@@ -7,21 +7,22 @@
       "direction": "in",
       "name": "req",
       "methods": [
-        "get",
-        "post"
+        "post",
+        "get"
       ]
-    },
-    {
-      "type": "signalR",
-      "name": "signalrHub",
-      "hubName": "mySignalRHub",
-      "connectionStringSetting": "AzureSignalRConnectionString",
-      "direction": "out"
     },
     {
       "type": "http",
       "direction": "out",
       "name": "$return"
+    },
+    {
+      "type": "signalRConnectionInfo",
+      "name": "connectionInfo",
+      "hubName": "mySignalRHub",
+      "connectionStringSetting": "AzureSignalRConnectionString",
+      "direction": "in"
     }
   ]
 }
+

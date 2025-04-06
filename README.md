@@ -1,38 +1,24 @@
-# Objective:
-Create a simple counter app. Follow these steps:
+# Objective
+We will extend EX1 to support:
+* Saving the counter on the cloud
+* Broadcasting the new counter value using SignalR
 
-![Output sample](https://github.com/moabarar/iot-workshop-2024/raw/main/assets/demo.mp4)
+We recommend watching the tutorial video and reviewing the slides on Moodle. We have provided a demo demonstrating the app's functionality.
 
-1. Create a new React Native App.
-2. Copy and paste the source code in the frontend directory (this repo). Make sure you are able to run-it and it functions well. 
-3. Download and install Azure Functions and verfiy you are able to invoke the provided functions. 
-4. Run the Azure Function App and  see that the counter value is changed as expected. In our implementeation, pressing decrease/increase button will randomly change the counter value between (0,499)/(500,999), respectively.
+Below, we provide useful links to assist you in the implementation.
 
-Up until step-4, you didn't have to do anything but run our code locally on your machine. In the following steps you need to make sure that your azure function is deployed in the cloud.
+# Azure Tables
+Use Azure Tables to store our counter in the cloud. The following links may be helpful:
 
-5. Create a new Azure Function App in Azure. Deploy your functions, and make sure they are accessible by simply invoking them from your broweser. 
-6. Change your frontend code so that it calls the azure function url on the web instead of using localhost.
+* An overview of Azure Tables can be found [here](https://learn.microsoft.com/en-us/azure/storage/tables/table-storage-overview).
+* The Azure Tables client can be used to access Azure Storage or Cosmos accounts. The SDK is supported in multiple languages, including [Python](https://learn.microsoft.com/en-us/python/api/overview/azure/data-tables-readme?view=azure-python), [C#](https://learn.microsoft.com/en-us/dotnet/api/overview/azure/data.tables-readme?view=azure-dotnet), and [JavaScript](https://learn.microsoft.com/en-us/javascript/api/overview/azure/data-tables-readme?view=azure-node-latest).
+* Create a new table with a single entity representing our counter (see [here](https://learn.microsoft.com/en-us/azure/data-explorer/create-table-wizard)).
+* Edit your Azure Functions, such as Increase/Decrease counter, to directly manipulate the counter in Azure.
+* In our implementation, we also added a new function that reads the counter value. We use this to initialize the counter value on the client side upon startup.
 
-# Known errors:
-If you get this error (or similar one):
-> Access to fetch at '...' from origin 'http://localhost' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource. If an opaque response serves your needs, set the request's mode to 'no-cors' to fetch the resource with CORS disabled.
-"
+# SignalR
+We will use the SignalR service to broadcast updates to all connected clients whenever there is a change in the counter value. Review the tutorial slides to understand the process. Here are some related links to help you understand how SignalR works:
 
-When you launch the Azure Function locally, it typically runs on port 7071. Meanwhile, your local website runs on a different port (e.g., 8081). By default, the Azure Function Project disables CORS communication.
-
-To enable CORS for all ports in your local.settings.json, you can configure the CORS policy to allow all origins, including different ports. You need to set up your local.settings.json by adding:
-
-```json
-{
-  "IsEncrypted": false,
-  "Values": {
-    "AzureWebJobsStorage": "",
-    "FUNCTIONS_WORKER_RUNTIME": "python"
-  },
-  "Host": {
-    "CORS": "*"
-  }
-}
-```
-
-See further information [here:](https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS)
+* We recommend following the guidelines provided in class. However, feel free to explore the documentation and references here:
+* [Here](https://learn.microsoft.com/en-us/azure/azure-signalr/signalr-quickstart-azure-functions-python?pivots=python-mode-configuration) is an example of a serverless app using SignalR. References to Python, C#, and JavaScript languages are also available.
+* Examples using SignalR can be found in [this repository](https://github.com/aspnet/AzureSignalR-samples). The code in the repo is not React Native-based and is more relevant for web apps, but it might be useful for understanding how SignalR works.
