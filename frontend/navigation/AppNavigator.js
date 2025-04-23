@@ -25,8 +25,8 @@ export default function AppNavigator() {
       <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
       <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
       <Stack.Screen name="SignupAnimals" component={SignupAnimals} />
-      {/*<Stack.Screen name="SignupLocationReq" component={SignupLocationReq} />
-      <Stack.Screen name="SignupReminders" component={SignupReminders} /> */}
+      <Stack.Screen name="SignupLocationReq" component={SignupLocationReq} />
+      <Stack.Screen name="SignupReminders" component={SignupReminders} />
       <Stack.Screen name="SignIn" component={SignInScreen} />
       <Stack.Screen name="Home" component={HomeScreen} />
     </Stack.Navigator>

@@ -102,7 +102,7 @@ export default function KidsAnimalsScreen({ navigation }) {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.nextButton}
-          onPress={() => navigation.navigate("NextScreen")}
+          onPress={() => navigation.navigate("SignupLocationReq")}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>
