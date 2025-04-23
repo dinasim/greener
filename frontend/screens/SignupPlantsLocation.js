@@ -8,7 +8,7 @@ import {
   ScrollView,
   SafeAreaView,
 } from "react-native";
-import { FormContext } from "../context/FormContext";
+import { useForm } from "../context/FormContext";
 
 const options = [
   {
@@ -29,8 +29,8 @@ const options = [
 ];
 
 export default function PlantLocationScreen({ navigation }) {
-  const { formData, updateFormData } = useContext(FormContext);
-  const scaleAnim = new Animated.Value(0.95);
+    const { formData, updateFormData } = useForm(); 
+    const scaleAnim = new Animated.Value(0.95);
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
