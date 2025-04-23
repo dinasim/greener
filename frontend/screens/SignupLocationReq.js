@@ -1,3 +1,1 @@
-// low
-// medium
-// high
+//explain why we need your location and ask for the phone הרשאות
