@@ -9,8 +9,11 @@ export default function App() {
 
   useEffect( () => {
     const signalrConnection = new SignalR.HubConnectionBuilder()
-    .withUrl("<REPLACE_WITH_YOURS>", {
+    .withUrl("https://excerice2.azurewebsites.net/api", {
       withCredentials: false, // We disable the credential for simplicity.
+      headers: {
+        'Origin': 'http://localhost:8081'
+      }
       // TODO: check what happens when you disable this flag!
     })// Note we don't call the Negotiate directly, it will be called by the Client SDK
     .withAutomaticReconnect()
@@ -27,7 +30,7 @@ export default function App() {
     });
     
     setConnection(signalrConnection); 
-
+/*
     // Start the connection
     const startConnection = async () => {
         try {
@@ -39,15 +42,34 @@ export default function App() {
             setTimeout(startConnection, 5000); // Retry connection after 5 seconds
         }
     };
-
+    */
+    const startConnection = async () => {
+      try {
+          console.log('Attempting to connect to SignalR...');
+          await signalrConnection.start();
+          console.log('SignalR connected.');
+          setConnection(signalrConnection);
+      } catch (err) {
+          console.log('SignalR connection error details:', err.message);
+          console.log('Error source:', err.source);
+          console.log('Full error:', err);
+          setTimeout(startConnection, 5000);
+      }
+  };
     startConnection();
   }, []);
   
 
 
   const increaseCounter = () => {
-    fetch("<Replace With yours>", {
+    fetch("https://excerice2.azurewebsites.net/api/IncreaseCounter", {
       method: 'GET',
+      headers: {
+        'Accept': 'text/plain',
+        'Content-Type': 'text/plain',
+        'Origin': 'http://localhost:8081'  // ← ADD THIS HEADER
+      },
+      mode: 'cors'  // ← EXPLICITLY ENABLE CORS
     }).then((response) => {
       return response.text();
     }).then((text) => {
@@ -58,8 +80,14 @@ export default function App() {
   };
 
   const decreaseCounter = () => {
-    fetch("<Replace with yours>", {
+    fetch("https://excerice2.azurewebsites.net/api/DecreaseCounter", {
       method: 'GET',
+      headers: {
+        'Accept': 'text/plain',
+        'Content-Type': 'text/plain',
+        'Origin': 'http://localhost:8081'  // ← ADD THIS HEADER
+      },
+      mode: 'cors'  // ← EXPLICITLY ENABLE CORS
     }).then((response) => {
       return response.text();
     }).then((text) => {
@@ -73,8 +101,14 @@ export default function App() {
   // This will be used to initialize the counter value upon
   // Startup.
   const readCounter = () => {
-    fetch("<Replace with yours>", {
+    fetch("https://excerice2.azurewebsites.net/api/ReadCounter", {
       method: 'GET',
+      headers: {
+        'Accept': 'text/plain',
+        'Content-Type': 'text/plain',
+        'Origin': 'http://localhost:8081'  // ← ADD THIS HEADER
+      },
+      mode: 'cors'  // ← EXPLICITLY ENABLE CORS
     }).then((response) => {
       return response.text();
     }).then((text) => {
@@ -85,8 +119,12 @@ export default function App() {
   };
 
 
-  readCounter();
-  
+  useEffect(() => {
+    readCounter();
+  }, []);
+  //   readCounter();
+  //changed ^
+
   return (
     <View style={styles.container}>
       <Text style={styles.counterText}>Counter: {counter}</Text>

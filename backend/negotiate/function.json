@@ -19,7 +19,7 @@
     {
       "type": "signalRConnectionInfo",
       "name": "connectionInfo",
-      "hubName": "mySignalRHub",
+      "hubName": "signalRforEX2",
       "connectionStringSetting": "AzureSignalRConnectionString",
       "direction": "in"
     }
