@@ -25,6 +25,10 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "expoClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com",
+      "webClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com"
     }
   }
 }

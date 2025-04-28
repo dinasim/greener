@@ -2,39 +2,73 @@ import React, { useEffect } from 'react';
 import { Button, View, StyleSheet } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
+import Constants from 'expo-constants';
+import * as AuthSession from 'expo-auth-session';
+import { useForm } from "../context/FormContext"; // This import is correct
+
 
 WebBrowser.maybeCompleteAuthSession();
 
 export default function LoginScreen() {
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com",
-    redirectUri: "https://auth.expo.io/@dina2/greener", // Web-specific URI
-  });
+  // Call useForm inside the function component
+  const { formData } = useForm();  // Valid hook call now
 
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    clientId: Constants.expoConfig.extra.expoClientId,
+    webClientId: Constants.expoConfig.extra.webClientId,
+    redirectUri: AuthSession.makeRedirectUri({
+      useProxy: true, // important for Expo Go
+    }),
+  });
   useEffect(() => {
     if (response?.type === 'success') {
       const { id_token } = response.authentication;
-      fetchUserInfo(id_token);
+      if (id_token) {
+        fetchUserInfo(id_token);
+      } else {
+        console.error("No id_token received from Google response");
+      }
+    } else {
+      console.error('Failed to authenticate with Google', response);
     }
   }, [response]);
-
+  
   async function fetchUserInfo(id_token) {
     try {
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${id_token}` },
       });
+  
+      if (!res.ok) {
+        throw new Error('Failed to fetch user info from Google API');
+      }
+  
       const userInfo = await res.json();
       console.log('User Info:', userInfo);
-
+  
+      if (!userInfo.email || !userInfo.name) {
+        throw new Error('Missing email or name from Google response');
+      }
+  
       await saveUserToBackend(userInfo);
     } catch (error) {
       console.error('Error fetching user info:', error);
     }
   }
+  
 
   async function saveUserToBackend(userInfo) {
     try {
-      const response = await fetch('https://YOUR-BACKEND-API.com/saveUser', {
+      console.log('Sending user info:', {
+        email: userInfo.email,
+        name: userInfo.name,
+        googleId: userInfo.sub,
+        plants_location: formData.plants_location,
+        Intersted: formData.Intersted,
+        animals: formData.animals,
+        kids: formData.kids
+      });
+      const response = await fetch('https://usershandle.azurewebsites.net/api/saveUser?', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -42,8 +76,11 @@ export default function LoginScreen() {
         body: JSON.stringify({
           email: userInfo.email,
           name: userInfo.name,
-          picture: userInfo.picture,
           googleId: userInfo.sub,
+          plants_location: formData.plants_location,
+          Intersted: formData.Intersted,
+          animals: formData.animals,
+          kids: formData.kids
         }),
       });
 
@@ -59,7 +96,10 @@ export default function LoginScreen() {
       <Button
         disabled={!request}
         title="Login with Google"
-        onPress={() => promptAsync()}
+        onPress={() =>  {
+          console.log('Redirect URI:', AuthSession.makeRedirectUri({ useProxy: true }));
+          promptAsync({ useProxy: true })
+        }}
       />
     </View>
   );
