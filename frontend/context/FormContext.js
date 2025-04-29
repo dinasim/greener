@@ -12,7 +12,7 @@ export const useForm = () => {
 export const FormProvider = ({ children }) => {
   // Declare the state for all form fields
   const [formData, setFormData] = useState({
-    plants_location: [],
+    plantLocations: [],
     Intersted: '',
     animals: '',
     kids: '',
