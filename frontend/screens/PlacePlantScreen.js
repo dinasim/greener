@@ -1,96 +1,170 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Alert } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  FlatList
+} from 'react-native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
 
-export default function PlacePlantScreen({ route, navigation }) {
-  const { plantData } = route.params;
-  const { formData } = useForm(); // <-- get the user data
+export default function PlacePlantScreen() {
+  const navigation = useNavigation();
+  const { params } = useRoute();
+  const { plantData } = params;
+  const { formData } = useForm();
 
+  const [nickname, setNickname] = useState('');
   const [location, setLocation] = useState('');
-  const [lastRepotted, setLastRepotted] = useState('');
-  const [lastWatered, setLastWatered] = useState('');
+  const [locations, setLocations] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = async () => {
+  const userEmail = formData?.email;
+
+  useEffect(() => {
+    console.log("formData.email =", formData?.email);
+    if (formData?.email) {
+      fetchLocations();
+    }
+  }, [formData]);
+
+  const fetchLocations = async () => {
+    try {
+      console.log("Fetching locations for", userEmail);
+      const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getuserlocations?email=${userEmail}`);
+      const data = await res.json();
+      console.log("Locations fetched:", data);
+      setLocations(data || []);
+    } catch (e) {
+      console.error("Failed to fetch locations", e);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!nickname || !location) {
+      Alert.alert("Missing fields", "Please enter a nickname and select a location.");
+      return;
+    }
+
     const payload = {
-      email: formData.email,
-      id: `${plantData.common_name || plantData.scientific_name}-${Date.now()}`,
-      plantName: plantData.common_name || plantData.scientific_name,
+      email: userEmail,
+      nickname,
       location,
-      lastRepotted,
-      lastWatered,
-      imageUrl: plantData.default_image?.original_url || '',
+      common_name: plantData.common_name,
+      scientific_name: plantData.scientific_name,
+      origin: plantData.origin || 'Unknown',
+      water_days: plantData.water_days || 7,
+      light: plantData.light || 'Unknown',
+      humidity: plantData.humidity || 'Unknown',
+      temperature: plantData.temperature || { min: 15, max: 30 },
+      pets: plantData.pets || 'Unknown',
+      difficulty: plantData.difficulty || 5,
+      repot: plantData.repot || 'Every 2 years',
+      feed: plantData.feed || 'Every 10 weeks',
+      common_problems: plantData.common_problems || []
     };
 
-    // try {
-    //   const response = await fetch('https://your-azure-function-url/api/saveUserPlant', {
-    //     method: 'POST',
-    //     headers: {
-    //       'Content-Type': 'application/json',
-    //     },
-    //     body: JSON.stringify(payload),
-    //   });
+    setLoading(true);
+    try {
+      const res = await fetch('https://usersfunctions.azurewebsites.net/api/userplants/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
 
-    //   if (response.ok) {
-    //     Alert.alert('Success', 'Plant added successfully!');
-    //     navigation.navigate('Home');
-    //   } else {
-    //     Alert.alert('Error', 'Failed to save plant.');
-    //   }
-    // } catch (error) {
-    //   console.error('Error saving plant:', error);
-    //   Alert.alert('Error', 'Could not save plant.');
-    // }
+      if (!res.ok) throw new Error("Add failed");
+      Alert.alert("Success", "Plant added to your garden!");
+      navigation.navigate('Home');
+    } catch (e) {
+      console.error("Save failed", e);
+      Alert.alert("Error", "Could not save your plant.");
+    }
+    setLoading(false);
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView>
-        <Text style={styles.title}>Set Up Your Plant</Text>
+    <View style={styles.container}>
+      <Text style={styles.title}>Give your plant a nickname:</Text>
+      <TextInput
+        placeholder="e.g., Spike, My Balcony Aloe"
+        value={nickname}
+        onChangeText={setNickname}
+        style={styles.input}
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="Where is the plant placed? (e.g., Balcony, Bathroom)"
-          value={location}
-          onChangeText={setLocation}
-        />
+      <Text style={styles.title}>Select a location:</Text>
+      <FlatList
+        data={locations}
+        keyExtractor={(item) => item}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={[
+              styles.locationOption,
+              item === location && styles.locationSelected
+            ]}
+            onPress={() => setLocation(item)}
+          >
+            <Text style={styles.locationText}>{item}</Text>
+          </TouchableOpacity>
+        )}
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="When was it last repotted? (YYYY-MM-DD)"
-          value={lastRepotted}
-          onChangeText={setLastRepotted}
-        />
+      <Text style={styles.title}>Or enter a new location:</Text>
+      <TextInput
+        placeholder="New location"
+        value={location}
+        onChangeText={setLocation}
+        style={styles.input}
+      />
 
-        <TextInput
-          style={styles.input}
-          placeholder="When was it last watered? (YYYY-MM-DD)"
-          value={lastWatered}
-          onChangeText={setLastWatered}
-        />
-
-        <TouchableOpacity style={styles.saveButton} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>Save Plant</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </SafeAreaView>
+      <TouchableOpacity style={styles.submitButton} onPress={handleSubmit} disabled={loading}>
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.submitText}>Save Plant</Text>
+        )}
+      </TouchableOpacity>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  title: { fontSize: 24, fontWeight: 'bold', marginBottom: 20 },
+  container: { flex: 1, padding: 20, backgroundColor: '#f5fff5' },
+  title: { fontSize: 18, fontWeight: 'bold', marginTop: 20, marginBottom: 8 },
   input: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    padding: 15,
+    backgroundColor: '#fff',
+    padding: 10,
     borderRadius: 10,
-    marginBottom: 20,
+    borderColor: '#ccc',
+    borderWidth: 1,
+    marginBottom: 12
   },
-  saveButton: {
+  locationOption: {
+    padding: 10,
+    backgroundColor: '#e0ffe0',
+    borderRadius: 8,
+    marginBottom: 8
+  },
+  locationSelected: {
+    backgroundColor: '#4CAF50'
+  },
+  locationText: {
+    fontSize: 16,
+    color: '#333'
+  },
+  submitButton: {
     backgroundColor: '#2e7d32',
-    padding: 15,
+    padding: 14,
     borderRadius: 10,
     alignItems: 'center',
+    marginTop: 20
   },
-  saveButtonText: { color: '#fff', fontWeight: 'bold' },
+  submitText: {
+    color: '#fff',
+    fontWeight: 'bold'
+  }
 });

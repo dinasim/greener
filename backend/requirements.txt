@@ -4,3 +4,7 @@
 
 azure-functions
 azure-data-tables
+azure-cosmos
+requests-toolbelt
+requests
+

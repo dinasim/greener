@@ -10,8 +10,10 @@ import SignupAnimals from "../screens/SignupAnimals";
 import SignupLocationReq from "../screens/SignupLocationReq";
 import SignupReminders from "../screens/SignupReminders";
 import CameraScreen from '../screens/CameraScreen';
-import AddPlantScreen from '../screens/AddPlantScreen';         
+import AddPlantScreen from '../screens/AddPlantScreen';
 import PlacePlantScreen from '../screens/PlacePlantScreen';     
+import LocationsScreen from '../screens/LocationsScreen';
+import LocationPlantsScreen from '../screens/LocationPlantsScreen';
 
 import { FormProvider } from '../context/FormContext';
 
@@ -32,8 +34,10 @@ export default function AppNavigator() {
         <Stack.Screen name="SignIn" component={SignInGoogleScreen} />
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="Camera" component={CameraScreen} />
-        <Stack.Screen name="AddPlant" component={AddPlantScreen} />          
+        <Stack.Screen name="AddPlant" component={AddPlantScreen} />
         <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
+        <Stack.Screen name="Locations" component={LocationsScreen} />
+        <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
       </Stack.Navigator>
     </FormProvider>
   );

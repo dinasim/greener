@@ -1,15 +1,15 @@
 import React, { useEffect } from 'react';
-import { Button, View, StyleSheet, Text, TouchableOpacity, Platform, SafeAreaView } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, Platform, SafeAreaView } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
 import Constants from 'expo-constants';
 import * as AuthSession from 'expo-auth-session';
-import { useForm } from "../context/FormContext";
+import { useForm } from "../context/FormContext"; // ✅ your form context
 
 WebBrowser.maybeCompleteAuthSession();
 
-export default function LoginScreen({navigation}) {
-  const { formData } = useForm();
+export default function SignInGoogleScreen({ navigation }) {
+  const { formData, updateFormData } = useForm(); // ✅ include updater
 
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: Constants.expoConfig.extra.expoClientId,
@@ -32,6 +32,9 @@ export default function LoginScreen({navigation}) {
           .then((userInfo) => {
             if (userInfo) {
               console.log('User Info:', userInfo);
+
+              // ✅ Save email into global context
+              updateFormData('email', userInfo.email);
 
               saveUserToBackend({
                 email: userInfo.email,

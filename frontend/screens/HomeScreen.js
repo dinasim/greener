@@ -1,26 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, FlatList, Modal } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
+  Modal, FlatList, Image
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen({ navigation }) {
-  const [tasks, setTasks] = useState([]);
   const [greeting, setGreeting] = useState('');
   const [showPopup, setShowPopup] = useState(false);
 
   useEffect(() => {
-    fetchUserTasks();
     setGreeting(getGreeting());
   }, []);
-
-  const fetchUserTasks = async () => {
-    try {
-      const response = await fetch('https://yourbackendurl.com/api/getTasks?email=dina@example.com');
-      const data = await response.json();
-      setTasks(data.tasks);
-    } catch (error) {
-      console.error('Failed to fetch tasks:', error);
-    }
-  };
 
   const getGreeting = () => {
     const hour = new Date().getHours();
@@ -38,15 +29,18 @@ export default function HomeScreen({ navigation }) {
     if (type === 'plant') {
       navigation.navigate('AddPlant');
     } else if (type === 'site') {
-      navigation.navigate('AddSite');
+      navigation.navigate('AddSite'); // you can implement this if needed
     }
+  };
+
+  const handleLeafPress = () => {
+    navigation.navigate('Locations');
   };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.greeting}>{greeting}</Text>
-        <Text style={styles.subtitle}>You have {tasks.length} tasks left to complete today. Let's check them off and call it a day</Text>
       </View>
 
       <View style={styles.tabRow}>
@@ -55,7 +49,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={tasks}
+        data={[]} // Placeholder for future plant tasks
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.taskCard}>
@@ -71,7 +65,9 @@ export default function HomeScreen({ navigation }) {
 
       <View style={styles.navBar}>
         <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="leaf" size={24} color="black" /></TouchableOpacity>
+        <TouchableOpacity onPress={handleLeafPress}>
+          <Ionicons name="leaf" size={24} color="black" />
+        </TouchableOpacity>
         <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
       </View>
 
@@ -104,12 +100,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff', padding: 20 },
   header: { marginTop: 20 },
   greeting: { fontSize: 28, color: '#000', fontWeight: 'bold' },
-  subtitle: { fontSize: 16, color: '#444', marginTop: 10 },
-  chipsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 20 },
-  chip: { backgroundColor: '#eee', padding: 10, borderRadius: 10 },
-  chipText: { color: '#333' },
-  chipPremium: { backgroundColor: '#f1c40f', padding: 10, borderRadius: 10 },
-  chipPremiumText: { color: '#000', fontWeight: 'bold' },
   tabRow: { flexDirection: 'row', marginBottom: 10 },
   tab: { fontSize: 16, color: '#777', marginRight: 20 },
   activeTab: { color: '#2e7d32', fontWeight: 'bold', textDecorationLine: 'underline' },
