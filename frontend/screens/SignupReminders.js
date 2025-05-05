@@ -58,7 +58,7 @@ export default function SignupReminders({ navigation }) {
             style={[styles.permissionButton, { backgroundColor: "#4caf50", marginTop: 20 }]}
             onPress={() => {
               console.log("Continue button pressed");
-              // navigation.navigate("NextScreen"); // Add navigation later
+              navigation.navigate("SignInGoogleScreen"); 
             }}
           >
             <Text style={styles.buttonText}>Continue</Text>

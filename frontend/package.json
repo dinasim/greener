@@ -9,6 +9,7 @@
     "web": "expo start --web"
   },
   "dependencies": {
+    "@azure/cosmos": "^4.3.0",
     "@expo/metro-runtime": "~4.0.1",
     "@react-native-firebase/app": "^21.14.0",
     "@react-native-firebase/auth": "^21.14.0",
@@ -18,9 +19,12 @@
     "expo-auth-session": "~6.0.3",
     "expo-camera": "~16.0.18",
     "expo-dev-client": "^5.0.20",
+    "expo-image-picker": "^16.0.6",
     "expo-location": "~18.0.10",
     "expo-notifications": "~0.29.14",
     "firebase": "^11.6.0",
+    "jwt-decode": "^4.0.0",
+    "pg": "^8.15.6",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "^0.76.9",
