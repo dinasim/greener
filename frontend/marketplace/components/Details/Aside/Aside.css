@@ -1,0 +1,72 @@
+.product-details-seller {
+    text-align: center;
+    padding: 20px;
+    margin-top: 1rem;
+}
+
+#btnContact {
+    padding: 6px 12px;
+    margin-bottom: 2rem;
+    font-size: 1rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#btnContact svg {
+    font-size: 17pt;
+    margin-right: 5px;
+    margin-bottom: 3px;
+}
+
+/* Price headings */
+#product-price-heading {
+    display: inline;
+    font-family: serif;
+    font-weight: bold;
+    font-size: 1.1rem;
+    color: #333;
+}
+
+#price-heading {
+    font-weight: bold;
+    font-family: 'Times New Roman', Times, serif;
+    font-size: 2rem;
+    margin-top: 0.5rem;
+    color: #111;
+}
+
+/* Edit and archive icons */
+#edit-icon svg {
+    font-size: 15pt;
+    margin-left: 10px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    color: #666;
+}
+
+#archive-icon svg {
+    font-size: 19pt;
+    margin-left: 10px;
+    margin-bottom: 5px;
+    cursor: pointer;
+    color: #a00;
+}
+
+#edit-icon svg:hover,
+#archive-icon svg:hover {
+    color: #000;
+}
+
+/* Guest login prompt */
+#guest-msg {
+    font-weight: bold;
+    font-family: serif;
+    font-size: 14pt;
+    margin-top: 1.5rem;
+}
+
+#guest-msg a {
+    text-decoration: underline;
+    color: #007bff;
+}
