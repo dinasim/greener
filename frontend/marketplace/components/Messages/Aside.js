@@ -1,26 +1,60 @@
-// import {Link} from 'react-router-dom'
+import React from 'react';
+import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 
-// function Aside({conversations, chatId}) {
-//     const [selected, setSelected] = useState({ seller: { _id: "", avatar: "", name: "" }, buyer: { _id: "", avatar: "", name: "" }, conversation: [] });
-//     const [isSelected, setIsSelected] = useState(false);
+const Aside = ({ conversations, chatId }) => {
+  const navigation = useNavigation();
 
-//     useEffect(() => {
-//         if (isSelected) {
-//             setSelected(conversations.find(x => x._id == chatId))
-//         }
-//     }, [isSelected, chatId])
+  return (
+    <View style={styles.aside}>
+      <Text style={styles.header}>Conversations</Text>
+      <ScrollView>
+        {conversations.map(x => (
+          <TouchableOpacity
+            key={x._id}
+            style={styles.connection}
+            onPress={() => navigation.navigate('Messages', { chatId: x._id })}
+          >
+            <Image source={{ uri: x.seller.avatar }} style={styles.avatar} />
+            <Text style={styles.name}>{x.seller.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
+  );
+};
 
-//     return (
-//         <aside className="col-lg-4 col-md-4">
-//             <h3>Conversations</h3>
-//             {conversations.map(x =>
-//                 <div className="chat-connections" key={x._id}>
-//                     <Link onClick={() => setIsSelected(true)} to={`/messages/${x._id}`}>
-//                         <img src={x.seller.avatar} /> {x.seller.name}
-//                     </Link>
-//                 </div>)}
-//         </aside>
-//     )
-// }
+const styles = StyleSheet.create({
+  aside: {
+    borderRightWidth: 1,
+    borderRightColor: '#8080804a',
+    paddingHorizontal: 10
+  },
+  header: {
+    fontFamily: 'serif',
+    textAlign: 'center',
+    borderBottomWidth: 1,
+    borderColor: '#8080804a',
+    padding: 15,
+    fontSize: 18
+  },
+  connection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    borderBottomWidth: 1,
+    borderColor: '#8080804a'
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    objectFit: 'cover',
+    marginRight: 10
+  },
+  name: {
+    fontSize: 16
+  }
+});
 
-// export default Aside;
+export default Aside;

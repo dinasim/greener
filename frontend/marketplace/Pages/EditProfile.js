@@ -48,9 +48,10 @@ export default function EditProfileScreen() {
       quality: 0.7,
     });
 
-    if (!result.cancelled) {
-      setNewAvatarBase64(result.base64);
-      setLocalAvatarUri(result.uri);
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      setNewAvatarBase64(asset.base64);
+      setLocalAvatarUri(asset.uri);
     }
   };
 
@@ -69,8 +70,8 @@ export default function EditProfileScreen() {
     try {
       setLoading(true);
       const res = await editUserProfile(_id, payload);
-      if (res.error) {
-        Alert.alert('Error', res.error.toString());
+      if (!res || res.error) {
+        Alert.alert('Error', res?.error?.toString() || 'Failed to save profile');
       } else {
         navigation.navigate('UserProfile', { id: _id });
       }

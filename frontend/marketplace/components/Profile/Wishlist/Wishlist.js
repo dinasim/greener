@@ -1,49 +1,74 @@
-import { useEffect, useState } from 'react';
-import ProductCard from '../../ProductCard/ProductCard';
-import { Col, Row, Spinner } from 'react-bootstrap';
-import { getUserWishlist } from '../../../services/userData';
+import React, { useEffect, useState } from 'react';
+import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
+import ProductCard from '../../components/ProductCard';
+import { getUserWishlist } from '../../services/userData';
 
-import './Wishlist.css';
+const Wishlist = () => {
+  const [products, setProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-function Wishlist() {
-    const [products, setProduct] = useState([])
-    let [loading, setLoading] = useState(true);
+  useEffect(() => {
+    getUserWishlist()
+      .then(res => {
+        const activeItems = (res.wishlist || []).filter(x => x.active === true);
+        setProducts(activeItems);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.log(err);
+        setLoading(false);
+      });
+  }, []);
 
-    useEffect(() => {
-        window.scrollTo(0, 0);
-        getUserWishlist()
-            .then(res => {
-                setProduct(res.wishlist.filter(x => x.active === true));
-                setLoading(false)
-            })
-            .catch(err => console.log(err))
-    }, [setProduct, setLoading])
+  if (loading) {
+    return <ActivityIndicator size="large" style={styles.loader} />;
+  }
 
-    return (
-        <>
-            {!loading ?
-                (<>
-                    <h1 className="heading">Wishlist</h1>
-                    {products.length > 0 ? (
-                        <Row>
-                            {products
-                               
-                                .map(x =>
-                                    <Col xs={12} md={6} lg={4} key={x._id.toString()}>
-                                        <ProductCard params={x} />
-                                    </Col>
-                                )
-                            }
-                        </Row>
-                    ) : (
-                            <p className="nothing-to-show">Nothing to show</p>
-                        )}
+  return (
+    <View style={styles.container}>
+      <Text style={styles.heading}>Wishlist</Text>
+      {products.length > 0 ? (
+        <FlatList
+          data={products}
+          keyExtractor={item => item._id}
+          numColumns={2}
+          renderItem={({ item }) => (
+            <View style={styles.cardWrapper}>
+              <ProductCard params={item} />
+            </View>
+          )}
+        />
+      ) : (
+        <Text style={styles.emptyText}>Nothing to show</Text>
+      )}
+    </View>
+  );
+};
 
-                </>) :
-                <Spinner animation="border" />}
-
-        </>
-    )
-}
+const styles = StyleSheet.create({
+  container: {
+    padding: 16
+  },
+  heading: {
+    fontSize: 22,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginVertical: 16,
+    fontFamily: 'serif'
+  },
+  loader: {
+    flex: 1,
+    justifyContent: 'center'
+  },
+  cardWrapper: {
+    flex: 1,
+    padding: 8
+  },
+  emptyText: {
+    textAlign: 'center',
+    fontFamily: 'serif',
+    fontSize: 20
+  }
+});
 
 export default Wishlist;

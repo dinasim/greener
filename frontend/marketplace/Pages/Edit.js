@@ -36,7 +36,7 @@ export default function EditProductScreen() {
   useEffect(() => {
     getSpecific(productId)
       .then(res => {
-        setProduct(res);
+        if (res) setProduct(res);
       })
       .catch(err => {
         console.error('Failed to fetch product:', err);
@@ -54,9 +54,10 @@ export default function EditProductScreen() {
       quality: 0.7,
     });
 
-    if (!result.cancelled) {
-      setNewImageBase64(result.base64);
-      setLocalImageURI(result.uri);
+    if (!result.canceled && result.assets?.[0]) {
+      const asset = result.assets[0];
+      setNewImageBase64(asset.base64);
+      setLocalImageURI(asset.uri);
     }
   };
 
@@ -77,8 +78,9 @@ export default function EditProductScreen() {
     try {
       setLoading(true);
       const res = await editProduct(_id, updatedProduct);
-      if (res.error) {
-        Alert.alert('Error', res.error.toString());
+
+      if (!res || res.error) {
+        Alert.alert('Error', res?.error?.toString() || 'Unknown error');
       } else {
         navigation.navigate('ProductDetails', {
           category,

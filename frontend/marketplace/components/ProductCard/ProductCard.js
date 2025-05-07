@@ -1,29 +1,75 @@
-import { Card } from 'react-bootstrap';
-// import { BsHeart, BsHeartFill } from 'react-icons/bs';
-import { Link } from 'react-router-dom';
-import Moment from 'react-moment';
+import React from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import dayjs from 'dayjs';
+import localizedFormat from 'dayjs/plugin/localizedFormat';
 
-function ProductCard({ params }) {
-    return (
-        <Card>
-            <Link to={`/categories/${params.category}/${params._id}/details`}>
-                <Card.Img variant="top" src={params.image} />
-                <Card.Body>
-                    <Card.Title>{params.title}</Card.Title>
-                    <Card.Text>{(params.price).toFixed(2)}€</Card.Text>
-                </Card.Body>
-            </Link>
-            <Card.Footer>
-                <small className="text-muted">
-                    <Moment format="d MMM YYYY (dddd) HH:mm">
-                        {params.addedAt}
-                    </Moment>
-                    -  <strong>{params.city}</strong>
-                    {/* <Link to="" id="heartIcon"><BsHeart /></Link> */}
-                </small>
-            </Card.Footer>
-        </Card>
-    )
-}
+dayjs.extend(localizedFormat);
+
+const ProductCard = ({ params }) => {
+  const navigation = useNavigation();
+
+  return (
+    <TouchableOpacity
+      onPress={() =>
+        navigation.navigate('ProductDetailsScreen', {
+          category: params.category,
+          id: params._id
+        })
+      }
+    >
+      <View style={styles.card}>
+        <Image source={{ uri: params.image }} style={styles.image} resizeMode="cover" />
+        <View style={styles.body}>
+          <Text style={styles.title}>{params.title}</Text>
+          <Text style={styles.price}>{parseFloat(params.price).toFixed(2)}€</Text>
+        </View>
+        <View style={styles.footer}>
+          <Text style={styles.footerText}>
+            {dayjs(params.addedAt).format('D MMM YYYY (dddd) HH:mm')} -{' '}
+            <Text style={{ fontWeight: 'bold' }}>{params.city}</Text>
+          </Text>
+        </View>
+      </View>
+    </TouchableOpacity>
+  );
+};
+
+const styles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    overflow: 'hidden',
+    marginBottom: 30,
+    elevation: 3
+  },
+  image: {
+    height: 200,
+    width: '100%'
+  },
+  body: {
+    padding: 12
+  },
+  title: {
+    fontSize: 16,
+    fontWeight: '600'
+  },
+  price: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'right',
+    marginTop: 4
+  },
+  footer: {
+    padding: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#eee'
+  },
+  footerText: {
+    fontSize: 12,
+    textAlign: 'right',
+    color: '#555'
+  }
+});
 
 export default ProductCard;

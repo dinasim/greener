@@ -8,6 +8,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+
 import { getUserById } from '../services/userData';
 import ProfileSection from '../components/Profile/ProfileSection';
 import Wishlist from '../components/Profile/Wishlist/Wishlist';

@@ -32,9 +32,7 @@ export default function MessagesScreen() {
         setConversations(res);
         if (chatId) {
           const convo = res.find((x) => x.chats._id === chatId);
-          if (convo) {
-            setSelected(convo);
-          }
+          if (convo) setSelected(convo);
         }
       })
       .catch((err) => console.error(err));
@@ -45,13 +43,15 @@ export default function MessagesScreen() {
 
     sendMessage(chatId, message)
       .then((res) => {
-        Alert.alert('Message sent');
         const updated = { ...selected };
         updated.chats.conversation.push({ message, senderId: res.sender });
         setSelected(updated);
         setMessage('');
       })
-      .catch((err) => console.error(err));
+      .catch((err) => {
+        console.error(err);
+        Alert.alert('Error', 'Failed to send message');
+      });
   };
 
   const handleSelectConversation = (id) => {
@@ -164,6 +164,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
   chatArea: {
     flex: 1,
     paddingLeft: 10,
@@ -178,12 +184,6 @@ const styles = StyleSheet.create({
   headerUser: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
   },
   chatBody: {
     maxHeight: 300,
@@ -205,8 +205,8 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    gap: 10,
     alignItems: 'center',
+    gap: 10,
   },
   input: {
     flex: 1,
@@ -214,7 +214,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: 5,
     padding: 10,
-    marginRight: 5,
     minHeight: 40,
+    marginRight: 5,
   },
 });

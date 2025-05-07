@@ -1,78 +1,132 @@
-import { useState } from 'react';
-import ActiveSells from './Sells/ActiveSells'
-import { Col, Row, Button, Form, Modal } from 'react-bootstrap';
-import { BsFillPersonFill } from 'react-icons/bs';
-import { MdEmail, MdPhoneAndroid } from 'react-icons/md'
-import { FaSellsy } from 'react-icons/fa'
-import { RiMessage3Fill } from 'react-icons/ri';
-import { createChatRoom } from '../../services/messagesData'
+import React, { useState } from 'react';
+import { View, Text, Image, StyleSheet, Modal, TextInput, Button, TouchableOpacity } from 'react-native';
+import IconPerson from 'react-native-vector-icons/FontAwesome';
+import IconEmail from 'react-native-vector-icons/MaterialCommunityIcons';
+import IconPhone from 'react-native-vector-icons/MaterialIcons';
+import IconSell from 'react-native-vector-icons/FontAwesome5';
+import IconChat from 'react-native-vector-icons/MaterialCommunityIcons';
 
-function SellerProfile({ params, history }) {
-    const [showMsg, setShowMdg] = useState(false);
-    const [message, setMessage] = useState("");
-    const handleClose = () => setShowMdg(false);
-    const handleShow = () => setShowMdg(true);
+import ActiveSells from './Sells/ActiveSells';
+import { createChatRoom } from '../../services/messagesData';
+import { useNavigation } from '@react-navigation/native';
 
-    const handleMsgChange = (e) => {
-        e.preventDefault();
-        setMessage(e.target.value)
-    }
+const SellerProfile = ({ params }) => {
+  const navigation = useNavigation();
+  const [showMsg, setShowMsg] = useState(false);
+  const [message, setMessage] = useState('');
 
-    const onMsgSent = (e) => {
-        e.preventDefault();
-        createChatRoom(params._id, message)
-            .then((res) => {
-                history.push(`/messages`)
-            })
-            .catch(err => console.log(err))
-    }
-    return (
-        <>
-            <div id="profile-head">
-                <div className="container">
-                    <Row className="profile-row">
-                        <Col lg={2} md={5} sm={12}>
-                            <img id="avatar" alt="avatar" src={params.avatar} />
-                        </Col>
-                        <Col lg={2} md={3} sm={12}>
-                            <p><BsFillPersonFill /> {params.name}</p>
-                            <p><MdEmail /> {params.email}</p>
-                            <p><MdPhoneAndroid /> {params.phoneNumber}</p>
-                            <p><FaSellsy /> {params.totalSells} sells in total</p>
-                        </Col>
-                        <Col lg={3} md={4} sm={12}>
-                            <Button variant="dark" className="col-lg-10" id="btnContact" onClick={handleShow}>
-                                <RiMessage3Fill />Contact Seller
-                            </Button>
-                        </Col>
-                    </Row>
-                </div>
-            </div>
-            <div className="container">
-                <Row>
-                    <Col lg={12}>
-                        <ActiveSells params={params} />
-                    </Col>
-                </Row>
-            </div>
-            <Modal show={showMsg} onHide={handleClose}>
-                <Modal.Header closeButton>
-                    <Modal.Title>Message</Modal.Title>
-                </Modal.Header>
-                <Modal.Body>
-                    <Form>
-                        <Form.Group>
-                            <Form.Control as="textarea" name="textarea" onChange={handleMsgChange} rows={3} />
-                        </Form.Group>
-                    </Form>
-                </Modal.Body>
-                <Modal.Footer>
-                    <Button variant="dark" onClick={onMsgSent}>Sent</Button>
-                    <Button variant="secondary" onClick={handleClose}>Close</Button>
-                </Modal.Footer>
-            </Modal>
-        </>
-    )
-}
+  const handleMsgSubmit = () => {
+    createChatRoom(params._id, message)
+      .then(() => {
+        setShowMsg(false);
+        navigation.navigate('Messages');
+      })
+      .catch(err => console.log(err));
+  };
+
+  return (
+    <>
+      <View style={styles.head}>
+        <View style={styles.row}>
+          <Image source={{ uri: params.avatar }} style={styles.avatar} />
+          <View style={styles.info}>
+            <Text><IconPerson name="user" />  {params.name}</Text>
+            <Text><IconEmail name="email-outline" />  {params.email}</Text>
+            <Text><IconPhone name="phone" />  {params.phoneNumber}</Text>
+            <Text><IconSell name="store" />  {params.totalSells} sells in total</Text>
+            <TouchableOpacity style={styles.btn} onPress={() => setShowMsg(true)}>
+              <IconChat name="message-text" size={18} color="#fff" />
+              <Text style={styles.btnText}>  Contact Seller</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+
+      <ActiveSells params={params} />
+
+      <Modal visible={showMsg} animationType="slide" transparent>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalBox}>
+            <Text style={styles.modalTitle}>Message</Text>
+            <TextInput
+              multiline
+              placeholder="Type your message..."
+              style={styles.textArea}
+              value={message}
+              onChangeText={setMessage}
+            />
+            <View style={styles.modalActions}>
+              <Button title="Send" onPress={handleMsgSubmit} />
+              <Button title="Close" color="grey" onPress={() => setShowMsg(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  head: {
+    backgroundColor: '#f0f0f0',
+    padding: 20,
+    marginBottom: 30
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  avatar: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    objectFit: 'cover'
+  },
+  info: {
+    flex: 1,
+    marginLeft: 20
+  },
+  btn: {
+    flexDirection: 'row',
+    backgroundColor: '#343a40',
+    padding: 10,
+    borderRadius: 5,
+    marginTop: 10,
+    alignItems: 'center'
+  },
+  btnText: {
+    color: '#fff',
+    fontSize: 16
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: '#00000088',
+    padding: 20
+  },
+  modalBox: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 20
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10
+  },
+  textArea: {
+    borderColor: '#ccc',
+    borderWidth: 1,
+    borderRadius: 5,
+    minHeight: 100,
+    padding: 10,
+    marginBottom: 20,
+    textAlignVertical: 'top'
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  }
+});
 
 export default SellerProfile;

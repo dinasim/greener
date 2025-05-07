@@ -8,11 +8,9 @@ import {
   StyleSheet,
   Alert
 } from 'react-native';
-import { BsHeart, BsHeartFill } from 'react-icons/bs'; // placeholder, see note below
-import { wishProduct } from '../services/productData'; // Make sure this hits your Azure backend
+import { wishProduct } from '../../../services/productData'; // Adapt to your file structure
 
-const ProductInfoScreen = ({ route }) => {
-  const { params } = route;
+const ProductInfo = ({ params }) => {
   const [wish, setWish] = useState(false);
 
   useEffect(() => {
@@ -21,7 +19,7 @@ const ProductInfoScreen = ({ route }) => {
 
   const handleWishToggle = async () => {
     try {
-      await wishProduct(params._id); // must be Azure-based
+      await wishProduct(params._id);
       setWish(prev => !prev);
     } catch (err) {
       console.error(err);
@@ -32,13 +30,11 @@ const ProductInfoScreen = ({ route }) => {
   return (
     <ScrollView contentContainerStyle={styles.container}>
       <Image source={{ uri: params.image }} style={styles.image} resizeMode="cover" />
-      <View style={styles.row}>
+      <View style={styles.headerRow}>
         <Text style={styles.title}>{params.title}</Text>
         {params.isAuth && (
           <TouchableOpacity onPress={handleWishToggle}>
-            <Text style={styles.heart}>
-              {wish ? '❤️' : '🤍'} {/* Unicode fallback */}
-            </Text>
+            <Text style={styles.heart}>{wish ? '❤️' : '🤍'}</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -52,4 +48,57 @@ const ProductInfoScreen = ({ route }) => {
   );
 };
 
-export default ProductInfoScreen;
+const styles = StyleSheet.create({
+  container: {
+    paddingVertical: 20,
+    paddingHorizontal: 10
+  },
+  image: {
+    height: 500,
+    width: '100%',
+    borderRadius: 8,
+    marginBottom: 20
+  },
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: '600',
+    marginLeft: 10,
+    flex: 1,
+    flexWrap: 'wrap'
+  },
+  heart: {
+    fontSize: 32,
+    marginRight: 10,
+    marginTop: 10,
+    color: '#81002c'
+  },
+  card: {
+    backgroundColor: '#f9f9f9',
+    padding: 15,
+    borderRadius: 10
+  },
+  detailsText: {
+    fontSize: 16,
+    textAlign: 'justify',
+    letterSpacing: 0.5,
+    textIndent: 20
+  },
+  separator: {
+    height: 1,
+    backgroundColor: '#ccc',
+    marginVertical: 10
+  },
+  footer: {
+    textAlign: 'right',
+    fontStyle: 'italic',
+    fontSize: 12
+  }
+});
+
+export default ProductInfo;

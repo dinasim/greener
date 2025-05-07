@@ -1,31 +1,57 @@
-import { Link } from 'react-router-dom';
-import { Col, Row } from 'react-bootstrap';
-import { BsFillPersonFill } from 'react-icons/bs';
-import { MdEmail, MdPhoneAndroid } from 'react-icons/md'
-import { FaSellsy } from 'react-icons/fa'
-import { GrEdit } from 'react-icons/gr';
+import React from 'react';
+import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import IconEdit from 'react-native-vector-icons/Feather';
+import IconPerson from 'react-native-vector-icons/FontAwesome';
+import IconEmail from 'react-native-vector-icons/MaterialCommunityIcons';
+import IconPhone from 'react-native-vector-icons/MaterialIcons';
+import IconSell from 'react-native-vector-icons/FontAwesome5';
 
-function ProfileSection({ params }) {
-    return (
-        <div id="profile-head">
-            <div className="container">
-                <Row className="profile-row">
-                    <Col lg={2} md={5} sm={12}>
-                        <img id="avatar" alt="avatar" src={params.avatar} />
-                    </Col>
-                    <Col lg={3} md={3} sm={12}>
-                        <p><BsFillPersonFill /> {params.name}</p>
-                        <p><MdEmail /> {params.email}</p>
-                        <p><MdPhoneAndroid /> {params.phoneNumber}</p>
-                        <p><FaSellsy /> {params.totalSells} sells in total</p>
-                    </Col>
-                    <span id="edit-icon">
-                        <Link to={`/profile/${params._id}/edit`}><GrEdit /></Link>
-                    </span>
-                </Row>
-            </div>
-        </div>
-    )
-}
+const ProfileSection = ({ params }) => {
+  const navigation = useNavigation();
+
+  return (
+    <View style={styles.head}>
+      <View style={styles.row}>
+        <Image source={{ uri: params.avatar }} style={styles.avatar} />
+        <View style={styles.info}>
+          <Text><IconPerson name="user" />  {params.name}</Text>
+          <Text><IconEmail name="email-outline" />  {params.email}</Text>
+          <Text><IconPhone name="phone" />  {params.phoneNumber}</Text>
+          <Text><IconSell name="store" />  {params.totalSells} sells in total</Text>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('EditProfile', { id: params._id })}>
+          <IconEdit name="edit" size={28} style={styles.editIcon} />
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  head: {
+    backgroundColor: '#f0f0f0',
+    padding: 20,
+    marginBottom: 30
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between'
+  },
+  avatar: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    objectFit: 'cover'
+  },
+  info: {
+    flex: 1,
+    marginLeft: 20
+  },
+  editIcon: {
+    color: '#444'
+  }
+});
 
 export default ProfileSection;

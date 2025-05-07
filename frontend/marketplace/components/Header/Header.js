@@ -1,80 +1,101 @@
-import { useContext } from 'react';
+import React, { useContext, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { Menu, Divider } from 'react-native-paper';
+import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import { Context } from '../../ContextStore';
-import { Navbar, NavDropdown, Nav, OverlayTrigger, Tooltip } from 'react-bootstrap';
-import { NavLink } from 'react-router-dom';
-import { BsFillPersonFill, BsFillEnvelopeFill, BsFillPlusCircleFill } from 'react-icons/bs';
-import { IoLogOut } from 'react-icons/io5'
 
-import './Header.css'
-function Header() {
-    const { userData, setUserData } = useContext(Context)
+const Header = () => {
+  const { userData } = useContext(Context);
+  const navigation = useNavigation();
+  const [menuVisible, setMenuVisible] = useState(false);
 
-    return (
-        <Navbar collapseOnSelect bg="light" variant="light">
-            <div className="container">
-                <Navbar.Brand>
-                    <NavLink className="navbar-brand" to="/">All for you...</NavLink>
-                </Navbar.Brand>
-                <Navbar.Toggle aria-controls="responsive-navbar-nav" />
-                <Navbar.Collapse id="responsive-navbar-nav">
-                    <Nav className="mr-auto">
-                        {/* <Nav.Link href="#features">Features</Nav.Link>
-                        <Nav.Link href="#pricing">Pricing</Nav.Link> */}
-                    </Nav>
-                    {userData ?
-                        (<Nav>
-                            <NavLink className="nav-item" id="addButton" to="/add-product">
-                                <OverlayTrigger key="bottom" placement="bottom"
-                                    overlay={
-                                        <Tooltip id={`tooltip-bottom`}>
-                                            <strong>Add</strong>  a sell.
-                                        </Tooltip>
-                                    }
-                                > 
-                                    <BsFillPlusCircleFill />
-                                </OverlayTrigger>
-                            </NavLink>
+  const openMenu = () => setMenuVisible(true);
+  const closeMenu = () => setMenuVisible(false);
 
-                            <NavDropdown title={<img id="navImg" src={userData.avatar} alt="user-avatar"/>} drop="left" id="collasible-nav-dropdown">
-                                <NavLink className="dropdown-item" to={`/profile/${userData._id}`}>
-                                    <BsFillPersonFill />Profile
-                                </NavLink>
+  return (
+    <View style={styles.navbar}>
+      <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+        <Text style={styles.brand}>Greener</Text>
+      </TouchableOpacity>
 
-                                {/* <NavDropdown.Divider /> */}
+      <View style={styles.navRight}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => navigation.navigate('AddProduct')}
+        >
+          <MaterialIcons name="add-circle-outline" size={28} color="#000" />
+        </TouchableOpacity>
 
-                                {/* <NavLink className="dropdown-item" to="/your-sells">
-                                    <BsFillGridFill />Sells
-                            </NavLink> */}
-                                <NavLink className="dropdown-item" to="/messages">
-                                    <BsFillEnvelopeFill />Messages
-                            </NavLink>
-                                {/* <NavLink className="dropdown-item" to="/wishlist">
-                                    <BsFillHeartFill />Wishlist
-                            </NavLink> */}
+        <Menu
+          visible={menuVisible}
+          onDismiss={closeMenu}
+          anchor={
+            <TouchableOpacity onPress={openMenu}>
+              <Image source={{ uri: userData.avatar }} style={styles.avatar} />
+            </TouchableOpacity>
+          }
+        >
+          <Menu.Item
+            onPress={() => {
+              closeMenu();
+              navigation.navigate('Profile', { userId: userData._id });
+            }}
+            title="Profile"
+            leadingIcon="account-circle"
+          />
+          <Menu.Item
+            onPress={() => {
+              closeMenu();
+              navigation.navigate('Messages');
+            }}
+            title="Messages"
+            leadingIcon="email"
+          />
+          <Divider />
+          <Menu.Item
+            onPress={() => {
+              closeMenu();
+              navigation.navigate('YourProducts');
+            }}
+            title="My Products"
+            leadingIcon="format-list-bulleted"
+          />
+        </Menu>
+      </View>
+    </View>
+  );
+};
 
-                                <NavDropdown.Divider />
-
-                                <NavLink className="dropdown-item" to="/auth/logout" onClick={() => {
-                                    setUserData(null)
-                                }}>
-                                    <IoLogOut />Log out
-                                </NavLink>
-                            </NavDropdown>
-                        </Nav>)
-                        :
-                        (<Nav>
-                            <NavLink className="nav-item" id="nav-sign-in" to="/auth/login">
-                                Sign In
-                            </NavLink>
-                            <NavLink className="nav-item" id="nav-sign-up" to="/auth/register">
-                                Sign Up
-                            </NavLink>
-                        </Nav>)
-                    }
-                </Navbar.Collapse>
-            </div>
-        </Navbar>
-    )
-}
+const styles = StyleSheet.create({
+  navbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#f7f7f7',
+    paddingHorizontal: 16,
+    paddingVertical: 12
+  },
+  brand: {
+    fontSize: 22,
+    fontFamily: 'serif',
+    fontStyle: 'italic'
+  },
+  navRight: {
+    flexDirection: 'row',
+    alignItems: 'center'
+  },
+  iconBtn: {
+    marginRight: 16
+  },
+  avatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#000',
+    objectFit: 'cover'
+  }
+});
 
 export default Header;

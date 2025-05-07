@@ -78,7 +78,14 @@ export default function MarketplaceScreen({ route }) {
 
       <View style={styles.sortButtons}>
         {['oldest', 'newest', 'lowerPrice', 'biggerPrice'].map(option => (
-          <TouchableOpacity key={option} onPress={() => setSort(option)} style={styles.sortButton}>
+          <TouchableOpacity
+            key={option}
+            onPress={() => setSort(option)}
+            style={[
+              styles.sortButton,
+              sort === option && styles.sortButtonActive,
+            ]}
+          >
             <Text style={styles.sortText}>{option}</Text>
           </TouchableOpacity>
         ))}
@@ -94,6 +101,7 @@ export default function MarketplaceScreen({ route }) {
           onEndReached={fetchMore}
           onEndReachedThreshold={0.5}
           numColumns={2}
+          columnWrapperStyle={styles.column}
           contentContainerStyle={styles.list}
         />
       )}
@@ -120,11 +128,18 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: '#e0e0e0',
   },
+  sortButtonActive: {
+    backgroundColor: '#a0a0a0',
+  },
   sortText: {
     fontWeight: 'bold',
     textTransform: 'capitalize',
   },
   list: {
     gap: 10,
+    paddingBottom: 100,
+  },
+  column: {
+    justifyContent: 'space-between',
   },
 });

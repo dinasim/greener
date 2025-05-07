@@ -53,4 +53,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  heading: {
+    textAlign: 'center',
+    fontFamily: 'serif',
+    paddingTop: 16,
+    paddingBottom: 32,
+    fontSize: 24,
+    fontWeight: '600',
+  },
+  btnForm: {
+    marginTop: 24,
+  },
+  formButton: {
+    marginTop: 24,
+  },
+  spinner: {
+    width: 16,
+    height: 16,
+    marginLeft: 8,
+    marginBottom: 4,
+  },
 });
