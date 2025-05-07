@@ -1,3 +1,53 @@
+
+// 🌿 MOCKED VERSION: userData.js
+// This file simulates user-related API calls for frontend testing without backend.
+
+export async function getUser() {
+  // ✅ Mock: Returns fake logged-in user data
+  return Promise.resolve({
+    id: "mock-user-1",
+    name: "Test User",
+    email: "testuser@example.com",
+  });
+}
+
+export async function getUserActiveSells(id) {
+  // ✅ Mock: Returns mock active listings for a user
+  return Promise.resolve([
+    { _id: "1", name: "Aloe Vera", price: "10", category: "cactus" }
+  ]);
+}
+
+export async function getUserArchivedSells() {
+  // ✅ Mock: Returns mock archived listings for the current user
+  return Promise.resolve([
+    { _id: "2", name: "Dead Cactus", price: "5", category: "cactus", archived: true }
+  ]);
+}
+
+export async function getUserWishlist() {
+  // ✅ Mock: Returns fake wishlist products
+  return Promise.resolve([
+    { _id: "3", name: "Snake Plant", price: "20", category: "indoor" }
+  ]);
+}
+
+export async function editUserProfile(id, data) {
+  // ✅ Mock: Simulates editing a user profile
+  return Promise.resolve({ success: true, updatedUser: { id, ...data } });
+}
+
+export async function getUserById(id) {
+  // ✅ Mock: Returns a mock public user profile
+  return Promise.resolve({
+    id,
+    name: "Public Plant Seller",
+    bio: "I grow and sell beautiful plants.",
+  });
+}
+
+
+/*
 // ✅ Set your Azure Function base URL here
 const baseUrl = 'https://usersfunctions.azurewebsites.net/api'; // Change this if your Azure Function URL differs
 
@@ -7,15 +57,11 @@ export async function getUser() {
     method: 'GET',
     headers: {
       'Content-Type': 'application/json',
-      /*
-        🔐 If you are using authentication:
-        Add an Authorization header to each request like so:
-
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${yourToken}`,
-        }
-      */
+      // 🔐 If you are using authentication:
+      // Add an Authorization header to each request like so:
+      //
+      // 'Content-Type': 'application/json',
+      // 'Authorization': `Bearer ${yourToken}`,
     },
   });
   return res.json();
@@ -76,3 +122,4 @@ export async function getUserById(id) {
   });
   return res.json();
 }
+*/

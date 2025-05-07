@@ -29,12 +29,16 @@ export default function HomeScreen({ navigation }) {
     if (type === 'plant') {
       navigation.navigate('AddPlant');
     } else if (type === 'site') {
-      navigation.navigate('AddSite'); // you can implement this if needed
+      navigation.navigate('AddSite'); // optional feature
     }
   };
 
   const handleLeafPress = () => {
     navigation.navigate('Locations');
+  };
+
+  const handleMarketplacePress = () => {
+    navigation.navigate('Marketplace'); // Navigates to Categories.js
   };
 
   return (
@@ -49,7 +53,7 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={[]} // Placeholder for future plant tasks
+        data={[]} // Placeholder
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <View style={styles.taskCard}>
@@ -67,6 +71,9 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
         <TouchableOpacity onPress={handleLeafPress}>
           <Ionicons name="leaf" size={24} color="black" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleMarketplacePress}>
+          <Image source={require('../assets/cart.png')} style={styles.cartIcon} />
         </TouchableOpacity>
         <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
       </View>
@@ -119,6 +126,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     alignItems: 'center',
     paddingVertical: 10,
+  },
+  cartIcon: {
+    width: 24,
+    height: 24,
+    resizeMode: 'contain',
   },
   addButton: {
     position: 'absolute',

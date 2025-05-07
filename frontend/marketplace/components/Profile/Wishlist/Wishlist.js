@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import ProductCard from '../../components/ProductCard';
-import { getUserWishlist } from '../../services/userData';
+import ProductCard from '../../ProductCard/ProductCard';
+import { getUserWishlist } from '../../../services/userData';
 
 const Wishlist = () => {
   const [products, setProducts] = useState([]);

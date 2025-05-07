@@ -6,28 +6,28 @@ import localizedFormat from 'dayjs/plugin/localizedFormat';
 
 dayjs.extend(localizedFormat);
 
-const ProductCard = ({ params }) => {
+const ProductCard = ({ product }) => {
   const navigation = useNavigation();
 
   return (
     <TouchableOpacity
       onPress={() =>
         navigation.navigate('ProductDetailsScreen', {
-          category: params.category,
-          id: params._id
+          category: product.category,
+          id: product._id
         })
       }
     >
       <View style={styles.card}>
-        <Image source={{ uri: params.image }} style={styles.image} resizeMode="cover" />
+        <Image source={{ uri: product.image }} style={styles.image} resizeMode="cover" />
         <View style={styles.body}>
-          <Text style={styles.title}>{params.title}</Text>
-          <Text style={styles.price}>{parseFloat(params.price).toFixed(2)}€</Text>
+          <Text style={styles.title}>{product.title}</Text>
+          <Text style={styles.price}>{parseFloat(product.price).toFixed(2)}€</Text>
         </View>
         <View style={styles.footer}>
           <Text style={styles.footerText}>
-            {dayjs(params.addedAt).format('D MMM YYYY (dddd) HH:mm')} -{' '}
-            <Text style={{ fontWeight: 'bold' }}>{params.city}</Text>
+            {dayjs(product.addedAt).format('D MMM YYYY (dddd) HH:mm')} –{' '}
+            <Text style={{ fontWeight: 'bold' }}>{product.city}</Text>
           </Text>
         </View>
       </View>

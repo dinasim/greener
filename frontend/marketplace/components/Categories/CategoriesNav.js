@@ -1,113 +1,74 @@
+// marketplace/components/Categories/CategoriesNav.js
+
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { MaterialCommunityIcons, FontAwesome5, Entypo, Feather } from '@expo/vector-icons';
 
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
-import Entypo from 'react-native-vector-icons/Entypo';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+const categories = [
+  { id: 'all', label: 'All Plants', icon: (color) => <Feather name="list" size={16} color={color} /> },
+  { id: 'indoor', label: 'Indoor', icon: (color) => <MaterialCommunityIcons name="pot-mix" size={16} color={color} /> },
+  { id: 'outdoor', label: 'Outdoor', icon: (color) => <MaterialCommunityIcons name="tree" size={16} color={color} /> },
+  { id: 'flowers', label: 'Flowers', icon: (color) => <MaterialCommunityIcons name="flower" size={16} color={color} /> },
+  { id: 'succulents', label: 'Succulents', icon: (color) => <FontAwesome5 name="seedling" size={16} color={color} /> },
+  { id: 'herbs', label: 'Herbs', icon: (color) => <MaterialCommunityIcons name="leaf" size={16} color={color} /> },
+  { id: 'seeds', label: 'Seeds', icon: (color) => <Entypo name="drop" size={16} color={color} /> },
+  { id: 'tools', label: 'Tools', icon: (color) => <MaterialCommunityIcons name="shovel" size={16} color={color} /> },
+];
 
-const CategoriesNav = () => {
-  const navigation = useNavigation();
-
-  const categories = [
-    {
-      id: 'all',
-      label: 'All',
-      icon: <Entypo name="list" size={16} color="#333" />,
-      color: '#333'
-    },
-    {
-      id: 'indoor',
-      label: 'Indoor Plants',
-      icon: <MaterialCommunityIcons name="home-outline" size={16} color="orange" />,
-      color: 'orange'
-    },
-    {
-      id: 'succulents',
-      label: 'Succulents',
-      icon: <MaterialCommunityIcons name="flower" size={16} color="#4a88f9" />,
-      color: '#4a88f9'
-    },
-    {
-      id: 'outdoor',
-      label: 'Outdoor Plants',
-      icon: <MaterialCommunityIcons name="home-variant" size={16} color="#f95a5a" />,
-      color: '#f95a5a'
-    },
-    {
-      id: 'tools',
-      label: 'Tools & Tech',
-      icon: <Ionicons name="hardware-chip-outline" size={16} color="#444" />,
-      color: '#444'
-    },
-    {
-      id: 'cactus',
-      label: 'Cactus',
-      icon: <FontAwesome5 name="seedling" size={16} color="#f0f342" />,
-      color: '#f0f342'
-    },
-    {
-      id: 'seeds',
-      label: 'Seeds',
-      icon: <FontAwesome5 name="leaf" size={16} color="#f57ecb" />,
-      color: '#f57ecb'
-    },
-    {
-      id: 'garden',
-      label: 'Garden',
-      icon: <MaterialCommunityIcons name="shovel" size={16} color="#5aeb5a" />,
-      color: '#5aeb5a'
-    }
-  ];
-
+const CategoriesNav = ({ onSelectCategory }) => {
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Categories</Text>
-      <View style={styles.buttonContainer}>
-        {categories.map(cat => (
+    <View style={styles.container}>
+      <Text style={styles.heading}>Plant Categories</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContainer}
+      >
+        {categories.map((cat) => (
           <TouchableOpacity
             key={cat.id}
-            style={[styles.button, { borderColor: cat.color }]}
-            onPress={() => navigation.navigate('Category', { category: cat.id })}
+            style={styles.categoryButton}
+            onPress={() => onSelectCategory?.(cat.id)}
           >
-            {cat.icon}
-            <Text style={styles.label}>{cat.label}</Text>
+            {cat.icon('#fff')}
+            <Text style={styles.buttonText}>{cat.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: '5%',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginVertical: 16,
   },
-  header: {
-    fontSize: 24,
+  heading: {
+    fontSize: 22,
+    fontWeight: '600',
+    marginBottom: 12,
     fontFamily: 'serif',
-    marginBottom: '3%'
   },
-  buttonContainer: {
+  scrollContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    paddingHorizontal: 10,
   },
-  button: {
+  categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 14,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    margin: 5
+    borderRadius: 22,
+    marginHorizontal: 6,
   },
-  label: {
-    fontSize: 16,
-    marginLeft: 6
-  }
+  buttonText: {
+    color: '#fff',
+    marginLeft: 6,
+    fontSize: 14,
+  },
 });
 
 export default CategoriesNav;

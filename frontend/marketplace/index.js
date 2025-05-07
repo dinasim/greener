@@ -5,7 +5,7 @@ export { default as CategoriesNav } from './Categories/CategoriesNav';
 export { default as Aside } from './Details/Aside/Aside';
 export { default as Breadcrumb } from './Details/Breadcrumb';
 export { default as ProductInfo } from './Details/ProductInfo/ProductInfo';
-export { default as Messages } from './Messages/Messages';
+export { default as Messages } from './MessagesData/MessagesData';
 export { default as ProfileSection } from './Profile/ProfileSection';
 export { default as SellerProfile } from './Profile/SellerProfile';
 export { default as Wishlist } from './Profile/Wishlist/Wishlist';
