@@ -1,160 +1,145 @@
 import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  Button,
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  Image,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import { View, Text, TextInput, Button, ScrollView, StyleSheet, Alert, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Picker } from '@react-native-picker/picker';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getSpecific, editProduct } from '../services/productData';
+import { MaterialIcons } from '@expo/vector-icons';
+import SimpleSider from '../components/Siders/SimpleSider';
 
-export default function EditProductScreen() {
-  const route = useRoute();
+const EditProduct = () => {
   const navigation = useNavigation();
-  const { id: productId } = route.params;
+  const route = useRoute();
+  const productId = route.params.plantId;
 
-  const [product, setProduct] = useState({
-    title: '',
-    price: '',
-    description: '',
-    city: '',
-    category: '',
-    image: '',
-  });
-
+  const [product, setProduct] = useState({});
   const [loading, setLoading] = useState(false);
-  const [newImageBase64, setNewImageBase64] = useState(null);
-  const [localImageURI, setLocalImageURI] = useState(null);
 
   useEffect(() => {
     getSpecific(productId)
-      .then(res => {
-        if (res) setProduct(res);
-      })
-      .catch(err => {
-        console.error('Failed to fetch product:', err);
-      });
+      .then(res => setProduct(res))
+      .catch(err => console.error(err));
   }, [productId]);
 
   const handleChange = (key, value) => {
     setProduct(prev => ({ ...prev, [key]: value }));
   };
 
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      base64: true,
-      allowsEditing: true,
-      quality: 0.7,
-    });
+  const handleImagePick = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission required', 'Please grant gallery access.');
+      return;
+    }
 
-    if (!result.canceled && result.assets?.[0]) {
-      const asset = result.assets[0];
-      setNewImageBase64(asset.base64);
-      setLocalImageURI(asset.uri);
+    const result = await ImagePicker.launchImageLibraryAsync({ base64: true });
+    if (!result.cancelled) {
+      handleChange('image', result.base64);
     }
   };
 
   const handleSubmit = async () => {
-    const { _id, title, price, description, city, category } = product;
+    const { _id, title, price, description, city, category, image } = product;
+    const payload = { title, price, description, city, category };
 
-    if (!title || !price || !description || !city || !category) {
-      Alert.alert('Error', 'All fields except image are required.');
-      return;
-    }
-
-    const updatedProduct = { title, price, description, city, category };
-
-    if (newImageBase64) {
-      updatedProduct.image = `data:image/jpeg;base64,${newImageBase64}`;
-    }
-
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await editProduct(_id, updatedProduct);
+      if (typeof image === 'string' && !image.startsWith('data:')) {
+        payload.image = `data:image/jpeg;base64,${image}`;
+      } else if (image && image.uri) {
+        payload.image = image.uri; // or convert to base64 if needed
+      }
 
-      if (!res || res.error) {
-        Alert.alert('Error', res?.error?.toString() || 'Unknown error');
-      } else {
-        navigation.navigate('ProductDetails', {
+      const res = await editProduct(_id, payload);
+      if (!res.error) {
+        navigation.navigate('ProductDetailsScreen', {
+          plantId: _id,
           category,
-          id: _id,
         });
+      } else {
+        Alert.alert('Error', res.error.toString());
       }
     } catch (err) {
-      console.error('Edit product error:', err);
-      Alert.alert('Error', 'Failed to edit product.');
+      console.error('Error editing product:', err);
+      Alert.alert('Error', 'Something went wrong.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.heading}>Edit Product</Text>
+    <ScrollView style={styles.container}>
+      <SimpleSider />
+      <View style={styles.profileIconContainer}>
+        <TouchableOpacity onPress={() => navigation.navigate('ProfileScreen')}>
+          <MaterialIcons name="person" size={28} color="#444" />
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.heading}>Edit Plant Listing</Text>
 
       <TextInput
+        style={styles.input}
         placeholder="Title"
-        style={styles.input}
         value={product.title}
-        onChangeText={val => handleChange('title', val)}
+        onChangeText={text => handleChange('title', text)}
       />
-
       <TextInput
-        placeholder="Price"
         style={styles.input}
+        placeholder="Price"
         keyboardType="numeric"
-        value={product.price?.toString()}
-        onChangeText={val => handleChange('price', val)}
+        value={product.price}
+        onChangeText={text => handleChange('price', text)}
       />
-
       <TextInput
-        placeholder="Description"
         style={[styles.input, styles.textArea]}
+        placeholder="Description"
         multiline
         numberOfLines={4}
         value={product.description}
-        onChangeText={val => handleChange('description', val)}
+        onChangeText={text => handleChange('description', text)}
       />
-
       <TextInput
+        style={styles.input}
         placeholder="City"
-        style={styles.input}
         value={product.city}
-        onChangeText={val => handleChange('city', val)}
+        onChangeText={text => handleChange('city', text)}
       />
+      <Picker
+        selectedValue={product.category}
+        style={styles.picker}
+        onValueChange={value => handleChange('category', value)}
+      >
+        <Picker.Item label="Choose category..." value="" />
+        <Picker.Item label="Cactus" value="cactus" />
+        <Picker.Item label="Succulent" value="succulent" />
+        <Picker.Item label="Indoor" value="indoor" />
+        <Picker.Item label="Outdoor" value="outdoor" />
+        <Picker.Item label="Seeds" value="seeds" />
+        <Picker.Item label="Flowers" value="flowers" />
+        <Picker.Item label="Herbs" value="herbs" />
+      </Picker>
 
-      <TextInput
-        placeholder="Category"
-        style={styles.input}
-        value={product.category}
-        onChangeText={val => handleChange('category', val)}
-      />
-
-      <TouchableOpacity onPress={pickImage} style={styles.imageButton}>
+      <TouchableOpacity style={styles.imageButton} onPress={handleImagePick}>
         <Text style={styles.imageButtonText}>Pick New Image</Text>
       </TouchableOpacity>
 
-      {localImageURI ? (
-        <Image source={{ uri: localImageURI }} style={styles.previewImage} />
-      ) : product.image ? (
-        <Image source={{ uri: product.image }} style={styles.previewImage} />
-      ) : null}
+      {product.image && typeof product.image === 'string' && (
+        <Image
+          source={{ uri: product.image.startsWith('data:') ? product.image : `data:image/jpeg;base64,${product.image}` }}
+          style={styles.previewImage}
+        />
+      )}
 
       {loading ? (
-        <ActivityIndicator size="large" />
+        <ActivityIndicator size="large" color="#2e7d32" />
       ) : (
-        <Button title="Save Changes" onPress={handleSubmit} />
+        <Button title="Save Changes" onPress={handleSubmit} color="#2e7d32" />
       )}
     </ScrollView>
   );
-}
+};
+
+export default EditProduct;
 
 const styles = StyleSheet.create({
   container: {
@@ -163,34 +148,47 @@ const styles = StyleSheet.create({
   },
   heading: {
     fontSize: 24,
-    fontWeight: 'bold',
+    fontWeight: '600',
     marginBottom: 20,
     textAlign: 'center',
   },
   input: {
     borderWidth: 1,
     borderColor: '#999',
-    borderRadius: 5,
+    borderRadius: 6,
     padding: 10,
     marginBottom: 15,
+    backgroundColor: '#f9f9f9',
   },
   textArea: {
     height: 100,
+    textAlignVertical: 'top',
+  },
+  picker: {
+    height: 50,
+    marginBottom: 15,
+    backgroundColor: '#f0f0f0',
   },
   imageButton: {
-    backgroundColor: '#333',
-    padding: 10,
+    backgroundColor: '#4caf50',
+    padding: 12,
+    alignItems: 'center',
+    borderRadius: 6,
     marginBottom: 15,
-    borderRadius: 5,
   },
   imageButtonText: {
-    color: 'white',
-    textAlign: 'center',
+    color: '#fff',
+    fontWeight: '600',
   },
   previewImage: {
     width: '100%',
     height: 200,
-    borderRadius: 5,
+    resizeMode: 'cover',
     marginBottom: 15,
+    borderRadius: 8,
+  },
+  profileIconContainer: {
+    alignItems: 'flex-end',
+    marginBottom: 10,
   },
 });

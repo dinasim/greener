@@ -1,220 +1,232 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
   TextInput,
   Image,
+  ScrollView,
   TouchableOpacity,
   Button,
   StyleSheet,
-  ScrollView,
-  Alert,
-  useWindowDimensions,
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { getUserConversations, sendMessage } from '../services/messagesData';
 
-export default function MessagesScreen() {
-  const { width } = useWindowDimensions();
-  const isWide = width >= 768;
-
-  const route = useRoute();
+const Messages = () => {
   const navigation = useNavigation();
-  const chatId = route.params?.id;
+  const route = useRoute();
+  const chatId = route.params?.messageId;
 
   const [conversations, setConversations] = useState([]);
+  const [isSelected, setIsSelected] = useState(false);
   const [selected, setSelected] = useState(null);
   const [message, setMessage] = useState('');
+  const [alertText, setAlertText] = useState(null);
 
   useEffect(() => {
     getUserConversations()
-      .then((res) => {
+      .then(res => {
         setConversations(res);
         if (chatId) {
-          const convo = res.find((x) => x.chats._id === chatId);
-          if (convo) setSelected(convo);
+          const match = res.find(x => x.chats._id === chatId);
+          if (match) {
+            setIsSelected(true);
+            setSelected(match);
+          }
         }
       })
-      .catch((err) => console.error(err));
+      .catch(err => console.error(err));
   }, [chatId]);
 
-  const handleSend = () => {
+  const handleMsgSubmit = () => {
     if (!message.trim()) return;
 
     sendMessage(chatId, message)
-      .then((res) => {
-        const updated = { ...selected };
-        updated.chats.conversation.push({ message, senderId: res.sender });
-        setSelected(updated);
+      .then(res => {
         setMessage('');
+        setAlertText('Message sent!');
+        setSelected(prev => ({
+          ...prev,
+          chats: {
+            ...prev.chats,
+            conversation: [...prev.chats.conversation, { message, senderId: res.sender }],
+          },
+        }));
+        setTimeout(() => setAlertText(null), 1500);
       })
-      .catch((err) => {
-        console.error(err);
-        Alert.alert('Error', 'Failed to send message');
-      });
-  };
-
-  const handleSelectConversation = (id) => {
-    navigation.navigate('Messages', { id });
-  };
-
-  const renderSidebar = () => (
-    <View style={styles.sidebar}>
-      <Text style={styles.heading}>Conversations</Text>
-      {conversations.length ? (
-        conversations.map((x) => {
-          const user = x.isBuyer ? x.chats.seller : x.chats.buyer;
-          return (
-            <TouchableOpacity
-              key={x.chats._id}
-              onPress={() => handleSelectConversation(x.chats._id)}
-              style={styles.chatItem}
-            >
-              <Image source={{ uri: user.avatar }} style={styles.avatar} />
-              <Text>{user.name}</Text>
-            </TouchableOpacity>
-          );
-        })
-      ) : (
-        <Text>No messages yet</Text>
-      )}
-    </View>
-  );
-
-  const renderChatArea = () => {
-    if (!selected) return null;
-
-    const targetUser = selected.isBuyer
-      ? selected.chats.seller
-      : selected.chats.buyer;
-
-    return (
-      <View style={styles.chatArea}>
-        <View style={styles.chatHeader}>
-          <TouchableOpacity
-            style={styles.headerUser}
-            onPress={() =>
-              navigation.navigate('UserProfile', { id: targetUser._id })
-            }
-          >
-            <Image source={{ uri: targetUser.avatar }} style={styles.avatar} />
-            <Text>{targetUser.name}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <ScrollView style={styles.chatBody}>
-          {selected.chats.conversation.map((x, i) => (
-            <View
-              key={i}
-              style={[
-                styles.messageBubble,
-                selected.myId === x.senderId
-                  ? styles.myMessage
-                  : styles.otherMessage,
-              ]}
-            >
-              <Text>{x.message}</Text>
-            </View>
-          ))}
-        </ScrollView>
-
-        <View style={styles.inputContainer}>
-          <TextInput
-            value={message}
-            onChangeText={setMessage}
-            placeholder="Type a message"
-            multiline
-            style={styles.input}
-          />
-          <Button title="Send" onPress={handleSend} />
-        </View>
-      </View>
-    );
+      .catch(err => console.error(err));
   };
 
   return (
-    <ScrollView contentContainerStyle={isWide ? styles.rowLayout : styles.columnLayout}>
-      {renderSidebar()}
-      {renderChatArea()}
+    <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.sidebar}>
+        <Text style={styles.title}>Conversations</Text>
+        {conversations.length >= 1 ? (
+          conversations.map(x => (
+            <TouchableOpacity
+              key={x.chats._id}
+              style={styles.connection}
+              onPress={() => {
+                navigation.navigate('Messages', { messageId: x.chats._id });
+                setIsSelected(true);
+              }}
+            >
+              <Image
+                source={{
+                  uri: x.isBuyer ? x.chats.seller.avatar : x.chats.buyer.avatar,
+                }}
+                style={styles.avatar}
+              />
+              <Text>
+                {x.isBuyer ? x.chats.seller.name : x.chats.buyer.name}
+              </Text>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <Text>No messages yet</Text>
+        )}
+      </View>
+
+      <View style={styles.chatArea}>
+        {isSelected && selected && (
+          <>
+            <TouchableOpacity
+              style={styles.chatHeader}
+              onPress={() =>
+                navigation.navigate('Profile', {
+                  id: selected.isBuyer
+                    ? selected.chats.seller._id
+                    : selected.chats.buyer._id,
+                })
+              }
+            >
+              <Image
+                source={{
+                  uri: selected.isBuyer
+                    ? selected.chats.seller.avatar
+                    : selected.chats.buyer.avatar,
+                }}
+                style={styles.avatar}
+              />
+              <Text>
+                {selected.isBuyer
+                  ? selected.chats.seller.name
+                  : selected.chats.buyer.name}
+              </Text>
+            </TouchableOpacity>
+
+            {alertText && <Text style={styles.alert}>{alertText}</Text>}
+
+            <ScrollView style={styles.chatBody}>
+              {selected.chats.conversation.map((x, idx) => (
+                <View
+                  key={idx}
+                  style={[
+                    styles.messageBubble,
+                    selected.myId === x.senderId
+                      ? styles.messageMe
+                      : styles.messageOther,
+                  ]}
+                >
+                  <Text>{x.message}</Text>
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.chatFooter}>
+              <TextInput
+                style={styles.input}
+                multiline
+                value={message}
+                onChangeText={setMessage}
+                placeholder="Type your message..."
+              />
+              <Button title="Send" onPress={handleMsgSubmit} />
+            </View>
+          </>
+        )}
+      </View>
     </ScrollView>
   );
-}
+};
+
+export default Messages;
 
 const styles = StyleSheet.create({
-  rowLayout: {
+  container: {
     flexDirection: 'row',
     padding: 10,
-  },
-  columnLayout: {
-    flexDirection: 'column',
-    padding: 10,
+    backgroundColor: '#fff',
+    flexGrow: 1,
   },
   sidebar: {
-    width: 300,
+    width: '35%',
     paddingRight: 10,
-    marginBottom: 20,
-  },
-  heading: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  chatItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    marginRight: 8,
+    borderRightWidth: 1,
+    borderColor: '#ccc',
   },
   chatArea: {
     flex: 1,
     paddingLeft: 10,
-    borderLeftWidth: 1,
-    borderLeftColor: '#ccc',
+  },
+  title: {
+    fontSize: 20,
+    marginBottom: 10,
+    fontWeight: 'bold',
+  },
+  connection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 15,
+    gap: 8,
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
   },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 10,
   },
-  headerUser: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  alert: {
+    backgroundColor: '#d4edda',
+    color: '#155724',
+    padding: 8,
+    borderRadius: 6,
+    marginBottom: 10,
   },
   chatBody: {
     maxHeight: 300,
-    marginBottom: 10,
+    marginBottom: 15,
   },
   messageBubble: {
     padding: 10,
-    borderRadius: 10,
-    marginBottom: 5,
+    marginVertical: 4,
+    borderRadius: 8,
     maxWidth: '80%',
   },
-  myMessage: {
-    backgroundColor: '#DCF8C6',
+  messageMe: {
     alignSelf: 'flex-end',
+    backgroundColor: '#dcf8c6',
   },
-  otherMessage: {
-    backgroundColor: '#eee',
+  messageOther: {
     alignSelf: 'flex-start',
+    backgroundColor: '#f1f0f0',
   },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  chatFooter: {
+    flexDirection: 'column',
+    gap: 8,
   },
   input: {
-    flex: 1,
-    borderColor: '#aaa',
+    borderColor: '#999',
     borderWidth: 1,
-    borderRadius: 5,
     padding: 10,
-    minHeight: 40,
-    marginRight: 5,
+    borderRadius: 6,
+    height: 60,
+    textAlignVertical: 'top',
+    marginBottom: 10,
   },
 });

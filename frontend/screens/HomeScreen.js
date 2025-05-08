@@ -9,6 +9,12 @@ export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [showPopup, setShowPopup] = useState(false);
 
+  // Dummy data for FlatList to show
+  const data = [
+    { id: '1', plantName: 'Plant 1', location: 'Living Room', status: 'On Time', image: 'https://via.placeholder.com/60' },
+    { id: '2', plantName: 'Plant 2', location: 'Kitchen', status: 'Late', image: 'https://via.placeholder.com/60' },
+  ];
+
   useEffect(() => {
     setGreeting(getGreeting());
   }, []);
@@ -38,8 +44,10 @@ export default function HomeScreen({ navigation }) {
   };
 
   const handleMarketplacePress = () => {
-    navigation.navigate('Marketplace'); // Navigates to Categories.js
+    navigation.navigate('MainTabs'); // Navigate to MainTabs (not Marketplace)
   };
+
+  const keyExtractor = (item) => item.id ? item.id.toString() : 'defaultKey'; // Handle undefined or null id
 
   return (
     <SafeAreaView style={styles.container}>
@@ -53,8 +61,8 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={[]} // Placeholder
-        keyExtractor={(item) => item.id}
+        data={data} // Use the dummy data
+        keyExtractor={keyExtractor} // Use the updated keyExtractor function
         renderItem={({ item }) => (
           <View style={styles.taskCard}>
             <Image source={{ uri: item.image }} style={styles.plantImage} />
@@ -169,6 +177,6 @@ const styles = StyleSheet.create({
   popupText: {
     fontSize: 16,
     color: '#101010',
-    textAlign: 'right'
+    textAlign: 'right',
   },
 });

@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
+import { View, TouchableOpacity, Linking, StyleSheet } from 'react-native';
 import Icon from 'react-native-vector-icons/FontAwesome'; // For Facebook
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons'; // For Instagram
 import AntDesign from 'react-native-vector-icons/AntDesign'; // For LinkedIn
@@ -18,59 +18,42 @@ const Footer = () => {
         <TouchableOpacity onPress={() => openLink('https://www.facebook.com')}>
           <Icon name="facebook" style={styles.fbIcon} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => openLink('https://www.linkedin.com/in/iva-tosheva/')}>
-          <AntDesign name="linkedin-square" style={styles.linkedIcon} />
+        <TouchableOpacity onPress={() => openLink('https://www.linkedin.com')}>
+          <AntDesign name="linkedin" style={styles.linkedInIcon} />
         </TouchableOpacity>
       </View>
-      <Text style={styles.text}>
-        All Rights Reserved © 2021 •{' '}
-        <Text
-          style={styles.link}
-          onPress={() => openLink('https://github.com/dinasim/greener')}
-        >
-          GitHub
-        </Text>
-      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   footer: {
-    padding: 16,
-    backgroundColor: '#f7f7f7',
+    width: '100%',
+    backgroundColor: '#333',
+    padding: 10,
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    justifyContent: 'center',
     alignItems: 'center',
-    marginTop: '5%'
   },
   iconRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginBottom: 12
+    justifyContent: 'space-evenly',
+    width: '80%',
   },
   instaIcon: {
-    fontSize: 35,
-    color: '#727272',
-    marginHorizontal: 7
+    color: '#fff',
+    fontSize: 30,
   },
   fbIcon: {
+    color: '#fff',
     fontSize: 30,
-    color: '#727272',
-    marginHorizontal: 7
   },
-  linkedIcon: {
-    fontSize: 34,
-    color: '#727272',
-    marginHorizontal: 7
+  linkedInIcon: {
+    color: '#fff',
+    fontSize: 30,
   },
-  text: {
-    color: 'gray',
-    fontSize: 14,
-    textAlign: 'center'
-  },
-  link: {
-    color: '#000000c2',
-    textDecorationLine: 'underline'
-  }
 });
 
 export default Footer;

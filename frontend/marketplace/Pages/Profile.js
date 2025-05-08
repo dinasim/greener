@@ -1,121 +1,153 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   View,
   Text,
-  ScrollView,
-  TouchableOpacity,
   StyleSheet,
-  useWindowDimensions,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+  ScrollView
 } from 'react-native';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 
-import { getUserById } from '../services/userData';
-import ProfileSection from '../components/Profile/ProfileSection';
-import Wishlist from '../components/Profile/Wishlist/Wishlist';
-import ActiveSells from '../components/Profile/Sells/ActiveSells';
-import ArchivedSells from '../components/Profile/Sells/ArchivedSells';
-import SellerProfile from '../components/Profile/SellerProfile';
+export default function Profile({ navigation }) {
+  const menuItems = [
+    { id: '1', title: 'My Orders', icon: 'cart-outline' },
+    { id: '2', title: 'My Listings', icon: 'list-outline' },
+    { id: '3', title: 'Saved Items', icon: 'heart-outline' },
+    { id: '4', title: 'Settings', icon: 'settings-outline' },
+    { id: '5', title: 'Help Center', icon: 'help-circle-outline' },
+    { id: '6', title: 'Logout', icon: 'log-out-outline' }
+  ];
 
-export default function ProfileScreen() {
-  const route = useRoute();
-  const navigation = useNavigation();
-  const userId = route.params?.id;
-  const { width } = useWindowDimensions();
-  const isWide = width >= 768;
-
-  const [active, setActive] = useState(true);
-  const [archived, setArchived] = useState(false);
-  const [wishlist, setWishlist] = useState(false);
-  const [user, setUser] = useState({});
-
-  useEffect(() => {
-    getUserById(userId)
-      .then(res => setUser(res.user))
-      .catch(err => console.error(err));
-  }, [userId]);
-
-  const handleView = (type) => {
-    setActive(type === 'active');
-    setArchived(type === 'archived');
-    setWishlist(type === 'wishlist');
-  };
-
-  if (!user._id) return null;
+  const renderMenuItem = (item) => (
+    <TouchableOpacity key={item.id} style={styles.menuItem}>
+      <View style={styles.menuItemLeft}>
+        <Ionicons name={item.icon} size={24} color="#555" />
+        <Text style={styles.menuItemText}>{item.title}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color="#aaa" />
+    </TouchableOpacity>
+  );
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {user.isMe ? (
-        <>
-          <ProfileSection params={user} />
-          <View style={[styles.content, isWide && styles.row]}>
-            <View style={isWide ? styles.sidebar : styles.sidebarMobile}>
-              <TouchableOpacity
-                style={[styles.button, active && styles.buttonActive]}
-                onPress={() => handleView('active')}
-              >
-                <Text style={styles.buttonText}>Active Sells</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, archived && styles.buttonActive]}
-                onPress={() => handleView('archived')}
-              >
-                <Text style={styles.buttonText}>Archived</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.button, wishlist && styles.buttonActive]}
-                onPress={() => handleView('wishlist')}
-              >
-                <Text style={styles.buttonText}>Wishlist</Text>
-              </TouchableOpacity>
-            </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        <View style={styles.profileHeader}>
+          <Image 
+            source={require('../../assets/placeholder.png')} 
+            style={styles.profileImage} 
+          />
+          <Text style={styles.profileName}>Plant Lover</Text>
+          <Text style={styles.profileEmail}>plant.lover@example.com</Text>
+          
+          <TouchableOpacity style={styles.editButton}>
+            <Text style={styles.editButtonText}>Edit Profile</Text>
+          </TouchableOpacity>
+        </View>
 
-            <View style={styles.mainContent}>
-              {active && <ActiveSells params={user} />}
-              {archived && <ArchivedSells navigation={navigation} />}
-              {wishlist && <Wishlist />}
-            </View>
+        <View style={styles.statsContainer}>
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>12</Text>
+            <Text style={styles.statLabel}>Orders</Text>
           </View>
-        </>
-      ) : (
-        <SellerProfile params={user} navigation={navigation} />
-      )}
-    </ScrollView>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>5</Text>
+            <Text style={styles.statLabel}>Listings</Text>
+          </View>
+          <View style={styles.statDivider} />
+          <View style={styles.statItem}>
+            <Text style={styles.statNumber}>8</Text>
+            <Text style={styles.statLabel}>Saved</Text>
+          </View>
+        </View>
+
+        <View style={styles.menuContainer}>
+          {menuItems.map(renderMenuItem)}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    flex: 1,
     backgroundColor: '#fff',
   },
-  row: {
+  profileHeader: {
+    alignItems: 'center',
+    paddingVertical: 30,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  profileImage: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 15,
+  },
+  profileName: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginBottom: 5,
+  },
+  profileEmail: {
+    fontSize: 16,
+    color: '#777',
+    marginBottom: 15,
+  },
+  editButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    backgroundColor: '#4CAF50',
+    borderRadius: 20,
+  },
+  editButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+  },
+  statsContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  content: {
-    flex: 1,
-    marginTop: 10,
+  statItem: {
+    alignItems: 'center',
   },
-  sidebar: {
-    width: 140,
-    marginRight: 16,
+  statNumber: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 5,
   },
-  sidebarMobile: {
-    marginBottom: 16,
+  statLabel: {
+    fontSize: 14,
+    color: '#777',
   },
-  button: {
-    backgroundColor: '#ccc',
-    padding: 10,
-    marginBottom: 10,
-    borderRadius: 6,
+  statDivider: {
+    width: 1,
+    backgroundColor: '#f0f0f0',
   },
-  buttonActive: {
-    backgroundColor: '#444',
+  menuContainer: {
+    paddingVertical: 10,
   },
-  buttonText: {
-    color: 'white',
-    textAlign: 'center',
+  menuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  mainContent: {
-    flex: 1,
+  menuItemLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  menuItemText: {
+    fontSize: 16,
+    marginLeft: 15,
   },
 });

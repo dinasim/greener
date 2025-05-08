@@ -1,88 +1,121 @@
+// This is a sample implementation - replace with your actual data service
+// Adjust according to your actual API or data source
 
-// 🌿 MOCKED VERSION: productData.js
-// Simulates all product-related API calls for local frontend testing without Azure backend.
+import { Platform } from 'react-native';
 
-export async function getAll(page, category, query) {
-  return Promise.resolve([
-    {
-      _id: "1",
-      title: "Aloe Vera",
-      price: "10",
-      image: "https://example.com/aloe.jpg",
-      category: "cactus",
-      city: "Tel Aviv",
-      addedAt: "2024-01-01T08:30:00Z"
-    },
-    {
-      _id: "2",
-      title: "Monstera",
-      price: "25",
-      image: "https://example.com/monstera.jpg",
-      category: "tropical",
-      city: "Haifa",
-      addedAt: "2024-02-15T10:45:00Z"
+// Sample data for testing - you should replace this with your actual data fetching logic
+const sampleProducts = [
+  {
+    id: '1',
+    title: 'Monstera Deliciosa',
+    price: 25.99,
+    image: 'https://via.placeholder.com/150?text=Monstera',
+    rating: 4.7,
+    location: 'Brooklyn, NY',
+    seller: { name: 'Green Thumb', id: 'seller1' },
+    category: 'indoor'
+  },
+  {
+    id: '2',
+    title: 'Snake Plant',
+    price: 18.50,
+    image: 'https://via.placeholder.com/150?text=Snake+Plant',
+    rating: 4.5,
+    location: 'Manhattan, NY',
+    seller: { name: 'Plant Paradise', id: 'seller2' },
+    category: 'indoor'
+  },
+  {
+    id: '3',
+    title: 'Rose Bush',
+    price: 22.00,
+    image: 'https://via.placeholder.com/150?text=Rose+Bush',
+    rating: 4.2,
+    location: 'Queens, NY',
+    seller: { name: 'Garden World', id: 'seller3' },
+    category: 'outdoor'
+  },
+  {
+    id: '4',
+    title: 'Echeveria Succulent',
+    price: 12.99,
+    image: 'https://via.placeholder.com/150?text=Succulent',
+    rating: 4.8,
+    location: 'Bronx, NY',
+    seller: { name: 'Desert Plants', id: 'seller4' },
+    category: 'succulent'
+  },
+  {
+    id: '5',
+    title: 'Tulip Bulbs',
+    price: 15.75,
+    image: 'https://via.placeholder.com/150?text=Tulips',
+    rating: 4.3,
+    location: 'Staten Island, NY',
+    seller: { name: 'Spring Blooms', id: 'seller5' },
+    category: 'flowers'
+  }
+];
+
+// Function to simulate getting all products with filtering
+export const getAll = async (category = 'all', searchQuery = '') => {
+  try {
+    // In a real application, you would make an API call here
+    // For example:
+    // const response = await fetch(`https://your-api.com/products?category=${category}&search=${searchQuery}`);
+    // const data = await response.json();
+    // return data;
+    
+    // Simulating API call delay
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Filter based on category and search query
+    let filteredProducts = [...sampleProducts];
+    
+    if (category !== 'all') {
+      filteredProducts = filteredProducts.filter(product => product.category === category);
     }
-  ]);
-}
-
-
-export async function getSpecific(id) {
-  // ✅ Mock: Simulates fetching details of a specific product
-  return Promise.resolve({
-    _id: id,
-    name: "Mock Plant",
-    price: "15",
-    imageUrl: "https://example.com/mock.jpg",
-    description: "This is a mocked product for testing.",
-    category: "mock",
-  });
-}
-
-export async function createProduct(product) {
-  // ✅ Mock: Simulates product creation
-  return Promise.resolve({
-    success: true,
-    product: {
-      ...product,
-      _id: "mock-created-id"
+    
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      filteredProducts = filteredProducts.filter(product => 
+        product.title.toLowerCase().includes(query) ||
+        product.seller.name.toLowerCase().includes(query) ||
+        product.location.toLowerCase().includes(query)
+      );
     }
-  });
-}
+    
+    return filteredProducts;
+  } catch (error) {
+    console.error('Error fetching products:', error);
+    throw error;
+  }
+};
 
-export async function editProduct(id, product) {
-  // ✅ Mock: Simulates product editing
-  return Promise.resolve({
-    success: true,
-    updated: {
-      id,
-      ...product
+// Function to get a single product by ID
+export const getById = async (id) => {
+  try {
+    // In a real application, you would make an API call here
+    // For example:
+    // const response = await fetch(`https://your-api.com/products/${id}`);
+    // const data = await response.json();
+    // return data;
+    
+    // Simulating API call delay
+    await new Promise(resolve => setTimeout(resolve, 300));
+    
+    const product = sampleProducts.find(p => p.id === id);
+    if (!product) {
+      throw new Error('Product not found');
     }
-  });
-}
+    
+    return product;
+  } catch (error) {
+    console.error(`Error fetching product with ID ${id}:`, error);
+    throw error;
+  }
+};
 
-export async function activateSell(id) {
-  // ✅ Mock: Simulates reactivating a product
-  return Promise.resolve({
-    success: true,
-    id
-  });
-}
-
-export async function archiveSell(id) {
-  // ✅ Mock: Simulates archiving a product
-  return Promise.resolve({
-    success: true,
-    id
-  });
-}
-
-export async function wishProduct(id) {
-  // ✅ Mock: Simulates adding a product to the wishlist
-  return Promise.resolve({
-    success: true,
-    wishedProductId: id
-  });
-}
 
 
 /*

@@ -14,6 +14,8 @@
     "@expo/vector-icons": "^14.1.0",
     "@react-native-firebase/app": "^21.14.0",
     "@react-native-firebase/auth": "^21.14.0",
+    "@react-native-picker/picker": "^2.11.0",
+    "@react-navigation/bottom-tabs": "^6.5.7",
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.9.16",
     "cors": "^2.8.5",
