@@ -1,104 +1,150 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
+  StyleSheet,
   Image,
   TouchableOpacity,
   ScrollView,
-  StyleSheet,
-  Alert
 } from 'react-native';
-import { wishProduct } from '../../../services/productData'; // Adapt to your file structure
+import { BsHeart, BsHeartFill } from 'react-icons/bs';
+import { wishProduct } from '../../../services/productData';
 
 const ProductInfo = ({ params }) => {
   const [wish, setWish] = useState(false);
+  const [tab, setTab] = useState('details');
 
   useEffect(() => {
-    setWish(!!params.isWished);
+    setWish(params.isWished === true);
   }, [params.isWished]);
 
-  const handleWishToggle = async () => {
-    try {
-      await wishProduct(params._id);
-      setWish(prev => !prev);
-    } catch (err) {
-      console.error(err);
-      Alert.alert('Error', 'Failed to update wishlist status.');
-    }
+  const onHeartClick = () => {
+    wishProduct(params._id)
+      .then(() => {
+        setWish(!wish);
+      })
+      .catch(err => console.error(err));
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Image source={{ uri: params.image }} style={styles.image} resizeMode="cover" />
+    <ScrollView style={styles.container}>
+      <Image source={{ uri: params.image }} style={styles.image} />
+
       <View style={styles.headerRow}>
         <Text style={styles.title}>{params.title}</Text>
         {params.isAuth && (
-          <TouchableOpacity onPress={handleWishToggle}>
-            <Text style={styles.heart}>{wish ? '❤️' : '🤍'}</Text>
+          <TouchableOpacity onPress={onHeartClick} style={styles.heartIcon}>
+            {!wish ? (
+              <BsHeart style={styles.heartSvg} />
+            ) : (
+              <BsHeartFill style={styles.heartSvg} />
+            )}
           </TouchableOpacity>
         )}
       </View>
 
-      <View style={styles.card}>
-        <Text style={styles.detailsText}>{params.description}</Text>
-        <View style={styles.separator} />
-        <Text style={styles.footer}>Product listed at {params.addedAt}</Text>
+      <View style={styles.tabBar}>
+        <TouchableOpacity
+          style={[styles.tabButton, tab === 'details' && styles.tabActive]}
+          onPress={() => setTab('details')}
+        >
+          <Text style={styles.tabText}>Details</Text>
+        </TouchableOpacity>
+        {/* Future Tab:
+        <TouchableOpacity
+          style={[styles.tabButton, tab === 'about' && styles.tabActive]}
+          onPress={() => setTab('about')}
+        >
+          <Text style={styles.tabText}>About Seller</Text>
+        </TouchableOpacity>
+        */}
+      </View>
+
+      <View style={styles.tabContent}>
+        {tab === 'details' && (
+          <>
+            <Text style={styles.description}>{params.description}</Text>
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                Product listed at {params.addedAt}
+              </Text>
+            </View>
+          </>
+        )}
+        {/* Future tab content can go here */}
       </View>
     </ScrollView>
   );
 };
 
+export default ProductInfo;
+
 const styles = StyleSheet.create({
   container: {
-    paddingVertical: 20,
-    paddingHorizontal: 10
+    backgroundColor: '#fff',
+    padding: 10,
   },
   image: {
-    height: 500,
     width: '100%',
-    borderRadius: 8,
-    marginBottom: 20
+    height: 500,
+    resizeMode: 'cover',
+    borderRadius: 6,
   },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10
+    marginTop: 20,
+    marginBottom: 10,
   },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: '600',
-    marginLeft: 10,
     flex: 1,
-    flexWrap: 'wrap'
+    paddingRight: 10,
   },
-  heart: {
-    fontSize: 32,
-    marginRight: 10,
+  heartIcon: {
+    padding: 6,
+  },
+  heartSvg: {
+    fontSize: 34,
+    color: '#81002c',
     marginTop: 10,
-    color: '#81002c'
   },
-  card: {
-    backgroundColor: '#f9f9f9',
-    padding: 15,
-    borderRadius: 10
+  tabBar: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    marginTop: 10,
   },
-  detailsText: {
-    fontSize: 16,
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  tabText: {
+    fontWeight: 'bold',
+  },
+  tabActive: {
+    borderBottomWidth: 2,
+    borderColor: '#2e7d32',
+  },
+  tabContent: {
+    paddingVertical: 20,
+  },
+  description: {
     textAlign: 'justify',
-    letterSpacing: 0.5,
-    textIndent: 20
-  },
-  separator: {
-    height: 1,
-    backgroundColor: '#ccc',
-    marginVertical: 10
+    letterSpacing: 1,
+    paddingHorizontal: 5,
+    lineHeight: 22,
   },
   footer: {
-    textAlign: 'right',
+    marginTop: 20,
+    alignItems: 'flex-end',
+  },
+  footerText: {
+    fontSize: 12,
+    color: '#888',
     fontStyle: 'italic',
-    fontSize: 12
-  }
+  },
 });
-
-export default ProductInfo;

@@ -9,6 +9,12 @@ export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [showPopup, setShowPopup] = useState(false);
 
+  // Dummy data for FlatList to show
+  const data = [
+    { id: '1', plantName: 'Plant 1', location: 'Living Room', status: 'On Time', image: 'https://via.placeholder.com/60' },
+    { id: '2', plantName: 'Plant 2', location: 'Kitchen', status: 'Late', image: 'https://via.placeholder.com/60' },
+  ];
+
   useEffect(() => {
     setGreeting(getGreeting());
   }, []);
@@ -29,13 +35,19 @@ export default function HomeScreen({ navigation }) {
     if (type === 'plant') {
       navigation.navigate('AddPlant');
     } else if (type === 'site') {
-      navigation.navigate('AddSite'); // you can implement this if needed
+      navigation.navigate('AddSite'); // optional feature
     }
   };
 
   const handleLeafPress = () => {
     navigation.navigate('Locations');
   };
+
+  const handleMarketplacePress = () => {
+    navigation.navigate('MainTabs'); // Navigate to MainTabs (not Marketplace)
+  };
+
+  const keyExtractor = (item) => item.id ? item.id.toString() : 'defaultKey'; // Handle undefined or null id
 
   return (
     <SafeAreaView style={styles.container}>
@@ -49,8 +61,8 @@ export default function HomeScreen({ navigation }) {
       </View>
 
       <FlatList
-        data={[]} // Placeholder for future plant tasks
-        keyExtractor={(item) => item.id}
+        data={data} // Use the dummy data
+        keyExtractor={keyExtractor} // Use the updated keyExtractor function
         renderItem={({ item }) => (
           <View style={styles.taskCard}>
             <Image source={{ uri: item.image }} style={styles.plantImage} />
@@ -67,6 +79,9 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
         <TouchableOpacity onPress={handleLeafPress}>
           <Ionicons name="leaf" size={24} color="black" />
+        </TouchableOpacity>
+        <TouchableOpacity onPress={handleMarketplacePress}>
+          <Image source={require('../assets/cart.png')} style={styles.cartIcon} />
         </TouchableOpacity>
         <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
       </View>
@@ -120,6 +135,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 10,
   },
+  cartIcon: {
+    width: 24,
+    height: 24,
+    resizeMode: 'contain',
+  },
   addButton: {
     position: 'absolute',
     right: 20,
@@ -157,6 +177,6 @@ const styles = StyleSheet.create({
   popupText: {
     fontSize: 16,
     color: '#101010',
-    textAlign: 'right'
+    textAlign: 'right',
   },
 });

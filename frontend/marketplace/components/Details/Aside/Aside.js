@@ -1,175 +1,231 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, Alert } from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  Modal,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  Button,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Button, Portal, Dialog, Paragraph } from 'react-native-paper';
-import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 import { archiveSell } from '../../../services/productData';
 import { createChatRoom } from '../../../services/messagesData';
+import { RiMessage3Fill } from 'react-icons/ri';
+import { GrEdit } from 'react-icons/gr';
+import { MdArchive, MdEmail, MdPhoneAndroid } from 'react-icons/md';
+import { BsFillPersonFill } from 'react-icons/bs';
+import { FaSellsy } from 'react-icons/fa';
 
 const Aside = ({ params }) => {
   const navigation = useNavigation();
   const [showMsg, setShowMsg] = useState(false);
   const [showArchive, setShowArchive] = useState(false);
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
 
   const handleArchive = async () => {
     try {
       await archiveSell(params._id);
       setShowArchive(false);
-      navigation.navigate('Profile', { userId: params.seller });
+      navigation.navigate('Profile', { id: params.sellerId });
     } catch (err) {
       console.error(err);
+      Alert.alert('Error', 'Failed to archive.');
     }
   };
 
-  const handleMsgSend = async () => {
+  const onMsgSent = async () => {
     try {
       const res = await createChatRoom(params.sellerId, message);
       setShowMsg(false);
       navigation.navigate('Messages', { messageId: res.messageId });
     } catch (err) {
       console.error(err);
+      Alert.alert('Error', 'Failed to send message.');
     }
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.priceLabel}>Product Price</Text>
+
       {params.isSeller && (
         <View style={styles.iconRow}>
-          <TouchableOpacity onPress={() => navigation.navigate('EditProduct', { id: params._id })}>
-            <Icon name="pencil" size={20} color="#666" style={styles.icon} />
+          <TouchableOpacity
+            onPress={() =>
+              navigation.navigate('Edit', {
+                id: params._id,
+              })
+            }
+          >
+            <GrEdit style={styles.editIcon} />
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => setShowArchive(true)}>
-            <Icon name="archive" size={24} color="#a00" style={styles.icon} />
+            <MdArchive style={styles.archiveIcon} />
           </TouchableOpacity>
         </View>
       )}
-      {params.price && (
-        <Text style={styles.priceHeading}>{parseFloat(params.price).toFixed(2)}€</Text>
-      )}
 
-      {params.isAuth ? (
-        <>
-          {!params.isSeller && (
-            <Button
-              icon="message"
-              mode="contained"
-              style={styles.contactBtn}
-              onPress={() => setShowMsg(true)}
-            >
-              Contact Seller
-            </Button>
-          )}
-          <TouchableOpacity onPress={() => navigation.navigate('Profile', { userId: params.sellerId })}>
-            <Image source={{ uri: params.avatar }} style={styles.avatar} />
-            <Text><Icon name="account" /> {params.name}</Text>
-            <Text><Icon name="email" /> {params.email}</Text>
-            <Text><Icon name="phone" /> {params.phoneNumber}</Text>
-            <Text><Icon name="shopping" /> {params.createdSells} sells in total</Text>
-          </TouchableOpacity>
-        </>
-      ) : (
-        <Text style={styles.guestMsg}>
-          <Text style={styles.loginLink} onPress={() => navigation.navigate('Login')}>Sign In</Text> now to contact the seller!
+      {params.price && (
+        <Text style={styles.priceHeading}>
+          {parseFloat(params.price).toFixed(2)}€
         </Text>
       )}
 
+      {!params.isSeller && (
+        <TouchableOpacity style={styles.contactButton} onPress={() => setShowMsg(true)}>
+          <RiMessage3Fill color="#fff" size={20} style={styles.contactIcon} />
+          <Text style={styles.contactText}>Contact Seller</Text>
+        </TouchableOpacity>
+      )}
+
+      <TouchableOpacity
+        onPress={() =>
+          navigation.navigate('Profile', {
+            id: params.sellerId,
+          })
+        }
+      >
+        <Image source={{ uri: params.avatar }} style={styles.avatar} />
+        <Text><BsFillPersonFill /> {params.name}</Text>
+        <Text><MdEmail /> {params.email}</Text>
+        <Text><MdPhoneAndroid /> {params.phoneNumber}</Text>
+        <Text><FaSellsy /> {params.createdSells} sells in total</Text>
+      </TouchableOpacity>
+
       {/* Message Modal */}
-      <Portal>
-        <Dialog visible={showMsg} onDismiss={() => setShowMsg(false)}>
-          <Dialog.Title>Message</Dialog.Title>
-          <Dialog.Content>
+      <Modal visible={showMsg} animationType="slide" transparent>
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Message</Text>
             <TextInput
               multiline
-              numberOfLines={3}
-              style={styles.textInput}
-              placeholder="Type your message..."
-              onChangeText={setMessage}
+              style={styles.textArea}
               value={message}
+              onChangeText={setMessage}
+              placeholder="Write your message"
             />
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={handleMsgSend}>Send</Button>
-            <Button onPress={() => setShowMsg(false)}>Cancel</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+            <View style={styles.modalButtons}>
+              <Button title="Send" onPress={onMsgSent} />
+              <Button title="Close" color="gray" onPress={() => setShowMsg(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       {/* Archive Modal */}
-      <Portal>
-        <Dialog visible={showArchive} onDismiss={() => setShowArchive(false)}>
-          <Dialog.Title>Archive Product</Dialog.Title>
-          <Dialog.Content>
-            <Paragraph>
-              Are you sure you want to archive this item? You can unarchive it anytime from your Profile.
-            </Paragraph>
-          </Dialog.Content>
-          <Dialog.Actions>
-            <Button onPress={() => setShowArchive(false)}>Cancel</Button>
-            <Button onPress={handleArchive}>Archive</Button>
-          </Dialog.Actions>
-        </Dialog>
-      </Portal>
+      <Modal visible={showArchive} animationType="slide" transparent>
+        <View style={styles.modalBackground}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Archive this item?</Text>
+            <Text style={styles.modalBody}>
+              By clicking <Text style={{ fontWeight: 'bold' }}>Archive</Text>, this listing will
+              become invisible to everyone but you. You can unarchive it anytime from your profile.
+            </Text>
+            <View style={styles.modalButtons}>
+              <Button title="Archive" color="green" onPress={handleArchive} />
+              <Button title="Cancel" color="gray" onPress={() => setShowArchive(false)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
 
+export default Aside;
+
 const styles = StyleSheet.create({
   container: {
-    alignItems: 'center',
-    marginTop: 16,
-    padding: 20
+    padding: 16,
+    borderRadius: 8,
+    backgroundColor: '#fff',
+    marginTop: 10,
   },
   priceLabel: {
     fontFamily: 'serif',
-    fontSize: 18,
-    color: '#333',
-    marginBottom: 8
+    fontWeight: 'bold',
+    fontSize: 16,
+    marginBottom: 8,
   },
   priceHeading: {
     fontWeight: 'bold',
-    fontSize: 28,
+    fontSize: 24,
     fontFamily: 'Times New Roman',
-    color: '#111',
-    marginTop: 8
+    marginBottom: 12,
   },
   iconRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
-    marginVertical: 8
+    marginBottom: 10,
   },
-  icon: {
-    marginHorizontal: 10
+  editIcon: {
+    fontSize: 20,
+    marginLeft: '7%',
+    marginBottom: 7,
   },
-  contactBtn: {
-    marginTop: 16,
-    marginBottom: 20
+  archiveIcon: {
+    fontSize: 24,
+    marginLeft: 6,
+    marginBottom: 8,
+  },
+  contactButton: {
+    backgroundColor: '#333',
+    padding: 10,
+    borderRadius: 6,
+    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  contactIcon: {
+    marginRight: 6,
+    marginBottom: 3,
+  },
+  contactText: {
+    color: '#fff',
+    fontSize: 16,
   },
   avatar: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    marginVertical: 12
+    width: 100,
+    height: 100,
+    marginTop: 15,
+    borderRadius: 50,
+    alignSelf: 'center',
+    marginBottom: 10,
   },
-  guestMsg: {
-    fontFamily: 'serif',
-    fontSize: 16,
-    marginTop: 24,
-    textAlign: 'center'
+  modalBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: '#000000aa',
+    padding: 20,
   },
-  loginLink: {
-    color: '#007bff',
-    textDecorationLine: 'underline'
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
   },
-  textInput: {
-    borderColor: '#ccc',
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  modalBody: {
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  textArea: {
+    borderColor: '#aaa',
     borderWidth: 1,
     borderRadius: 6,
     padding: 10,
+    height: 100,
+    marginBottom: 15,
     textAlignVertical: 'top',
-    marginTop: 10
-  }
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
 });
-
-export default Aside;

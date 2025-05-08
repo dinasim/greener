@@ -5,11 +5,7 @@ import {
   StyleSheet,
   ImageBackground,
   TouchableOpacity,
-  Button,
   ScrollView,
-  TextInput,
-  Pressable,
-  Image,
   SafeAreaView,
   Dimensions,
   Platform,
@@ -54,7 +50,7 @@ export default function LoginScreen({ navigation }) {
                 <View style={styles.buttonContainer}>
                   <TouchableOpacity
                     style={styles.getStartedButton}
-                    onPress={() => navigation.navigate("SignupPlantsLocation")}
+                    onPress={() => navigation.navigate("SignUp")}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.getStartedText}>

@@ -1,145 +1,117 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  TextInput,
-  ActivityIndicator,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, FlatList, ActivityIndicator, StyleSheet, Text } from 'react-native';
+import CategoriesNav from '../components/Categories/CategoriesNav';
+import ProductCard from '../components/ProductCard/ProductCard';
 import { getAll } from '../services/productData';
-import ProductCard from '../components/ProductCard';
 
-export default function MarketplaceScreen({ route }) {
-  const currentCategory = route?.params?.category || null;
+const Categories = () => {
   const [products, setProducts] = useState([]);
-  const [query, setQuery] = useState('');
-  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState('oldest');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState(null);
 
   useEffect(() => {
-    setPage(1);
-    setLoading(true);
-    setQuery('');
-    getAll(1, currentCategory)
-      .then(res => {
-        setProducts(res.products || []);
-        setPage(2);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, [currentCategory]);
+    loadProducts();
+  }, [selectedCategory, query]);
 
-  useEffect(() => {
-    setPage(1);
-    setLoading(true);
-    getAll(1, currentCategory, query)
-      .then(res => {
-        setProducts(res.products || []);
-        setPage(2);
-        setLoading(false);
-      })
-      .catch(err => {
-        console.error(err);
-        setLoading(false);
-      });
-  }, [query]);
-
-  const fetchMore = () => {
-    getAll(page, currentCategory, query)
-      .then(res => {
-        setProducts(prev => [...prev, ...(res.products || [])]);
-        setPage(prev => prev + 1);
-      })
-      .catch(err => console.error(err));
+  const loadProducts = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const res = await getAll(selectedCategory, query);
+      
+      // Ensure we have an array and filter out any items without an id
+      const validProducts = (res || []).filter(item => item && item.id);
+      
+      setProducts(validProducts);
+    } catch (err) {
+      console.error("Error loading products:", err);
+      setError("Failed to load products. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const sortProducts = (a, b) => {
-    if (sort === 'oldest') return a.addedAt.localeCompare(b.addedAt);
-    if (sort === 'newest') return b.addedAt.localeCompare(a.addedAt);
-    if (sort === 'lowerPrice') return a.price - b.price;
-    if (sort === 'biggerPrice') return b.price - a.price;
-    return 0;
+  const handleCategorySelect = (categoryId) => {
+    setSelectedCategory(categoryId);
+  };
+
+  // Safe key extractor function
+  const keyExtractor = (item) => {
+    // Make sure item and item.id exist before calling toString()
+    return item && item.id ? item.id.toString() : Math.random().toString();
   };
 
   return (
     <View style={styles.container}>
-      <TextInput
-        placeholder="Search..."
-        value={query}
-        onChangeText={setQuery}
-        style={styles.searchBar}
+      <CategoriesNav
+        onSelectCategory={handleCategorySelect}
+        searchQuery={query}
+        onSearchChange={setQuery}
       />
 
-      <View style={styles.sortButtons}>
-        {['oldest', 'newest', 'lowerPrice', 'biggerPrice'].map(option => (
-          <TouchableOpacity
-            key={option}
-            onPress={() => setSort(option)}
-            style={[
-              styles.sortButton,
-              sort === option && styles.sortButtonActive,
-            ]}
-          >
-            <Text style={styles.sortText}>{option}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       {loading ? (
-        <ActivityIndicator size="large" />
+        <View style={styles.loaderContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+        </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      ) : products.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>No products found</Text>
+        </View>
       ) : (
         <FlatList
-          data={[...products].sort(sortProducts)}
-          keyExtractor={item => item._id}
-          renderItem={({ item }) => <ProductCard product={item} />}
-          onEndReached={fetchMore}
-          onEndReachedThreshold={0.5}
-          numColumns={2}
-          columnWrapperStyle={styles.column}
-          contentContainerStyle={styles.list}
+          data={products}
+          renderItem={({ item }) => item ? <ProductCard product={item} /> : null}
+          keyExtractor={keyExtractor}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
         />
       )}
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 10, backgroundColor: '#fff' },
-  searchBar: {
-    borderWidth: 1,
-    borderColor: '#aaa',
-    borderRadius: 8,
+  container: {
+    flex: 1,
+    backgroundColor: '#f9f9f9',
+  },
+  loaderContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    color: 'red',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    color: '#666',
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  listContainer: {
     padding: 10,
-    marginBottom: 10,
-  },
-  sortButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: 10,
-  },
-  sortButton: {
-    padding: 8,
-    borderRadius: 6,
-    backgroundColor: '#e0e0e0',
-  },
-  sortButtonActive: {
-    backgroundColor: '#a0a0a0',
-  },
-  sortText: {
-    fontWeight: 'bold',
-    textTransform: 'capitalize',
-  },
-  list: {
-    gap: 10,
-    paddingBottom: 100,
-  },
-  column: {
-    justifyContent: 'space-between',
   },
 });
+
+export default Categories;

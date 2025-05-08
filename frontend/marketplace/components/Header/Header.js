@@ -1,101 +1,67 @@
-import React, { useContext, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import {
+  View,
+  Text,
+  ImageBackground,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { Menu, Divider } from 'react-native-paper';
-import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
-import { Context } from '../../ContextStore';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const Header = () => {
-  const { userData } = useContext(Context);
   const navigation = useNavigation();
-  const [menuVisible, setMenuVisible] = useState(false);
+  const [userData, setUserData] = useState(null);
 
-  const openMenu = () => setMenuVisible(true);
-  const closeMenu = () => setMenuVisible(false);
+  useEffect(() => {
+    getUser().then(setUserData).catch(console.error);
+  }, []);
+
+  const featherImageUrl = 'https://images.unsplash.com/photo-1608571421747-3d96e1f1ec66?auto=format&fit=crop&w=1200&q=80';
 
   return (
-    <View style={styles.navbar}>
-      <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-        <Text style={styles.brand}>Greener</Text>
-      </TouchableOpacity>
-
-      <View style={styles.navRight}>
-        <TouchableOpacity
-          style={styles.iconBtn}
-          onPress={() => navigation.navigate('AddProduct')}
-        >
-          <MaterialIcons name="add-circle-outline" size={28} color="#000" />
-        </TouchableOpacity>
-
-        <Menu
-          visible={menuVisible}
-          onDismiss={closeMenu}
-          anchor={
-            <TouchableOpacity onPress={openMenu}>
-              <Image source={{ uri: userData.avatar }} style={styles.avatar} />
-            </TouchableOpacity>
-          }
-        >
-          <Menu.Item
-            onPress={() => {
-              closeMenu();
-              navigation.navigate('Profile', { userId: userData._id });
-            }}
-            title="Profile"
-            leadingIcon="account-circle"
-          />
-          <Menu.Item
-            onPress={() => {
-              closeMenu();
-              navigation.navigate('Messages');
-            }}
-            title="Messages"
-            leadingIcon="email"
-          />
-          <Divider />
-          <Menu.Item
-            onPress={() => {
-              closeMenu();
-              navigation.navigate('YourProducts');
-            }}
-            title="My Products"
-            leadingIcon="format-list-bulleted"
-          />
-        </Menu>
+    <ImageBackground source={{ uri: featherImageUrl }} style={styles.background}>
+      <View style={styles.overlay}>
+        <View style={styles.headerContent}>
+          <TouchableOpacity onPress={() => navigation.navigate('Marketplace')}>
+            <MaterialIcons name="home" size={30} style={styles.icon} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Plant Market</Text>
+        </View>
       </View>
-    </View>
+    </ImageBackground>
   );
 };
 
 const styles = StyleSheet.create({
-  navbar: {
+  background: {
+    width: '100%',
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    width: '100%',
+    height: '100%',
+  },
+  headerContent: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f7f7f7',
-    paddingHorizontal: 16,
-    paddingVertical: 12
+    width: '90%',
   },
-  brand: {
-    fontSize: 22,
-    fontFamily: 'serif',
-    fontStyle: 'italic'
+  icon: {
+    color: '#fff',
   },
-  navRight: {
-    flexDirection: 'row',
-    alignItems: 'center'
+  headerTitle: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
   },
-  iconBtn: {
-    marginRight: 16
-  },
-  avatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#000',
-    objectFit: 'cover'
-  }
 });
 
 export default Header;

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import ProductCard from '../../components/ProductCard';
-import { getUserActiveSells } from '../../services/userData';
+import ProductCard from '../../ProductCard/ProductCard';
+import { getUserActiveSells } from '../../../services/userData';
 
 const ActiveSells = ({ params }) => {
   const [products, setProducts] = useState([]);

@@ -8,42 +8,42 @@ const BreadcrumbNav = ({ params }) => {
   return (
     <View style={styles.breadcrumbContainer}>
       <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-        <Text style={styles.link}>Home</Text>
+        <Text style={styles.breadcrumbItem}>Home</Text>
       </TouchableOpacity>
-      <Text style={styles.separator}>{'>'}</Text>
-      <TouchableOpacity onPress={() => navigation.navigate('Category', { category: params.category })}>
-        <Text style={styles.link}>{params.category}</Text>
+
+      <Text style={styles.separator}>›</Text>
+
+      <TouchableOpacity onPress={() => navigation.navigate('Marketplace', { category: params.category })}>
+        <Text style={styles.breadcrumbItem}>{params.category}</Text>
       </TouchableOpacity>
-      <Text style={styles.separator}>{'>'}</Text>
-      <Text style={styles.current}>{params.title}</Text>
+
+      <Text style={styles.separator}>›</Text>
+
+      <TouchableOpacity onPress={() => navigation.navigate('ProductDetails', { plantId: params._id, category: params.category })}>
+        <Text style={styles.breadcrumbItem}>{params.title}</Text>
+      </TouchableOpacity>
     </View>
   );
 };
+
+export default BreadcrumbNav;
 
 const styles = StyleSheet.create({
   breadcrumbContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
     flexWrap: 'wrap',
   },
-  link: {
-    color: '#007bff',
+  breadcrumbItem: {
+    color: '#2e7d32',
+    fontWeight: 'bold',
+    fontSize: 16,
     textDecorationLine: 'underline',
-    fontSize: 14,
-    marginRight: 5
   },
   separator: {
     marginHorizontal: 5,
-    fontSize: 14,
-    color: '#555'
+    fontSize: 16,
+    color: '#444',
   },
-  current: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#333',
-    flexShrink: 1
-  }
 });
-
-export default BreadcrumbNav;

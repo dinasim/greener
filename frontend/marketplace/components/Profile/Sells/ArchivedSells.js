@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, ActivityIndicator, StyleSheet } from 'react-native';
-import DisabledCard from '../../components/DisabledProductCard/DisabledCard';
-import { getUserArchivedSells } from '../../services/userData';
+import DisabledCard from '../../DisabledProductCard/DisabledCard';
+import { getUserActiveSells } from '../../../services/userData';
 
 const ArchivedSells = () => {
   const [products, setProducts] = useState([]);

@@ -6,7 +6,7 @@ export default function SignUpScreen({ navigation }) {
 
   const handleSignUp = () => {
     // TODO: Connect to sign-up logic or API
-    navigation.navigate('Home'); // or go to onboarding screen
+    navigation.navigate('MainTabs'); // ✅ Navigate to your main layout after sign-up
   };
 
   return (

@@ -1,113 +1,97 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { View, Text, StyleSheet, ScrollView, TextInput, TouchableOpacity } from 'react-native';
+import { 
+  MaterialCommunityIcons, 
+  FontAwesome5, 
+  Feather 
+} from '@expo/vector-icons';
 
-import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
-import FontAwesome5 from 'react-native-vector-icons/FontAwesome5';
-import Entypo from 'react-native-vector-icons/Entypo';
-import Ionicons from 'react-native-vector-icons/Ionicons';
+const categories = [
+  { id: 'all', label: 'All', icon: 'leaf' },
+  { id: 'indoor', label: 'Indoor', icon: 'home' },
+  { id: 'outdoor', label: 'Outdoor', icon: 'tree' },
+  { id: 'succulent', label: 'Succulents', icon: 'sprout' },
+  { id: 'flowers', label: 'Flowers', icon: 'flower' },
+];
 
-const CategoriesNav = () => {
-  const navigation = useNavigation();
-
-  const categories = [
-    {
-      id: 'all',
-      label: 'All',
-      icon: <Entypo name="list" size={16} color="#333" />,
-      color: '#333'
-    },
-    {
-      id: 'indoor',
-      label: 'Indoor Plants',
-      icon: <MaterialCommunityIcons name="home-outline" size={16} color="orange" />,
-      color: 'orange'
-    },
-    {
-      id: 'succulents',
-      label: 'Succulents',
-      icon: <MaterialCommunityIcons name="flower" size={16} color="#4a88f9" />,
-      color: '#4a88f9'
-    },
-    {
-      id: 'outdoor',
-      label: 'Outdoor Plants',
-      icon: <MaterialCommunityIcons name="home-variant" size={16} color="#f95a5a" />,
-      color: '#f95a5a'
-    },
-    {
-      id: 'tools',
-      label: 'Tools & Tech',
-      icon: <Ionicons name="hardware-chip-outline" size={16} color="#444" />,
-      color: '#444'
-    },
-    {
-      id: 'cactus',
-      label: 'Cactus',
-      icon: <FontAwesome5 name="seedling" size={16} color="#f0f342" />,
-      color: '#f0f342'
-    },
-    {
-      id: 'seeds',
-      label: 'Seeds',
-      icon: <FontAwesome5 name="leaf" size={16} color="#f57ecb" />,
-      color: '#f57ecb'
-    },
-    {
-      id: 'garden',
-      label: 'Garden',
-      icon: <MaterialCommunityIcons name="shovel" size={16} color="#5aeb5a" />,
-      color: '#5aeb5a'
-    }
-  ];
-
+const CategoriesNav = ({ onSelectCategory, searchQuery, onSearchChange }) => {
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.header}>Categories</Text>
-      <View style={styles.buttonContainer}>
-        {categories.map(cat => (
+    <View style={styles.container}>
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search plants..."
+          placeholderTextColor="#888"
+          value={searchQuery}
+          onChangeText={onSearchChange}
+        />
+        <Feather name="search" size={20} color="#888" style={styles.searchIcon} />
+      </View>
+
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.categoriesContainer}
+      >
+        {categories.map((category) => (
           <TouchableOpacity
-            key={cat.id}
-            style={[styles.button, { borderColor: cat.color }]}
-            onPress={() => navigation.navigate('Category', { category: cat.id })}
+            key={category.id}
+            style={styles.categoryButton}
+            onPress={() => onSelectCategory(category.id)}
           >
-            {cat.icon}
-            <Text style={styles.label}>{cat.label}</Text>
+            <MaterialCommunityIcons 
+              name={category.icon} 
+              size={20} 
+              color="#4CAF50" 
+            />
+            <Text style={styles.categoryText}>{category.label}</Text>
           </TouchableOpacity>
         ))}
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: '5%',
-    alignItems: 'center'
+    padding: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  header: {
-    fontSize: 24,
-    fontFamily: 'serif',
-    marginBottom: '3%'
+  searchContainer: {
+    position: 'relative',
+    marginBottom: 16,
   },
-  buttonContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'center'
+  searchInput: {
+    backgroundColor: '#f5f5f5',
+    borderRadius: 25,
+    paddingVertical: 10,
+    paddingHorizontal: 45,
+    fontSize: 16,
   },
-  button: {
+  searchIcon: {
+    position: 'absolute',
+    left: 15,
+    top: 12,
+  },
+  categoriesContainer: {
+    paddingHorizontal: 5,
+  },
+  categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderWidth: 1,
+    backgroundColor: '#f0f9f0',
+    borderRadius: 20,
     paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    margin: 5
+    paddingHorizontal: 15,
+    marginRight: 10,
   },
-  label: {
-    fontSize: 16,
-    marginLeft: 6
-  }
+  categoryText: {
+    marginLeft: 8,
+    color: '#2E7D32',
+    fontWeight: '500',
+  },
 });
 
 export default CategoriesNav;

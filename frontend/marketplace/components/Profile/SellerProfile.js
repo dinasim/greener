@@ -1,132 +1,167 @@
 import React, { useState } from 'react';
-import { View, Text, Image, StyleSheet, Modal, TextInput, Button, TouchableOpacity } from 'react-native';
-import IconPerson from 'react-native-vector-icons/FontAwesome';
-import IconEmail from 'react-native-vector-icons/MaterialCommunityIcons';
-import IconPhone from 'react-native-vector-icons/MaterialIcons';
-import IconSell from 'react-native-vector-icons/FontAwesome5';
-import IconChat from 'react-native-vector-icons/MaterialCommunityIcons';
-
-import ActiveSells from './Sells/ActiveSells';
-import { createChatRoom } from '../../services/messagesData';
+import {
+  View,
+  Text,
+  Image,
+  Modal,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Button,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { FontAwesome, MaterialIcons, Entypo } from '@expo/vector-icons';
+import { createChatRoom } from '../../services/messagesData';
+import ActiveSells from './Sells/ActiveSells';
 
 const SellerProfile = ({ params }) => {
   const navigation = useNavigation();
   const [showMsg, setShowMsg] = useState(false);
   const [message, setMessage] = useState('');
 
-  const handleMsgSubmit = () => {
-    createChatRoom(params._id, message)
-      .then(() => {
-        setShowMsg(false);
-        navigation.navigate('Messages');
-      })
-      .catch(err => console.log(err));
+  const handleMsgChange = text => setMessage(text);
+
+  const onMsgSent = async () => {
+    try {
+      await createChatRoom(params._id, message);
+      setShowMsg(false);
+      navigation.navigate('Messages');
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   return (
-    <>
-      <View style={styles.head}>
-        <View style={styles.row}>
-          <Image source={{ uri: params.avatar }} style={styles.avatar} />
-          <View style={styles.info}>
-            <Text><IconPerson name="user" />  {params.name}</Text>
-            <Text><IconEmail name="email-outline" />  {params.email}</Text>
-            <Text><IconPhone name="phone" />  {params.phoneNumber}</Text>
-            <Text><IconSell name="store" />  {params.totalSells} sells in total</Text>
-            <TouchableOpacity style={styles.btn} onPress={() => setShowMsg(true)}>
-              <IconChat name="message-text" size={18} color="#fff" />
-              <Text style={styles.btnText}>  Contact Seller</Text>
-            </TouchableOpacity>
+    <ScrollView style={styles.container}>
+      <View style={styles.profileHeader}>
+        <Image source={{ uri: params.avatar }} style={styles.avatar} />
+        <View style={styles.info}>
+          <View style={styles.infoRow}>
+            <FontAwesome name="user" size={16} style={styles.icon} />
+            <Text>{params.name}</Text>
           </View>
+          <View style={styles.infoRow}>
+            <MaterialIcons name="email" size={16} style={styles.icon} />
+            <Text>{params.email}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <MaterialIcons name="phone-android" size={16} style={styles.icon} />
+            <Text>{params.phoneNumber}</Text>
+          </View>
+          <View style={styles.infoRow}>
+            <Entypo name="shop" size={16} style={styles.icon} />
+            <Text>{params.totalSells} sells in total</Text>
+          </View>
+        </View>
+
+        <View style={styles.contactButtonContainer}>
+          <TouchableOpacity style={styles.contactButton} onPress={() => setShowMsg(true)}>
+            <Entypo name="message" size={18} color="#fff" />
+            <Text style={styles.contactButtonText}>Contact Seller</Text>
+          </TouchableOpacity>
         </View>
       </View>
 
       <ActiveSells params={params} />
 
-      <Modal visible={showMsg} animationType="slide" transparent>
-        <View style={styles.modalContainer}>
-          <View style={styles.modalBox}>
+      <Modal visible={showMsg} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>Message</Text>
             <TextInput
               multiline
-              placeholder="Type your message..."
-              style={styles.textArea}
+              style={styles.textarea}
               value={message}
-              onChangeText={setMessage}
+              onChangeText={handleMsgChange}
+              placeholder="Write your message..."
             />
-            <View style={styles.modalActions}>
-              <Button title="Send" onPress={handleMsgSubmit} />
-              <Button title="Close" color="grey" onPress={() => setShowMsg(false)} />
+            <View style={styles.modalButtons}>
+              <Button title="Send" onPress={onMsgSent} />
+              <Button title="Close" color="gray" onPress={() => setShowMsg(false)} />
             </View>
           </View>
         </View>
       </Modal>
-    </>
+    </ScrollView>
   );
 };
 
+export default SellerProfile;
+
 const styles = StyleSheet.create({
-  head: {
-    backgroundColor: '#f0f0f0',
-    padding: 20,
-    marginBottom: 30
+  container: {
+    backgroundColor: '#fff',
   },
-  row: {
+  profileHeader: {
     flexDirection: 'row',
-    alignItems: 'center'
+    padding: 16,
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 12,
   },
   avatar: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    objectFit: 'cover'
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    marginRight: 16,
   },
   info: {
-    flex: 1,
-    marginLeft: 20
+    flexShrink: 1,
+    gap: 4,
   },
-  btn: {
+  infoRow: {
     flexDirection: 'row',
-    backgroundColor: '#343a40',
-    padding: 10,
-    borderRadius: 5,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  icon: {
+    marginRight: 6,
+  },
+  contactButtonContainer: {
     marginTop: 10,
-    alignItems: 'center'
   },
-  btnText: {
+  contactButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#333',
+    padding: 10,
+    borderRadius: 6,
+  },
+  contactButtonText: {
     color: '#fff',
-    fontSize: 16
+    marginLeft: 6,
+    fontWeight: 'bold',
   },
-  modalContainer: {
+  modalOverlay: {
     flex: 1,
     justifyContent: 'center',
-    backgroundColor: '#00000088',
-    padding: 20
+    backgroundColor: '#000000aa',
+    padding: 20,
   },
-  modalBox: {
+  modalContent: {
     backgroundColor: '#fff',
+    padding: 24,
     borderRadius: 10,
-    padding: 20
   },
   modalTitle: {
-    fontSize: 18,
     fontWeight: 'bold',
-    marginBottom: 10
+    fontSize: 18,
+    marginBottom: 10,
   },
-  textArea: {
-    borderColor: '#ccc',
+  textarea: {
+    height: 100,
+    borderColor: '#aaa',
     borderWidth: 1,
-    borderRadius: 5,
-    minHeight: 100,
+    borderRadius: 6,
     padding: 10,
-    marginBottom: 20,
-    textAlignVertical: 'top'
+    textAlignVertical: 'top',
+    marginBottom: 15,
   },
-  modalActions: {
+  modalButtons: {
     flexDirection: 'row',
-    justifyContent: 'space-between'
-  }
+    justifyContent: 'space-between',
+  },
 });
-
-export default SellerProfile;
