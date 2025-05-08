@@ -1,321 +1,335 @@
-// src/marketplace/services/marketplaceApi.js
-import { Platform } from 'react-native';
-import { 
-  mockPlants, 
-  mockUser, 
-  mockMessages, 
-  mockConversations, 
-  mockFavorites 
-} from './mockData';
+/**
+ * marketplaceApi.js
+ * API service for interacting with Azure Functions for the Marketplace feature
+ */
 
-// Helper function to simulate network delay
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
-// Flag to control whether we should use mock data
-// Change this to false when your Azure backend is ready
-const MOCK_DATA_ENABLED = true;
-
-// Base URL for your API
+// Base URL for Azure Functions
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-/**
- * Fetch all plants
- */
-export const fetchPlants = async () => {
-  // Use mock data if enabled or if on web platform
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log('Using mock data for plants');
-    // Add slight delay to simulate network request
-    await delay(500);
-    return mockPlants;
-  }
-  
+// AUTH TOKEN HANDLING
+// Will be used to authenticate requests to Azure Functions
+let authToken = null;
+
+const setAuthToken = (token) => {
+  authToken = token;
+};
+
+// Helper function to handle API requests
+const apiRequest = async (endpoint, method = 'GET', body = null) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/plants`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch plants: ${response.status}`);
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
     }
+
+    const options = {
+      method,
+      headers,
+    };
+
+    if (body) {
+      options.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(`${API_BASE_URL}/${endpoint}`, options);
+
+    // Check if the request was successful
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'An error occurred');
+    }
+
     return await response.json();
   } catch (error) {
-    console.error('Error in fetchPlants:', error);
-    // Fallback to mock data on error
-    console.log('Falling back to mock data due to API error');
-    return mockPlants;
+    console.error(`API Error (${endpoint}):`, error);
+    throw error;
+  }
+};
+
+// PLANT LISTINGS API
+
+/**
+ * Fetch plants with optional filters
+ * @param {Object} filters - Filter options like category, search query, price range
+ * @returns {Promise<Array>} Array of plant listings
+ */
+export const fetchPlants = async (filters = {}) => {
+  try {
+    let queryParams = new URLSearchParams();
+    
+    // Add filters to query params
+    if (filters.category && filters.category !== 'All') {
+      queryParams.append('category', filters.category);
+    }
+    
+    if (filters.search) {
+      queryParams.append('search', filters.search);
+    }
+    
+    if (filters.minPrice) {
+      queryParams.append('minPrice', filters.minPrice);
+    }
+    
+    if (filters.maxPrice) {
+      queryParams.append('maxPrice', filters.maxPrice);
+    }
+    
+    const queryString = queryParams.toString();
+    const endpoint = `plants${queryString ? `?${queryString}` : ''}`;
+    
+    return await apiRequest(endpoint);
+  } catch (error) {
+    console.error('Error fetching plants:', error);
+    throw error;
   }
 };
 
 /**
- * Fetch plant details by ID
+ * Fetch a single plant by ID
+ * @param {string} id - Plant ID
+ * @returns {Promise<Object>} Plant details
  */
 export const fetchPlantById = async (id) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log(`Using mock data for plant ${id}`);
-    await delay(300);
-    const plant = mockPlants.find(p => p.id === id);
-    
-    if (!plant) {
-      throw new Error(`Plant with ID ${id} not found`);
-    }
-    
-    return plant;
-  }
-  
   try {
-    const response = await fetch(`${API_BASE_URL}/plants/${id}`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch plant: ${response.status}`);
-    }
-    return await response.json();
+    return await apiRequest(`plants/${id}`);
   } catch (error) {
     console.error(`Error fetching plant ${id}:`, error);
-    
-    // Try to return mock data as fallback
-    const mockPlant = mockPlants.find(p => p.id === id);
-    if (mockPlant) {
-      return mockPlant;
-    }
-    
-    // Rethrow if no mock data found
     throw error;
   }
 };
 
 /**
- * Fetch the current user's profile
+ * Create a new plant listing
+ * @param {Object} plantData - Plant data including images
+ * @returns {Promise<Object>} Created plant
  */
-export const fetchUserProfile = async () => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log('Using mock data for user profile');
-    await delay(300);
-    return mockUser;
-  }
-  
+export const createPlant = async (plantData) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/user/profile`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch user profile: ${response.status}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-    return mockUser;
-  }
-};
+    // For images, we need to convert them to base64 or use a form-data approach
+    // This is a simplified example
+    // Ensure to handle image uploads (base64 or form-data) properly, depending on your backend setup.
+    // You might need to upload the images to a storage service (like Azure Blob Storage) and send the URLs in the `plantData`.
+    if (plantData.images && plantData.images.length > 0) {
+      // Convert image URIs to base64 or handle as per your server's requirements
+      const base64Images = await Promise.all(plantData.images.map(async (image) => {
+        const response = await fetch(image);
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }));
 
-/**
- * Fetch conversations list
- */
-export const fetchConversations = async () => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log('Using mock data for conversations');
-    await delay(400);
-    return mockConversations;
-  }
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/messages/conversations`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch conversations: ${response.status}`);
+      plantData.images = base64Images;
     }
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching conversations:', error);
-    return mockConversations;
-  }
-};
 
-/**
- * Fetch messages for a conversation
- */
-export const fetchMessages = async (conversationId) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log(`Using mock data for messages in conversation ${conversationId}`);
-    await delay(300);
-    return mockMessages.filter(msg => msg.conversationId === conversationId);
-  }
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/messages/${conversationId}`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch messages: ${response.status}`);
-    }
-    return await response.json();
+    return await apiRequest('plants', 'POST', plantData);
   } catch (error) {
-    console.error(`Error fetching messages for conversation ${conversationId}:`, error);
-    return mockMessages.filter(msg => msg.conversationId === conversationId);
-  }
-};
-
-/**
- * Send a message
- */
-export const sendMessage = async (conversationId, messageText) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log(`Mock: Sending message to conversation ${conversationId}`);
-    await delay(200);
-    
-    // Create a new message object
-    const newMessage = {
-      id: `new-${Date.now()}`,
-      conversationId,
-      sender: {
-        id: 'current-user',
-        name: mockUser.name,
-        avatar: mockUser.avatar
-      },
-      message: messageText,
-      timestamp: new Date().toISOString(),
-      read: false
-    };
-    
-    // In a real implementation, we would update the mock data
-    // For now, just return the new message
-    return newMessage;
-  }
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/messages/${conversationId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ message: messageText }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to send message: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error sending message:', error);
+    console.error('Error creating plant:', error);
     throw error;
   }
 };
+
+/**
+ * Update an existing plant listing
+ * @param {string} id - Plant ID
+ * @param {Object} updates - Updated plant data
+ * @returns {Promise<Object>} Updated plant
+ */
+export const updatePlant = async (id, updates) => {
+  try {
+    return await apiRequest(`plants/${id}`, 'PUT', updates);
+  } catch (error) {
+    console.error(`Error updating plant ${id}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a plant listing
+ * @param {string} id - Plant ID
+ * @returns {Promise<Object>} Deletion confirmation
+ */
+export const deletePlant = async (id) => {
+  try {
+    return await apiRequest(`plants/${id}`, 'DELETE');
+  } catch (error) {
+    console.error(`Error deleting plant ${id}:`, error);
+    throw error;
+  }
+};
+
+// FAVORITES API
 
 /**
  * Fetch user's favorite plants
+ * @returns {Promise<Array>} Array of favorite plants
  */
 export const fetchFavorites = async () => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log('Using mock data for favorites');
-    await delay(300);
-    
-    // Return the full plant objects for favorited items
-    return mockPlants.filter(plant => mockFavorites.includes(plant.id));
-  }
-  
   try {
-    const response = await fetch(`${API_BASE_URL}/user/favorites`);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch favorites: ${response.status}`);
-    }
-    return await response.json();
+    return await apiRequest('plants/favorites');
   } catch (error) {
     console.error('Error fetching favorites:', error);
-    return mockPlants.filter(plant => mockFavorites.includes(plant.id));
-  }
-};
-
-/**
- * Add a plant to favorites
- */
-export const addToFavorites = async (plantId) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log(`Mock: Adding plant ${plantId} to favorites`);
-    await delay(200);
-    return { success: true };
-  }
-  
-  try {
-    const response = await fetch(`${API_BASE_URL}/user/favorites`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ plantId }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to add favorite: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error adding to favorites:', error);
     throw error;
   }
 };
 
 /**
- * Remove a plant from favorites
+ * Toggle favorite status for a plant
+ * @param {string} plantId - Plant ID
+ * @returns {Promise<Object>} Updated favorite status
  */
-export const removeFromFavorites = async (plantId) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log(`Mock: Removing plant ${plantId} from favorites`);
-    await delay(200);
-    return { success: true };
-  }
-  
+export const toggleFavoritePlant = async (plantId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/user/favorites/${plantId}`, {
-      method: 'DELETE',
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to remove favorite: ${response.status}`);
-    }
-    
-    return await response.json();
+    return await apiRequest(`plants/${plantId}/favorite`, 'POST');
   } catch (error) {
-    console.error('Error removing from favorites:', error);
+    console.error(`Error toggling favorite for plant ${plantId}:`, error);
+    throw error;
+  }
+};
+
+// SELLER API
+
+/**
+ * Fetch seller profile
+ * @param {string} sellerId - Seller ID
+ * @returns {Promise<Object>} Seller profile
+ */
+export const fetchSellerProfile = async (sellerId) => {
+  try {
+    return await apiRequest(`users/${sellerId}`);
+  } catch (error) {
+    console.error(`Error fetching seller ${sellerId}:`, error);
     throw error;
   }
 };
 
 /**
- * Add a new plant listing
+ * Fetch plants by a specific seller
+ * @param {string} sellerId - Seller ID
+ * @returns {Promise<Array>} Array of plants from the seller
  */
-export const addPlantListing = async (plantData) => {
-  if (MOCK_DATA_ENABLED || Platform.OS === 'web') {
-    console.log('Mock: Adding new plant listing');
-    console.log('Plant data:', plantData);
-    await delay(500);
-    
-    // Generate a mock response with a new ID
-    return {
-      success: true,
-      plant: {
-        id: `new-${Date.now()}`,
-        ...plantData,
-        seller: {
-          id: mockUser.id,
-          name: mockUser.name,
-          avatar: mockUser.avatar,
-          rating: mockUser.rating
-        },
-        createdAt: new Date().toISOString(),
-        isFavorite: false
-      }
-    };
-  }
-  
+export const fetchSellerPlants = async (sellerId) => {
   try {
-    const response = await fetch(`${API_BASE_URL}/plants`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(plantData),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to add plant listing: ${response.status}`);
-    }
-    
-    return await response.json();
+    return await apiRequest(`users/${sellerId}/plants`);
   } catch (error) {
-    console.error('Error adding plant listing:', error);
+    console.error(`Error fetching plants for seller ${sellerId}:`, error);
     throw error;
   }
+};
+
+// USER PROFILE API
+
+/**
+ * Fetch current user's profile
+ * @returns {Promise<Object>} User profile
+ */
+export const fetchUserProfile = async () => {
+  try {
+    return await apiRequest('users/me');
+  } catch (error) {
+    console.error('Error fetching user profile:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update user profile
+ * @param {Object} updates - Profile updates
+ * @returns {Promise<Object>} Updated profile
+ */
+export const updateUserProfile = async (updates) => {
+  try {
+    return await apiRequest('users/me', 'PUT', updates);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    throw error;
+  }
+};
+
+// MESSAGING API
+
+/**
+ * Fetch user's conversations
+ * @returns {Promise<Array>} Array of conversations
+ */
+export const fetchConversations = async () => {
+  try {
+    return await apiRequest('messages/conversations');
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    throw error;
+  }
+};
+
+/**
+ * Fetch messages for a specific conversation
+ * @param {string} conversationId - Conversation ID
+ * @returns {Promise<Object>} Conversation with messages
+ */
+export const fetchMessages = async (conversationId) => {
+  try {
+    return await apiRequest(`messages/conversations/${conversationId}`);
+  } catch (error) {
+    console.error(`Error fetching messages for conversation ${conversationId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Send a message in an existing conversation
+ * @param {string} conversationId - Conversation ID
+ * @param {string} message - Message text
+ * @returns {Promise<Object>} Sent message
+ */
+export const sendMessage = async (conversationId, message) => {
+  try {
+    return await apiRequest(`messages/conversations/${conversationId}`, 'POST', { message });
+  } catch (error) {
+    console.error(`Error sending message in conversation ${conversationId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Start a new conversation with a seller about a plant
+ * @param {string} sellerId - Seller ID
+ * @param {string} plantId - Plant ID
+ * @param {string} initialMessage - First message to send
+ * @returns {Promise<Object>} New conversation with first message
+ */
+export const startConversation = async (sellerId, plantId, initialMessage) => {
+  try {
+    return await apiRequest('messages/conversations', 'POST', {
+      sellerId,
+      plantId,
+      message: initialMessage
+    });
+  } catch (error) {
+    console.error('Error starting conversation:', error);
+    throw error;
+  }
+};
+
+export default {
+  setAuthToken,
+  fetchPlants,
+  fetchPlantById,
+  createPlant,
+  updatePlant,
+  deletePlant,
+  fetchFavorites,
+  toggleFavoritePlant,
+  fetchSellerProfile,
+  fetchSellerPlants,
+  fetchUserProfile,
+  updateUserProfile,
+  fetchConversations,
+  sendMessage,
+  startConversation
 };

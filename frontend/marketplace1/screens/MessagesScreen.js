@@ -1,0 +1,748 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  FlatList,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
+  ActivityIndicator,
+  SafeAreaView,
+} from 'react-native';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { useRoute, useNavigation } from '@react-navigation/native';
+
+// API Services
+import { 
+  fetchMessages, 
+  fetchConversations, 
+  sendMessage, 
+  startConversation 
+} from '../services/marketplaceApi';
+
+// Tab view for switching between active conversations and a specific chat
+const MessagesScreen = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  
+  const [activeTab, setActiveTab] = useState('conversations');
+  const [conversations, setConversations] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Parameters passed for starting a new conversation
+  const sellerId = route.params?.sellerId;
+  const plantId = route.params?.plantId;
+  const plantName = route.params?.plantName;
+  
+  // If params are passed, we want to show the chat tab
+  useEffect(() => {
+    if (sellerId && plantId) {
+      setActiveTab('chat');
+    }
+  }, [sellerId, plantId]);
+  
+  // Load conversations
+  useEffect(() => {
+    loadConversations();
+  }, []);
+  
+  const loadConversations = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const data = await fetchConversations();
+      setConversations(data);
+      
+      setIsLoading(false);
+    } catch (err) {
+      setError('Failed to load conversations. Please try again later.');
+      setIsLoading(false);
+      console.error('Error fetching conversations:', err);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Messages</Text>
+      </View>
+      
+      <View style={styles.tabContainer}>
+        <TouchableOpacity
+          style={[
+            styles.tabButton,
+            activeTab === 'conversations' && styles.activeTabButton,
+          ]}
+          onPress={() => setActiveTab('conversations')}
+        >
+          <Text
+            style={[
+              styles.tabText,
+              activeTab === 'conversations' && styles.activeTabText,
+            ]}
+          >
+            Conversations
+          </Text>
+        </TouchableOpacity>
+        
+        {sellerId && plantId && (
+          <TouchableOpacity
+            style={[
+              styles.tabButton,
+              activeTab === 'chat' && styles.activeTabButton,
+            ]}
+            onPress={() => setActiveTab('chat')}
+          >
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'chat' && styles.activeTabText,
+              ]}
+            >
+              Chat
+            </Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      
+      {activeTab === 'conversations' ? (
+        <ConversationsList 
+          conversations={conversations} 
+          isLoading={isLoading} 
+          error={error}
+          onRefresh={loadConversations}
+          onSelectConversation={(conversation) => {
+            navigation.navigate('Chat', { 
+              conversationId: conversation.id,
+              sellerId: conversation.sellerId,
+              buyerId: conversation.buyerId,
+              plantId: conversation.plantId,
+              otherUserName: conversation.otherUserName,
+              otherUserAvatar: conversation.otherUserAvatar,
+            });
+          }}
+        />
+      ) : (
+        <ChatScreen 
+          sellerId={sellerId} 
+          plantId={plantId} 
+          plantName={plantName}
+          onBack={() => setActiveTab('conversations')}
+        />
+      )}
+    </SafeAreaView>
+  );
+};
+
+// Component for displaying the list of active conversations
+const ConversationsList = ({ 
+  conversations, 
+  isLoading, 
+  error, 
+  onRefresh,
+  onSelectConversation 
+}) => {
+  if (isLoading) {
+    return (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#4CAF50" />
+        <Text style={styles.loadingText}>Loading conversations...</Text>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={styles.centerContainer}>
+        <MaterialIcons name="error-outline" size={48} color="#f44336" />
+        <Text style={styles.errorText}>{error}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+  
+  if (conversations.length === 0) {
+    return (
+      <View style={styles.centerContainer}>
+        <MaterialIcons name="forum" size={48} color="#aaa" />
+        <Text style={styles.noConversationsText}>
+          You don't have any conversations yet
+        </Text>
+        <Text style={styles.startConversationText}>
+          Start a conversation by contacting a seller from a plant listing
+        </Text>
+      </View>
+    );
+  }
+  
+  const renderConversationItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.conversationItem}
+      onPress={() => onSelectConversation(item)}
+    >
+      <Image 
+        source={{ uri: item.otherUserAvatar || 'https://via.placeholder.com/50' }}
+        style={styles.avatar}
+      />
+      
+      <View style={styles.conversationInfo}>
+        <View style={styles.conversationHeader}>
+          <Text style={styles.userName} numberOfLines={1}>
+            {item.otherUserName || 'User'}
+          </Text>
+          <Text style={styles.timeStamp}>
+            {formatTimestamp(item.lastMessageTimestamp)}
+          </Text>
+        </View>
+        
+        <View style={styles.messagePreviewContainer}>
+          <Text style={styles.messagePreview} numberOfLines={1}>
+            {item.lastMessage}
+          </Text>
+          {item.unreadCount > 0 && (
+            <View style={styles.unreadBadge}>
+              <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+            </View>
+          )}
+        </View>
+        
+        <Text style={styles.plantName} numberOfLines={1}>
+          About: {item.plantName}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  );
+  
+  return (
+    <FlatList
+      data={conversations}
+      renderItem={renderConversationItem}
+      keyExtractor={(item) => item.id}
+      contentContainerStyle={styles.conversationsList}
+      onRefresh={onRefresh}
+      refreshing={isLoading}
+    />
+  );
+};
+
+// Component for the actual chat screen with messages
+const ChatScreen = ({ sellerId, plantId, plantName, conversationId: existingConversationId, onBack }) => {
+  const [messages, setMessages] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState(null);
+  const [newMessage, setNewMessage] = useState('');
+  const [conversationId, setConversationId] = useState(existingConversationId);
+  const [otherUser, setOtherUser] = useState(null);
+  
+  const flatListRef = useRef(null);
+  const navigation = useNavigation();
+  
+  // Load messages when conversation ID changes
+  useEffect(() => {
+    if (conversationId) {
+      loadMessages();
+    }
+  }, [conversationId]);
+  
+  const loadMessages = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const data = await fetchMessages(conversationId);
+      setMessages(data.messages);
+      setOtherUser(data.otherUser);
+      
+      setIsLoading(false);
+    } catch (err) {
+      setError('Failed to load messages. Please try again later.');
+      setIsLoading(false);
+      console.error('Error fetching messages:', err);
+    }
+  };
+  
+  const handleSendMessage = async () => {
+    if (!newMessage.trim()) return;
+    
+    try {
+      setIsSending(true);
+      
+      let messageResponse;
+      if (conversationId) {
+        // Send message in existing conversation
+        messageResponse = await sendMessage(conversationId, newMessage);
+      } else {
+        // Start new conversation
+        const conversationResponse = await startConversation(sellerId, plantId, newMessage);
+        setConversationId(conversationResponse.id);
+        messageResponse = conversationResponse.firstMessage;
+      }
+      
+      // Add the new message to the list
+      setMessages((prevMessages) => [...prevMessages, messageResponse]);
+      
+      // Clear the input
+      setNewMessage('');
+      setIsSending(false);
+      
+      // Scroll to the bottom
+      if (flatListRef.current) {
+        flatListRef.current.scrollToEnd({ animated: true });
+      }
+    } catch (err) {
+      setIsSending(false);
+      console.error('Error sending message:', err);
+      Alert.alert('Error', 'Failed to send message. Please try again.');
+    }
+  };
+  
+  const renderMessageItem = ({ item }) => {
+    const isOwnMessage = item.senderId === 'currentUser'; // Replace with actual user ID comparison
+    
+    return (
+      <View
+        style={[
+          styles.messageContainer,
+          isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer,
+        ]}
+      >
+        {!isOwnMessage && (
+          <Image 
+            source={{ uri: otherUser?.avatar || 'https://via.placeholder.com/40' }}
+            style={styles.messageAvatar}
+          />
+        )}
+        
+        <View
+          style={[
+            styles.messageBubble,
+            isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
+          ]}
+        >
+          <Text style={styles.messageText}>{item.text}</Text>
+          <Text
+            style={[
+              styles.messageTime,
+              isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime,
+            ]}
+          >
+            {formatMessageTime(item.timestamp)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+  
+  return (
+    <KeyboardAvoidingView
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.chatContainer}
+      keyboardVerticalOffset={80}
+    >
+      <View style={styles.chatHeader}>
+        <TouchableOpacity 
+          style={styles.backButton}
+          onPress={onBack || navigation.goBack}
+        >
+          <Ionicons name="arrow-back" size={24} color="#333" />
+        </TouchableOpacity>
+        
+        <View style={styles.chatHeaderInfo}>
+          <Text style={styles.chatHeaderName} numberOfLines={1}>
+            {otherUser?.name || 'Chat'}
+          </Text>
+          <Text style={styles.chatHeaderPlant} numberOfLines={1}>
+            {plantName ? `About: ${plantName}` : ''}
+          </Text>
+        </View>
+      </View>
+      
+      {isLoading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading messages...</Text>
+        </View>
+      ) : error ? (
+        <View style={styles.centerContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          renderItem={renderMessageItem}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.messagesList}
+          onContentSizeChange={() => 
+            flatListRef.current?.scrollToEnd({ animated: true })
+          }
+          ListEmptyComponent={() => (
+            <View style={styles.emptyChatContainer}>
+              {conversationId ? (
+                <>
+                  <MaterialIcons name="forum" size={48} color="#aaa" />
+                  <Text style={styles.emptyChatText}>No messages yet</Text>
+                  <Text style={styles.emptyChatSubtext}>
+                    Send a message to start the conversation
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <MaterialIcons name="forum" size={48} color="#aaa" />
+                  <Text style={styles.emptyChatText}>New Conversation</Text>
+                  <Text style={styles.emptyChatSubtext}>
+                    Send a message about {plantName || 'this plant'}
+                  </Text>
+                </>
+              )}
+            </View>
+          )}
+        />
+      )}
+      
+      <View style={styles.inputContainer}>
+        <TextInput
+          style={styles.input}
+          placeholder="Type a message..."
+          value={newMessage}
+          onChangeText={setNewMessage}
+          multiline
+        />
+        <TouchableOpacity
+          style={[
+            styles.sendButton,
+            (!newMessage.trim() || isSending) && styles.disabledSendButton,
+          ]}
+          onPress={handleSendMessage}
+          disabled={!newMessage.trim() || isSending}
+        >
+          {isSending ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="send" size={20} color="#fff" />
+          )}
+        </TouchableOpacity>
+      </View>
+    </KeyboardAvoidingView>
+  );
+};
+
+// Helper function to format timestamps
+const formatTimestamp = (timestamp) => {
+  if (!timestamp) return '';
+  
+  const date = new Date(timestamp);
+  const now = new Date();
+  
+  // If it's today, just show the time
+  if (date.toDateString() === now.toDateString()) {
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  
+  // If it's this year, show month and day
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  }
+  
+  // Otherwise show the full date
+  return date.toLocaleDateString([], { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric' 
+  });
+};
+
+// Helper function to format message times
+const formatMessageTime = (timestamp) => {
+  if (!timestamp) return '';
+  
+  const date = new Date(timestamp);
+  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  header: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  tabContainer: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  activeTabButton: {
+    borderBottomWidth: 2,
+    borderBottomColor: '#4CAF50',
+  },
+  tabText: {
+    fontSize: 16,
+    color: '#666',
+  },
+  activeTabText: {
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  centerContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#f44336',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    backgroundColor: '#4CAF50',
+    borderRadius: 4,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  noConversationsText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: '#333',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  startConversationText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  conversationsList: {
+    flexGrow: 1,
+  },
+  conversationItem: {
+    flexDirection: 'row',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    marginRight: 12,
+  },
+  conversationInfo: {
+    flex: 1,
+  },
+  conversationHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  userName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    flex: 1,
+  },
+  timeStamp: {
+    fontSize: 12,
+    color: '#999',
+  },
+  messagePreviewContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  messagePreview: {
+    fontSize: 14,
+    color: '#666',
+    flex: 1,
+  },
+  unreadBadge: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  unreadCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  plantName: {
+    fontSize: 12,
+    color: '#4CAF50',
+  },
+  chatContainer: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  backButton: {
+    padding: 4,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  chatHeaderName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  chatHeaderPlant: {
+    fontSize: 12,
+    color: '#4CAF50',
+  },
+  messagesList: {
+    flexGrow: 1,
+    padding: 16,
+  },
+  messageContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    maxWidth: '80%',
+  },
+  ownMessageContainer: {
+    alignSelf: 'flex-end',
+  },
+  otherMessageContainer: {
+    alignSelf: 'flex-start',
+  },
+  messageAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+    alignSelf: 'flex-end',
+  },
+  messageBubble: {
+    padding: 12,
+    borderRadius: 16,
+    maxWidth: '100%',
+  },
+  ownMessageBubble: {
+    backgroundColor: '#4CAF50',
+    borderBottomRightRadius: 4,
+  },
+  otherMessageBubble: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+  },
+  messageText: {
+    fontSize: 16,
+    color: '#333',
+  },
+  ownMessageText: {
+    color: '#fff',
+  },
+  messageTime: {
+    fontSize: 10,
+    marginTop: 4,
+    alignSelf: 'flex-end',
+  },
+  ownMessageTime: {
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
+  otherMessageTime: {
+    color: '#999',
+  },
+  emptyChatContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    height: 300,
+  },
+  emptyChatText: {
+    marginTop: 10,
+    fontSize: 18,
+    color: '#333',
+    textAlign: 'center',
+    fontWeight: '600',
+  },
+  emptyChatSubtext: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    paddingHorizontal: 32,
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    padding: 8,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#eee',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    maxHeight: 100,
+  },
+  sendButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 20,
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 8,
+  },
+  disabledSendButton: {
+    backgroundColor: '#ccc',
+  },
+});
+
+export default MessagesScreen;

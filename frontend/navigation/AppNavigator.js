@@ -37,13 +37,13 @@ export default function AppNavigator() {
         <Stack.Screen name="SignupReminders" component={SignupReminders} />
         <Stack.Screen name="SignInGoogleScreen" component={SignInGoogleScreen} />
         <Stack.Screen name="SignIn" component={SignInGoogleScreen} />
-        
+
         {/* Home and Other Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
-        
+
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen name="MainTabs" component={MainTabs} />
-        
+
         {/* Other screens */}
         <Stack.Screen name="Camera" component={CameraScreen} />
         <Stack.Screen name="AddPlant" component={AddPlantScreen} />

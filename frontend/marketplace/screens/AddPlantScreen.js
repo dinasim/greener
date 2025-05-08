@@ -1,132 +1,199 @@
 import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  TextInput, 
-  TouchableOpacity, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  TextInput,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
   Image,
+  Alert,
+  ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
-  KeyboardAvoidingView
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
-// Import our placeholder map component
-import MapView, { Marker } from '../components/maps';
+// Mock placeholder for actual API service
+const createPlant = async (plantData) => {
+  // In a real app, this would be an Azure Function call
+  return new Promise((resolve) => {
+    // Simulate API delay
+    setTimeout(() => {
+      resolve({ success: true, plantId: 'new-plant-' + Date.now() });
+    }, 1000);
+  });
+};
 
-const AddPlantScreen = ({ navigation }) => {
-  // Form state
-  const [title, setTitle] = useState('');
-  const [price, setPrice] = useState('');
-  const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('Houseplant');
-  const [condition, setCondition] = useState('Healthy');
+const AddPlantScreen = () => {
+  const navigation = useNavigation();
+  const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState([]);
-  const [location, setLocation] = useState({
-    latitude: 32.0853,
-    longitude: 34.8461,
+  const [formData, setFormData] = useState({
+    name: '',
+    price: '',
+    category: 'Indoor Plants',
+    description: '',
+    careInstructions: '',
+    location: '',
   });
 
   // Categories for plants
   const categories = [
-    'Houseplant', 
-    'Succulent', 
-    'Cactus', 
-    'Flowering', 
-    'Tropical', 
-    'Herb', 
-    'Tree/Shrub', 
-    'Other'
+    'Indoor Plants',
+    'Outdoor Plants',
+    'Succulents',
+    'Cacti',
+    'Flowering Plants',
+    'Herbs',
+    'Vegetable Plants',
   ];
 
-  // Conditions for plants
-  const conditions = [
-    'Healthy', 
-    'Needs Care', 
-    'Young/Seedling', 
-    'Mature', 
-    'Flowering'
-  ];
-
-  // Handle image picking
-  const pickImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
+  const handleChange = (key, value) => {
+    setFormData({
+      ...formData,
+      [key]: value,
     });
+  };
 
-    if (!result.canceled && result.assets && result.assets.length > 0) {
-      // Add the new image to the images array
-      setImages([...images, result.assets[0].uri]);
+  const pickImage = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'We need permission to access your photos');
+        return;
+      }
+      
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 1,
+      });
+      
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        setImages([...images, result.assets[0].uri]);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
     }
   };
 
-  // Handle form submission
-  const handleSubmit = () => {
-    // Validate form
-    if (!title || !price || !description || images.length === 0) {
-      alert('Please fill out all fields and add at least one image');
-      return;
+  const removeImage = (index) => {
+    const newImages = [...images];
+    newImages.splice(index, 1);
+    setImages(newImages);
+  };
+
+  const validateForm = () => {
+    if (!formData.name.trim()) {
+      Alert.alert('Error', 'Please enter a plant name');
+      return false;
     }
-
-    // Create plant object
-    const plantData = {
-      title,
-      price: parseFloat(price),
-      description,
-      category,
-      condition,
-      images,
-      location,
-      createdAt: new Date().toISOString(),
-      seller: {
-        id: 'user123', // This would come from authentication
-        name: 'Current User', // This would come from authentication
-      },
-    };
-
-    console.log('Submitting plant:', plantData);
     
-    // Here you would normally submit the data to your backend
-    // For now, let's just navigate back to the marketplace
-    navigation.navigate('Marketplace');
+    if (!formData.price || isNaN(parseFloat(formData.price))) {
+      Alert.alert('Error', 'Please enter a valid price');
+      return false;
+    }
+    
+    if (!formData.description.trim()) {
+      Alert.alert('Error', 'Please enter a description');
+      return false;
+    }
+    
+    if (!formData.location.trim()) {
+      Alert.alert('Error', 'Please enter a location');
+      return false;
+    }
+    
+    if (images.length === 0) {
+      Alert.alert('Error', 'Please add at least one image');
+      return false;
+    }
+    
+    return true;
   };
 
-  // Handle location selection on map
-  const handleMapPress = (event) => {
-    setLocation(event.nativeEvent.coordinate);
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
+    
+    setIsLoading(true);
+    
+    try {
+      // Prepare data for upload
+      const plantData = {
+        ...formData,
+        price: parseFloat(formData.price),
+        images: images,
+        createdAt: new Date().toISOString(),
+      };
+      
+      // Call Azure Function to create plant
+      const result = await createPlant(plantData);
+      
+      if (result.success) {
+        Alert.alert(
+          'Success',
+          'Your plant has been listed!',
+          [
+            {
+              text: 'View Listing',
+              onPress: () => navigation.navigate('PlantDetail', { plantId: result.plantId }),
+            },
+            {
+              text: 'Go to Marketplace',
+              onPress: () => navigation.navigate('Marketplace'),
+            },
+          ]
+        );
+      } else {
+        throw new Error('Failed to create listing');
+      }
+    } catch (error) {
+      console.error('Error creating plant:', error);
+      Alert.alert('Error', 'Failed to create listing. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
     >
-      <ScrollView style={styles.container}>
+      <ScrollView>
         <Text style={styles.title}>Add a New Plant</Text>
         
         {/* Plant Images */}
-        <View style={styles.imageSection}>
+        <View style={styles.section}>
           <Text style={styles.sectionTitle}>Plant Images</Text>
-          <ScrollView horizontal={true} style={styles.imageScroller}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.imageScroller}
+          >
             {images.map((uri, index) => (
               <View key={index} style={styles.imageContainer}>
                 <Image source={{ uri }} style={styles.plantImage} />
                 <TouchableOpacity 
                   style={styles.removeImageButton}
-                  onPress={() => setImages(images.filter((_, i) => i !== index))}
+                  onPress={() => removeImage(index)}
                 >
                   <MaterialIcons name="close" size={20} color="white" />
                 </TouchableOpacity>
               </View>
             ))}
             
-            <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-              <MaterialIcons name="add-a-photo" size={30} color="#228B22" />
+            <TouchableOpacity 
+              style={styles.addImageButton} 
+              onPress={pickImage}
+            >
+              <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
               <Text style={styles.addImageText}>Add Photo</Text>
             </TouchableOpacity>
           </ScrollView>
@@ -136,69 +203,57 @@ const AddPlantScreen = ({ navigation }) => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Basic Information</Text>
           
-          <Text style={styles.label}>Title</Text>
+          <Text style={styles.label}>Plant Name</Text>
           <TextInput
             style={styles.input}
-            value={title}
-            onChangeText={setTitle}
+            value={formData.name}
+            onChangeText={(text) => handleChange('name', text)}
             placeholder="What kind of plant is it?"
-            maxLength={50}
           />
           
           <Text style={styles.label}>Price</Text>
           <TextInput
             style={styles.input}
-            value={price}
-            onChangeText={setPrice}
+            value={formData.price}
+            onChangeText={(text) => handleChange('price', text)}
             placeholder="How much are you selling it for?"
             keyboardType="numeric"
           />
           
           <Text style={styles.label}>Category</Text>
-          <View style={styles.optionsContainer}>
-            {categories.map((cat) => (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            style={styles.categoryScroller}
+          >
+            {categories.map((category) => (
               <TouchableOpacity 
-                key={cat}
+                key={category}
                 style={[
-                  styles.optionButton,
-                  category === cat && styles.selectedOption
+                  styles.categoryButton,
+                  formData.category === category && styles.selectedCategoryButton
                 ]}
-                onPress={() => setCategory(cat)}
+                onPress={() => handleChange('category', category)}
               >
                 <Text 
                   style={[
-                    styles.optionText,
-                    category === cat && styles.selectedOptionText
+                    styles.categoryText,
+                    formData.category === category && styles.selectedCategoryText
                   ]}
                 >
-                  {cat}
+                  {category}
                 </Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
           
-          <Text style={styles.label}>Condition</Text>
-          <View style={styles.optionsContainer}>
-            {conditions.map((cond) => (
-              <TouchableOpacity 
-                key={cond}
-                style={[
-                  styles.optionButton,
-                  condition === cond && styles.selectedOption
-                ]}
-                onPress={() => setCondition(cond)}
-              >
-                <Text 
-                  style={[
-                    styles.optionText,
-                    condition === cond && styles.selectedOptionText
-                  ]}
-                >
-                  {cond}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          <Text style={styles.label}>Location</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.location}
+            onChangeText={(text) => handleChange('location', text)}
+            placeholder="Where can buyers pick up the plant?"
+          />
         </View>
         
         {/* Description */}
@@ -206,44 +261,42 @@ const AddPlantScreen = ({ navigation }) => {
           <Text style={styles.sectionTitle}>Description</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Describe your plant (size, age, care instructions, etc.)"
+            value={formData.description}
+            onChangeText={(text) => handleChange('description', text)}
+            placeholder="Describe your plant (size, age, condition, etc.)"
             multiline
             numberOfLines={4}
-            textAlignVertical="top"
           />
         </View>
         
-        {/* Location */}
+        {/* Care Instructions */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Pickup Location</Text>
-          <Text style={styles.mapInstructions}>Tap on the map to set your location</Text>
-          
-          {/* This is our placeholder map component */}
-          <View style={styles.mapContainer}>
-            <MapView
-              style={styles.map}
-              initialRegion={{
-                latitude: location.latitude,
-                longitude: location.longitude,
-                latitudeDelta: 0.01,
-                longitudeDelta: 0.01,
-              }}
-              onPress={handleMapPress}
-            >
-              <Marker coordinate={location} />
-            </MapView>
-          </View>
+          <Text style={styles.sectionTitle}>Care Instructions</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={formData.careInstructions}
+            onChangeText={(text) => handleChange('careInstructions', text)}
+            placeholder="Share how to care for this plant (optional)"
+            multiline
+            numberOfLines={4}
+          />
         </View>
         
         {/* Submit Button */}
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitButtonText}>List Plant for Sale</Text>
+        <TouchableOpacity 
+          style={[
+            styles.submitButton,
+            isLoading && styles.disabledButton
+          ]} 
+          onPress={handleSubmit}
+          disabled={isLoading}
+        >
+          {isLoading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.submitText}>List Plant for Sale</Text>
+          )}
         </TouchableOpacity>
-        
-        {/* Spacing at the bottom */}
-        <View style={{ height: 40 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -252,14 +305,14 @@ const AddPlantScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#fff',
+    padding: 16,
   },
   title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#228B22',
-    marginBottom: 16,
+    marginBottom: 20,
+    color: '#2E7D32',
   },
   section: {
     marginBottom: 24,
@@ -270,15 +323,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
-  imageSection: {
-    marginBottom: 24,
-  },
   imageScroller: {
     flexDirection: 'row',
+    marginBottom: 10,
   },
   imageContainer: {
     position: 'relative',
-    marginRight: 12,
+    marginRight: 10,
   },
   plantImage: {
     width: 100,
@@ -309,75 +360,60 @@ const styles = StyleSheet.create({
   },
   addImageText: {
     marginTop: 4,
-    color: '#228B22',
+    color: '#4CAF50',
   },
   label: {
     fontSize: 16,
     marginBottom: 8,
-    color: '#444',
+    color: '#555',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
     marginBottom: 16,
-    backgroundColor: '#f9f9f9',
+    fontSize: 16,
   },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
   },
-  optionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  categoryScroller: {
     marginBottom: 16,
   },
-  optionButton: {
+  categoryButton: {
     paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingHorizontal: 16,
     borderRadius: 20,
+    backgroundColor: '#f0f0f0',
+    marginRight: 8,
     borderWidth: 1,
     borderColor: '#ddd',
-    marginRight: 8,
-    marginBottom: 8,
-    backgroundColor: '#f9f9f9',
   },
-  selectedOption: {
-    backgroundColor: '#228B22',
-    borderColor: '#228B22',
+  selectedCategoryButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
   },
-  optionText: {
-    color: '#444',
+  categoryText: {
+    color: '#333',
   },
-  selectedOptionText: {
-    color: 'white',
-  },
-  mapContainer: {
-    height: 200,
-    borderRadius: 8,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  map: {
-    flex: 1,
-  },
-  mapInstructions: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-    fontStyle: 'italic',
+  selectedCategoryText: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
   submitButton: {
-    backgroundColor: '#228B22',
+    backgroundColor: '#4CAF50',
     borderRadius: 8,
-    paddingVertical: 16,
+    padding: 16,
     alignItems: 'center',
-    marginTop: 16,
+    marginBottom: 30,
   },
-  submitButtonText: {
-    color: 'white',
+  disabledButton: {
+    backgroundColor: '#A5D6A7',
+  },
+  submitText: {
+    color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },

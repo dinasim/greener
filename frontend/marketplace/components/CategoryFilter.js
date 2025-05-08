@@ -1,97 +1,104 @@
 import React from 'react';
-import { ScrollView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const CategoryFilter = ({ categories, selectedCategory, onSelect }) => {
-  // Helper function to get icon name based on category
-  const getCategoryIcon = (category) => {
-    switch (category.toLowerCase()) {
-      case 'indoor plants':
-        return 'home';
-      case 'outdoor plants':
-        return 'nature';
-      case 'succulents':
-        return 'spa';
-      case 'cacti':
-        return 'filter-vintage';
-      case 'flowering plants':
-        return 'local-florist';
-      case 'air plants':
-        return 'air';
-      case 'herbs':
-        return 'eco';
-      case 'vegetable plants':
-        return 'grass';
-      case 'all':
-      default:
-        return 'apps';
-    }
-  };
-
+/**
+ * Plant categories filter component
+ * @param {Object} props - Component props
+ * @param {Array} props.categories - Array of category objects
+ * @param {string} props.selectedCategory - Currently selected category
+ * @param {Function} props.onSelect - Handler function when category is selected
+ */
+const CategoryFilter = ({
+  categories = defaultCategories,
+  selectedCategory = 'All',
+  onSelect
+}) => {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    >
-      {categories.map((category) => (
-        <TouchableOpacity
-          key={category}
-          style={[
-            styles.categoryButton,
-            selectedCategory === category && styles.selectedCategoryButton,
-          ]}
-          onPress={() => onSelect(category)}
-        >
-          <MaterialIcons
-            name={getCategoryIcon(category)}
-            size={20}
-            color={selectedCategory === category ? '#fff' : '#4CAF50'}
-            style={styles.icon}
-          />
-          <Text
+    <View style={styles.container}>
+      <Text style={styles.heading}>Categories</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {categories.map((category) => (
+          <TouchableOpacity
+            key={category.id}
             style={[
-              styles.categoryText,
-              selectedCategory === category && styles.selectedCategoryText,
+              styles.categoryButton,
+              selectedCategory === category.id && styles.selectedButton
             ]}
+            onPress={() => onSelect(category.id)}
+            activeOpacity={0.7}
           >
-            {category}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
+            <MaterialCommunityIcons
+              name={category.icon}
+              size={20}
+              color={selectedCategory === category.id ? '#fff' : '#4CAF50'}
+            />
+            <Text
+              style={[
+                styles.categoryText,
+                selectedCategory === category.id && styles.selectedText
+              ]}
+            >
+              {category.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+    </View>
   );
 };
 
+// Default categories with icons
+const defaultCategories = [
+  { id: 'All', label: 'All Plants', icon: 'flower-outline' },
+  { id: 'indoor', label: 'Indoor', icon: 'home' },
+  { id: 'outdoor', label: 'Outdoor', icon: 'tree' },
+  { id: 'succulent', label: 'Succulents', icon: 'cactus' },
+  { id: 'herb', label: 'Herbs', icon: 'leaf' },
+  { id: 'tropical', label: 'Tropical', icon: 'palm-tree' },
+  { id: 'flowering', label: 'Flowering', icon: 'flower' },
+];
+
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+  },
+  heading: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginLeft: 16,
+    marginBottom: 12,
+    color: '#333',
+  },
+  scrollContent: {
+    paddingHorizontal: 12,
   },
   categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f2f2f2',
-    borderRadius: 20,
-    paddingVertical: 8,
+    backgroundColor: '#f0f9f0',
     paddingHorizontal: 16,
-    marginHorizontal: 6,
+    paddingVertical: 10,
+    borderRadius: 20,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
-  selectedCategoryButton: {
+  selectedButton: {
     backgroundColor: '#4CAF50',
     borderColor: '#4CAF50',
   },
-  icon: {
-    marginRight: 6,
-  },
   categoryText: {
-    fontSize: 14,
-    color: '#333',
+    marginLeft: 8,
     fontWeight: '500',
+    color: '#4CAF50',
   },
-  selectedCategoryText: {
+  selectedText: {
     color: '#fff',
   },
 });

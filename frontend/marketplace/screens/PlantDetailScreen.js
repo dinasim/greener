@@ -9,46 +9,52 @@ import {
   ActivityIndicator,
   Alert,
   Dimensions,
-  Linking,
   Share,
+  Platform,
+  SafeAreaView,
 } from 'react-native';
-import { MaterialIcons, FontAwesome, Ionicons, Feather } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome, Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import MapView, { Marker } from '../components/maps';
 
-// API Services
-import { fetchPlantById } from '../services/marketplaceApi';
+// Import services
+import { getSpecific, wishProduct } from '../services/productData';
 
 const { width } = Dimensions.get('window');
 
+/**
+ * PlantDetailScreen - Displays detailed information about a plant listing
+ * Includes images, price, description, seller info, and action buttons
+ */
 const PlantDetailScreen = () => {
   const route = useRoute();
   const navigation = useNavigation();
   const { plantId } = route.params;
-  
+
+  // State
   const [plant, setPlant] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
 
+  // Load plant details when component mounts
   useEffect(() => {
     loadPlantDetail();
   }, [plantId]);
 
+  // Function to load plant details
   const loadPlantDetail = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Call Azure Function to get plant details
-      const data = await fetchPlantById(plantId);
+      const data = await getSpecific(plantId);
+
+      if (!data) {
+        throw new Error('Plant not found');
+      }
+
       setPlant(data);
-      
-      // Check if this plant is in favorites
-      // This would typically come from your user preferences in Azure
-      setIsFavorite(false);
-      
+      setIsFavorite(data.isWished || false);
       setIsLoading(false);
     } catch (err) {
       setError('Failed to load plant details. Please try again later.');
@@ -57,51 +63,60 @@ const PlantDetailScreen = () => {
     }
   };
 
+  // Toggle favorite/wishlist status
   const toggleFavorite = async () => {
     try {
-      // Toggle favorite state optimistically for better UX
+      // Update UI immediately for better user experience
       setIsFavorite(!isFavorite);
       
-      // Call Azure Function to toggle favorite status
-      // Example: await toggleFavoritePlant(plantId);
+      // Call API to update wishlist status
+      await wishProduct(plantId);
     } catch (err) {
-      // Revert if API call fails
-      setIsFavorite(!isFavorite);
+      // Revert UI state if API call fails
+      setIsFavorite(isFavorite);
       Alert.alert('Error', 'Failed to update favorites. Please try again.');
       console.error('Error toggling favorite:', err);
     }
   };
 
+  // Navigate to contact seller screen
   const handleContactSeller = () => {
-    // Navigate to chat with seller
     navigation.navigate('Messages', { 
-      sellerId: plant.sellerId,
-      plantId: plant.id,
-      plantName: plant.name
+      sellerId: plant.sellerId, 
+      plantId: plant._id,
+      plantName: plant.title || plant.name
     });
   };
 
+  // Share plant listing
   const handleShareListing = async () => {
     try {
       await Share.share({
-        message: `Check out this ${plant.name} on Greener: ${plant.price}`,
-        url: `https://greenerapp.com/plants/${plant.id}`, // You would need to implement deep linking
+        message: `Check out this ${plant.title || plant.name} on Greener: $${plant.price}`,
+        url: Platform.OS === 'ios' ? `greenerapp://plants/${plantId}` : undefined,
       });
     } catch (error) {
       Alert.alert('Error', 'Could not share this listing');
     }
   };
 
-  const handleViewLocation = () => {
-    // Open in maps app if coordinates available
-    if (plant.coordinates) {
-      const url = `https://www.google.com/maps/search/?api=1&query=${plant.coordinates.latitude},${plant.coordinates.longitude}`;
-      Linking.openURL(url);
-    } else {
-      Alert.alert('Location', `This plant is available for pickup in ${plant.location}`);
+  // Format date for display
+  const formatDate = (dateString) => {
+    if (!dateString) return 'Recently listed';
+    
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString(undefined, { 
+        year: 'numeric', 
+        month: 'long', 
+        day: 'numeric' 
+      });
+    } catch (e) {
+      return 'Recently listed';
     }
   };
 
+  // Loading state
   if (isLoading) {
     return (
       <View style={styles.centerContainer}>
@@ -111,591 +126,462 @@ const PlantDetailScreen = () => {
     );
   }
 
+  // Error state
   if (error || !plant) {
     return (
       <View style={styles.centerContainer}>
         <MaterialIcons name="error-outline" size={48} color="#f44336" />
         <Text style={styles.errorText}>{error || 'Plant not found'}</Text>
+        <TouchableOpacity style={styles.retryButton} onPress={loadPlantDetail}>
+          <Text style={styles.retryText}>Retry</Text>
+        </TouchableOpacity>
       </View>
     );
   }
 
-  // For demonstration - in a real app, the plant would have multiple images
-  const images = plant.images && plant.images.length > 0 ? plant.images : [plant.imageUrl || 'https://via.placeholder.com/400'];
+  // Prepare images array (handle different data formats)
+  const images = plant.images && plant.images.length > 0 
+    ? plant.images 
+    : [plant.image || plant.imageUrl || 'https://via.placeholder.com/400?text=Plant'];
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Plant Images */}
-      <View style={styles.imageContainer}>
-        <ScrollView
-          horizontal
-          pagingEnabled
-          showsHorizontalScrollIndicator={false}
-          onMomentumScrollEnd={(event) => {
-            const slideIndex = Math.floor(
-              event.nativeEvent.contentOffset.x / width
-            );
-            setActiveImageIndex(slideIndex);
-          }}
-        >
-          {images.map((image, index) => (
-            <Image
-              key={index}
-              source={{ uri: image }}
-              style={styles.image}
-              resizeMode="cover"
-            />
-          ))}
-        </ScrollView>
-        
-        {/* Image pagination dots */}
-        {images.length > 1 && (
-          <View style={styles.pagination}>
-            {images.map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.paginationDot,
-                  activeImageIndex === index && styles.paginationDotActive,
-                ]}
+    <SafeAreaView style={styles.container}>
+      <ScrollView>
+        {/* Plant Image Gallery */}
+        <View style={styles.imageContainer}>
+          <ScrollView
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={(event) => {
+              const slideIndex = Math.floor(event.nativeEvent.contentOffset.x / width);
+              setActiveImageIndex(slideIndex);
+            }}
+          >
+            {images.map((image, index) => (
+              <Image 
+                key={index} 
+                source={{ uri: image }} 
+                style={styles.image} 
+                resizeMode="cover" 
               />
             ))}
-          </View>
-        )}
-        
-        <TouchableOpacity 
-          style={styles.favoriteButton}
-          onPress={toggleFavorite}
-        >
-          <MaterialIcons 
-            name={isFavorite ? "favorite" : "favorite-border"} 
-            size={28} 
-            color={isFavorite ? "#f44336" : "#fff"} 
-          />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#fff" />
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.shareButton}
-          onPress={handleShareListing}
-        >
-          <Feather name="share" size={24} color="#fff" />
-        </TouchableOpacity>
-      </View>
+          </ScrollView>
 
-      {/* Plant Info */}
-      <View style={styles.infoContainer}>
-        <Text style={styles.name}>{plant.name}</Text>
-        <Text style={styles.category}>{plant.category}</Text>
-        <Text style={styles.price}>${plant.price.toFixed(2)}</Text>
-        
-        {/* Status and Date */}
-        <View style={styles.statusContainer}>
-          <View style={styles.statusPill}>
-            <Text style={styles.statusText}>Available</Text>
-          </View>
-          <Text style={styles.listedDate}>
-            Listed {plant.listedDate ? new Date(plant.listedDate).toLocaleDateString() : 'recently'}
-          </Text>
-        </View>
-
-        {/* Location */}
-        <View style={styles.locationContainer}>
-          <View style={styles.locationHeader}>
-            <MaterialIcons name="location-on" size={20} color="#4CAF50" />
-            <Text style={styles.locationTitle}>Location</Text>
-          </View>
-          <Text style={styles.locationText}>{plant.location || 'Local pickup'}</Text>
-          
-          {plant.coordinates && (
-            <TouchableOpacity onPress={handleViewLocation}>
-              <View style={styles.mapPreview}>
-                <MapView
-                  style={styles.map}
-                  initialRegion={{
-                    latitude: plant.coordinates.latitude,
-                    longitude: plant.coordinates.longitude,
-                    latitudeDelta: 0.01,
-                    longitudeDelta: 0.01,
-                  }}
-                  scrollEnabled={false}
-                  zoomEnabled={false}
-                  rotateEnabled={false}
-                >
-                  <Marker
-                    coordinate={{
-                      latitude: plant.coordinates.latitude,
-                      longitude: plant.coordinates.longitude,
-                    }}
-                    pinColor="#4CAF50"
-                  />
-                </MapView>
-                <View style={styles.mapOverlay}>
-                  <Text style={styles.viewOnMapText}>Tap to view on map</Text>
-                </View>
-              </View>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Description */}
-        <Text style={styles.sectionTitle}>Description</Text>
-        <Text style={styles.description}>{plant.description}</Text>
-
-        {/* Care Information */}
-        <Text style={styles.sectionTitle}>Care Information</Text>
-        <View style={styles.careInfoContainer}>
-          <View style={styles.careItem}>
-            <FontAwesome name="tint" size={24} color="#4CAF50" />
-            <Text style={styles.careLabel}>Water</Text>
-            <Text style={styles.careValue}>{plant.careInfo?.water || 'Moderate'}</Text>
-          </View>
-          <View style={styles.careItem}>
-            <Ionicons name="sunny" size={24} color="#4CAF50" />
-            <Text style={styles.careLabel}>Light</Text>
-            <Text style={styles.careValue}>{plant.careInfo?.light || 'Bright indirect'}</Text>
-          </View>
-          <View style={styles.careItem}>
-            <MaterialIcons name="thermostat" size={24} color="#4CAF50" />
-            <Text style={styles.careLabel}>Temperature</Text>
-            <Text style={styles.careValue}>{plant.careInfo?.temperature || '65-80°F'}</Text>
-          </View>
-        </View>
-
-        {/* Seller Information */}
-        <Text style={styles.sectionTitle}>About the Seller</Text>
-        <TouchableOpacity 
-          style={styles.sellerContainer}
-          onPress={() => navigation.navigate('SellerProfile', { sellerId: plant.sellerId })}
-        >
-          <Image 
-            source={{ uri: plant.sellerAvatar || 'https://via.placeholder.com/50' }} 
-            style={styles.sellerAvatar} 
-          />
-          <View style={styles.sellerInfo}>
-            <Text style={styles.sellerName}>{plant.sellerName || 'Plant Enthusiast'}</Text>
-            <View style={styles.sellerRatingContainer}>
-              <MaterialIcons name="star" size={16} color="#FFC107" />
-              <Text style={styles.sellerRating}>
-                {plant.sellerRating || '4.8'} ({plant.sellerReviews || '24'} reviews)
-              </Text>
-            </View>
-            <Text style={styles.sellerMember}>
-              Member since {plant.sellerJoinDate ? new Date(plant.sellerJoinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'short' }) : 'January 2023'}
-            </Text>
-          </View>
-          <MaterialIcons name="chevron-right" size={24} color="#999" />
-        </TouchableOpacity>
-
-        {/* Seller's other listings preview */}
-        {plant.sellerOtherListings && plant.sellerOtherListings.length > 0 && (
-          <View style={styles.otherListingsContainer}>
-            <Text style={styles.otherListingsTitle}>More from this seller</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.otherListingsScroll}
-            >
-              {plant.sellerOtherListings.map((listing) => (
-                <TouchableOpacity 
-                  key={listing.id}
-                  style={styles.otherListingItem}
-                  onPress={() => navigation.replace('PlantDetail', { plantId: listing.id })}
-                >
-                  <Image
-                    source={{ uri: listing.imageUrl }}
-                    style={styles.otherListingImage}
-                    resizeMode="cover"
-                  />
-                  <Text style={styles.otherListingName} numberOfLines={1}>{listing.name}</Text>
-                  <Text style={styles.otherListingPrice}>${listing.price}</Text>
-                </TouchableOpacity>
+          {/* Image Pagination Dots */}
+          {images.length > 1 && (
+            <View style={styles.pagination}>
+              {images.map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.paginationDot, 
+                    activeImageIndex === index && styles.paginationDotActive
+                  ]}
+                />
               ))}
-              <TouchableOpacity
-                style={styles.seeAllButton}
-                onPress={() => navigation.navigate('SellerProfile', { sellerId: plant.sellerId })}
-              >
-                <Text style={styles.seeAllText}>See All</Text>
-                <MaterialIcons name="arrow-forward" size={16} color="#4CAF50" />
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-        )}
+            </View>
+          )}
 
-        {/* Action Buttons */}
-        <View style={styles.actionsContainer}>
-          <TouchableOpacity 
-            style={styles.favoriteActionButton}
-            onPress={toggleFavorite}
-          >
+          {/* Favorite Button */}
+          <TouchableOpacity style={styles.favoriteButton} onPress={toggleFavorite}>
             <MaterialIcons 
               name={isFavorite ? "favorite" : "favorite-border"} 
-              size={24} 
-              color={isFavorite ? "#f44336" : "#4CAF50"} 
+              size={28} 
+              color={isFavorite ? "#f44336" : "#fff"} 
             />
-            <Text style={styles.actionButtonText}>
-              {isFavorite ? 'Saved' : 'Save'}
-            </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={styles.contactButton}
-            onPress={handleContactSeller}
-          >
-            <MaterialIcons name="chat" size={24} color="#fff" />
-            <Text style={styles.contactButtonText}>Message Seller</Text>
+
+          {/* Back Button */}
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {/* Share Button */}
+          <TouchableOpacity style={styles.shareButton} onPress={handleShareListing}>
+            <MaterialIcons name="share" size={24} color="#fff" />
           </TouchableOpacity>
         </View>
 
-        {/* Safety tips */}
-        <View style={styles.safetyContainer}>
-          <MaterialIcons name="shield" size={20} color="#4CAF50" />
-          <Text style={styles.safetyText}>
-            <Text style={styles.safetyBold}>Safety Tips: </Text>
-            Meet in a public place and inspect the plant before purchasing
-          </Text>
+        {/* Plant Details */}
+        <View style={styles.infoContainer}>
+          {/* Plant Name & Price */}
+          <Text style={styles.name}>{plant.title || plant.name}</Text>
+          <Text style={styles.category}>{plant.category}</Text>
+          <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
+
+          {/* Status & Date */}
+          <View style={styles.statusContainer}>
+            <View style={styles.statusPill}>
+              <Text style={styles.statusText}>Available</Text>
+            </View>
+            <Text style={styles.listedDate}>
+              Listed {formatDate(plant.addedAt || plant.listedDate)}
+            </Text>
+          </View>
+
+          {/* Location */}
+          <View style={styles.locationContainer}>
+            <View style={styles.locationHeader}>
+              <MaterialIcons name="location-on" size={20} color="#4CAF50" />
+              <Text style={styles.locationTitle}>Location</Text>
+            </View>
+            <Text style={styles.locationText}>{plant.city || plant.location || 'Local pickup'}</Text>
+          </View>
+
+          {/* Description */}
+          <Text style={styles.sectionTitle}>Description</Text>
+          <Text style={styles.description}>{plant.description}</Text>
+
+          {/* Care Information (if available) */}
+          {plant.careInfo && (
+            <>
+              <Text style={styles.sectionTitle}>Care Information</Text>
+              <View style={styles.careInfoContainer}>
+                <View style={styles.careItem}>
+                  <FontAwesome name="tint" size={24} color="#4CAF50" />
+                  <Text style={styles.careLabel}>Water</Text>
+                  <Text style={styles.careValue}>{plant.careInfo?.water || 'Moderate'}</Text>
+                </View>
+                <View style={styles.careItem}>
+                  <Ionicons name="sunny" size={24} color="#4CAF50" />
+                  <Text style={styles.careLabel}>Light</Text>
+                  <Text style={styles.careValue}>{plant.careInfo?.light || 'Bright indirect'}</Text>
+                </View>
+                <View style={styles.careItem}>
+                  <MaterialIcons name="thermostat" size={24} color="#4CAF50" />
+                  <Text style={styles.careLabel}>Temperature</Text>
+                  <Text style={styles.careValue}>{plant.careInfo?.temperature || '65-80°F'}</Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* Seller Information */}
+          <Text style={styles.sectionTitle}>About the Seller</Text>
+          <TouchableOpacity 
+            style={styles.sellerContainer} 
+            onPress={() => navigation.navigate('SellerProfile', { sellerId: plant.sellerId })}
+          >
+            <Image 
+              source={{ uri: plant.avatar || 'https://via.placeholder.com/50?text=Seller' }} 
+              style={styles.sellerAvatar} 
+            />
+            <View style={styles.sellerInfo}>
+              <Text style={styles.sellerName}>{plant.name || 'Plant Enthusiast'}</Text>
+              {plant.rating && (
+                <View style={styles.sellerRatingContainer}>
+                  <MaterialIcons name="star" size={16} color="#FFC107" />
+                  <Text style={styles.sellerRating}>
+                    {plant.rating} ({plant.totalSells || 0} plants)
+                  </Text>
+                </View>
+              )}
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#999" />
+          </TouchableOpacity>
+
+          {/* Action Buttons */}
+          <View style={styles.actionsContainer}>
+            <TouchableOpacity 
+              style={styles.favoriteActionButton} 
+              onPress={toggleFavorite}
+            >
+              <MaterialIcons 
+                name={isFavorite ? "favorite" : "favorite-border"} 
+                size={24} 
+                color={isFavorite ? "#f44336" : "#4CAF50"} 
+              />
+              <Text style={styles.actionButtonText}>{isFavorite ? 'Saved' : 'Save'}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.contactButton} 
+              onPress={handleContactSeller}
+            >
+              <MaterialIcons name="chat" size={24} color="#fff" />
+              <Text style={styles.contactButtonText}>Message Seller</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Safety Tips */}
+          <View style={styles.safetyContainer}>
+            <MaterialIcons name="shield" size={20} color="#4CAF50" />
+            <Text style={styles.safetyText}>
+              <Text style={styles.safetyBold}>Safety Tips: </Text>
+              Meet in a public place and inspect the plant before purchasing
+            </Text>
+          </View>
         </View>
-      </View>
-    </ScrollView>
+      </ScrollView>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
+  container: { 
+    flex: 1, 
+    backgroundColor: '#fff' 
   },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  centerContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
     alignItems: 'center',
     padding: 20,
   },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: '#666',
+  loadingText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: '#4CAF50' 
   },
-  errorText: {
-    marginTop: 10,
-    fontSize: 16,
+  errorText: { 
+    marginTop: 10, 
+    fontSize: 16, 
     color: '#f44336',
     textAlign: 'center',
+    marginBottom: 10,
   },
-  imageContainer: {
+  retryButton: { 
+    marginTop: 10, 
+    padding: 10, 
+    backgroundColor: '#4CAF50', 
+    borderRadius: 5 
+  },
+  retryText: { 
+    color: '#fff',
+    fontWeight: '600',
+  },
+  imageContainer: { 
     position: 'relative',
-    width: '100%',
-    height: 300,
+    height: 250,
   },
-  image: {
-    width: width,
-    height: 300,
+  image: { 
+    width, 
+    height: 250,
+    backgroundColor: '#f0f0f0',
   },
-  pagination: {
-    position: 'absolute',
-    bottom: 16,
-    flexDirection: 'row',
-    alignSelf: 'center',
+  pagination: { 
+    position: 'absolute', 
+    bottom: 10, 
+    flexDirection: 'row', 
+    alignSelf: 'center' 
   },
-  paginationDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.5)',
-    margin: 3,
+  paginationDot: { 
+    width: 8, 
+    height: 8, 
+    margin: 4, 
+    backgroundColor: 'rgba(255,255,255,0.6)', 
+    borderRadius: 4 
   },
-  paginationDotActive: {
-    backgroundColor: '#fff',
+  paginationDotActive: { 
+    backgroundColor: '#4CAF50' 
   },
-  favoriteButton: {
-    position: 'absolute',
-    top: 15,
-    right: 15,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  favoriteButton: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 20, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    borderRadius: 50, 
+    padding: 10 
   },
-  backButton: {
-    position: 'absolute',
-    top: 15,
-    left: 15,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  backButton: { 
+    position: 'absolute', 
+    top: 20, 
+    left: 20, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    borderRadius: 50, 
+    padding: 10 
   },
-  shareButton: {
-    position: 'absolute',
-    top: 15,
-    right: 65,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
+  shareButton: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 70, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    borderRadius: 50, 
+    padding: 10 
   },
-  infoContainer: {
+  infoContainer: { 
     padding: 16,
   },
-  name: {
-    fontSize: 24,
+  name: { 
+    fontSize: 24, 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  category: { 
+    fontSize: 16, 
+    color: '#777' 
+  },
+  price: { 
+    fontSize: 20, 
+    color: '#4CAF50', 
+    marginVertical: 10,
     fontWeight: 'bold',
+  },
+  statusContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  statusPill: { 
+    paddingVertical: 4, 
+    paddingHorizontal: 8, 
+    backgroundColor: '#a5d6a7', 
+    borderRadius: 10 
+  },
+  statusText: { 
+    fontSize: 14, 
+    color: '#fff',
+    fontWeight: '500',
+  },
+  listedDate: { 
+    fontSize: 14, 
+    color: '#999' 
+  },
+  locationContainer: { 
+    marginBottom: 16,
+    padding: 12,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+  },
+  locationHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
     marginBottom: 4,
   },
-  category: {
-    fontSize: 16,
-    color: '#666',
-    marginBottom: 8,
-  },
-  price: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginBottom: 8,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    justifyContent: 'space-between',
-  },
-  statusPill: {
-    backgroundColor: '#e0f2f1',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-  },
-  statusText: {
-    color: '#00897b',
-    fontSize: 12,
+  locationTitle: { 
+    fontSize: 16, 
+    marginLeft: 8,
     fontWeight: '600',
-  },
-  listedDate: {
-    fontSize: 12,
-    color: '#999',
-  },
-  locationContainer: {
-    backgroundColor: '#f9f9f9',
-    padding: 12,
-    borderRadius: 8,
-    marginBottom: 16,
-  },
-  locationHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  locationTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 6,
-  },
-  locationText: {
-    fontSize: 14,
-    color: '#555',
-    marginBottom: 8,
-  },
-  mapPreview: {
-    height: 150,
-    borderRadius: 8,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  map: {
-    width: '100%',
-    height: '100%',
-  },
-  mapOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    padding: 8,
-  },
-  viewOnMapText: {
-    color: '#fff',
-    fontSize: 12,
-    textAlign: 'center',
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  description: {
-    fontSize: 16,
-    lineHeight: 24,
     color: '#333',
   },
-  careInfoContainer: {
+  locationText: { 
+    fontSize: 14, 
+    color: '#555',
+    marginLeft: 32,
+  },
+  sectionTitle: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    marginVertical: 12,
+    color: '#333',
+  },
+  description: { 
+    fontSize: 14, 
+    color: '#333',
+    lineHeight: 20,
+    marginBottom: 16,
+  },
+  careInfoContainer: { 
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 12,
+    flexWrap: 'wrap',
+    marginBottom: 16,
   },
-  careItem: {
-    alignItems: 'center',
-    flex: 1,
-    padding: 8,
+  careItem: { 
+    alignItems: 'center', 
+    width: '30%',
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    padding: 12,
   },
-  careLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
+  careLabel: { 
+    fontSize: 14, 
+    marginTop: 8,
+    color: '#333',
+    fontWeight: '600',
   },
-  careValue: {
-    fontSize: 14,
-    fontWeight: '500',
+  careValue: { 
+    fontSize: 12, 
+    color: '#777',
     marginTop: 4,
     textAlign: 'center',
   },
-  sellerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
+  sellerContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginVertical: 12,
+    padding: 16,
     backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    marginVertical: 8,
+    borderRadius: 10,
   },
-  sellerAvatar: {
-    width: 50,
-    height: 50,
+  sellerAvatar: { 
+    width: 50, 
+    height: 50, 
     borderRadius: 25,
+    backgroundColor: '#e0e0e0',
   },
-  sellerInfo: {
-    flex: 1,
-    marginLeft: 12,
+  sellerInfo: { 
+    marginLeft: 10, 
+    flex: 1 
   },
-  sellerName: {
-    fontSize: 16,
-    fontWeight: '500',
+  sellerName: { 
+    fontSize: 16, 
+    fontWeight: 'bold' 
   },
-  sellerRatingContainer: {
-    flexDirection: 'row',
+  sellerRatingContainer: { 
+    flexDirection: 'row', 
     alignItems: 'center',
-    marginTop: 2,
-  },
-  sellerRating: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 4,
-  },
-  sellerMember: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 2,
-  },
-  otherListingsContainer: {
-    marginTop: 16,
-    marginBottom: 16,
-  },
-  otherListingsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  otherListingsScroll: {
-    marginLeft: -8,
-  },
-  otherListingItem: {
-    width: 120,
-    marginLeft: 8,
-  },
-  otherListingImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
-  },
-  otherListingName: {
-    fontSize: 14,
     marginTop: 4,
   },
-  otherListingPrice: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
+  sellerRating: { 
+    fontSize: 14, 
+    marginLeft: 5,
+    color: '#666',
   },
-  seeAllButton: {
-    width: 120,
-    height: 120,
-    borderRadius: 8,
-    marginLeft: 8,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  seeAllText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginBottom: 4,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    marginTop: 24,
+  actionsContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginTop: 20,
     marginBottom: 16,
   },
-  favoriteActionButton: {
-    flexDirection: 'row',
+  favoriteActionButton: { 
+    flexDirection: 'row', 
     alignItems: 'center',
-    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: '#4CAF50',
     borderRadius: 8,
-    padding: 12,
-    marginRight: 12,
-    flex: 1,
   },
-  actionButtonText: {
-    fontSize: 16,
-    color: '#4CAF50',
-    fontWeight: '500',
+  actionButtonText: { 
+    fontSize: 16, 
+    color: '#4CAF50', 
     marginLeft: 8,
-  },
-  contactButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4CAF50',
-    borderRadius: 8,
-    padding: 12,
-    flex: 2,
-  },
-  contactButtonText: {
-    fontSize: 16,
-    color: '#fff',
-    fontWeight: '500',
-    marginLeft: 8,
-  },
-  safetyContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f1f8e9',
-    borderRadius: 8,
-    marginBottom: 24,
-  },
-  safetyText: {
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 8,
-    flex: 1,
-  },
-  safetyBold: {
     fontWeight: '600',
+  },
+  contactButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#4CAF50', 
+    borderRadius: 8, 
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  contactButtonText: { 
+    color: '#fff', 
+    marginLeft: 8,
+    fontWeight: '600',
+    fontSize: 16,
+  },
+  safetyContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#f0f9f0',
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 40,
+  },
+  safetyText: { 
+    fontSize: 14, 
+    marginLeft: 8,
+    color: '#555',
+    flex: 1,
+  },
+  safetyBold: { 
+    fontWeight: 'bold',
+    color: '#333',
   },
 });
 

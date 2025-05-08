@@ -10,52 +10,127 @@ import {
   Platform,
   Image,
   ActivityIndicator,
-  SafeAreaView,
 } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 
-// API Services
-import { 
-  fetchMessages, 
-  fetchConversations, 
-  sendMessage, 
-  startConversation 
-} from '../services/marketplaceApi';
+import {
+  fetchConversations,
+  fetchMessages,
+  sendMessage,
+  startConversation
+} from '../services/marketplaceApi';  // Correct relative path with capital M
 
-// Tab view for switching between active conversations and a specific chat
+
+
+// Sample data for development
+const SAMPLE_CONVERSATIONS = [
+  {
+    id: 'conv1',
+    otherUserName: 'PlantLover123',
+    otherUserAvatar: 'https://via.placeholder.com/50?text=User1',
+    lastMessage: "Hi, is the Monstera still available?",
+    lastMessageTimestamp: new Date().toISOString(),
+    plantName: "Monstera Deliciosa",
+    plantId: "1",
+    sellerId: "seller1",
+    unreadCount: 2
+  },
+  {
+    id: 'conv2',
+    otherUserName: 'GreenThumb',
+    otherUserAvatar: 'https://via.placeholder.com/50?text=User2',
+    lastMessage: "Thanks for the quick response!",
+    lastMessageTimestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+    plantName: "Snake Plant",
+    plantId: "2",
+    sellerId: "seller2",
+    unreadCount: 0
+  }
+];
+
+const SAMPLE_MESSAGES = {
+  'conv1': {
+    messages: [
+      {
+        id: 'msg1',
+        text: "Hi, is the Monstera still available?",
+        senderId: 'otherUser',
+        timestamp: new Date(Date.now() - 30 * 60 * 1000).toISOString() // 30 minutes ago
+      },
+      {
+        id: 'msg2',
+        text: "Yes, it's still available!",
+        senderId: 'currentUser',
+        timestamp: new Date(Date.now() - 25 * 60 * 1000).toISOString() // 25 minutes ago
+      },
+      {
+        id: 'msg3',
+        text: "Great! What's the best time to come see it?",
+        senderId: 'otherUser',
+        timestamp: new Date(Date.now() - 20 * 60 * 1000).toISOString() // 20 minutes ago
+      },
+      {
+        id: 'msg4',
+        text: "I'm available this weekend, would that work for you?",
+        senderId: 'otherUser',
+        timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString() // 15 minutes ago
+      }
+    ],
+    otherUser: {
+      id: 'seller1',
+      name: 'PlantLover123',
+      avatar: 'https://via.placeholder.com/50?text=User1'
+    }
+  }
+};
+
+// MessagesScreen component
 const MessagesScreen = () => {
-  const route = useRoute();
   const navigation = useNavigation();
+  const route = useRoute();
   
-  const [activeTab, setActiveTab] = useState('conversations');
-  const [conversations, setConversations] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  
-  // Parameters passed for starting a new conversation
+  // Get parameters if passed for starting a new conversation
   const sellerId = route.params?.sellerId;
   const plantId = route.params?.plantId;
   const plantName = route.params?.plantName;
   
-  // If params are passed, we want to show the chat tab
-  useEffect(() => {
-    if (sellerId && plantId) {
-      setActiveTab('chat');
-    }
-  }, [sellerId, plantId]);
+  // State for conversations and messaging
+  const [activeTab, setActiveTab] = useState(sellerId ? 'chat' : 'conversations');
+  const [conversations, setConversations] = useState([]);
+  const [selectedConversation, setSelectedConversation] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState(null);
   
-  // Load conversations
+  // Ref for scrolling to bottom of messages
+  const flatListRef = useRef(null);
+  
+  // Load conversations on mount
   useEffect(() => {
     loadConversations();
   }, []);
   
+  // Load messages if conversation is selected
+  useEffect(() => {
+    if (selectedConversation) {
+      loadMessages(selectedConversation.id);
+    }
+  }, [selectedConversation]);
+  
+  // Helper functions to load data
   const loadConversations = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const data = await fetchConversations();
+      // For real app, use API:
+      // const data = await fetchConversations();
+      
+      // For development, use sample data:
+      const data = SAMPLE_CONVERSATIONS;
       setConversations(data);
       
       setIsLoading(false);
@@ -65,9 +140,350 @@ const MessagesScreen = () => {
       console.error('Error fetching conversations:', err);
     }
   };
-
+  
+  const loadMessages = async (conversationId) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // For real app, use API:
+      // const data = await fetchMessages(conversationId);
+      
+      // For development, use sample data:
+      const data = SAMPLE_MESSAGES[conversationId] || { messages: [] };
+      setMessages(data.messages);
+      
+      setIsLoading(false);
+      
+      // Scroll to bottom of messages
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: false });
+        }
+      }, 100);
+    } catch (err) {
+      setError('Failed to load messages. Please try again later.');
+      setIsLoading(false);
+      console.error('Error fetching messages:', err);
+    }
+  };
+  
+  const handleSendMessage = async () => {
+    if (!newMessage.trim()) return;
+    
+    try {
+      setIsSending(true);
+      
+      // Add message to state optimistically
+      const tempMessage = {
+        id: 'temp-' + Date.now(),
+        text: newMessage,
+        senderId: 'currentUser',
+        timestamp: new Date().toISOString()
+      };
+      
+      setMessages([...messages, tempMessage]);
+      setNewMessage('');
+      
+      // Scroll to bottom of messages
+      setTimeout(() => {
+        if (flatListRef.current) {
+          flatListRef.current.scrollToEnd({ animated: true });
+        }
+      }, 100);
+      
+      // For real app, use API:
+      if (selectedConversation) {
+        // Existing conversation
+        // await sendMessage(selectedConversation.id, newMessage);
+      } else if (sellerId && plantId) {
+        // New conversation
+        // const result = await startConversation(sellerId, plantId, newMessage);
+        // setSelectedConversation({
+        //   id: result.conversationId,
+        //   otherUserName: result.sellerName,
+        //   plantName: plantName
+        // });
+        // await loadConversations(); // Refresh conversations list
+      }
+      
+      // For development, just simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      setIsSending(false);
+    } catch (err) {
+      console.error('Error sending message:', err);
+      setIsSending(false);
+      
+      // Remove optimistic message on error
+      setMessages(messages.filter(m => m.id !== 'temp-' + Date.now()));
+    }
+  };
+  
+  const handleSelectConversation = (conversation) => {
+    setSelectedConversation(conversation);
+    setActiveTab('chat');
+  };
+  
+  // Format timestamps
+  const formatTimestamp = (timestamp) => {
+    if (!timestamp) return '';
+    
+    const date = new Date(timestamp);
+    const now = new Date();
+    
+    // If it's today, just show the time
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // If it's this year, show month and day
+    if (date.getFullYear() === now.getFullYear()) {
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+    
+    // Otherwise show the full date
+    return date.toLocaleDateString([], { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  };
+  
+  // Render the conversations list
+  const renderConversationsList = () => {
+    if (isLoading && conversations.length === 0) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading conversations...</Text>
+        </View>
+      );
+    }
+    
+    if (error) {
+      return (
+        <View style={styles.centerContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={loadConversations}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    
+    if (conversations.length === 0) {
+      return (
+        <View style={styles.centerContainer}>
+          <MaterialIcons name="forum" size={48} color="#aaa" />
+          <Text style={styles.noConversationsText}>
+            You don't have any conversations yet
+          </Text>
+          <Text style={styles.startConversationText}>
+            Start a conversation by contacting a seller from a plant listing
+          </Text>
+        </View>
+      );
+    }
+    
+    return (
+      <FlatList
+        data={conversations}
+        renderItem={({ item }) => (
+          <TouchableOpacity 
+            style={styles.conversationItem}
+            onPress={() => handleSelectConversation(item)}
+          >
+            <Image 
+              source={{ uri: item.otherUserAvatar }} 
+              style={styles.avatar}
+            />
+            
+            <View style={styles.conversationInfo}>
+              <View style={styles.conversationHeader}>
+                <Text style={styles.userName} numberOfLines={1}>
+                  {item.otherUserName}
+                </Text>
+                <Text style={styles.timeStamp}>
+                  {formatTimestamp(item.lastMessageTimestamp)}
+                </Text>
+              </View>
+              
+              <View style={styles.messagePreviewContainer}>
+                <Text style={styles.messagePreview} numberOfLines={1}>
+                  {item.lastMessage}
+                </Text>
+                {item.unreadCount > 0 && (
+                  <View style={styles.unreadBadge}>
+                    <Text style={styles.unreadCount}>{item.unreadCount}</Text>
+                  </View>
+                )}
+              </View>
+              
+              <Text style={styles.plantName} numberOfLines={1}>
+                About: {item.plantName}
+              </Text>
+            </View>
+          </TouchableOpacity>
+        )}
+        keyExtractor={item => item.id}
+        contentContainerStyle={styles.conversationsList}
+      />
+    );
+  };
+  
+  // Render the chat screen
+  const renderChatScreen = () => {
+    const isNewConversation = !selectedConversation && sellerId && plantId;
+    
+    const renderMessageItem = ({ item }) => {
+      const isOwnMessage = item.senderId === 'currentUser';
+      
+      return (
+        <View
+          style={[
+            styles.messageContainer,
+            isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer,
+          ]}
+        >
+          {!isOwnMessage && (
+            <Image 
+              source={{ 
+                uri: selectedConversation?.otherUserAvatar || 'https://via.placeholder.com/40'
+              }}
+              style={styles.messageAvatar}
+            />
+          )}
+          
+          <View
+            style={[
+              styles.messageBubble,
+              isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
+            ]}
+          >
+            <Text style={[
+              styles.messageText,
+              isOwnMessage ? styles.ownMessageText : styles.otherMessageText
+            ]}>
+              {item.text}
+            </Text>
+            <Text
+              style={[
+                styles.messageTime,
+                isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime,
+              ]}
+            >
+              {formatTimestamp(item.timestamp)}
+            </Text>
+          </View>
+        </View>
+      );
+    };
+    
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.chatContainer}
+        keyboardVerticalOffset={90}
+      >
+        <View style={styles.chatHeader}>
+          <TouchableOpacity 
+            style={styles.backButton}
+            onPress={() => setActiveTab('conversations')}
+          >
+            <MaterialIcons name="arrow-back" size={24} color="#333" />
+          </TouchableOpacity>
+          
+          <View style={styles.chatHeaderInfo}>
+            <Text style={styles.chatHeaderName} numberOfLines={1}>
+              {selectedConversation?.otherUserName || 'New Message'}
+            </Text>
+            <Text style={styles.chatHeaderPlant} numberOfLines={1}>
+              {selectedConversation?.plantName || plantName || ''}
+            </Text>
+          </View>
+        </View>
+        
+        {isLoading && messages.length === 0 ? (
+          <View style={styles.centerContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading messages...</Text>
+          </View>
+        ) : error ? (
+          <View style={styles.centerContainer}>
+            <MaterialIcons name="error-outline" size={48} color="#f44336" />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity 
+              style={styles.retryButton}
+              onPress={() => loadMessages(selectedConversation?.id)}
+            >
+              <Text style={styles.retryText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <FlatList
+            ref={flatListRef}
+            data={messages}
+            renderItem={renderMessageItem}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messagesList}
+            ListEmptyComponent={() => (
+              <View style={styles.emptyChatContainer}>
+                {isNewConversation ? (
+                  <>
+                    <MaterialIcons name="forum" size={48} color="#aaa" />
+                    <Text style={styles.emptyChatText}>New Conversation</Text>
+                    <Text style={styles.emptyChatSubtext}>
+                      Send a message about {plantName || 'this plant'}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <MaterialIcons name="forum" size={48} color="#aaa" />
+                    <Text style={styles.emptyChatText}>No messages yet</Text>
+                    <Text style={styles.emptyChatSubtext}>
+                      Send a message to start the conversation
+                    </Text>
+                  </>
+                )}
+              </View>
+            )}
+          />
+        )}
+        
+        <View style={styles.inputContainer}>
+          <TextInput
+            style={styles.input}
+            placeholder="Type a message..."
+            value={newMessage}
+            onChangeText={setNewMessage}
+            multiline
+          />
+          <TouchableOpacity
+            style={[
+              styles.sendButton,
+              (!newMessage.trim() || isSending) && styles.disabledSendButton,
+            ]}
+            onPress={handleSendMessage}
+            disabled={!newMessage.trim() || isSending}
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <MaterialIcons name="send" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    );
+  };
+  
   return (
-    <SafeAreaView style={styles.container}>
+    <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Messages</Text>
       </View>
@@ -90,7 +506,7 @@ const MessagesScreen = () => {
           </Text>
         </TouchableOpacity>
         
-        {sellerId && plantId && (
+        {(selectedConversation || (sellerId && plantId)) && (
           <TouchableOpacity
             style={[
               styles.tabButton,
@@ -110,366 +526,9 @@ const MessagesScreen = () => {
         )}
       </View>
       
-      {activeTab === 'conversations' ? (
-        <ConversationsList 
-          conversations={conversations} 
-          isLoading={isLoading} 
-          error={error}
-          onRefresh={loadConversations}
-          onSelectConversation={(conversation) => {
-            navigation.navigate('Chat', { 
-              conversationId: conversation.id,
-              sellerId: conversation.sellerId,
-              buyerId: conversation.buyerId,
-              plantId: conversation.plantId,
-              otherUserName: conversation.otherUserName,
-              otherUserAvatar: conversation.otherUserAvatar,
-            });
-          }}
-        />
-      ) : (
-        <ChatScreen 
-          sellerId={sellerId} 
-          plantId={plantId} 
-          plantName={plantName}
-          onBack={() => setActiveTab('conversations')}
-        />
-      )}
-    </SafeAreaView>
+      {activeTab === 'conversations' ? renderConversationsList() : renderChatScreen()}
+    </View>
   );
-};
-
-// Component for displaying the list of active conversations
-const ConversationsList = ({ 
-  conversations, 
-  isLoading, 
-  error, 
-  onRefresh,
-  onSelectConversation 
-}) => {
-  if (isLoading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading conversations...</Text>
-      </View>
-    );
-  }
-  
-  if (error) {
-    return (
-      <View style={styles.centerContainer}>
-        <MaterialIcons name="error-outline" size={48} color="#f44336" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={onRefresh}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
-    );
-  }
-  
-  if (conversations.length === 0) {
-    return (
-      <View style={styles.centerContainer}>
-        <MaterialIcons name="forum" size={48} color="#aaa" />
-        <Text style={styles.noConversationsText}>
-          You don't have any conversations yet
-        </Text>
-        <Text style={styles.startConversationText}>
-          Start a conversation by contacting a seller from a plant listing
-        </Text>
-      </View>
-    );
-  }
-  
-  const renderConversationItem = ({ item }) => (
-    <TouchableOpacity 
-      style={styles.conversationItem}
-      onPress={() => onSelectConversation(item)}
-    >
-      <Image 
-        source={{ uri: item.otherUserAvatar || 'https://via.placeholder.com/50' }}
-        style={styles.avatar}
-      />
-      
-      <View style={styles.conversationInfo}>
-        <View style={styles.conversationHeader}>
-          <Text style={styles.userName} numberOfLines={1}>
-            {item.otherUserName || 'User'}
-          </Text>
-          <Text style={styles.timeStamp}>
-            {formatTimestamp(item.lastMessageTimestamp)}
-          </Text>
-        </View>
-        
-        <View style={styles.messagePreviewContainer}>
-          <Text style={styles.messagePreview} numberOfLines={1}>
-            {item.lastMessage}
-          </Text>
-          {item.unreadCount > 0 && (
-            <View style={styles.unreadBadge}>
-              <Text style={styles.unreadCount}>{item.unreadCount}</Text>
-            </View>
-          )}
-        </View>
-        
-        <Text style={styles.plantName} numberOfLines={1}>
-          About: {item.plantName}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
-  
-  return (
-    <FlatList
-      data={conversations}
-      renderItem={renderConversationItem}
-      keyExtractor={(item) => item.id}
-      contentContainerStyle={styles.conversationsList}
-      onRefresh={onRefresh}
-      refreshing={isLoading}
-    />
-  );
-};
-
-// Component for the actual chat screen with messages
-const ChatScreen = ({ sellerId, plantId, plantName, conversationId: existingConversationId, onBack }) => {
-  const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState(null);
-  const [newMessage, setNewMessage] = useState('');
-  const [conversationId, setConversationId] = useState(existingConversationId);
-  const [otherUser, setOtherUser] = useState(null);
-  
-  const flatListRef = useRef(null);
-  const navigation = useNavigation();
-  
-  // Load messages when conversation ID changes
-  useEffect(() => {
-    if (conversationId) {
-      loadMessages();
-    }
-  }, [conversationId]);
-  
-  const loadMessages = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      const data = await fetchMessages(conversationId);
-      setMessages(data.messages);
-      setOtherUser(data.otherUser);
-      
-      setIsLoading(false);
-    } catch (err) {
-      setError('Failed to load messages. Please try again later.');
-      setIsLoading(false);
-      console.error('Error fetching messages:', err);
-    }
-  };
-  
-  const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
-    
-    try {
-      setIsSending(true);
-      
-      let messageResponse;
-      if (conversationId) {
-        // Send message in existing conversation
-        messageResponse = await sendMessage(conversationId, newMessage);
-      } else {
-        // Start new conversation
-        const conversationResponse = await startConversation(sellerId, plantId, newMessage);
-        setConversationId(conversationResponse.id);
-        messageResponse = conversationResponse.firstMessage;
-      }
-      
-      // Add the new message to the list
-      setMessages((prevMessages) => [...prevMessages, messageResponse]);
-      
-      // Clear the input
-      setNewMessage('');
-      setIsSending(false);
-      
-      // Scroll to the bottom
-      if (flatListRef.current) {
-        flatListRef.current.scrollToEnd({ animated: true });
-      }
-    } catch (err) {
-      setIsSending(false);
-      console.error('Error sending message:', err);
-      Alert.alert('Error', 'Failed to send message. Please try again.');
-    }
-  };
-  
-  const renderMessageItem = ({ item }) => {
-    const isOwnMessage = item.senderId === 'currentUser'; // Replace with actual user ID comparison
-    
-    return (
-      <View
-        style={[
-          styles.messageContainer,
-          isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer,
-        ]}
-      >
-        {!isOwnMessage && (
-          <Image 
-            source={{ uri: otherUser?.avatar || 'https://via.placeholder.com/40' }}
-            style={styles.messageAvatar}
-          />
-        )}
-        
-        <View
-          style={[
-            styles.messageBubble,
-            isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
-          ]}
-        >
-          <Text style={styles.messageText}>{item.text}</Text>
-          <Text
-            style={[
-              styles.messageTime,
-              isOwnMessage ? styles.ownMessageTime : styles.otherMessageTime,
-            ]}
-          >
-            {formatMessageTime(item.timestamp)}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-  
-  return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.chatContainer}
-      keyboardVerticalOffset={80}
-    >
-      <View style={styles.chatHeader}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={onBack || navigation.goBack}
-        >
-          <Ionicons name="arrow-back" size={24} color="#333" />
-        </TouchableOpacity>
-        
-        <View style={styles.chatHeaderInfo}>
-          <Text style={styles.chatHeaderName} numberOfLines={1}>
-            {otherUser?.name || 'Chat'}
-          </Text>
-          <Text style={styles.chatHeaderPlant} numberOfLines={1}>
-            {plantName ? `About: ${plantName}` : ''}
-          </Text>
-        </View>
-      </View>
-      
-      {isLoading ? (
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading messages...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.centerContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#f44336" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadMessages}>
-            <Text style={styles.retryText}>Retry</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          renderItem={renderMessageItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.messagesList}
-          onContentSizeChange={() => 
-            flatListRef.current?.scrollToEnd({ animated: true })
-          }
-          ListEmptyComponent={() => (
-            <View style={styles.emptyChatContainer}>
-              {conversationId ? (
-                <>
-                  <MaterialIcons name="forum" size={48} color="#aaa" />
-                  <Text style={styles.emptyChatText}>No messages yet</Text>
-                  <Text style={styles.emptyChatSubtext}>
-                    Send a message to start the conversation
-                  </Text>
-                </>
-              ) : (
-                <>
-                  <MaterialIcons name="forum" size={48} color="#aaa" />
-                  <Text style={styles.emptyChatText}>New Conversation</Text>
-                  <Text style={styles.emptyChatSubtext}>
-                    Send a message about {plantName || 'this plant'}
-                  </Text>
-                </>
-              )}
-            </View>
-          )}
-        />
-      )}
-      
-      <View style={styles.inputContainer}>
-        <TextInput
-          style={styles.input}
-          placeholder="Type a message..."
-          value={newMessage}
-          onChangeText={setNewMessage}
-          multiline
-        />
-        <TouchableOpacity
-          style={[
-            styles.sendButton,
-            (!newMessage.trim() || isSending) && styles.disabledSendButton,
-          ]}
-          onPress={handleSendMessage}
-          disabled={!newMessage.trim() || isSending}
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Ionicons name="send" size={20} color="#fff" />
-          )}
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
-  );
-};
-
-// Helper function to format timestamps
-const formatTimestamp = (timestamp) => {
-  if (!timestamp) return '';
-  
-  const date = new Date(timestamp);
-  const now = new Date();
-  
-  // If it's today, just show the time
-  if (date.toDateString() === now.toDateString()) {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-  
-  // If it's this year, show month and day
-  if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  }
-  
-  // Otherwise show the full date
-  return date.toLocaleDateString([], { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
-  });
-};
-
-// Helper function to format message times
-const formatMessageTime = (timestamp) => {
-  if (!timestamp) return '';
-  
-  const date = new Date(timestamp);
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
 const styles = StyleSheet.create({
@@ -679,10 +738,12 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 16,
-    color: '#333',
   },
   ownMessageText: {
     color: '#fff',
+  },
+  otherMessageText: {
+    color: '#333',
   },
   messageTime: {
     fontSize: 10,

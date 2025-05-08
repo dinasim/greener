@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getUserConversations, sendMessage } from '../services/messagesData';
+import * as SignalR from '@microsoft/signalr'; // Azure SignalR Client
 
 const Messages = () => {
   const navigation = useNavigation();
@@ -24,6 +25,7 @@ const Messages = () => {
   const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
   const [alertText, setAlertText] = useState(null);
+  const [hubConnection, setHubConnection] = useState(null); // Store the SignalR connection
 
   // Fetch user conversations
   useEffect(() => {
@@ -38,25 +40,57 @@ const Messages = () => {
         }
       })
       .catch((err) => console.error(err));
+
+    // Establish SignalR connection for real-time messaging
+    const connection = new SignalR.HubConnectionBuilder()
+      .withUrl('https://your-azure-signalr-service-url/hub') // Your Azure SignalR Service URL
+      .build();
+
+    connection.start()
+      .then(() => {
+        console.log('SignalR Connected');
+        setHubConnection(connection);
+      })
+      .catch((err) => console.error('Error connecting to SignalR:', err));
+
+    // Listen for new messages via SignalR
+    connection.on('ReceiveMessage', (newMessage) => {
+      if (newMessage.chatId === chatId) {
+        setSelectedChat((prevState) => ({
+          ...prevState,
+          chats: {
+            ...prevState.chats,
+            conversation: [
+              ...prevState.chats.conversation,
+              { message: newMessage.text, senderId: newMessage.senderId },
+            ],
+          },
+        }));
+      }
+    });
+
+    return () => {
+      if (hubConnection) {
+        hubConnection.stop();
+      }
+    };
   }, [chatId]);
 
   const handleMsgSubmit = () => {
     if (!message.trim()) return;
 
+    // Emit the message to SignalR
     sendMessage(chatId, message)
       .then((res) => {
         setMessage('');
         setAlertText('Message sent!');
-        setSelectedChat((prev) => ({
-          ...prev,
-          chats: {
-            ...prev.chats,
-            conversation: [
-              ...prev.chats.conversation,
-              { message, senderId: res.sender },
-            ],
-          },
-        }));
+        if (hubConnection) {
+          hubConnection.invoke('SendMessage', {
+            chatId,
+            text: message,
+            senderId: res.sender,
+          });
+        }
         setTimeout(() => setAlertText(null), 1500);
       })
       .catch((err) => console.error(err));
@@ -76,7 +110,9 @@ const Messages = () => {
         }}
         style={styles.avatar}
       />
-      <Text>{item.isBuyer ? item.chats.seller.name : item.chats.buyer.name}</Text>
+      <Text style={styles.name}>
+        {item.isBuyer ? item.chats.seller.name : item.chats.buyer.name}
+      </Text>
     </TouchableOpacity>
   );
 

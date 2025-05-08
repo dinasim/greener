@@ -1,118 +1,96 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import Slider from '@react-native-community/slider';
 
-// Import CustomSlider from the same directory
-import CustomSlider from './CustomSlider';
+/**
+ * Price range component for filtering plants based on price
+ * @param {Object} props - Component props
+ * @param {number} props.minValue - Minimum possible value for the price
+ * @param {number} props.maxValue - Maximum possible value for the price
+ * @param {number} props.initialMin - Initial minimum value for the price
+ * @param {number} props.initialMax - Initial maximum value for the price
+ * @param {Function} props.onPriceChange - Function to call when price values change
+ */
+const PriceRange = ({ 
+  minValue = 0, 
+  maxValue = 1000, 
+  initialMin = 0, 
+  initialMax = 1000, 
+  onPriceChange,
+  style
+}) => {
+  const [minPrice, setMinPrice] = useState(initialMin);
+  const [maxPrice, setMaxPrice] = useState(initialMax);
 
-const PriceRange = ({ minPrice = 0, maxPrice = 1000, onPriceChange }) => {
-  const [range, setRange] = useState([minPrice, maxPrice]);
-  
-  // Update the range when props change
-  useEffect(() => {
-    setRange([minPrice, maxPrice]);
-  }, [minPrice, maxPrice]);
-  
-  // Handle min price change
+  // Handle changes in min price
   const handleMinChange = (value) => {
-    // Ensure min value doesn't exceed max value
-    const newRange = [Math.min(value, range[1]), range[1]];
-    setRange(newRange);
-    if (onPriceChange) {
-      onPriceChange(newRange);
-    }
+    const newMinPrice = Math.min(value, maxPrice);
+    setMinPrice(newMinPrice);
+    if (onPriceChange) onPriceChange([newMinPrice, maxPrice]);
   };
-  
-  // Handle max price change
+
+  // Handle changes in max price
   const handleMaxChange = (value) => {
-    // Ensure max value isn't less than min value
-    const newRange = [range[0], Math.max(value, range[0])];
-    setRange(newRange);
-    if (onPriceChange) {
-      onPriceChange(newRange);
-    }
+    const newMaxPrice = Math.max(value, minPrice);
+    setMaxPrice(newMaxPrice);
+    if (onPriceChange) onPriceChange([minPrice, newMaxPrice]);
   };
-  
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, style]}>
       <Text style={styles.title}>Price Range</Text>
-      
-      <View style={styles.rangeContainer}>
-        <Text style={styles.priceLabel}>Min: ${range[0]}</Text>
-        <Text style={styles.priceLabel}>Max: ${range[1]}</Text>
+      <View style={styles.rangeRow}>
+        <Text style={styles.priceValue}>${minPrice.toFixed(0)}</Text>
+        <Text style={styles.priceValue}>${maxPrice.toFixed(0)}</Text>
       </View>
-      
-      <View style={styles.sliderContainer}>
-        <Text style={styles.sliderLabel}>Minimum Price</Text>
-        <CustomSlider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={1000}
-          step={10}
-          value={range[0]}
-          onValueChange={handleMinChange}
-          minimumTrackTintColor="#81c784"
-          maximumTrackTintColor="#ccc"
-          thumbTintColor="#2e7d32"
-        />
-      </View>
-      
-      <View style={styles.sliderContainer}>
-        <Text style={styles.sliderLabel}>Maximum Price</Text>
-        <CustomSlider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={1000}
-          step={10}
-          value={range[1]}
-          onValueChange={handleMaxChange}
-          minimumTrackTintColor="#81c784"
-          maximumTrackTintColor="#ccc"
-          thumbTintColor="#2e7d32"
-        />
-      </View>
+      <Slider
+        value={minPrice}
+        minimumValue={minValue}
+        maximumValue={maxValue}
+        onValueChange={handleMinChange}
+        style={styles.slider}
+      />
+      <Slider
+        value={maxPrice}
+        minimumValue={minValue}
+        maximumValue={maxValue}
+        onValueChange={handleMaxChange}
+        style={styles.slider}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 15,
-    backgroundColor: 'white',
-    borderRadius: 8,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    width: '30%', // Set to 80% to occupy less space
+    marginBottom: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    alignSelf: 'center', // Center it horizontally
   },
   title: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 15,
-    color: '#2e7d32',
+    fontWeight: '600',
+    color: '#4CAF50',
+    marginBottom: 12,
   },
-  rangeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 10,
-  },
-  priceLabel: {
+  priceValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-  },
-  sliderContainer: {
-    marginBottom: 15,
-  },
-  sliderLabel: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 5,
+    color: '#4CAF50',
   },
   slider: {
     width: '100%',
     height: 40,
+    marginTop: 8,
+  },
+  rangeRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
   },
 });
 

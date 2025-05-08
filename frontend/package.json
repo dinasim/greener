@@ -21,6 +21,7 @@
     "@react-navigation/native": "^6.1.18",
     "@react-navigation/native-stack": "^6.9.16",
     "@react-navigation/stack": "^6.4.1",
+    "azure-maps-control": "^3.6.1",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
     "expo": "^52.0.46",
