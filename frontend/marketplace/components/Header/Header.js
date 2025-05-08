@@ -1,66 +1,68 @@
-import React, { useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  ImageBackground,
-  TouchableOpacity,
-  StyleSheet,
-} from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Platform, StatusBar } from 'react-native';
+import { Ionicons, FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { MaterialIcons } from '@expo/vector-icons';
 
-const Header = () => {
+const Header = ({ title = "Greener" }) => {
   const navigation = useNavigation();
-  const [userData, setUserData] = useState(null);
-
-  useEffect(() => {
-    getUser().then(setUserData).catch(console.error);
-  }, []);
-
-  const featherImageUrl = 'https://images.unsplash.com/photo-1608571421747-3d96e1f1ec66?auto=format&fit=crop&w=1200&q=80';
 
   return (
-    <ImageBackground source={{ uri: featherImageUrl }} style={styles.background}>
-      <View style={styles.overlay}>
-        <View style={styles.headerContent}>
-          <TouchableOpacity onPress={() => navigation.navigate('Marketplace')}>
-            <MaterialIcons name="home" size={30} style={styles.icon} />
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.header}>
+        <View style={styles.leftContainer}>
+          <Text style={styles.title}>{title}</Text>
+        </View>
+        
+        <View style={styles.rightContainer}>
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('Notifications')}
+          >
+            <Ionicons name="notifications-outline" size={24} color="#2E7D32" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>Plant Market</Text>
+          
+          <TouchableOpacity 
+            style={styles.iconButton}
+            onPress={() => navigation.navigate('Cart')}
+          >
+            <FontAwesome name="shopping-cart" size={22} color="#2E7D32" />
+          </TouchableOpacity>
         </View>
       </View>
-    </ImageBackground>
+    </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  background: {
-    width: '100%',
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
+  safeArea: {
+    backgroundColor: '#ffffff',
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
   },
-  overlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    width: '100%',
-    height: '100%',
-  },
-  headerContent: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: '90%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
-  icon: {
-    color: '#fff',
+  leftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
-  headerTitle: {
-    color: '#fff',
-    fontSize: 24,
+  title: {
+    fontSize: 22,
     fontWeight: 'bold',
+    color: '#2E7D32',
+  },
+  rightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconButton: {
+    padding: 8,
+    marginLeft: 12,
   },
 });
 

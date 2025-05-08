@@ -1,14 +1,17 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
-  Image,
-  ScrollView,
   TouchableOpacity,
-  Button,
+  FlatList,
   StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Image,
+  SafeAreaView,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { getUserConversations, sendMessage } from '../services/messagesData';
 
@@ -18,112 +21,119 @@ const Messages = () => {
   const chatId = route.params?.messageId;
 
   const [conversations, setConversations] = useState([]);
-  const [isSelected, setIsSelected] = useState(false);
-  const [selected, setSelected] = useState(null);
+  const [selectedChat, setSelectedChat] = useState(null);
   const [message, setMessage] = useState('');
   const [alertText, setAlertText] = useState(null);
 
+  // Fetch user conversations
   useEffect(() => {
     getUserConversations()
-      .then(res => {
+      .then((res) => {
         setConversations(res);
         if (chatId) {
-          const match = res.find(x => x.chats._id === chatId);
+          const match = res.find((x) => x.chats._id === chatId);
           if (match) {
-            setIsSelected(true);
-            setSelected(match);
+            setSelectedChat(match);
           }
         }
       })
-      .catch(err => console.error(err));
+      .catch((err) => console.error(err));
   }, [chatId]);
 
   const handleMsgSubmit = () => {
     if (!message.trim()) return;
 
     sendMessage(chatId, message)
-      .then(res => {
+      .then((res) => {
         setMessage('');
         setAlertText('Message sent!');
-        setSelected(prev => ({
+        setSelectedChat((prev) => ({
           ...prev,
           chats: {
             ...prev.chats,
-            conversation: [...prev.chats.conversation, { message, senderId: res.sender }],
+            conversation: [
+              ...prev.chats.conversation,
+              { message, senderId: res.sender },
+            ],
           },
         }));
         setTimeout(() => setAlertText(null), 1500);
       })
-      .catch(err => console.error(err));
+      .catch((err) => console.error(err));
   };
 
+  const renderConversation = ({ item }) => (
+    <TouchableOpacity
+      style={styles.connection}
+      onPress={() => {
+        navigation.navigate('Messages', { messageId: item.chats._id });
+        setSelectedChat(item);
+      }}
+    >
+      <Image
+        source={{
+          uri: item.isBuyer ? item.chats.seller.avatar : item.chats.buyer.avatar,
+        }}
+        style={styles.avatar}
+      />
+      <Text>{item.isBuyer ? item.chats.seller.name : item.chats.buyer.name}</Text>
+    </TouchableOpacity>
+  );
+
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.sidebar}>
         <Text style={styles.title}>Conversations</Text>
-        {conversations.length >= 1 ? (
-          conversations.map(x => (
-            <TouchableOpacity
-              key={x.chats._id}
-              style={styles.connection}
-              onPress={() => {
-                navigation.navigate('Messages', { messageId: x.chats._id });
-                setIsSelected(true);
-              }}
-            >
-              <Image
-                source={{
-                  uri: x.isBuyer ? x.chats.seller.avatar : x.chats.buyer.avatar,
-                }}
-                style={styles.avatar}
-              />
-              <Text>
-                {x.isBuyer ? x.chats.seller.name : x.chats.buyer.name}
-              </Text>
-            </TouchableOpacity>
-          ))
+        {conversations.length > 0 ? (
+          <FlatList
+            data={conversations}
+            renderItem={renderConversation}
+            keyExtractor={(item) => item.chats._id}
+            style={styles.connectionList}
+          />
         ) : (
-          <Text>No messages yet</Text>
+          <Text>No conversations yet.</Text>
         )}
       </View>
 
       <View style={styles.chatArea}>
-        {isSelected && selected && (
+        {selectedChat ? (
           <>
-            <TouchableOpacity
-              style={styles.chatHeader}
-              onPress={() =>
-                navigation.navigate('Profile', {
-                  id: selected.isBuyer
-                    ? selected.chats.seller._id
-                    : selected.chats.buyer._id,
-                })
-              }
-            >
-              <Image
-                source={{
-                  uri: selected.isBuyer
-                    ? selected.chats.seller.avatar
-                    : selected.chats.buyer.avatar,
-                }}
-                style={styles.avatar}
-              />
-              <Text>
-                {selected.isBuyer
-                  ? selected.chats.seller.name
-                  : selected.chats.buyer.name}
-              </Text>
-            </TouchableOpacity>
+            <View style={styles.chatHeader}>
+              <TouchableOpacity
+                onPress={() =>
+                  navigation.navigate('Profile', {
+                    id: selectedChat.isBuyer
+                      ? selectedChat.chats.seller._id
+                      : selectedChat.chats.buyer._id,
+                  })
+                }
+              >
+                <Image
+                  source={{
+                    uri: selectedChat.isBuyer
+                      ? selectedChat.chats.seller.avatar
+                      : selectedChat.chats.buyer.avatar,
+                  }}
+                  style={styles.avatar}
+                />
+                <Text>
+                  {selectedChat.isBuyer
+                    ? selectedChat.chats.seller.name
+                    : selectedChat.chats.buyer.name}
+                </Text>
+              </TouchableOpacity>
+            </View>
 
             {alertText && <Text style={styles.alert}>{alertText}</Text>}
 
             <ScrollView style={styles.chatBody}>
-              {selected.chats.conversation.map((x, idx) => (
+              {selectedChat.chats.conversation.map((x, idx) => (
                 <View
                   key={idx}
                   style={[
                     styles.messageBubble,
-                    selected.myId === x.senderId
+                    selectedChat.myId === x.senderId
                       ? styles.messageMe
                       : styles.messageOther,
                   ]}
@@ -141,16 +151,22 @@ const Messages = () => {
                 onChangeText={setMessage}
                 placeholder="Type your message..."
               />
-              <Button title="Send" onPress={handleMsgSubmit} />
+              <TouchableOpacity
+                style={styles.sendButton}
+                onPress={handleMsgSubmit}
+                disabled={!message.trim()}
+              >
+                <Ionicons name="send" size={20} color="white" />
+              </TouchableOpacity>
             </View>
           </>
+        ) : (
+          <Text>Select a conversation to start chatting.</Text>
         )}
       </View>
-    </ScrollView>
+    </SafeAreaView>
   );
 };
-
-export default Messages;
 
 const styles = StyleSheet.create({
   container: {
@@ -229,4 +245,13 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
     marginBottom: 10,
   },
+  sendButton: {
+    backgroundColor: '#2E7D32',
+    borderRadius: 6,
+    padding: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
+
+export default Messages;
