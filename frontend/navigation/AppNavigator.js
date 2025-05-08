@@ -14,6 +14,7 @@ import AddPlantScreen from '../screens/AddPlantScreen';
 import PlacePlantScreen from '../screens/PlacePlantScreen';     
 import LocationsScreen from '../screens/LocationsScreen';
 import LocationPlantsScreen from '../screens/LocationPlantsScreen';
+import PlantDetailScreen from '../screens/PlantDetailScreen';
 
 import { FormProvider } from '../context/FormContext';
 
@@ -38,6 +39,7 @@ export default function AppNavigator() {
         <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
         <Stack.Screen name="Locations" component={LocationsScreen} />
         <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
+        <Stack.Screen name="PlantDetailScreen" component={PlantDetailScreen} />
       </Stack.Navigator>
     </FormProvider>
   );
