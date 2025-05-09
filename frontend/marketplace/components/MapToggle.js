@@ -4,6 +4,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 
 /**
  * MapToggle component for switching between list/grid view and map view
+ * This version focuses only on grid/list toggle since map view is temporarily disabled
  */
 const MapToggle = ({ viewMode, onViewModeChange }) => {
   return (
@@ -32,7 +33,7 @@ const MapToggle = ({ viewMode, onViewModeChange }) => {
         </TouchableOpacity>
       </View>
       
-      {/* Map view toggle */}
+      {/* Map view toggle - temporarily disabled 
       <TouchableOpacity 
         style={[styles.mapButton, viewMode === 'map' && styles.activeViewButton]}
         onPress={() => onViewModeChange('map')}
@@ -43,6 +44,7 @@ const MapToggle = ({ viewMode, onViewModeChange }) => {
           color={viewMode === 'map' ? '#4CAF50' : '#999'} 
         />
       </TouchableOpacity>
+      */}
     </View>
   );
 };

@@ -165,7 +165,7 @@ const AddPlantScreen = () => {
       {/* Use consistent header with back button */}
       <MarketplaceHeader
         title="Add New Plant"
-        showBackButton={true}
+        showBackButton={true} // This should be true for proper back navigation
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
       

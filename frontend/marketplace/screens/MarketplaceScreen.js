@@ -1,3 +1,4 @@
+// Modified MarketplaceScreen.js with fixes for map integration
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -8,7 +9,6 @@ import {
   TouchableOpacity,
   SafeAreaView,
   RefreshControl,
-  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -19,7 +19,8 @@ import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
-import AzureMapView from '../components/AzureMapView';
+// Temporarily comment out the Azure Map view
+// import AzureMapView from '../components/AzureMapView';
 
 // Import services
 import { getAll } from '../services/productData';
@@ -34,7 +35,7 @@ const MarketplaceScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortOption, setSortOption] = useState('recent');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid', 'list', or 'map'
+  const [viewMode, setViewMode] = useState('grid'); // Only 'grid' or 'list' for now (map disabled)
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [error, setError] = useState(null);
@@ -192,7 +193,10 @@ const MarketplaceScreen = ({ navigation }) => {
 
   // Handle view mode change
   const handleViewModeChange = (mode) => {
-    setViewMode(mode);
+    // Prevent switching to map view temporarily
+    if (mode !== 'map') {
+      setViewMode(mode);
+    }
   };
 
   // Handle load more
@@ -329,43 +333,32 @@ const MarketplaceScreen = ({ navigation }) => {
         onViewModeChange={handleViewModeChange}
       />
 
-      {/* Conditional rendering based on view mode */}
-      {viewMode === 'map' ? (
-        // Map View
-        <AzureMapView 
-          products={filteredPlants}
-          onSelectProduct={(productId) => {
-            navigation.navigate('PlantDetail', { plantId: productId });
-          }}
-        />
-      ) : (
-        // List or Grid View
-        <FlatList
-          data={filteredPlants}
-          renderItem={({ item }) => (
-            <PlantCard 
-              plant={item} 
-              showActions={true}
-              layout={viewMode}
-            />
-          )}
-          numColumns={viewMode === 'grid' ? 2 : 1}
-          key={viewMode} // Forces remount when view mode changes
-          keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
-          contentContainerStyle={[
-            styles.listContainer,
-            filteredPlants.length === 0 && styles.emptyListContainer,
-            viewMode === 'list' && styles.listViewContainer
-          ]}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={renderFooter}
-          ListEmptyComponent={renderEmptyList}
-          refreshControl={
-            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
-          }
-        />
-      )}
+      {/* Grid/List View */}
+      <FlatList
+        data={filteredPlants}
+        renderItem={({ item }) => (
+          <PlantCard 
+            plant={item} 
+            showActions={true}
+            layout={viewMode}
+          />
+        )}
+        numColumns={viewMode === 'grid' ? 2 : 1}
+        key={viewMode} // Forces remount when view mode changes
+        keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
+        contentContainerStyle={[
+          styles.listContainer,
+          filteredPlants.length === 0 && styles.emptyListContainer,
+          viewMode === 'list' && styles.listViewContainer
+        ]}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmptyList}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
+        }
+      />
 
       {/* Add Plant FAB */}
       <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddPlant')}>
