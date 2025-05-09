@@ -1,3 +1,4 @@
+// screens/AddPlantScreen.js
 import React, { useState } from 'react';
 import {
   View,
@@ -16,16 +17,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
-// Mock placeholder for actual API service
-const createPlant = async (plantData) => {
-  // In a real app, this would be an Azure Function call
-  return new Promise((resolve) => {
-    // Simulate API delay
-    setTimeout(() => {
-      resolve({ success: true, plantId: 'new-plant-' + Date.now() });
-    }, 1000);
-  });
-};
+// Import consistent header
+import MarketplaceHeader from '../components/MarketplaceHeader';
+
+// Import API service
+import { createPlant } from '../services/productData';
 
 const AddPlantScreen = () => {
   const navigation = useNavigation();
@@ -135,14 +131,14 @@ const AddPlantScreen = () => {
       // Call Azure Function to create plant
       const result = await createPlant(plantData);
       
-      if (result.success) {
+      if (result.productId) {
         Alert.alert(
           'Success',
           'Your plant has been listed!',
           [
             {
               text: 'View Listing',
-              onPress: () => navigation.navigate('PlantDetail', { plantId: result.plantId }),
+              onPress: () => navigation.navigate('PlantDetail', { plantId: result.productId }),
             },
             {
               text: 'Go to Marketplace',
@@ -166,137 +162,146 @@ const AddPlantScreen = () => {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView>
-        <Text style={styles.title}>Add a New Plant</Text>
-        
-        {/* Plant Images */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Plant Images</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.imageScroller}
-          >
-            {images.map((uri, index) => (
-              <View key={index} style={styles.imageContainer}>
-                <Image source={{ uri }} style={styles.plantImage} />
-                <TouchableOpacity 
-                  style={styles.removeImageButton}
-                  onPress={() => removeImage(index)}
-                >
-                  <MaterialIcons name="close" size={20} color="white" />
-                </TouchableOpacity>
-              </View>
-            ))}
-            
-            <TouchableOpacity 
-              style={styles.addImageButton} 
-              onPress={pickImage}
+      {/* Use consistent header with back button */}
+      <MarketplaceHeader
+        title="Add New Plant"
+        showBackButton={true}
+        onNotificationsPress={() => navigation.navigate('Messages')}
+      />
+      
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Add a New Plant</Text>
+          
+          {/* Plant Images */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Plant Images</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.imageScroller}
             >
-              <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
-              <Text style={styles.addImageText}>Add Photo</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
-        
-        {/* Basic Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Basic Information</Text>
-          
-          <Text style={styles.label}>Plant Name</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.name}
-            onChangeText={(text) => handleChange('name', text)}
-            placeholder="What kind of plant is it?"
-          />
-          
-          <Text style={styles.label}>Price</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.price}
-            onChangeText={(text) => handleChange('price', text)}
-            placeholder="How much are you selling it for?"
-            keyboardType="numeric"
-          />
-          
-          <Text style={styles.label}>Category</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoryScroller}
-          >
-            {categories.map((category) => (
+              {images.map((uri, index) => (
+                <View key={index} style={styles.imageContainer}>
+                  <Image source={{ uri }} style={styles.plantImage} />
+                  <TouchableOpacity 
+                    style={styles.removeImageButton}
+                    onPress={() => removeImage(index)}
+                  >
+                    <MaterialIcons name="close" size={20} color="white" />
+                  </TouchableOpacity>
+                </View>
+              ))}
+              
               <TouchableOpacity 
-                key={category}
-                style={[
-                  styles.categoryButton,
-                  formData.category === category && styles.selectedCategoryButton
-                ]}
-                onPress={() => handleChange('category', category)}
+                style={styles.addImageButton} 
+                onPress={pickImage}
               >
-                <Text 
-                  style={[
-                    styles.categoryText,
-                    formData.category === category && styles.selectedCategoryText
-                  ]}
-                >
-                  {category}
-                </Text>
+                <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
+                <Text style={styles.addImageText}>Add Photo</Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
+            </ScrollView>
+          </View>
           
-          <Text style={styles.label}>Location</Text>
-          <TextInput
-            style={styles.input}
-            value={formData.location}
-            onChangeText={(text) => handleChange('location', text)}
-            placeholder="Where can buyers pick up the plant?"
-          />
+          {/* Basic Information */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Basic Information</Text>
+            
+            <Text style={styles.label}>Plant Name</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.name}
+              onChangeText={(text) => handleChange('name', text)}
+              placeholder="What kind of plant is it?"
+            />
+            
+            <Text style={styles.label}>Price</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.price}
+              onChangeText={(text) => handleChange('price', text)}
+              placeholder="How much are you selling it for?"
+              keyboardType="numeric"
+            />
+            
+            <Text style={styles.label}>Category</Text>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoryScroller}
+            >
+              {categories.map((category) => (
+                <TouchableOpacity 
+                  key={category}
+                  style={[
+                    styles.categoryButton,
+                    formData.category === category && styles.selectedCategoryButton
+                  ]}
+                  onPress={() => handleChange('category', category)}
+                >
+                  <Text 
+                    style={[
+                      styles.categoryText,
+                      formData.category === category && styles.selectedCategoryText
+                    ]}
+                  >
+                    {category}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            
+            <Text style={styles.label}>Location</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.location}
+              onChangeText={(text) => handleChange('location', text)}
+              placeholder="Where can buyers pick up the plant?"
+            />
+          </View>
+          
+          {/* Description */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={formData.description}
+              onChangeText={(text) => handleChange('description', text)}
+              placeholder="Describe your plant (size, age, condition, etc.)"
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+          
+          {/* Care Instructions */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Care Instructions</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={formData.careInstructions}
+              onChangeText={(text) => handleChange('careInstructions', text)}
+              placeholder="Share how to care for this plant (optional)"
+              multiline
+              numberOfLines={4}
+            />
+          </View>
+          
+          {/* Submit Button */}
+          <TouchableOpacity 
+            style={[
+              styles.submitButton,
+              isLoading && styles.disabledButton
+            ]} 
+            onPress={handleSubmit}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.submitText}>List Plant for Sale</Text>
+            )}
+          </TouchableOpacity>
         </View>
-        
-        {/* Description */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Description</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={formData.description}
-            onChangeText={(text) => handleChange('description', text)}
-            placeholder="Describe your plant (size, age, condition, etc.)"
-            multiline
-            numberOfLines={4}
-          />
-        </View>
-        
-        {/* Care Instructions */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Care Instructions</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            value={formData.careInstructions}
-            onChangeText={(text) => handleChange('careInstructions', text)}
-            placeholder="Share how to care for this plant (optional)"
-            multiline
-            numberOfLines={4}
-          />
-        </View>
-        
-        {/* Submit Button */}
-        <TouchableOpacity 
-          style={[
-            styles.submitButton,
-            isLoading && styles.disabledButton
-          ]} 
-          onPress={handleSubmit}
-          disabled={isLoading}
-        >
-          {isLoading ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <Text style={styles.submitText}>List Plant for Sale</Text>
-          )}
-        </TouchableOpacity>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -306,7 +311,13 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  content: {
     padding: 16,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 24,
@@ -407,7 +418,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     padding: 16,
     alignItems: 'center',
-    marginBottom: 30,
+    marginTop: 16,
   },
   disabledButton: {
     backgroundColor: '#A5D6A7',

@@ -8,23 +8,21 @@ import {
   TouchableOpacity,
   SafeAreaView,
   RefreshControl,
-  Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect } from '@react-navigation/native';
 
 // Import components
+import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
-import PriceRange from '../components/PriceRange';
+import FilterSection from '../components/FilterSection';
 
 // Import services
 import { getAll } from '../services/productData';
 
-const MarketplaceScreen = () => {
-  const navigation = useNavigation();
-  
+const MarketplaceScreen = ({ navigation }) => {
   // State
   const [plants, setPlants] = useState([]);
   const [filteredPlants, setFilteredPlants] = useState([]);
@@ -33,15 +31,14 @@ const MarketplaceScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
+  const [sortOption, setSortOption] = useState('recent');
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [error, setError] = useState(null);
-  const [isMapView, setIsMapView] = useState(false);
-  
+
   // Load plants when the screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      // Reset filters when navigating back to screen
       loadPlants(1, true);
     }, [])
   );
@@ -49,26 +46,26 @@ const MarketplaceScreen = () => {
   // Apply filters when any filter criteria changes
   useEffect(() => {
     applyFilters();
-  }, [searchQuery, selectedCategory, priceRange, plants]);
+  }, [searchQuery, selectedCategory, priceRange, plants, sortOption]);
 
   // Function to load plants from API
   const loadPlants = async (pageNum = 1, resetData = false) => {
     if (!hasMorePages && pageNum > 1 && !resetData) return;
-    
+
     try {
       setError(null);
-      
+
       if (pageNum === 1) {
         setIsLoading(true);
       }
-      
+
       // Get plants from API
       const data = await getAll(
-        pageNum, 
-        selectedCategory === 'All' ? null : selectedCategory, 
+        pageNum,
+        selectedCategory === 'All' ? null : selectedCategory,
         searchQuery
       );
-      
+
       // Update state with new data
       if (data && data.products) {
         if (resetData) {
@@ -76,11 +73,11 @@ const MarketplaceScreen = () => {
         } else {
           setPlants(prevPlants => [...prevPlants, ...data.products]);
         }
-        
+
         setPage(pageNum);
         setHasMorePages(data.pages > pageNum);
       }
-      
+
       setIsLoading(false);
       setIsRefreshing(false);
     } catch (err) {
@@ -100,21 +97,21 @@ const MarketplaceScreen = () => {
   // Apply all filters to the plants data
   const applyFilters = () => {
     if (!plants.length) return;
-    
+
     let results = [...plants];
-    
+
     // Apply category filter if not "All"
     if (selectedCategory !== 'All') {
-      results = results.filter(plant => 
+      results = results.filter(plant =>
         plant.category?.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
-    
+
     // Apply price range filter
     results = results.filter(
       plant => plant.price >= priceRange.min && plant.price <= priceRange.max
     );
-    
+
     // Apply search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
@@ -128,9 +125,38 @@ const MarketplaceScreen = () => {
           plant.category?.toLowerCase().includes(query)
       );
     }
-    
+
+    // Apply sorting
+    results = sortPlants(results, sortOption);
+
     // Update filtered plants
     setFilteredPlants(results);
+  };
+
+  // Sort plants based on selected option
+  const sortPlants = (plantsToSort, option) => {
+    switch (option) {
+      case 'recent': // New to Old
+        return [...plantsToSort].sort((a, b) => {
+          const dateA = new Date(a.addedAt || a.listedDate || 0);
+          const dateB = new Date(b.addedAt || b.listedDate || 0);
+          return dateB - dateA; // Most recent first
+        });
+      case 'oldest': // Old to New
+        return [...plantsToSort].sort((a, b) => {
+          const dateA = new Date(a.addedAt || a.listedDate || 0);
+          const dateB = new Date(b.addedAt || b.listedDate || 0);
+          return dateA - dateB; // Oldest first
+        });
+      case 'priceAsc':
+        return [...plantsToSort].sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+      case 'priceDesc':
+        return [...plantsToSort].sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+      case 'rating':
+        return [...plantsToSort].sort((a, b) => (b.rating || 0) - (a.rating || 0));
+      default:
+        return plantsToSort;
+    }
   };
 
   // Handle search
@@ -138,7 +164,7 @@ const MarketplaceScreen = () => {
     setSearchQuery(query);
     // Reset to page 1 when search changes
     if (query !== searchQuery) {
-      loadPlants(1, true); 
+      loadPlants(1, true);
     }
   };
 
@@ -153,7 +179,12 @@ const MarketplaceScreen = () => {
 
   // Handle price range change
   const handlePriceRangeChange = (range) => {
-    setPriceRange({ min: range[0], max: range[1] });
+    setPriceRange(range);
+  };
+
+  // Handle sort option change
+  const handleSortChange = (option) => {
+    setSortOption(option);
   };
 
   // Handle load more
@@ -161,41 +192,6 @@ const MarketplaceScreen = () => {
     if (!isLoading && hasMorePages) {
       loadPlants(page + 1);
     }
-  };
-
-  // Toggle between list and map view
-  const toggleMapView = () => {
-    setIsMapView(!isMapView);
-  };
-
-  // Get locations for map view
-  const getMapLocations = () => {
-    // Simple geocoding for demonstration
-    // In a real app, you would use proper geocoding via Azure Maps API
-    return filteredPlants.map(plant => {
-      // Generate approximate coordinates based on city
-      const cityMap = {
-        'Seattle': { latitude: 47.6062, longitude: -122.3321 },
-        'Portland': { latitude: 45.5051, longitude: -122.6750 },
-        'San Francisco': { latitude: 37.7749, longitude: -122.4194 },
-        'Los Angeles': { latitude: 34.0522, longitude: -118.2437 },
-        'Chicago': { latitude: 41.8781, longitude: -87.6298 },
-        'Phoenix': { latitude: 33.4484, longitude: -112.0740 },
-      };
-      
-      let location = cityMap[plant.city] || { 
-        latitude: 37.78 + Math.random() * 0.1, 
-        longitude: -122.43 + Math.random() * 0.1
-      };
-      
-      return {
-        id: plant.id || plant._id,
-        title: plant.title || plant.name,
-        price: plant.price,
-        image: plant.image || plant.imageUrl,
-        coordinate: location
-      };
-    });
   };
 
   // Render list empty component
@@ -208,7 +204,7 @@ const MarketplaceScreen = () => {
         </View>
       );
     }
-    
+
     if (error) {
       return (
         <View style={styles.centerContainer}>
@@ -220,12 +216,12 @@ const MarketplaceScreen = () => {
         </View>
       );
     }
-    
+
     return (
       <View style={styles.centerContainer}>
         <MaterialIcons name="eco" size={48} color="#aaa" />
         <Text style={styles.noResultsText}>No plants found matching your criteria</Text>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={styles.resetButton}
           onPress={() => {
             setSearchQuery('');
@@ -243,7 +239,7 @@ const MarketplaceScreen = () => {
   // Render footer for infinite scrolling
   const renderFooter = () => {
     if (!isLoading || !hasMorePages) return null;
-    
+
     return (
       <View style={styles.footerContainer}>
         <ActivityIndicator size="small" color="#4CAF50" />
@@ -254,70 +250,53 @@ const MarketplaceScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Marketplace</Text>
-      </View>
+      {/* Custom Header - No back button needed on Marketplace home screen */}
+      <MarketplaceHeader
+        title="Plant Marketplace"
+        showBackButton={false}
+        onNotificationsPress={() => navigation.navigate('Messages')}
+      />
 
       {/* Search Bar */}
-      <SearchBar 
-        value={searchQuery} 
+      <SearchBar
+        value={searchQuery}
         onChangeText={handleSearch}
         onSubmit={() => loadPlants(1, true)}
+        style={styles.searchBarContainer}
       />
-      
-      {/* Filter Section */}
-      <View style={styles.filterContainer}>
-        {/* Category Filter */}
-        <CategoryFilter
-          selectedCategory={selectedCategory}
-          onSelect={handleCategorySelect}
-        />
-        
-        {/* Price Range Filter */}
-        <View style={styles.priceRangeContainer}>
-          <PriceRange
-            onPriceChange={handlePriceRangeChange}
-            initialMin={priceRange.min}
-            initialMax={priceRange.max}
-          />
-        </View>
-      </View>
 
-      {/* Plant List or Map View */}
-      {isMapView ? (
-        // Map View
-        <View style={styles.mapContainer}>
-          {/* Azure Map integration */}
-        </View>
-      ) : (
-        // List View
-        <FlatList
-          data={filteredPlants}
-          renderItem={({ item }) => <PlantCard plant={item} />}
-          keyExtractor={(item) => item.id?.toString() || item._id?.toString()}
-          numColumns={2}
-          contentContainerStyle={styles.listContainer}
-          onEndReached={handleLoadMore}
-          onEndReachedThreshold={0.5}
-          ListFooterComponent={renderFooter}
-          ListEmptyComponent={renderEmptyList}
-          refreshControl={
-            <RefreshControl
-              refreshing={isRefreshing}
-              onRefresh={onRefresh}
-              colors={["#4CAF50"]}
-              tintColor="#4CAF50"
-            />
-          }
-        />
-      )}
-      
-      {/* Add Plant Button */}
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate('AddPlant')}
-      >
+      {/* Category Filter */}
+      <CategoryFilter
+        selectedCategory={selectedCategory}
+        onSelect={handleCategorySelect}
+      />
+
+      {/* Sort and Price Filter */}
+      <FilterSection
+        sortOption={sortOption}
+        onSortChange={handleSortChange}
+        priceRange={priceRange}
+        onPriceChange={handlePriceRangeChange}
+      />
+
+      {/* Plant List */}
+      <FlatList
+        data={filteredPlants}
+        renderItem={({ item }) => <PlantCard plant={item} />}
+        keyExtractor={(item) => item.id?.toString() || item._id?.toString()}
+        numColumns={2}
+        contentContainerStyle={styles.listContainer}
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.5}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmptyList}
+        refreshControl={
+          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
+        }
+      />
+
+      {/* Add Plant FAB */}
+      <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddPlant')}>
         <MaterialIcons name="add" size={30} color="#fff" />
       </TouchableOpacity>
     </SafeAreaView>
@@ -329,24 +308,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f5f5f5',
   },
-  header: {
-    padding: 16,
-    backgroundColor: '#4CAF50',
+  searchBarContainer: {
     alignItems: 'center',
-  },
-  headerText: {
-    fontSize: 24,
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  filterContainer: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  priceRangeContainer: {
-    marginTop: 16,
+    paddingVertical: 12,
   },
   listContainer: {
     paddingHorizontal: 8,
@@ -371,6 +335,34 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 16,
   },
+  noResultsText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
+  retryButton: {
+    marginTop: 10,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 4,
+  },
+  retryText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  resetButton: {
+    marginTop: 16,
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 4,
+  },
+  resetButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
   footerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -391,6 +383,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
     justifyContent: 'center',
     alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
 });
 

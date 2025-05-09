@@ -1,3 +1,4 @@
+// screens/PlantDetailScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -16,6 +17,9 @@ import {
 import { MaterialIcons, FontAwesome, Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 
+// Import fixed header component
+import MarketplaceHeader from '../components/MarketplaceHeader';
+
 // Import services
 import { getSpecific, wishProduct } from '../services/productData';
 
@@ -23,7 +27,7 @@ const { width } = Dimensions.get('window');
 
 /**
  * PlantDetailScreen - Displays detailed information about a plant listing
- * Includes images, price, description, seller info, and action buttons
+ * Now with consistent header and back button
  */
 const PlantDetailScreen = () => {
   const route = useRoute();
@@ -116,26 +120,40 @@ const PlantDetailScreen = () => {
     }
   };
 
-  // Loading state
+  // Loading state with consistent header
   if (isLoading) {
     return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading plant details...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader 
+          title="Plant Details"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading plant details...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
-  // Error state
+  // Error state with consistent header
   if (error || !plant) {
     return (
-      <View style={styles.centerContainer}>
-        <MaterialIcons name="error-outline" size={48} color="#f44336" />
-        <Text style={styles.errorText}>{error || 'Plant not found'}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={loadPlantDetail}>
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader 
+          title="Plant Details"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.centerContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error || 'Plant not found'}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadPlantDetail}>
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -146,6 +164,13 @@ const PlantDetailScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* Use the consistent header with back button */}
+      <MarketplaceHeader 
+        title={plant.title || plant.name || "Plant Details"}
+        showBackButton={true}
+        onNotificationsPress={() => navigation.navigate('Messages')}
+      />
+      
       <ScrollView>
         {/* Plant Image Gallery */}
         <View style={styles.imageContainer}>
@@ -190,11 +215,6 @@ const PlantDetailScreen = () => {
               size={28} 
               color={isFavorite ? "#f44336" : "#fff"} 
             />
-          </TouchableOpacity>
-
-          {/* Back Button */}
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <Ionicons name="arrow-back" size={24} color="#fff" />
           </TouchableOpacity>
 
           {/* Share Button */}
@@ -380,14 +400,6 @@ const styles = StyleSheet.create({
     position: 'absolute', 
     top: 20, 
     right: 20, 
-    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
-    borderRadius: 50, 
-    padding: 10 
-  },
-  backButton: { 
-    position: 'absolute', 
-    top: 20, 
-    left: 20, 
     backgroundColor: 'rgba(0, 0, 0, 0.5)', 
     borderRadius: 50, 
     padding: 10 

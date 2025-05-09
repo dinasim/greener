@@ -1,3 +1,4 @@
+// screens/ProfileScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -9,87 +10,19 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+
+// Import consistent header
+import MarketplaceHeader from '../components/MarketplaceHeader';
 
 // Import components
 import PlantCard from '../components/PlantCard';
 
 // Import API service
 import { fetchUserProfile } from '../services/marketplaceApi';
-
-// Sample user data for development
-const SAMPLE_USER = {
-  id: 'user123',
-  name: 'Plant Enthusiast',
-  email: 'plant.lover@example.com',
-  phoneNumber: '+1 (555) 123-4567',
-  avatar: 'https://via.placeholder.com/150?text=User',
-  bio: 'Passionate plant enthusiast with a love for tropical houseplants. I enjoy propagating plants and helping others grow their own indoor jungles.',
-  joinDate: '2023-01-15T00:00:00Z',
-  location: 'Seattle, WA',
-  stats: {
-    plantsCount: 8,
-    favoritesCount: 12,
-    salesCount: 5,
-    rating: 4.9,
-  },
-  listings: [
-    {
-      id: '1',
-      name: 'Monstera Deliciosa',
-      description: 'Beautiful Swiss Cheese Plant with large fenestrated leaves',
-      price: 29.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Monstera',
-      category: 'Indoor Plants',
-      listedDate: new Date().toISOString(),
-      status: 'active',
-    },
-    {
-      id: '2',
-      name: 'Snake Plant',
-      description: 'Low maintenance indoor plant, perfect for beginners',
-      price: 19.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Snake+Plant',
-      category: 'Indoor Plants',
-      listedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-      status: 'active',
-    },
-    {
-      id: '3',
-      name: 'Fiddle Leaf Fig',
-      description: 'Trendy houseplant with violin-shaped leaves',
-      price: 34.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
-      category: 'Indoor Plants',
-      listedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
-      status: 'sold',
-    },
-  ],
-  favorites: [
-    {
-      id: '4',
-      name: 'Cactus Collection',
-      description: 'Set of 3 small decorative cacti',
-      price: 18.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Cactus',
-      sellerName: 'DesertDreams',
-      category: 'Cacti',
-      isFavorite: true,
-    },
-    {
-      id: '5',
-      name: 'Lavender Plant',
-      description: 'Fragrant flowering plant perfect for outdoors',
-      price: 15.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Lavender',
-      sellerName: 'GardenGuru',
-      category: 'Outdoor Plants',
-      isFavorite: true,
-    },
-  ],
-};
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -109,12 +42,7 @@ const ProfileScreen = () => {
       setError(null);
       
       // For real app, use API:
-      // const data = await fetchUserProfile();
-      
-      // For development, use sample data with a delay to simulate API call:
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const data = SAMPLE_USER;
-      
+      const data = await fetchUserProfile();
       setUser(data);
       setIsLoading(false);
     } catch (err) {
@@ -150,34 +78,55 @@ const ProfileScreen = () => {
   
   if (isLoading && !user) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
   
   if (error) {
     return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons name="error-outline" size={48} color="#f44336" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={loadUserProfile}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={loadUserProfile}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
   
   if (!user) {
     return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons name="person-off" size={48} color="#f44336" />
-        <Text style={styles.errorText}>User not found</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="person-off" size={48} color="#f44336" />
+          <Text style={styles.errorText}>User not found</Text>
+        </View>
+      </SafeAreaView>
     );
   }
   
@@ -185,7 +134,7 @@ const ProfileScreen = () => {
   const renderTabContent = () => {
     switch (activeTab) {
       case 'myPlants':
-        const activePlants = user.listings.filter(plant => plant.status === 'active');
+        const activePlants = user.listings ? user.listings.filter(plant => plant.status === 'active') : [];
         
         if (activePlants.length === 0) {
           return (
@@ -215,7 +164,7 @@ const ProfileScreen = () => {
         );
         
       case 'favorites':
-        if (user.favorites.length === 0) {
+        if (!user.favorites || user.favorites.length === 0) {
           return (
             <View style={styles.emptyStateContainer}>
               <MaterialIcons name="favorite-border" size={48} color="#ccc" />
@@ -243,7 +192,7 @@ const ProfileScreen = () => {
         );
         
       case 'sold':
-        const soldPlants = user.listings.filter(plant => plant.status === 'sold');
+        const soldPlants = user.listings ? user.listings.filter(plant => plant.status === 'sold') : [];
         
         if (soldPlants.length === 0) {
           return (
@@ -272,7 +221,14 @@ const ProfileScreen = () => {
   };
   
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      {/* Consistent header */}
+      <MarketplaceHeader
+        title="My Profile"
+        showBackButton={true}
+        onNotificationsPress={() => navigation.navigate('Messages')}
+      />
+      
       {/* Profile Header */}
       <View style={styles.profileHeader}>
         <View style={styles.coverContainer}>
@@ -313,21 +269,21 @@ const ProfileScreen = () => {
         
         <View style={styles.statsContainer}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.plantsCount}</Text>
+            <Text style={styles.statValue}>{user.stats?.plantsCount || 0}</Text>
             <Text style={styles.statLabel}>Listings</Text>
           </View>
           
           <View style={styles.statDivider} />
           
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.salesCount}</Text>
+            <Text style={styles.statValue}>{user.stats?.salesCount || 0}</Text>
             <Text style={styles.statLabel}>Sold</Text>
           </View>
           
           <View style={styles.statDivider} />
           
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.rating}</Text>
+            <Text style={styles.statValue}>{user.stats?.rating || '0.0'}</Text>
             <Text style={styles.statLabel}>Rating</Text>
           </View>
         </View>
@@ -404,7 +360,7 @@ const ProfileScreen = () => {
       >
         <MaterialIcons name="settings" size={24} color="#333" />
       </TouchableOpacity>
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -618,8 +574,8 @@ const styles = StyleSheet.create({
   },
   addPlantButton: {
     position: 'absolute',
-    right: 16,
-    bottom: 16,
+    right: 20,
+    bottom: 20,
     width: 56,
     height: 56,
     borderRadius: 28,
@@ -635,7 +591,7 @@ const styles = StyleSheet.create({
   settingsButton: {
     position: 'absolute',
     right: 16,
-    top: 16,
+    top: 96, // Positioned below the header
     width: 40,
     height: 40,
     borderRadius: 20,
@@ -647,6 +603,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+    zIndex: 10,
   },
 });
 

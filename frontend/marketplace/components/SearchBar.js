@@ -1,3 +1,4 @@
+// components/SearchBar.js
 import React from 'react';
 import {
   View,
@@ -9,12 +10,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 
 /**
- * SearchBar component for the marketplace
- * @param {Object} props - Component props
- * @param {string} props.value - Current search query
- * @param {Function} props.onChangeText - Function called when text changes
- * @param {Function} props.onSubmit - Function called when search is submitted (optional)
- * @param {Object} props.style - Additional style for the container (optional)
+ * Improved SearchBar component with better centering and styling
  */
 const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
   const handleClear = () => {
@@ -34,7 +30,7 @@ const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
       <View style={styles.searchContainer}>
         <MaterialIcons 
           name="search" 
-          size={24} 
+          size={20} 
           color="#999" 
           style={styles.searchIcon} 
         />
@@ -54,6 +50,7 @@ const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
           <TouchableOpacity 
             onPress={handleClear} 
             style={styles.clearButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
             <MaterialIcons name="clear" size={20} color="#999" />
           </TouchableOpacity>
@@ -65,25 +62,19 @@ const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 10,
+    padding: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    // Center the search bar container on web
-    ...Platform.select({
-      web: {
-        display: 'flex',
-        alignItems: 'center',
-      },
-    }),
+    alignItems: 'center', // Center the search bar
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
-    paddingHorizontal: 8,
-    width: '50%', // 50% of the screen width
+    paddingHorizontal: 12,
+    width: '50%', // Set to 50% of parent width
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -101,7 +92,6 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     marginRight: 8,
-    marginLeft: 4,
   },
   input: {
     flex: 1,
@@ -115,7 +105,7 @@ const styles = StyleSheet.create({
     }),
   },
   clearButton: {
-    padding: 8,
+    padding: 6,
   },
 });
 
