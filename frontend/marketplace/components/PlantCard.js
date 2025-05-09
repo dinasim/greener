@@ -16,11 +16,14 @@ import { wishProduct } from '../services/productData';
  * @param {Object} props - Component props
  * @param {Object} props.plant - Plant data
  * @param {boolean} props.showActions - Whether to show action buttons
+ * @param {string} props.layout - Layout type: 'grid' or 'list'
  */
-const PlantCard = ({ plant, showActions = true }) => {
+const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
   const navigation = useNavigation();
   const [isFavorite, setIsFavorite] = useState(plant.isFavorite || false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const isListLayout = layout === 'list';
 
   const handleViewDetails = () => {
     navigation.navigate('PlantDetail', { 
@@ -100,16 +103,19 @@ const PlantCard = ({ plant, showActions = true }) => {
 
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[
+        styles.card,
+        isListLayout && styles.listCard
+      ]}
       activeOpacity={0.9}
       onPress={handleViewDetails}
     >
-      <View style={styles.imageContainer}>
+      <View style={[styles.imageContainer, isListLayout && styles.listImageContainer]}>
         <Image
           source={{ 
             uri: plant.imageUrl || plant.image || 'https://via.placeholder.com/150?text=Plant' 
           }}
-          style={styles.image}
+          style={[styles.image, isListLayout && styles.listImage]}
           resizeMode="cover"
         />
         
@@ -137,9 +143,9 @@ const PlantCard = ({ plant, showActions = true }) => {
         )}
       </View>
 
-      <View style={styles.infoContainer}>
+      <View style={[styles.infoContainer, isListLayout && styles.listInfoContainer]}>
         <View style={styles.titleRow}>
-          <Text style={styles.name} numberOfLines={1}>
+          <Text style={[styles.name, isListLayout && styles.listName]} numberOfLines={isListLayout ? 2 : 1}>
             {plant.name || plant.title}
           </Text>
           <Text style={styles.price}>${formatPrice()}</Text>
@@ -191,6 +197,8 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     margin: 8,
     overflow: 'hidden',
+    flex: 1,
+    maxWidth: '47%', // For grid layout (2 columns)
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -206,13 +214,25 @@ const styles = StyleSheet.create({
       },
     }),
   },
+  listCard: {
+    flexDirection: 'row',
+    maxWidth: '100%',
+    height: 130,
+  },
   imageContainer: {
     position: 'relative',
+  },
+  listImageContainer: {
+    width: 130,
   },
   image: {
     height: 160,
     width: '100%',
     backgroundColor: '#f0f0f0',
+  },
+  listImage: {
+    height: 130,
+    width: 130,
   },
   locationPill: {
     position: 'absolute',
@@ -245,6 +265,10 @@ const styles = StyleSheet.create({
   infoContainer: {
     padding: 12,
   },
+  listInfoContainer: {
+    flex: 1,
+    padding: 12,
+  },
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -257,6 +281,9 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
     color: '#333',
+  },
+  listName: {
+    fontSize: 17,
   },
   price: {
     fontSize: 16,

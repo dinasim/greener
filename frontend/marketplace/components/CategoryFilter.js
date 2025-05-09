@@ -1,39 +1,44 @@
 import React from 'react';
-import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 
+const { width } = Dimensions.get('window');
+
 /**
- * Plant categories filter component with centered title and buttons
+ * Responsive plant categories filter component
  */
 const CategoryFilter = ({
   categories = defaultCategories,
   selectedCategory = 'All',
   onSelect
 }) => {
+  // Determine if button text should be shown based on screen size
+  const showText = width > 500;
+
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Categories</Text>
-      <View style={styles.scrollViewContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContent}
-        >
-          {categories.map((category) => (
-            <TouchableOpacity
-              key={category.id}
-              style={[
-                styles.categoryButton,
-                selectedCategory === category.id && styles.selectedButton
-              ]}
-              onPress={() => onSelect(category.id)}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons
-                name={category.icon}
-                size={20}
-                color={selectedCategory === category.id ? '#fff' : '#4CAF50'}
-              />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+      >
+        {categories.map((category) => (
+          <TouchableOpacity
+            key={category.id}
+            style={[
+              styles.categoryButton,
+              selectedCategory === category.id && styles.selectedButton
+            ]}
+            onPress={() => onSelect(category.id)}
+            activeOpacity={0.7}
+          >
+            <MaterialCommunityIcons
+              name={category.icon}
+              size={20}
+              color={selectedCategory === category.id ? '#fff' : '#4CAF50'}
+            />
+            {showText && (
               <Text
                 style={[
                   styles.categoryText,
@@ -42,10 +47,10 @@ const CategoryFilter = ({
               >
                 {category.label}
               </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
+            )}
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
     </View>
   );
 };
@@ -65,27 +70,27 @@ const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
     paddingVertical: 16,
+    paddingHorizontal: 8,
+    width: '100%',
   },
   heading: {
     fontSize: 18,
     fontWeight: 'bold',
     marginBottom: 12,
     color: '#333',
-    textAlign: 'center', // Center the "Categories" text
-  },
-  scrollViewContainer: {
-    alignItems: 'center', // Center the ScrollView horizontally
+    textAlign: 'center',
   },
   scrollContent: {
-    paddingHorizontal: 12,
-    justifyContent: 'center', // Center the category buttons
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    minWidth: '100%',
   },
   categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0f9f0',
-    paddingHorizontal: 16,
     paddingVertical: 10,
+    paddingHorizontal: width > 600 ? 16 : 12,
     borderRadius: 20,
     marginHorizontal: 4,
     borderWidth: 1,
@@ -99,6 +104,7 @@ const styles = StyleSheet.create({
     marginLeft: 8,
     fontWeight: '500',
     color: '#4CAF50',
+    fontSize: width > 800 ? 14 : 12,
   },
   selectedText: {
     color: '#fff',

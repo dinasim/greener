@@ -23,84 +23,44 @@ const MarketplaceNavigation = () => {
     <Stack.Navigator
       initialRouteName="Marketplace"
       screenOptions={({ navigation }) => ({
-        headerStyle: {
-          backgroundColor: '#4CAF50',
-        },
-        headerTintColor: '#fff',
-        headerTitleStyle: {
-          fontWeight: 'bold',
-        },
-        headerLeft: ({ canGoBack }) => 
-          canGoBack ? (
-            <TouchableOpacity onPress={() => navigation.goBack()}>
-              <MaterialIcons name="arrow-back" size={24} color="#fff" style={{ marginRight: 10 }} />
-            </TouchableOpacity>
-          ) : null,
-        headerRight: () => (
-          <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
-            <MaterialIcons name="person" size={24} color="#fff" />
-          </TouchableOpacity>
-        ),
+        headerShown: false, // We're using our custom header
+        contentStyle: { backgroundColor: '#fff' },
+        animation: 'slide_from_right',
       })}
     >
       <Stack.Screen 
         name="Marketplace" 
         component={MarketplaceScreen}
-        options={{ 
-          title: 'Plant Marketplace',
-        }}
       />
       
       <Stack.Screen 
         name="PlantDetail" 
         component={PlantDetailScreen}
-        options={{ 
-          title: 'Plant Details',
-          headerTransparent: true,
-          headerTitle: '', // Blank title for transparent header
-        }}
       />
       
       <Stack.Screen 
         name="AddPlant" 
         component={AddPlantScreen}
-        options={{ 
-          title: 'Add New Plant',
-        }}
       />
       
       <Stack.Screen 
         name="Profile" 
         component={ProfileScreen}
-        options={{ 
-          title: 'My Profile',
-          headerRight: null, // Remove profile icon in profile screen
-        }}
       />
       
       <Stack.Screen 
         name="EditProfile" 
         component={EditProfileScreen}
-        options={{ 
-          title: 'Edit Profile',
-          headerRight: null,
-        }}
       />
       
       <Stack.Screen 
         name="Messages" 
         component={MessagesScreen}
-        options={{ 
-          title: 'Messages',
-        }}
       />
       
       <Stack.Screen 
         name="SellerProfile" 
         component={SellerProfileScreen}
-        options={({ route }) => ({ 
-          title: route.params?.sellerName || 'Seller Profile',
-        })}
       />
     </Stack.Navigator>
   );

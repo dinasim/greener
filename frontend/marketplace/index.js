@@ -23,6 +23,7 @@ export { default as SearchBar } from './components/SearchBar';
 export { default as CategoryFilter } from './components/CategoryFilter';
 export { default as PriceRange } from './components/PriceRange';
 
+
 // Services
 export * from './services/productData';
 export * from './services/userData';

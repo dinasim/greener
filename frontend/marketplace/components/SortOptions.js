@@ -10,7 +10,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 
 /**
- * Compact sort options component to match web design
+ * Compact sort options component with smaller button size
  */
 const SortOptions = ({ selectedOption = 'recent', onSelectOption }) => {
   const [modalVisible, setModalVisible] = useState(false);
@@ -18,7 +18,7 @@ const SortOptions = ({ selectedOption = 'recent', onSelectOption }) => {
   // Sort options
   const options = [
     { id: 'recent', label: 'New To Old', icon: 'schedule' },
-    { id: 'popular', label: 'Old to New', icon: 'history' },
+    { id: 'oldest', label: 'Old to New', icon: 'history' },
     { id: 'priceAsc', label: 'Price: Low to High', icon: 'trending-up' },
     { id: 'priceDesc', label: 'Price: High to Low', icon: 'trending-down' },
     { id: 'rating', label: 'Highest Rated Seller', icon: 'star' },
@@ -91,25 +91,22 @@ const SortOptions = ({ selectedOption = 'recent', onSelectOption }) => {
 
 const styles = StyleSheet.create({
   container: {
-    width: '100%', // Full width to match the layout above product list
-    marginBottom: 16, // Add some margin to the bottom to space it from products
+    alignItems: 'flex-start', // Align to the left
   },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 6, // Reduced height
+    paddingHorizontal: 10, // Reduced width
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#e0e0e0',
-    marginLeft: 0, // Align to the left
   },
   sortButtonText: {
     fontSize: 14,
     color: '#333',
     marginHorizontal: 4,
-    flex: 1,
   },
   modalOverlay: {
     flex: 1,

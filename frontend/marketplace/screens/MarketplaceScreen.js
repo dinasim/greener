@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,6 +19,7 @@ import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
+import AzureMapView from '../components/AzureMapView';
 
 // Import services
 import { getAll } from '../services/productData';
@@ -32,6 +34,7 @@ const MarketplaceScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortOption, setSortOption] = useState('recent');
+  const [viewMode, setViewMode] = useState('grid'); // 'grid', 'list', or 'map'
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [error, setError] = useState(null);
@@ -187,6 +190,11 @@ const MarketplaceScreen = ({ navigation }) => {
     setSortOption(option);
   };
 
+  // Handle view mode change
+  const handleViewModeChange = (mode) => {
+    setViewMode(mode);
+  };
+
   // Handle load more
   const handleLoadMore = () => {
     if (!isLoading && hasMorePages) {
@@ -248,6 +256,46 @@ const MarketplaceScreen = ({ navigation }) => {
     );
   };
 
+  // Main loading state - show while initial data is loading
+  if (isLoading && plants.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="Plant Marketplace"
+          showBackButton={false}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading plants...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Main error state - show if there's an error loading initial data
+  if (error && plants.length === 0) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="Plant Marketplace"
+          showBackButton={false}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.centerContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity 
+            style={styles.retryButton} 
+            onPress={() => loadPlants(1, true)}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Custom Header - No back button needed on Marketplace home screen */}
@@ -271,29 +319,53 @@ const MarketplaceScreen = ({ navigation }) => {
         onSelect={handleCategorySelect}
       />
 
-      {/* Sort and Price Filter */}
+      {/* Sort, Price Filter, and View Mode Toggle */}
       <FilterSection
         sortOption={sortOption}
         onSortChange={handleSortChange}
         priceRange={priceRange}
         onPriceChange={handlePriceRangeChange}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
       />
 
-      {/* Plant List */}
-      <FlatList
-        data={filteredPlants}
-        renderItem={({ item }) => <PlantCard plant={item} />}
-        keyExtractor={(item) => item.id?.toString() || item._id?.toString()}
-        numColumns={2}
-        contentContainerStyle={styles.listContainer}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={renderEmptyList}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
-        }
-      />
+      {/* Conditional rendering based on view mode */}
+      {viewMode === 'map' ? (
+        // Map View
+        <AzureMapView 
+          products={filteredPlants}
+          onSelectProduct={(productId) => {
+            navigation.navigate('PlantDetail', { plantId: productId });
+          }}
+        />
+      ) : (
+        // List or Grid View
+        <FlatList
+          data={filteredPlants}
+          renderItem={({ item }) => (
+            <PlantCard 
+              plant={item} 
+              showActions={true}
+              layout={viewMode}
+            />
+          )}
+          numColumns={viewMode === 'grid' ? 2 : 1}
+          key={viewMode} // Forces remount when view mode changes
+          keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
+          contentContainerStyle={[
+            styles.listContainer,
+            filteredPlants.length === 0 && styles.emptyListContainer,
+            viewMode === 'list' && styles.listViewContainer
+          ]}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmptyList}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
+          }
+        />
+      )}
 
       {/* Add Plant FAB */}
       <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddPlant')}>
@@ -315,6 +387,12 @@ const styles = StyleSheet.create({
   listContainer: {
     paddingHorizontal: 8,
     paddingBottom: 80,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
+  },
+  listViewContainer: {
+    paddingHorizontal: 16,
   },
   centerContainer: {
     flex: 1,

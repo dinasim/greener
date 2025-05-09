@@ -12,8 +12,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
 /**
- * Marketplace header component that only shows back button on non-web platforms
- * and matches the web design better
+ * Marketplace header component with consistent back button behavior
  */
 const MarketplaceHeader = ({
   title = 'PlantMarket',
@@ -23,9 +22,6 @@ const MarketplaceHeader = ({
 }) => {
   const navigation = useNavigation();
   
-  // Only show back button on native platforms, not on web
-  const shouldShowBackButton = Platform.OS !== 'web' && showBackButton;
-
   return (
     <View style={styles.background}>
       <StatusBar
@@ -34,7 +30,7 @@ const MarketplaceHeader = ({
         translucent={true}
       />
       <View style={styles.headerContent}>
-        {shouldShowBackButton && (
+        {showBackButton && (
           <TouchableOpacity
             style={styles.backButton}
             onPress={() => navigation.goBack()}
@@ -44,7 +40,11 @@ const MarketplaceHeader = ({
           </TouchableOpacity>
         )}
 
-        <Text style={[styles.title, !shouldShowBackButton && styles.centeredTitle]}>
+        <Text style={[
+          styles.title, 
+          !showBackButton && styles.centeredTitle,
+          showBackButton && !showNotifications && styles.rightPadding
+        ]}>
           {title}
         </Text>
 
@@ -68,7 +68,7 @@ const MarketplaceHeader = ({
 
 const styles = StyleSheet.create({
   background: {
-    height: 60, // Reduced height to match web design
+    height: 60,
     width: '100%',
     backgroundColor: '#4CAF50',
     zIndex: 100,
@@ -93,6 +93,9 @@ const styles = StyleSheet.create({
   },
   centeredTitle: {
     textAlign: 'center',
+  },
+  rightPadding: {
+    paddingRight: 40, // Balance the header when there's only back button
   },
   notificationButton: {
     padding: 8,

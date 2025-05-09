@@ -10,18 +10,21 @@ import {
   Platform,
   Image,
   ActivityIndicator,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 
+// Import MarketplaceHeader
+import MarketplaceHeader from '../components/MarketplaceHeader';
+
+// Import services
 import {
   fetchConversations,
   fetchMessages,
   sendMessage,
   startConversation
 } from '../services/marketplaceApi';  // Correct relative path with capital M
-
-
 
 // Sample data for development
 const SAMPLE_CONVERSATIONS = [
@@ -483,10 +486,13 @@ const MessagesScreen = () => {
   };
   
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Messages</Text>
-      </View>
+    <SafeAreaView style={styles.container}>
+      {/* Use MarketplaceHeader instead of custom header */}
+      <MarketplaceHeader
+        title="Messages"
+        showBackButton={true}
+        showNotifications={false}
+      />
       
       <View style={styles.tabContainer}>
         <TouchableOpacity
@@ -527,7 +533,7 @@ const MessagesScreen = () => {
       </View>
       
       {activeTab === 'conversations' ? renderConversationsList() : renderChatScreen()}
-    </View>
+    </SafeAreaView>
   );
 };
 
@@ -535,16 +541,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
-  },
-  header: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
   },
   tabContainer: {
     flexDirection: 'row',

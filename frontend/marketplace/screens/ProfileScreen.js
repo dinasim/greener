@@ -6,7 +6,6 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
   FlatList,
@@ -41,9 +40,61 @@ const ProfileScreen = () => {
       setIsLoading(true);
       setError(null);
       
-      // For real app, use API:
-      const data = await fetchUserProfile();
-      setUser(data);
+      // For real app, use API
+      // const data = await fetchUserProfile();
+      
+      // For development, use sample data
+      const sampleUser = {
+        id: 'user123',
+        name: 'Plant Enthusiast',
+        email: 'plant.lover@example.com',
+        phoneNumber: '+1 (555) 123-4567',
+        avatar: 'https://via.placeholder.com/150?text=User',
+        bio: 'Passionate plant enthusiast with a love for tropical houseplants. I enjoy propagating plants and helping others grow their own indoor jungles.',
+        location: 'Seattle, WA',
+        joinDate: new Date('2023-01-01').toISOString(),
+        stats: {
+          plantsCount: 8,
+          salesCount: 5,
+          rating: 4.9,
+        },
+        listings: [
+          {
+            id: '1',
+            name: 'Monstera Deliciosa',
+            description: 'Beautiful Swiss Cheese Plant with large fenestrated leaves',
+            price: 29.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Monstera',
+            category: 'Indoor Plants',
+            listedDate: new Date().toISOString(),
+            status: 'active',
+          },
+          {
+            id: '2',
+            name: 'Snake Plant',
+            description: 'Low maintenance indoor plant, perfect for beginners',
+            price: 19.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Snake+Plant',
+            category: 'Indoor Plants',
+            listedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'active',
+          }
+        ],
+        favorites: [
+          {
+            id: '3',
+            name: 'Fiddle Leaf Fig',
+            description: 'Trendy houseplant with violin-shaped leaves',
+            price: 34.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
+            category: 'Indoor Plants',
+            listedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'sold',
+          }
+        ]
+      };
+      
+      setUser(sampleUser);
       setIsLoading(false);
     } catch (err) {
       setError('Failed to load profile. Please try again later.');
@@ -157,7 +208,7 @@ const ProfileScreen = () => {
             renderItem={({ item }) => (
               <PlantCard plant={item} showActions={false} />
             )}
-            keyExtractor={item => item.id}
+            keyExtractor={item => item.id || item._id}
             numColumns={2}
             contentContainerStyle={styles.plantGrid}
           />
@@ -185,7 +236,7 @@ const ProfileScreen = () => {
             renderItem={({ item }) => (
               <PlantCard plant={item} showActions={false} />
             )}
-            keyExtractor={item => item.id}
+            keyExtractor={item => item.id || item._id}
             numColumns={2}
             contentContainerStyle={styles.plantGrid}
           />
@@ -209,7 +260,7 @@ const ProfileScreen = () => {
             renderItem={({ item }) => (
               <PlantCard plant={item} showActions={false} />
             )}
-            keyExtractor={item => item.id}
+            keyExtractor={item => item.id || item._id}
             numColumns={2}
             contentContainerStyle={styles.plantGrid}
           />
