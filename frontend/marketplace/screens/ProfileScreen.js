@@ -41,9 +41,61 @@ const ProfileScreen = () => {
       setIsLoading(true);
       setError(null);
       
-      // For real app, use API:
-      const data = await fetchUserProfile();
-      setUser(data);
+      // For real app, use API
+      // const data = await fetchUserProfile();
+      
+      // For development, use sample data
+      const sampleUser = {
+        id: 'user123',
+        name: 'Plant Enthusiast',
+        email: 'plant.lover@example.com',
+        phoneNumber: '+1 (555) 123-4567',
+        avatar: 'https://via.placeholder.com/150?text=User',
+        bio: 'Passionate plant enthusiast with a love for tropical houseplants. I enjoy propagating plants and helping others grow their own indoor jungles.',
+        location: 'Seattle, WA',
+        joinDate: new Date('2023-01-01').toISOString(),
+        stats: {
+          plantsCount: 8,
+          salesCount: 5,
+          rating: 4.9,
+        },
+        listings: [
+          {
+            id: '1',
+            name: 'Monstera Deliciosa',
+            description: 'Beautiful Swiss Cheese Plant with large fenestrated leaves',
+            price: 29.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Monstera',
+            category: 'Indoor Plants',
+            listedDate: new Date().toISOString(),
+            status: 'active',
+          },
+          {
+            id: '2',
+            name: 'Snake Plant',
+            description: 'Low maintenance indoor plant, perfect for beginners',
+            price: 19.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Snake+Plant',
+            category: 'Indoor Plants',
+            listedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'active',
+          }
+        ],
+        favorites: [
+          {
+            id: '3',
+            name: 'Fiddle Leaf Fig',
+            description: 'Trendy houseplant with violin-shaped leaves',
+            price: 34.99,
+            imageUrl: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
+            category: 'Indoor Plants',
+            listedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
+            status: 'sold',
+          }
+        ]
+      };
+      
+      setUser(sampleUser);
       setIsLoading(false);
     } catch (err) {
       setError('Failed to load profile. Please try again later.');
@@ -237,6 +289,7 @@ const ProfileScreen = () => {
             style={styles.coverImage}
           />
           
+          {/* Keep only the Edit Profile button, remove Settings */}
           <TouchableOpacity 
             style={styles.editButton}
             onPress={() => navigation.navigate('EditProfile')}
@@ -353,13 +406,7 @@ const ProfileScreen = () => {
         <MaterialIcons name="add" size={24} color="#fff" />
       </TouchableOpacity>
       
-      {/* Settings Button */}
-      <TouchableOpacity
-        style={styles.settingsButton}
-        onPress={() => navigation.navigate('Settings')}
-      >
-        <MaterialIcons name="settings" size={24} color="#333" />
-      </TouchableOpacity>
+      {/* Removed the Settings button */}
     </SafeAreaView>
   );
 };
@@ -588,23 +635,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  settingsButton: {
-    position: 'absolute',
-    right: 16,
-    top: 96, // Positioned below the header
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    zIndex: 10,
-  },
+  // Removed settingsButton style
 });
 
 export default ProfileScreen;

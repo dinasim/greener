@@ -12,6 +12,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -21,19 +22,28 @@ import * as ImagePicker from 'expo-image-picker';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 
 // Import API service
-import { createPlant } from '../services/productData';
+import { createPlant } from '../services/marketplaceApi';
 
 const AddPlantScreen = () => {
   const navigation = useNavigation();
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState([]);
   const [formData, setFormData] = useState({
-    name: '',
+    title: '', // Using title to match backend property
     price: '',
     category: 'Indoor Plants',
     description: '',
     careInstructions: '',
-    location: '',
+    city: '', // Using city to match backend property
+  });
+  
+  // Form validations
+  const [formErrors, setFormErrors] = useState({
+    title: '',
+    price: '',
+    description: '',
+    city: '',
+    images: '',
   });
 
   // Categories for plants
@@ -52,6 +62,14 @@ const AddPlantScreen = () => {
       ...formData,
       [key]: value,
     });
+    
+    // Clear the error for this field when the user makes changes
+    if (formErrors[key]) {
+      setFormErrors({
+        ...formErrors,
+        [key]: '',
+      });
+    }
   };
 
   const pickImage = async () => {
@@ -71,7 +89,16 @@ const AddPlantScreen = () => {
       });
       
       if (!result.canceled && result.assets && result.assets.length > 0) {
+        // Add the new image to the images array
         setImages([...images, result.assets[0].uri]);
+        
+        // Clear any image-related error
+        if (formErrors.images) {
+          setFormErrors({
+            ...formErrors,
+            images: '',
+          });
+        }
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -86,32 +113,45 @@ const AddPlantScreen = () => {
   };
 
   const validateForm = () => {
-    if (!formData.name.trim()) {
-      Alert.alert('Error', 'Please enter a plant name');
-      return false;
+    const errors = {};
+    let isValid = true;
+    
+    if (!formData.title.trim()) {
+      errors.title = 'Plant name is required';
+      isValid = false;
+    } else if (formData.title.length < 3 || formData.title.length > 50) {
+      errors.title = 'Name should be between 3 and 50 characters';
+      isValid = false;
     }
     
-    if (!formData.price || isNaN(parseFloat(formData.price))) {
-      Alert.alert('Error', 'Please enter a valid price');
-      return false;
+    if (!formData.price) {
+      errors.price = 'Price is required';
+      isValid = false;
+    } else if (isNaN(parseFloat(formData.price)) || parseFloat(formData.price) <= 0) {
+      errors.price = 'Please enter a valid price';
+      isValid = false;
     }
     
     if (!formData.description.trim()) {
-      Alert.alert('Error', 'Please enter a description');
-      return false;
+      errors.description = 'Description is required';
+      isValid = false;
+    } else if (formData.description.length < 10) {
+      errors.description = 'Description must be at least 10 characters';
+      isValid = false;
     }
     
-    if (!formData.location.trim()) {
-      Alert.alert('Error', 'Please enter a location');
-      return false;
+    if (!formData.city.trim()) {
+      errors.city = 'Location is required';
+      isValid = false;
     }
     
     if (images.length === 0) {
-      Alert.alert('Error', 'Please add at least one image');
-      return false;
+      errors.images = 'Please add at least one image';
+      isValid = false;
     }
     
-    return true;
+    setFormErrors(errors);
+    return isValid;
   };
 
   const handleSubmit = async () => {
@@ -120,18 +160,24 @@ const AddPlantScreen = () => {
     setIsLoading(true);
     
     try {
-      // Prepare data for upload
+      // Prepare data for API
       const plantData = {
-        ...formData,
+        title: formData.title,
         price: parseFloat(formData.price),
-        images: images,
-        createdAt: new Date().toISOString(),
+        category: formData.category,
+        description: formData.description,
+        city: formData.city,
+        careInstructions: formData.careInstructions,
+        image: images[0], // Use the first image as the main image
+        images: images.length > 1 ? images.slice(1) : [], // Additional images if available
+        addedAt: new Date().toISOString(),
       };
       
-      // Call Azure Function to create plant
+      // Call the API to create the plant listing
       const result = await createPlant(plantData);
       
-      if (result.productId) {
+      // Check if we got a valid response with a product ID
+      if (result && result.productId) {
         Alert.alert(
           'Success',
           'Your plant has been listed!',
@@ -158,152 +204,171 @@ const AddPlantScreen = () => {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={styles.container}
-    >
-      {/* Use consistent header with back button */}
+    <SafeAreaView style={styles.container}>
+      {/* Added consistent header with back button */}
       <MarketplaceHeader
         title="Add New Plant"
-        showBackButton={true} // This should be true for proper back navigation
+        showBackButton={true}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
       
-      <ScrollView style={styles.scrollView}>
-        <View style={styles.content}>
-          <Text style={styles.title}>Add a New Plant</Text>
-          
-          {/* Plant Images */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Plant Images</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.imageScroller}
-            >
-              {images.map((uri, index) => (
-                <View key={index} style={styles.imageContainer}>
-                  <Image source={{ uri }} style={styles.plantImage} />
-                  <TouchableOpacity 
-                    style={styles.removeImageButton}
-                    onPress={() => removeImage(index)}
-                  >
-                    <MaterialIcons name="close" size={20} color="white" />
-                  </TouchableOpacity>
-                </View>
-              ))}
-              
-              <TouchableOpacity 
-                style={styles.addImageButton} 
-                onPress={pickImage}
-              >
-                <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
-                <Text style={styles.addImageText}>Add Photo</Text>
-              </TouchableOpacity>
-            </ScrollView>
-          </View>
-          
-          {/* Basic Information */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Basic Information</Text>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidingView}
+      >
+        <ScrollView style={styles.scrollView}>
+          <View style={styles.content}>
+            <Text style={styles.title}>Add a New Plant</Text>
             
-            <Text style={styles.label}>Plant Name</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.name}
-              onChangeText={(text) => handleChange('name', text)}
-              placeholder="What kind of plant is it?"
-            />
-            
-            <Text style={styles.label}>Price</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.price}
-              onChangeText={(text) => handleChange('price', text)}
-              placeholder="How much are you selling it for?"
-              keyboardType="numeric"
-            />
-            
-            <Text style={styles.label}>Category</Text>
-            <ScrollView 
-              horizontal 
-              showsHorizontalScrollIndicator={false}
-              style={styles.categoryScroller}
-            >
-              {categories.map((category) => (
-                <TouchableOpacity 
-                  key={category}
-                  style={[
-                    styles.categoryButton,
-                    formData.category === category && styles.selectedCategoryButton
-                  ]}
-                  onPress={() => handleChange('category', category)}
+            {/* Plant Images */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Plant Images</Text>
+              <View style={styles.imagesContainer}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  style={styles.imageScroller}
                 >
-                  <Text 
-                    style={[
-                      styles.categoryText,
-                      formData.category === category && styles.selectedCategoryText
-                    ]}
+                  {images.map((uri, index) => (
+                    <View key={index} style={styles.imageContainer}>
+                      <Image source={{ uri }} style={styles.plantImage} />
+                      <TouchableOpacity 
+                        style={styles.removeImageButton}
+                        onPress={() => removeImage(index)}
+                      >
+                        <MaterialIcons name="close" size={20} color="white" />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                  
+                  <TouchableOpacity 
+                    style={styles.addImageButton} 
+                    onPress={pickImage}
                   >
-                    {category}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+                    <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
+                    <Text style={styles.addImageText}>Add Photo</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+                {formErrors.images ? (
+                  <Text style={styles.errorText}>{formErrors.images}</Text>
+                ) : null}
+              </View>
+            </View>
             
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.location}
-              onChangeText={(text) => handleChange('location', text)}
-              placeholder="Where can buyers pick up the plant?"
-            />
+            {/* Basic Information */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Basic Information</Text>
+              
+              <Text style={styles.label}>Plant Name</Text>
+              <TextInput
+                style={[styles.input, formErrors.title && styles.inputError]}
+                value={formData.title}
+                onChangeText={(text) => handleChange('title', text)}
+                placeholder="What kind of plant is it?"
+              />
+              {formErrors.title ? (
+                <Text style={styles.errorText}>{formErrors.title}</Text>
+              ) : null}
+              
+              <Text style={styles.label}>Price</Text>
+              <TextInput
+                style={[styles.input, formErrors.price && styles.inputError]}
+                value={formData.price}
+                onChangeText={(text) => handleChange('price', text)}
+                placeholder="How much are you selling it for?"
+                keyboardType="numeric"
+              />
+              {formErrors.price ? (
+                <Text style={styles.errorText}>{formErrors.price}</Text>
+              ) : null}
+              
+              <Text style={styles.label}>Category</Text>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                style={styles.categoryScroller}
+              >
+                {categories.map((category) => (
+                  <TouchableOpacity 
+                    key={category}
+                    style={[
+                      styles.categoryButton,
+                      formData.category === category && styles.selectedCategoryButton
+                    ]}
+                    onPress={() => handleChange('category', category)}
+                  >
+                    <Text 
+                      style={[
+                        styles.categoryText,
+                        formData.category === category && styles.selectedCategoryText
+                      ]}
+                    >
+                      {category}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+              
+              <Text style={styles.label}>Location</Text>
+              <TextInput
+                style={[styles.input, formErrors.city && styles.inputError]}
+                value={formData.city}
+                onChangeText={(text) => handleChange('city', text)}
+                placeholder="Where can buyers pick up the plant?"
+              />
+              {formErrors.city ? (
+                <Text style={styles.errorText}>{formErrors.city}</Text>
+              ) : null}
+            </View>
+            
+            {/* Description */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Description</Text>
+              <TextInput
+                style={[styles.input, styles.textArea, formErrors.description && styles.inputError]}
+                value={formData.description}
+                onChangeText={(text) => handleChange('description', text)}
+                placeholder="Describe your plant (size, age, condition, etc.)"
+                multiline
+                numberOfLines={4}
+              />
+              {formErrors.description ? (
+                <Text style={styles.errorText}>{formErrors.description}</Text>
+              ) : null}
+            </View>
+            
+            {/* Care Instructions */}
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Care Instructions</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={formData.careInstructions}
+                onChangeText={(text) => handleChange('careInstructions', text)}
+                placeholder="Share how to care for this plant (optional)"
+                multiline
+                numberOfLines={4}
+              />
+            </View>
+            
+            {/* Submit Button */}
+            <TouchableOpacity 
+              style={[
+                styles.submitButton,
+                isLoading && styles.disabledButton
+              ]} 
+              onPress={handleSubmit}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.submitText}>List Plant for Sale</Text>
+              )}
+            </TouchableOpacity>
           </View>
-          
-          {/* Description */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Description</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.description}
-              onChangeText={(text) => handleChange('description', text)}
-              placeholder="Describe your plant (size, age, condition, etc.)"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-          
-          {/* Care Instructions */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Care Instructions</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.careInstructions}
-              onChangeText={(text) => handleChange('careInstructions', text)}
-              placeholder="Share how to care for this plant (optional)"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-          
-          {/* Submit Button */}
-          <TouchableOpacity 
-            style={[
-              styles.submitButton,
-              isLoading && styles.disabledButton
-            ]} 
-            onPress={handleSubmit}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>List Plant for Sale</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
@@ -311,6 +376,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  keyboardAvoidingView: {
+    flex: 1,
   },
   scrollView: {
     flex: 1,
@@ -334,6 +402,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#333',
   },
+  imagesContainer: {
+    width: '100%',
+  },
   imageScroller: {
     flexDirection: 'row',
     marginBottom: 10,
@@ -346,6 +417,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 8,
+    backgroundColor: '#f0f0f0',
   },
   removeImageButton: {
     position: 'absolute',
@@ -372,6 +444,7 @@ const styles = StyleSheet.create({
   addImageText: {
     marginTop: 4,
     color: '#4CAF50',
+    fontSize: 12,
   },
   label: {
     fontSize: 16,
@@ -385,6 +458,16 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 16,
     fontSize: 16,
+    backgroundColor: '#f9f9f9',
+  },
+  inputError: {
+    borderColor: '#f44336',
+  },
+  errorText: {
+    color: '#f44336',
+    fontSize: 12,
+    marginTop: -12,
+    marginBottom: 12,
   },
   textArea: {
     height: 120,
@@ -419,6 +502,7 @@ const styles = StyleSheet.create({
     padding: 16,
     alignItems: 'center',
     marginTop: 16,
+    marginBottom: 24,
   },
   disabledButton: {
     backgroundColor: '#A5D6A7',

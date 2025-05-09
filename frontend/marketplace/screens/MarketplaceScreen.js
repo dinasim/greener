@@ -1,4 +1,4 @@
-// Modified MarketplaceScreen.js with fixes for map integration
+// File: screens/MarketplaceScreen.js
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   SafeAreaView,
   RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -19,11 +20,11 @@ import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
-// Temporarily comment out the Azure Map view
-// import AzureMapView from '../components/AzureMapView';
+import AzureMapView from '../components/AzureMapView';
 
 // Import services
 import { getAll } from '../services/productData';
+import { getProductsWithLocation } from '../services/azureMapsService';
 
 const MarketplaceScreen = ({ navigation }) => {
   // State
@@ -35,10 +36,11 @@ const MarketplaceScreen = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortOption, setSortOption] = useState('recent');
-  const [viewMode, setViewMode] = useState('grid'); // Only 'grid' or 'list' for now (map disabled)
+  const [viewMode, setViewMode] = useState('grid'); // 'grid', 'list', or 'map'
   const [page, setPage] = useState(1);
   const [hasMorePages, setHasMorePages] = useState(true);
   const [error, setError] = useState(null);
+  const [mapProducts, setMapProducts] = useState([]);
 
   // Load plants when the screen comes into focus
   useFocusEffect(
@@ -51,6 +53,13 @@ const MarketplaceScreen = ({ navigation }) => {
   useEffect(() => {
     applyFilters();
   }, [searchQuery, selectedCategory, priceRange, plants, sortOption]);
+
+  // Load map products if map view is active
+  useEffect(() => {
+    if (viewMode === 'map') {
+      loadMapProducts();
+    }
+  }, [viewMode, filteredPlants]);
 
   // Function to load plants from API
   const loadPlants = async (pageNum = 1, resetData = false) => {
@@ -89,6 +98,26 @@ const MarketplaceScreen = ({ navigation }) => {
       setError('Failed to load plants. Please try again.');
       setIsLoading(false);
       setIsRefreshing(false);
+    }
+  };
+
+  // Load products with location data for map view
+  const loadMapProducts = async () => {
+    try {
+      // For development, we'll just add mock coordinates to filteredPlants
+      // In production, you'd call a separate API to get products with location data
+      // const mapData = await getProductsWithLocation({
+      //   category: selectedCategory === 'All' ? null : selectedCategory,
+      //   minPrice: priceRange.min,
+      //   maxPrice: priceRange.max
+      // });
+      // setMapProducts(mapData);
+
+      // For now, just use filtered plants
+      setMapProducts(filteredPlants);
+    } catch (err) {
+      console.error('Error loading map products:', err);
+      // If map products fail to load, still show the map with whatever we have
     }
   };
 
@@ -193,10 +222,7 @@ const MarketplaceScreen = ({ navigation }) => {
 
   // Handle view mode change
   const handleViewModeChange = (mode) => {
-    // Prevent switching to map view temporarily
-    if (mode !== 'map') {
-      setViewMode(mode);
-    }
+    setViewMode(mode);
   };
 
   // Handle load more
@@ -333,32 +359,43 @@ const MarketplaceScreen = ({ navigation }) => {
         onViewModeChange={handleViewModeChange}
       />
 
-      {/* Grid/List View */}
-      <FlatList
-        data={filteredPlants}
-        renderItem={({ item }) => (
-          <PlantCard 
-            plant={item} 
-            showActions={true}
-            layout={viewMode}
-          />
-        )}
-        numColumns={viewMode === 'grid' ? 2 : 1}
-        key={viewMode} // Forces remount when view mode changes
-        keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
-        contentContainerStyle={[
-          styles.listContainer,
-          filteredPlants.length === 0 && styles.emptyListContainer,
-          viewMode === 'list' && styles.listViewContainer
-        ]}
-        onEndReached={handleLoadMore}
-        onEndReachedThreshold={0.5}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={renderEmptyList}
-        refreshControl={
-          <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
-        }
-      />
+      {/* Conditional rendering based on view mode */}
+      {viewMode === 'map' ? (
+        // Map View
+        <AzureMapView 
+          products={mapProducts.length > 0 ? mapProducts : filteredPlants}
+          onSelectProduct={(productId) => {
+            navigation.navigate('PlantDetail', { plantId: productId });
+          }}
+        />
+      ) : (
+        // List or Grid View
+        <FlatList
+          data={filteredPlants}
+          renderItem={({ item }) => (
+            <PlantCard 
+              plant={item} 
+              showActions={true}
+              layout={viewMode}
+            />
+          )}
+          numColumns={viewMode === 'grid' ? 2 : 1}
+          key={viewMode} // Forces remount when view mode changes
+          keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
+          contentContainerStyle={[
+            styles.listContainer,
+            filteredPlants.length === 0 && styles.emptyListContainer,
+            viewMode === 'list' && styles.listViewContainer
+          ]}
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={renderEmptyList}
+          refreshControl={
+            <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
+          }
+        />
+      )}
 
       {/* Add Plant FAB */}
       <TouchableOpacity style={styles.addButton} onPress={() => navigation.navigate('AddPlant')}>

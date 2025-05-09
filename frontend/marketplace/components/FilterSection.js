@@ -1,3 +1,4 @@
+// File: components/FilterSection.js
 import React from 'react';
 import {
   View,
@@ -9,14 +10,13 @@ import MapToggle from './MapToggle';
 
 /**
  * FilterSection with Map Toggle integration
- * Map toggle is included but map functionality is temporarily disabled
  */
 const FilterSection = ({
   sortOption,
   onSortChange,
   priceRange = { min: 0, max: 1000 },
   onPriceChange,
-  viewMode = 'grid', // 'grid' or 'list' only for now
+  viewMode = 'grid', // 'grid', 'list', or 'map'
   onViewModeChange,
 }) => {
   const handlePriceRangeChange = (range) => {
@@ -47,11 +47,11 @@ const FilterSection = ({
           />
         </View>
         
-        {/* Empty middle space to push sort left and map toggle right */}
+        {/* Empty middle space to push sort left and map toggle center */}
         <View style={styles.spacer} />
         
-        {/* View Toggle - Right side */}
-        <View style={styles.viewSwitchContainer}>
+        {/* View Toggle - Centered */}
+        <View style={styles.viewSwitchWrapper}>
           <MapToggle 
             viewMode={viewMode} 
             onViewModeChange={onViewModeChange} 
@@ -81,17 +81,27 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: '#eee',
-    alignItems: 'center',
+    position: 'relative', // For absolute positioning of view switch
   },
   sortContainer: {
     // Left aligned
   },
   spacer: {
-    flex: 1, // Takes available space to push sort options left and view toggle right
+    flex: 1, // Takes available space to push sort options left
   },
-  viewSwitchContainer: {
-    // Right aligned
-  },
+  viewSwitchWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    // This container sits on top but won't interfere with touch on SortOptions
+    // because it only contains items in the center
+    zIndex: 1,
+    pointerEvents: 'box-none',
+  }
 });
 
 export default FilterSection;

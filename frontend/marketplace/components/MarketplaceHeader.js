@@ -13,14 +13,12 @@ import { useNavigation } from '@react-navigation/native';
 
 /**
  * Marketplace header component with consistent back button behavior
- * Now supports a custom right component
  */
 const MarketplaceHeader = ({
   title = 'PlantMarket',
   showBackButton = true, 
   showNotifications = true,
   onNotificationsPress,
-  rightComponent, // New prop for custom right component
 }) => {
   const navigation = useNavigation();
   
@@ -45,15 +43,12 @@ const MarketplaceHeader = ({
         <Text style={[
           styles.title, 
           !showBackButton && styles.centeredTitle,
-          showBackButton && !showNotifications && !rightComponent && styles.rightPadding
+          showBackButton && !showNotifications && styles.rightPadding
         ]}>
           {title}
         </Text>
 
-        {/* Custom right component takes precedence over notifications */}
-        {rightComponent ? (
-          rightComponent
-        ) : showNotifications && (
+        {showNotifications && (
           <TouchableOpacity
             style={styles.notificationButton}
             onPress={onNotificationsPress || (() => navigation.navigate('Messages'))}

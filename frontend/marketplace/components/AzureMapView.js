@@ -1,14 +1,17 @@
-// components/AzureMapView.js
+// File: components/AzureMapView.js
 import React, { useRef, useEffect } from 'react';
-import { View, StyleSheet, Platform } from 'react-native';
+import { View, StyleSheet, Platform, Text } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-const AzureMapView = ({ products, azureMapsKey }) => {
+const AzureMapView = ({ products, onSelectProduct }) => {
   const webViewRef = useRef(null);
+  
+  // Default Azure Maps subscription key - should be replaced with your actual key
+  const azureMapsKey = 'your_azure_maps_key';
 
   // Function to send products data to the WebView
   useEffect(() => {
-    if (webViewRef.current) {
+    if (webViewRef.current && products && products.length > 0) {
       const message = JSON.stringify({
         type: 'UPDATE_PRODUCTS',
         products,
@@ -64,6 +67,7 @@ const AzureMapView = ({ products, azureMapsKey }) => {
               const products = message.products;
               
               products.forEach(product => {
+                // Check if product has location data
                 if (product.location && product.location.longitude && product.location.latitude) {
                   pins.push(
                     new atlas.data.Feature(
@@ -71,35 +75,49 @@ const AzureMapView = ({ products, azureMapsKey }) => {
                       {
                         title: product.title || product.name,
                         price: product.price,
-                        id: product.id
+                        id: product.id || product._id
+                      }
+                    )
+                  );
+                } else if (product.city) {
+                  // For products with only city, we'll add them at (0,0) for now
+                  // In a real app, you would geocode the city name to get coordinates
+                  pins.push(
+                    new atlas.data.Feature(
+                      new atlas.data.Point([0, 0]),
+                      {
+                        title: product.title || product.name,
+                        price: product.price,
+                        id: product.id || product._id,
+                        city: product.city
                       }
                     )
                   );
                 }
               });
               
-              // Add data source and layer
-              const datasource = new atlas.source.DataSource('products-source');
-              map.sources.add(datasource);
-              datasource.add(pins);
-              
-              // Add a symbol layer using the datasource
-              map.layers.add(new atlas.layer.SymbolLayer(
-                'products-layer', 
-                'products-source', 
-                {
-                  iconOptions: {
-                    image: 'pin-round-blue'
-                  },
-                  textOptions: {
-                    textField: ['get', 'title'],
-                    offset: [0, -1.5]
-                  }
-                }
-              ));
-              
-              // Set map bounds to show all pins
               if (pins.length > 0) {
+                // Add data source and layer
+                const datasource = new atlas.source.DataSource('products-source');
+                map.sources.add(datasource);
+                datasource.add(pins);
+                
+                // Add a symbol layer using the datasource
+                map.layers.add(new atlas.layer.SymbolLayer(
+                  'products-layer', 
+                  'products-source', 
+                  {
+                    iconOptions: {
+                      image: 'pin-round-blue'
+                    },
+                    textOptions: {
+                      textField: ['get', 'title'],
+                      offset: [0, -1.5]
+                    }
+                  }
+                ));
+                
+                // Set map bounds to show all pins
                 const bounds = atlas.data.BoundingBox.fromData(pins);
                 map.setCamera({ bounds: bounds, padding: 50 });
               }
@@ -129,16 +147,22 @@ const AzureMapView = ({ products, azureMapsKey }) => {
   const handleMessage = (event) => {
     try {
       const message = JSON.parse(event.nativeEvent.data);
-      if (message.type === 'PIN_CLICKED') {
-        // Handle pin click - navigate to product details, etc.
-        console.log(`Pin clicked for product: ${message.productId}`);
-        // Navigate to product details
-        // navigation.navigate('PlantDetail', { plantId: message.productId });
+      if (message.type === 'PIN_CLICKED' && onSelectProduct) {
+        onSelectProduct(message.productId);
       }
     } catch (e) {
       console.error('Error handling WebView message:', e);
     }
   };
+
+  // For platforms where WebView might not be available
+  if (Platform.OS === 'web' && !WebView) {
+    return (
+      <View style={styles.fallbackContainer}>
+        <Text style={styles.fallbackText}>Map view is not available on this platform.</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -166,6 +190,18 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
+  fallbackContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+  },
+  fallbackText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+    padding: 20,
+  }
 });
 
 export default AzureMapView;

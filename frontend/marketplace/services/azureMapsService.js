@@ -1,4 +1,4 @@
-// locationService.js
+// File: services/azureMapsService.js
 
 /**
  * Azure Maps Service for geocoding and location services
@@ -6,7 +6,10 @@
  */
 
 // Replace this with your actual Azure Functions endpoint
-const API_BASE_URL = 'https://your-function-app-name.azurewebsites.net/api';
+const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+
+// Detect development mode
+const isDev = process.env.NODE_ENV === 'development' || __DEV__;
 
 /**
  * Geocode an address to get coordinates
@@ -15,6 +18,11 @@ export async function geocodeAddress(address) {
   try {
     if (!address || address === 'Unknown location' || address.length < 3) {
       throw new Error('Invalid address for geocoding');
+    }
+
+    if (isDev) {
+      // In development, return mock coordinates
+      return getMockCoordinates(address);
     }
 
     const response = await fetch(`${API_BASE_URL}/geocode?address=${encodeURIComponent(address)}`, {
@@ -38,8 +46,7 @@ export async function geocodeAddress(address) {
     return { latitude: data.latitude, longitude: data.longitude };
   } catch (error) {
     console.error('Error geocoding address:', error);
-    if (__DEV__) return getMockCoordinates(address);
-    throw error;
+    return getMockCoordinates(address);
   }
 }
 
@@ -48,6 +55,11 @@ export async function geocodeAddress(address) {
  */
 export async function getProductsWithLocation(options = {}) {
   try {
+    if (isDev) {
+      // In development, return mock products with location
+      return getMockProductsWithLocation(options);
+    }
+
     const queryParams = new URLSearchParams();
 
     if (options.category) queryParams.append('category', options.category);
@@ -76,8 +88,7 @@ export async function getProductsWithLocation(options = {}) {
     return data.products;
   } catch (error) {
     console.error('Error getting products with location:', error);
-    if (__DEV__) return getMockProductsWithLocation(options);
-    throw error;
+    return getMockProductsWithLocation(options);
   }
 }
 
@@ -86,6 +97,11 @@ export async function getProductsWithLocation(options = {}) {
  */
 export async function reverseGeocode(latitude, longitude) {
   try {
+    if (isDev) {
+      // In development, return mock address
+      return getMockAddress(latitude, longitude);
+    }
+
     const response = await fetch(`${API_BASE_URL}/reverseGeocode?lat=${latitude}&lon=${longitude}`, {
       method: 'GET',
       headers: {
@@ -107,8 +123,7 @@ export async function reverseGeocode(latitude, longitude) {
     return data.address;
   } catch (error) {
     console.error('Error reverse geocoding:', error);
-    if (__DEV__) return getMockAddress(latitude, longitude);
-    throw error;
+    return getMockAddress(latitude, longitude);
   }
 }
 
@@ -117,6 +132,11 @@ export async function reverseGeocode(latitude, longitude) {
  */
 export async function getNearbyProducts(latitude, longitude, radius = 10) {
   try {
+    if (isDev) {
+      // In development, return mock nearby products
+      return getMockNearbyProducts(latitude, longitude, radius);
+    }
+
     const response = await fetch(
       `${API_BASE_URL}/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`,
       {
@@ -141,13 +161,12 @@ export async function getNearbyProducts(latitude, longitude, radius = 10) {
     return data.products;
   } catch (error) {
     console.error('Error getting nearby products:', error);
-    if (__DEV__) return getMockNearbyProducts(latitude, longitude, radius);
-    throw error;
+    return getMockNearbyProducts(latitude, longitude, radius);
   }
 }
 
 // -----------------------------
-// MOCK FUNCTIONS (for __DEV__)
+// MOCK FUNCTIONS (for development)
 // -----------------------------
 
 function getMockCoordinates(address) {
@@ -169,7 +188,7 @@ function getMockProductsWithLocation() {
   return [
     {
       id: '1',
-      title: 'Mock Monstera',
+      title: 'Monstera Deliciosa',
       price: 25.0,
       category: 'indoor',
       location: {
@@ -179,6 +198,30 @@ function getMockProductsWithLocation() {
       },
       image: 'https://via.placeholder.com/150?text=Monstera',
     },
+    {
+      id: '2',
+      title: 'Snake Plant',
+      price: 15.0,
+      category: 'indoor',
+      location: {
+        address: 'Portland, OR',
+        latitude: 45.5051,
+        longitude: -122.6750,
+      },
+      image: 'https://via.placeholder.com/150?text=Snake+Plant',
+    },
+    {
+      id: '3',
+      title: 'Fiddle Leaf Fig',
+      price: 30.0,
+      category: 'indoor',
+      location: {
+        address: 'San Francisco, CA',
+        latitude: 37.7749,
+        longitude: -122.4194,
+      },
+      image: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
+    }
   ];
 }
 
@@ -196,5 +239,24 @@ function getMockNearbyProducts(lat, lon, radius) {
       },
       image: 'https://via.placeholder.com/150?text=Pothos',
     },
+    {
+      id: 'nearby-2',
+      title: 'Local Succulent',
+      price: 8.0,
+      category: 'succulent',
+      location: {
+        address: 'Just Around the Corner',
+        latitude: lat - 0.005,
+        longitude: lon + 0.008,
+      },
+      image: 'https://via.placeholder.com/150?text=Succulent',
+    }
   ];
 }
+
+export default {
+  geocodeAddress,
+  getProductsWithLocation,
+  reverseGeocode,
+  getNearbyProducts
+};
