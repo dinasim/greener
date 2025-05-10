@@ -1,0 +1,8 @@
+# Ignore Python virtual environment
+.venv/
+
+# Ignore Node.js dependencies
+node_modules/
+
+# macOS metadata
+.DS_Store

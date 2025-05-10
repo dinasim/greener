@@ -11,9 +11,11 @@ import {
   Platform,
 } from "react-native";
 import * as Notifications from "expo-notifications";
+import { useForm } from "../context/FormContext";
 
 export default function SignupReminders({ navigation }) {
   const [granted, setGranted] = useState(null);
+  const { setNotificationPermissionGranted, updateFormData, formData } = useForm(); // ✅ useForm() at top level
   const scaleAnim = new Animated.Value(0.95);
 
   useEffect(() => {
@@ -28,9 +30,11 @@ export default function SignupReminders({ navigation }) {
   const requestNotifications = async () => {
     const { status } = await Notifications.requestPermissionsAsync();
     if (status === "granted") {
+      setNotificationPermissionGranted(true);
       setGranted(true);
       Alert.alert("Notifications Enabled ✅");
     } else {
+      setNotificationPermissionGranted(false);
       setGranted(false);
       Alert.alert("Permission Denied", "You can still continue, but we won't send reminders.");
     }
@@ -56,9 +60,36 @@ export default function SignupReminders({ navigation }) {
 
           <TouchableOpacity
             style={[styles.permissionButton, { backgroundColor: "#4caf50", marginTop: 20 }]}
-            onPress={() => {
+            onPress={async () => {
               console.log("Continue button pressed");
-              navigation.navigate("MainTabs"); // ✅ changed to enter full app
+
+              try {
+                const location = formData.userLocation;
+                const placement = formData.plantLocations?.[0] || "outsidePotted";
+
+                if (location && location.latitude && location.longitude) {
+                  const url = `${process.env.EXPO_PUBLIC_WEATHER_FUNCTION_URL}?code=${process.env.EXPO_PUBLIC_WEATHER_FUNCTION_KEY}`;
+                  const response = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                      placement: placement,
+                    }),
+                  });
+
+                  const data = await response.json();
+                  console.log("🌱 Weather Advice:", data);
+                  Alert.alert("Weather Advice", data.advice);
+                } else {
+                  console.log("No location data available.");
+                }
+              } catch (error) {
+                console.error("❌ Error fetching weather advice:", error);
+              }
+
+              navigation.navigate("MainTabs");
             }}
           >
             <Text style={styles.buttonText}>Continue</Text>

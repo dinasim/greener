@@ -11,9 +11,11 @@ import {
   Platform,
 } from "react-native";
 import * as Location from "expo-location";
+import { useForm } from "../context/FormContext";
 
 export default function SignupLocationReq({ navigation }) {
   const [permissionStatus, setPermissionStatus] = useState(null);
+  const { setLocationPermissionGranted, updateFormData } = useForm();
   const scaleAnim = new Animated.Value(0.95);
 
   useEffect(() => {
@@ -28,7 +30,20 @@ export default function SignupLocationReq({ navigation }) {
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
+      const location = await Location.getCurrentPositionAsync({});
       setPermissionStatus("granted");
+      setLocationPermissionGranted(true); // ✅ Track it globally
+      updateFormData("userLocation", {     // ✅ Save coords for later use
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+
+      // You can now use location.coords.latitude & longitude
+      console.log("📍 Location saved:", location.coords);
+
+      // TODO: Send to backend or store in context for next steps
+      // Example: saveLocation(location.coords.latitude, location.coords.longitude);
+
       Alert.alert("Location access granted ✅");
     } else {
       setPermissionStatus("denied");

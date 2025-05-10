@@ -19,6 +19,10 @@ export const FormProvider = ({ children }) => {
     kids: '',
   });
 
+  // Permission flags
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+  const [notificationPermissionGranted, setNotificationPermissionGranted] = useState(false);
+
   // Function to update form data
   const updateFormData = (field, value) => {
     setFormData((prevData) => ({
@@ -28,7 +32,14 @@ export const FormProvider = ({ children }) => {
   };
 
   return (
-    <FormContext.Provider value={{ formData, updateFormData }}>
+    <FormContext.Provider value={{
+      formData,
+      updateFormData,
+      locationPermissionGranted,
+      setLocationPermissionGranted,
+      notificationPermissionGranted,
+      setNotificationPermissionGranted,
+    }}>
       {children}
     </FormContext.Provider>
   );
