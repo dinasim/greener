@@ -1,0 +1,34 @@
+{
+  "expo": {
+    "name": "Greener",
+    "slug": "greener",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "scheme": "greener",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.yourname.greener"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "expoClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com",
+      "webClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com"
+    }
+  }
+}

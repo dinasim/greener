@@ -1,0 +1,32 @@
+from azure.cosmos import CosmosClient, PartitionKey
+import json
+
+# Replace with your actual credentials
+endpoint = "https://greener-database.documents.azure.com:443/"
+key = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
+database_name = "GreenerDB"
+container_name = "Plants"
+json_file_path = "full_plants.json"
+
+# Connect to Cosmos DB
+client = CosmosClient(endpoint, key)
+db = client.create_database_if_not_exists(id=database_name)
+
+container = db.create_container_if_not_exists(
+    id=container_name,
+    partition_key=PartitionKey(path="/common_name"),
+    offer_throughput=400
+)
+
+# Load JSON file
+with open(json_file_path, 'r') as file:
+    plants = json.load(file)
+
+for plant in plants:
+    plant["id"] = plant["common_name"]
+    container.upsert_item(plant)
+
+
+    container.upsert_item(plant)
+
+print("Successfully uploaded all plants to Azure Cosmos DB.")
