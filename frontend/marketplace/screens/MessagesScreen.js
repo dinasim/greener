@@ -150,12 +150,26 @@ const MessagesScreen = () => {
       setError(null);
       
       // For real app, use API:
-      // const data = await fetchMessages(conversationId);
+      let data;
+      try {
+        // data = await fetchMessages(conversationId);
+        throw new Error('API not implemented yet'); // Remove this when API is ready
+      } catch (apiError) {
+        console.log('Using sample data for messages due to:', apiError.message);
+        // For development, use sample data:
+        data = SAMPLE_MESSAGES[conversationId] || { messages: [] };
+      }
       
-      // For development, use sample data:
-      const data = SAMPLE_MESSAGES[conversationId] || { messages: [] };
-      setMessages(data.messages);
+      // Sort messages by timestamp
+      if (data.messages && Array.isArray(data.messages)) {
+        data.messages.sort((a, b) => {
+          const timeA = new Date(a.timestamp || 0).getTime();
+          const timeB = new Date(b.timestamp || 0).getTime();
+          return timeA - timeB;
+        });
+      }
       
+      setMessages(data.messages || []);
       setIsLoading(false);
       
       // Scroll to bottom of messages
@@ -174,18 +188,26 @@ const MessagesScreen = () => {
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
     
+    // Create a unique ID for this message attempt
+    const tempId = 'temp-' + Date.now();
+    
     try {
       setIsSending(true);
       
       // Add message to state optimistically
       const tempMessage = {
-        id: 'temp-' + Date.now(),
+        id: tempId,
         text: newMessage,
         senderId: 'currentUser',
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        pending: true // Mark as pending for UI indication
       };
       
-      setMessages([...messages, tempMessage]);
+      // Save the message text before clearing input
+      const messageText = newMessage;
+      
+      // Update UI immediately
+      setMessages(prevMessages => [...prevMessages, tempMessage]);
       setNewMessage('');
       
       // Scroll to bottom of messages
@@ -196,22 +218,43 @@ const MessagesScreen = () => {
       }, 100);
       
       // For real app, use API:
-      if (selectedConversation) {
-        // Existing conversation
-        // await sendMessage(selectedConversation.id, newMessage);
-      } else if (sellerId && plantId) {
-        // New conversation
-        // const result = await startConversation(sellerId, plantId, newMessage);
-        // setSelectedConversation({
-        //   id: result.conversationId,
-        //   otherUserName: result.sellerName,
-        //   plantName: plantName
-        // });
-        // await loadConversations(); // Refresh conversations list
+      try {
+        if (selectedConversation) {
+          // Existing conversation
+          // await sendMessage(selectedConversation.id, messageText);
+          throw new Error('API not implemented yet');
+        } else if (sellerId && plantId) {
+          // New conversation
+          // const result = await startConversation(sellerId, plantId, messageText);
+          // setSelectedConversation({
+          //   id: result.conversationId,
+          //   otherUserName: result.sellerName,
+          //   plantName: plantName
+          // });
+          // await loadConversations(); // Refresh conversations list
+          throw new Error('API not implemented yet');
+        }
+      } catch (apiError) {
+        console.log('API error (Dev mode):', apiError.message);
+        
+        // For development, just simulate API delay
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // In dev mode, mark message as successful after delay
+        if (__DEV__) {
+          // Update the message to remove pending status
+          setMessages(prevMessages => 
+            prevMessages.map(msg => 
+              msg.id === tempId 
+                ? { ...msg, pending: false } 
+                : msg
+            )
+          );
+        } else {
+          // In production, throw error to be caught by outer catch
+          throw apiError;
+        }
       }
-      
-      // For development, just simulate API delay
-      await new Promise(resolve => setTimeout(resolve, 500));
       
       setIsSending(false);
     } catch (err) {
@@ -219,7 +262,16 @@ const MessagesScreen = () => {
       setIsSending(false);
       
       // Remove optimistic message on error
-      setMessages(messages.filter(m => m.id !== 'temp-' + Date.now()));
+      setMessages(prevMessages => 
+        prevMessages.filter(m => m.id !== tempId)
+      );
+      
+      // Show error to user
+      Alert.alert(
+        'Error',
+        'Failed to send message. Please try again.',
+        [{ text: 'OK' }]
+      );
     }
   };
   

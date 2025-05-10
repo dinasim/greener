@@ -21,7 +21,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 
 // Import services
-import { getSpecific, wishProduct } from '../services/productData';
+import { getSpecific, wishProduct } from '../services/marketplaceApi';
 
 const { width } = Dimensions.get('window');
 

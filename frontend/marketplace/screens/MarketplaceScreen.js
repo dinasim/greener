@@ -22,9 +22,8 @@ import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
 import AzureMapView from '../components/AzureMapView';
 
-// Import services
-import { getAll } from '../services/productData';
-import { getProductsWithLocation } from '../services/azureMapsService';
+// Import consolidated API service (no longer using separate files)
+import { getAll } from '../services/marketplaceApi';
 
 const MarketplaceScreen = ({ navigation }) => {
   // State
@@ -72,7 +71,7 @@ const MarketplaceScreen = ({ navigation }) => {
         setIsLoading(true);
       }
 
-      // Get plants from API
+      // Get plants from API (now using consolidated marketplaceApi.js)
       const data = await getAll(
         pageNum,
         selectedCategory === 'All' ? null : selectedCategory,
@@ -105,16 +104,26 @@ const MarketplaceScreen = ({ navigation }) => {
   const loadMapProducts = async () => {
     try {
       // For development, we'll just add mock coordinates to filteredPlants
-      // In production, you'd call a separate API to get products with location data
-      // const mapData = await getProductsWithLocation({
-      //   category: selectedCategory === 'All' ? null : selectedCategory,
-      //   minPrice: priceRange.min,
-      //   maxPrice: priceRange.max
-      // });
-      // setMapProducts(mapData);
-
-      // For now, just use filtered plants
-      setMapProducts(filteredPlants);
+      // Add location data to plants that don't have it
+      const productsWithLocation = filteredPlants.map(plant => {
+        if (plant.location && plant.location.latitude && plant.location.longitude) {
+          return plant;
+        }
+        
+        // Generate pseudo-random coordinates based on plant ID or name
+        const idString = (plant.id || plant._id || plant.name || plant.title || '').toString();
+        const hash = idString.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+        
+        return {
+          ...plant,
+          location: {
+            latitude: 47.6062 + (hash % 20 - 10) / 100,
+            longitude: -122.3321 + (hash % 20 - 10) / 100
+          }
+        };
+      });
+      
+      setMapProducts(productsWithLocation);
     } catch (err) {
       console.error('Error loading map products:', err);
       // If map products fail to load, still show the map with whatever we have
@@ -142,7 +151,10 @@ const MarketplaceScreen = ({ navigation }) => {
 
     // Apply price range filter
     results = results.filter(
-      plant => plant.price >= priceRange.min && plant.price <= priceRange.max
+      plant => {
+        const price = parseFloat(plant.price);
+        return !isNaN(price) && price >= priceRange.min && price <= priceRange.max;
+      }
     );
 
     // Apply search filter
@@ -362,12 +374,32 @@ const MarketplaceScreen = ({ navigation }) => {
       {/* Conditional rendering based on view mode */}
       {viewMode === 'map' ? (
         // Map View
-        <AzureMapView 
-          products={mapProducts.length > 0 ? mapProducts : filteredPlants}
-          onSelectProduct={(productId) => {
-            navigation.navigate('PlantDetail', { plantId: productId });
-          }}
-        />
+        <View style={styles.mapContainer}>
+          {mapProducts.length > 0 ? (
+            <AzureMapView 
+              products={mapProducts}
+              onSelectProduct={(productId) => {
+                navigation.navigate('PlantDetail', { plantId: productId });
+              }}
+            />
+          ) : (
+            <View style={styles.centerContainer}>
+              <MaterialIcons name="map" size={48} color="#aaa" />
+              <Text style={styles.noResultsText}>No plants with location data found</Text>
+              <TouchableOpacity
+                style={styles.resetButton}
+                onPress={() => {
+                  setSearchQuery('');
+                  setSelectedCategory('All');
+                  setPriceRange({ min: 0, max: 1000 });
+                  loadPlants(1, true);
+                }}
+              >
+                <Text style={styles.resetButtonText}>Reset Filters</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       ) : (
         // List or Grid View
         <FlatList
@@ -496,6 +528,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+  mapContainer: {
+    flex: 1,
+    backgroundColor: '#f0f0f0',
   },
 });
 

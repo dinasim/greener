@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { wishProduct } from '../services/productData';
+import { wishProduct } from '../services/marketplaceApi';
 
 /**
  * Plant Card component for displaying plant listings
@@ -71,10 +71,44 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     return 'Local pickup';
   };
 
+  // Prepare image URL with error handling
+  const getImageSource = () => {
+    let imageUrl = plant.imageUrl || plant.image || 'https://via.placeholder.com/150?text=Plant';
+    
+    // Check if URL is valid
+    if (typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
+      return { uri: imageUrl };
+    } else if (typeof imageUrl === 'string' && imageUrl.startsWith('/')) {
+      // Handle relative paths
+      return { uri: `https://yourbaseurl.com${imageUrl}` };
+    } else {
+      // Fallback to default placeholder
+      return { uri: 'https://via.placeholder.com/150?text=Plant' };
+    }
+  };
+
   // Format price display
   const formatPrice = () => {
-    const price = parseFloat(plant.price);
-    return isNaN(price) ? '0.00' : price.toFixed(2);
+    // Handle different price formats
+    let price;
+    
+    if (typeof plant.price === 'number') {
+      price = plant.price;
+    } else if (typeof plant.price === 'string') {
+      // Remove any non-numeric chars except decimal point
+      const cleanedPrice = plant.price.replace(/[^0-9.]/g, '');
+      price = parseFloat(cleanedPrice);
+    } else {
+      price = 0;
+    }
+    
+    // Ensure price is a valid number and not negative
+    if (isNaN(price) || price < 0) {
+      price = 0;
+    }
+    
+    // Format with 2 decimal places
+    return price.toFixed(2);
   };
 
   // Format date display
@@ -112,11 +146,11 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     >
       <View style={[styles.imageContainer, isListLayout && styles.listImageContainer]}>
         <Image
-          source={{ 
-            uri: plant.imageUrl || plant.image || 'https://via.placeholder.com/150?text=Plant' 
-          }}
+          source={getImageSource()}
           style={[styles.image, isListLayout && styles.listImage]}
           resizeMode="cover"
+          defaultSource={{ uri: 'https://via.placeholder.com/50?text=Loading' }}
+          onError={() => console.log('Image failed to load for plant', plant.id || plant._id)}
         />
         
         {/* Location pill */}

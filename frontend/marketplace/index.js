@@ -25,9 +25,6 @@ export { default as PriceRange } from './components/PriceRange';
 
 
 // Services
-export * from './services/productData';
-export * from './services/userData';
-export * from './services/messagesData';
 
 /**
  * Integration Guide for Greener App

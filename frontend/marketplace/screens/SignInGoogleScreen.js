@@ -70,39 +70,55 @@ export default function SignInGoogleScreen({ navigation }) {
       console.error('Google Sign In Error:', response.error);
     }
   }, [response]);
-
-  // Handle successful Google Sign-In
-  const handleSignInWithGoogle = async (authentication) => {
-    try {
-      // Save auth token globally
-      global.authToken = authentication.accessToken;
-      
-      // Get user info from Google
-      const userInfoResponse = await fetch(
-        'https://www.googleapis.com/userinfo/v2/me',
-        {
-          headers: { Authorization: `Bearer ${authentication.accessToken}` },
-        }
-      );
-      
-      const userInfo = await userInfoResponse.json();
-      
-      // Store user info and token for persistence
-      await AsyncStorage.setItem('user', JSON.stringify(userInfo));
-      await AsyncStorage.setItem('token', authentication.accessToken);
-      
-      // Update user state
-      setUser(userInfo);
-      
-      // Navigate to Home screen
-      navigation.replace('Home');
-    } catch (error) {
-      console.error('Error handling Google Sign In:', error);
-      setAuthError('Failed to get user information. Please try again.');
-    } finally {
-      setIsLoading(false);
+// Handle successful Google Sign-In
+const handleSignInWithGoogle = async (authentication) => {
+  try {
+    setIsLoading(true);
+    
+    // Ensure we have a valid token
+    if (!authentication || !authentication.accessToken) {
+      throw new Error('No authentication token received');
     }
-  };
+    
+    // Save auth token globally
+    global.googleAuthToken = authentication.accessToken;
+    
+    // Get user info from Google
+    const userInfoResponse = await fetch(
+      'https://www.googleapis.com/userinfo/v2/me',
+      {
+        headers: { Authorization: `Bearer ${authentication.accessToken}` },
+      }
+    );
+    
+    if (!userInfoResponse.ok) {
+      throw new Error(`Failed to get user info: ${userInfoResponse.status}`);
+    }
+    
+    const userInfo = await userInfoResponse.json();
+    
+    // Store user info and token for persistence
+    await AsyncStorage.setItem('user', JSON.stringify(userInfo));
+    await AsyncStorage.setItem('googleAuthToken', authentication.accessToken);
+    
+    // Update user state
+    setUser(userInfo);
+    
+    // Set auth token for marketplaceAPI
+    if (typeof marketplaceApi?.setAuthToken === 'function') {
+      marketplaceApi.setAuthToken(authentication.accessToken);
+    }
+    
+    // Navigate to Home screen
+    navigation.replace('Home');
+  } catch (error) {
+    console.error('Error handling Google Sign In:', error);
+    setAuthError('Failed to get user information. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
+  
 
   // Sign out function
   const signOut = async () => {

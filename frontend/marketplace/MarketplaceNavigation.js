@@ -1,10 +1,7 @@
-// MarketplaceNavigation.js
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { MaterialIcons } from '@expo/vector-icons';
-import { TouchableOpacity } from 'react-native';
 
-// Import screens
+// Fix the import paths - use './screens/' instead of '../screens/'
 import MarketplaceScreen from './screens/MarketplaceScreen';
 import PlantDetailScreen from './screens/PlantDetailScreen';
 import AddPlantScreen from './screens/AddPlantScreen';
@@ -15,19 +12,15 @@ import SellerProfileScreen from './screens/SellerProfileScreen';
 
 const Stack = createNativeStackNavigator();
 
-/**
- * MarketplaceNavigation - Stack navigator with improved back button handling
- * All screens now use custom header components instead of the default React Navigation header
- */
 const MarketplaceNavigation = () => {
   return (
     <Stack.Navigator
       initialRouteName="Marketplace"
-      screenOptions={{
-        headerShown: false, // Hide default header
+      screenOptions={() => ({
+        headerShown: false,
         contentStyle: { backgroundColor: '#fff' },
         animation: 'slide_from_right',
-      }}
+      })}
     >
       <Stack.Screen 
         name="Marketplace" 

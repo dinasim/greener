@@ -18,39 +18,41 @@ const CategoryFilter = ({
   return (
     <View style={styles.container}>
       <Text style={styles.heading}>Categories</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {categories.map((category) => (
-          <TouchableOpacity
-            key={category.id}
-            style={[
-              styles.categoryButton,
-              selectedCategory === category.id && styles.selectedButton
-            ]}
-            onPress={() => onSelect(category.id)}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons
-              name={category.icon}
-              size={20}
-              color={selectedCategory === category.id ? '#fff' : '#4CAF50'}
-            />
-            {showText && (
-              <Text
-                style={[
-                  styles.categoryText,
-                  selectedCategory === category.id && styles.selectedText
-                ]}
-              >
-                {category.label}
-              </Text>
-            )}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+      <View style={styles.scrollViewWrapper}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
+        >
+          {categories.map((category) => (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryButton,
+                selectedCategory === category.id && styles.selectedButton
+              ]}
+              onPress={() => onSelect(category.id)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons
+                name={category.icon}
+                size={20}
+                color={selectedCategory === category.id ? '#fff' : '#4CAF50'}
+              />
+              {showText && (
+                <Text
+                  style={[
+                    styles.categoryText,
+                    selectedCategory === category.id && styles.selectedText
+                  ]}
+                >
+                  {category.label}
+                </Text>
+              )}
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
     </View>
   );
 };
@@ -69,30 +71,39 @@ const defaultCategories = [
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    paddingVertical: 16,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     width: '100%',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   heading: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '600',
     marginBottom: 12,
     color: '#333',
-    textAlign: 'center',
+    textAlign: 'center', // Center the heading
+  },
+  scrollViewWrapper: {
+    alignItems: 'center', // Center the ScrollView
+    width: '100%',
   },
   scrollContent: {
-    paddingHorizontal: 8,
-    justifyContent: 'center',
-    minWidth: '100%',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
+    // Center categories if they all fit on screen
+    // This ensures they're evenly distributed
+    ...(width > 800 ? { justifyContent: 'center' } : {}),
   },
   categoryButton: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f0f9f0',
-    paddingVertical: 10,
+    paddingVertical: 8,
     paddingHorizontal: width > 600 ? 16 : 12,
     borderRadius: 20,
     marginHorizontal: 4,
+    marginVertical: 2,
     borderWidth: 1,
     borderColor: '#e0e0e0',
   },
@@ -101,7 +112,7 @@ const styles = StyleSheet.create({
     borderColor: '#4CAF50',
   },
   categoryText: {
-    marginLeft: 8,
+    marginLeft: 6,
     fontWeight: '500',
     color: '#4CAF50',
     fontSize: width > 800 ? 14 : 12,

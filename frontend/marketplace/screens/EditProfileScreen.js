@@ -150,33 +150,58 @@ const EditProfileScreen = () => {
 
   const handleSave = async () => {
     if (!validateForm()) return;
-
+  
     try {
       setIsSaving(true);
-
-      // For real app, use API:
-      // await updateUserProfile(formData);
-
-      // For development, simulate API delay:
-      await new Promise(resolve => setTimeout(resolve, 1000));
-
-      setIsSaving(false);
-
-      Alert.alert(
-        'Success',
-        'Your profile has been updated',
-        [
-          {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ]
-      );
+      setError(null);
+  
+      // Prepare formData for the API call
+      const updatedUserData = {
+        name: formData.name,
+        email: formData.email,
+        phoneNumber: formData.phoneNumber,
+        bio: formData.bio || '',
+        location: formData.location || '',
+      };
+  
+      // Only include avatar if it was changed
+      if (formData.avatar && formData.avatar !== user.avatar) {
+        updatedUserData.avatar = formData.avatar;
+      }
+  
+      // For real app, use API
+      try {
+        // First try the API call
+        await updateUserProfile(user.id, updatedUserData);
+        
+        Alert.alert(
+          'Success',
+          'Your profile has been updated',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+      } catch (apiError) {
+        console.error('API Error:', apiError);
+        
+        // For development, simulate success after API failure
+        if (__DEV__) {
+          console.log('Development mode: Simulating successful profile update');
+          
+          Alert.alert(
+            'Success (Dev Mode)',
+            'Your profile has been updated (simulated in development)',
+            [{ text: 'OK', onPress: () => navigation.goBack() }]
+          );
+        } else {
+          // In production, show the error
+          throw apiError;
+        }
+      }
     } catch (err) {
-      setIsSaving(false);
       setError('Failed to update profile. Please try again later.');
       Alert.alert('Error', 'Failed to update profile. Please try again later.');
       console.error('Error updating profile:', err);
+    } finally {
+      setIsSaving(false);
     }
   };
 

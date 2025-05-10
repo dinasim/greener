@@ -45,6 +45,9 @@ const ProfileScreen = () => {
       // const data = await fetchUserProfile();
       
       // For development, use sample data
+      // Simulate API delay
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
       const sampleUser = {
         id: 'user123',
         name: 'Plant Enthusiast',
@@ -144,7 +147,8 @@ const ProfileScreen = () => {
     );
   }
   
-  if (error) {
+  // Stop loading state from continuing if another error happened
+  if (error && !user) {
     return (
       <SafeAreaView style={styles.container}>
         <MarketplaceHeader
@@ -166,6 +170,7 @@ const ProfileScreen = () => {
     );
   }
   
+  // If no user, and not loading/error, show not found
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
@@ -176,7 +181,13 @@ const ProfileScreen = () => {
         />
         <View style={styles.errorContainer}>
           <MaterialIcons name="person-off" size={48} color="#f44336" />
-          <Text style={styles.errorText}>User not found</Text>
+          <Text style={styles.errorText}>User profile not found</Text>
+          <TouchableOpacity 
+            style={styles.retryButton}
+            onPress={() => navigation.navigate('SignIn')}
+          >
+            <Text style={styles.retryText}>Sign In</Text>
+          </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
@@ -405,8 +416,6 @@ const ProfileScreen = () => {
       >
         <MaterialIcons name="add" size={24} color="#fff" />
       </TouchableOpacity>
-      
-      {/* Removed the Settings button */}
     </SafeAreaView>
   );
 };
@@ -471,33 +480,30 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 16,
     right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 10,
     paddingVertical: 6,
-    paddingHorizontal: 12,
     borderRadius: 20,
   },
   editButtonText: {
     color: '#fff',
-    marginLeft: 4,
-    fontSize: 12,
+    marginLeft: 6,
+    fontWeight: '600',
   },
   avatarContainer: {
     flexDirection: 'row',
-    padding: 16,
     alignItems: 'center',
+    padding: 16,
   },
   avatar: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    marginTop: -30,
-    borderWidth: 3,
-    borderColor: '#fff',
+    marginRight: 16,
   },
   userInfo: {
-    marginLeft: 16,
     flex: 1,
   },
   userName: {
@@ -507,31 +513,32 @@ const styles = StyleSheet.create({
   },
   userEmail: {
     fontSize: 14,
-    color: '#666',
-    marginTop: 2,
+    color: '#777',
+    marginTop: 4,
   },
   joinDate: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 4,
+    color: '#aaa',
+    marginTop: 2,
   },
   bioContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 16,
+    paddingBottom: 12,
   },
   bioText: {
     fontSize: 14,
-    color: '#666',
-    lineHeight: 20,
+    color: '#555',
   },
   statsContainer: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
+    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: '#eee',
-    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
   statItem: {
-    flex: 1,
     alignItems: 'center',
   },
   statValue: {
@@ -541,22 +548,21 @@ const styles = StyleSheet.create({
   },
   statLabel: {
     fontSize: 12,
-    color: '#999',
-    marginTop: 2,
+    color: '#888',
+    marginTop: 4,
   },
   statDivider: {
     width: 1,
-    backgroundColor: '#eee',
+    backgroundColor: '#ddd',
     height: '100%',
   },
   tabsContainer: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    marginBottom: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.05,
     shadowRadius: 2,
   },
   tabButton: {
@@ -569,73 +575,68 @@ const styles = StyleSheet.create({
     borderBottomColor: '#4CAF50',
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#666',
     marginTop: 4,
   },
   activeTabText: {
     color: '#4CAF50',
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
   tabContent: {
     flex: 1,
+    padding: 8,
   },
   plantGrid: {
-    paddingHorizontal: 4,
-    paddingTop: 8,
+    paddingBottom: 80,
   },
   emptyStateContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 20,
+    marginTop: 40,
   },
   emptyStateText: {
-    marginTop: 16,
     fontSize: 16,
-    color: '#666',
+    color: '#888',
     textAlign: 'center',
-    marginBottom: 24,
+    marginTop: 12,
   },
   addButton: {
+    marginTop: 16,
     backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
   },
   addButtonText: {
     color: '#fff',
     fontWeight: '600',
-    fontSize: 16,
   },
   browseButton: {
+    marginTop: 16,
     backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 6,
   },
   browseButtonText: {
     color: '#fff',
     fontWeight: '600',
-    fontSize: 16,
   },
   addPlantButton: {
     position: 'absolute',
-    right: 20,
-    bottom: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    bottom: 16,
+    right: 16,
     backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
+    borderRadius: 30,
+    padding: 16,
     elevation: 4,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
-  // Removed settingsButton style
 });
 
 export default ProfileScreen;

@@ -57,27 +57,55 @@ const PriceRange = ({
   // Handle blur events (when user finishes editing)
   const handleMinInputBlur = () => {
     const value = parseInt(minInput, 10);
-    if (isNaN(value) || value < minValue) {
+    
+    if (isNaN(value)) {
+      // If not a number, reset to min value
       setMinInput(minValue.toString());
       setMinPrice(minValue);
       if (onPriceChange) onPriceChange([minValue, maxPrice]);
-    } else if (value > maxPrice) {
-      setMinInput(maxPrice.toString());
-      setMinPrice(maxPrice);
-      if (onPriceChange) onPriceChange([maxPrice, maxPrice]);
+    } else if (value < minValue) {
+      // If less than minimum allowed, set to minimum
+      setMinInput(minValue.toString());
+      setMinPrice(minValue);
+      if (onPriceChange) onPriceChange([minValue, maxPrice]);
+    } else if (value > maxPrice - 5) {
+      // If greater than max price - 5, set to max price - 5
+      const newMinPrice = maxPrice - 5;
+      setMinInput(newMinPrice.toString());
+      setMinPrice(newMinPrice);
+      if (onPriceChange) onPriceChange([newMinPrice, maxPrice]);
+    } else {
+      // Otherwise, keep the value and ensure it's formatted properly
+      setMinInput(value.toString());
+      setMinPrice(value);
+      if (onPriceChange) onPriceChange([value, maxPrice]);
     }
   };
-
+  
   const handleMaxInputBlur = () => {
     const value = parseInt(maxInput, 10);
-    if (isNaN(value) || value > maxValue) {
+    
+    if (isNaN(value)) {
+      // If not a number, reset to max value
       setMaxInput(maxValue.toString());
       setMaxPrice(maxValue);
       if (onPriceChange) onPriceChange([minPrice, maxValue]);
-    } else if (value < minPrice) {
-      setMaxInput(minPrice.toString());
-      setMaxPrice(minPrice);
-      if (onPriceChange) onPriceChange([minPrice, minPrice]);
+    } else if (value > maxValue) {
+      // If greater than maximum allowed, set to maximum
+      setMaxInput(maxValue.toString());
+      setMaxPrice(maxValue);
+      if (onPriceChange) onPriceChange([minPrice, maxValue]);
+    } else if (value < minPrice + 5) {
+      // If less than min price + 5, set to min price + 5
+      const newMaxPrice = minPrice + 5;
+      setMaxInput(newMaxPrice.toString());
+      setMaxPrice(newMaxPrice);
+      if (onPriceChange) onPriceChange([minPrice, newMaxPrice]);
+    } else {
+      // Otherwise, keep the value and ensure it's formatted properly
+      setMaxInput(value.toString());
+      setMaxPrice(value);
+      if (onPriceChange) onPriceChange([minPrice, value]);
     }
   };
 
