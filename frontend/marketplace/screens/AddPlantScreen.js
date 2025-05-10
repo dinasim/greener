@@ -20,6 +20,7 @@ import * as FileSystem from 'expo-file-system';
 
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import { createPlant } from '../services/marketplaceApi';
+import { getAddPlantCategories } from '../services/categories';
 
 const AddPlantScreen = () => {
   const navigation = useNavigation();
@@ -42,15 +43,7 @@ const AddPlantScreen = () => {
     images: '',
   });
 
-  const categories = [
-    'Indoor Plants',
-    'Outdoor Plants',
-    'Succulents',
-    'Cacti',
-    'Flowering Plants',
-    'Herbs',
-    'Vegetable Plants',
-  ];
+  const categories = getAddPlantCategories();
 
   const handleChange = (key, value) => {
     setFormData({ ...formData, [key]: value });
@@ -463,3 +456,4 @@ const styles = StyleSheet.create({
 });
 
 export default AddPlantScreen;
+// This code is a React Native component for an "Add Plant" screen in a marketplace app.

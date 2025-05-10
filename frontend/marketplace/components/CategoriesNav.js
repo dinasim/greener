@@ -8,19 +8,7 @@ import {
   TextInput 
 } from 'react-native';
 import { MaterialCommunityIcons, Feather } from '@expo/vector-icons';
-
-const plantCategories = [
-  { id: 'all', label: 'All', icon: 'leaf' },
-  { id: 'indoor', label: 'Indoor', icon: 'home' },
-  { id: 'outdoor', label: 'Outdoor', icon: 'tree' },
-  { id: 'succulent', label: 'Succulents', icon: 'flower' },
-  { id: 'cactus', label: 'Cacti', icon: 'cactus' },
-  { id: 'flowers', label: 'Flowers', icon: 'flower-tulip' },
-  { id: 'herbs', label: 'Herbs', icon: 'leaf-maple' },
-  { id: 'seeds', label: 'Seeds', icon: 'seed' },
-  { id: 'accessories', label: 'Accessories', icon: 'pot' },
-  { id: 'tools', label: 'Tools', icon: 'tools' },
-];
+import { PLANT_CATEGORIES } from '../services/categories';
 
 const CategoriesNav = ({ onSelectCategory, searchQuery, onSearchChange }) => {
   return (
@@ -44,7 +32,7 @@ const CategoriesNav = ({ onSelectCategory, searchQuery, onSearchChange }) => {
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={styles.categoriesContainer}
         >
-          {plantCategories.map((category) => (
+          {PLANT_CATEGORIES.map((category) => (
             <TouchableOpacity
               key={category.id}
               style={styles.categoryButton}

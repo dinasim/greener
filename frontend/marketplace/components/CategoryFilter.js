@@ -1,15 +1,17 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { getCategoryFilterOptions } from '../services/categories';
 
 const { width } = Dimensions.get('window');
 
 /**
  * Responsive plant categories filter component
+ * Using unified category definitions
  */
 const CategoryFilter = ({
-  categories = defaultCategories,
-  selectedCategory = 'All',
+  categories = getCategoryFilterOptions(),
+  selectedCategory = 'all',
   onSelect
 }) => {
   // Determine if button text should be shown based on screen size
@@ -56,20 +58,6 @@ const CategoryFilter = ({
     </View>
   );
 };
-
-// Default categories with icons
-const defaultCategories = [
-  { id: 'All', label: 'All Plants', icon: 'flower-outline' },
-  { id: 'indoor', label: 'Indoor', icon: 'home' },
-  { id: 'outdoor', label: 'Outdoor', icon: 'tree' },
-  { id: 'succulent', label: 'Succulents', icon: 'cactus' },
-  { id: 'herb', label: 'Herbs', icon: 'leaf' },
-  { id: 'tropical', label: 'Tropical', icon: 'palm-tree' },
-  { id: 'flowering', label: 'Flowering', icon: 'flower' },
-  { id: 'seeds', label: 'Seeds', icon: 'seed-outline' },
-  { id: 'accessories', label: 'Accessories', icon: 'pot-mix-outline' },
-  { id: 'tools', label: 'Tools', icon: 'tools' },
-];
 
 const styles = StyleSheet.create({
   container: {

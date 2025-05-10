@@ -75,7 +75,8 @@ const MarketplaceScreen = ({ navigation }) => {
       const data = await getAll(
         pageNum,
         selectedCategory === 'All' ? null : selectedCategory,
-        searchQuery
+        searchQuery,
+        { minPrice: priceRange.min, maxPrice: priceRange.max }
       );
 
       // Update state with new data
