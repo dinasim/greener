@@ -66,6 +66,9 @@ const defaultCategories = [
   { id: 'herb', label: 'Herbs', icon: 'leaf' },
   { id: 'tropical', label: 'Tropical', icon: 'palm-tree' },
   { id: 'flowering', label: 'Flowering', icon: 'flower' },
+  { id: 'seeds', label: 'Seeds', icon: 'seed-outline' },
+  { id: 'accessories', label: 'Accessories', icon: 'pot-mix-outline' },
+  { id: 'tools', label: 'Tools', icon: 'tools' },
 ];
 
 const styles = StyleSheet.create({

@@ -300,14 +300,34 @@ const ProfileScreen = () => {
             style={styles.coverImage}
           />
           
-          {/* Keep only the Edit Profile button, remove Settings */}
-          <TouchableOpacity 
-            style={styles.editButton}
-            onPress={() => navigation.navigate('EditProfile')}
-          >
-            <Feather name="edit-2" size={16} color="#fff" />
-            <Text style={styles.editButtonText}>Edit Profile</Text>
-          </TouchableOpacity>
+{/* Edit Profile button - Debug version with console logs */}
+<TouchableOpacity 
+  style={styles.editButton}
+  onPress={() => {
+    console.log('Edit Profile button pressed');
+    try {
+      // Navigate to EditProfile screen using the most direct method
+      navigation.navigate('EditProfile');
+      console.log('Navigation to EditProfile triggered');
+    } catch (error) {
+      console.error('Navigation error:', error);
+      
+      // Fallback navigation attempt if the first fails
+      try {
+        // Try alternative navigation method if available
+        if (navigation.getParent()) {
+          navigation.getParent().navigate('EditProfile');
+          console.log('Parent navigation used as fallback');
+        }
+      } catch (fallbackError) {
+        console.error('Fallback navigation also failed:', fallbackError);
+      }
+    }
+  }}
+>
+  <Feather name="edit-2" size={16} color="#fff" />
+  <Text style={styles.editButtonText}>Edit Profile</Text>
+</TouchableOpacity>
         </View>
         
         <View style={styles.avatarContainer}>

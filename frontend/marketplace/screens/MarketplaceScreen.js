@@ -22,7 +22,7 @@ import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
 import AzureMapView from '../components/AzureMapView';
 
-// Import consolidated API service (no longer using separate files)
+// Import consolidated API service
 import { getAll } from '../services/marketplaceApi';
 
 const MarketplaceScreen = ({ navigation }) => {
@@ -71,7 +71,7 @@ const MarketplaceScreen = ({ navigation }) => {
         setIsLoading(true);
       }
 
-      // Get plants from API (now using consolidated marketplaceApi.js)
+      // Get plants from API
       const data = await getAll(
         pageNum,
         selectedCategory === 'All' ? null : selectedCategory,
@@ -103,8 +103,9 @@ const MarketplaceScreen = ({ navigation }) => {
   // Load products with location data for map view
   const loadMapProducts = async () => {
     try {
+      setIsLoading(true);
+      
       // For development, we'll just add mock coordinates to filteredPlants
-      // Add location data to plants that don't have it
       const productsWithLocation = filteredPlants.map(plant => {
         if (plant.location && plant.location.latitude && plant.location.longitude) {
           return plant;
@@ -118,15 +119,18 @@ const MarketplaceScreen = ({ navigation }) => {
           ...plant,
           location: {
             latitude: 47.6062 + (hash % 20 - 10) / 100,
-            longitude: -122.3321 + (hash % 20 - 10) / 100
+            longitude: -122.3321 + (hash % 20 - 10) / 100,
+            city: plant.city || 'Unknown location'
           }
         };
       });
       
       setMapProducts(productsWithLocation);
+      setIsLoading(false);
     } catch (err) {
       console.error('Error loading map products:', err);
-      // If map products fail to load, still show the map with whatever we have
+      setError('Failed to load map data. Please try again.');
+      setIsLoading(false);
     }
   };
 
@@ -375,7 +379,12 @@ const MarketplaceScreen = ({ navigation }) => {
       {viewMode === 'map' ? (
         // Map View
         <View style={styles.mapContainer}>
-          {mapProducts.length > 0 ? (
+          {isLoading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+              <Text style={styles.loadingText}>Preparing map view...</Text>
+            </View>
+          ) : mapProducts.length > 0 ? (
             <AzureMapView 
               products={mapProducts}
               onSelectProduct={(productId) => {

@@ -17,6 +17,9 @@ const plantCategories = [
   { id: 'cactus', label: 'Cacti', icon: 'cactus' },
   { id: 'flowers', label: 'Flowers', icon: 'flower-tulip' },
   { id: 'herbs', label: 'Herbs', icon: 'leaf-maple' },
+  { id: 'seeds', label: 'Seeds', icon: 'seed' },
+  { id: 'accessories', label: 'Accessories', icon: 'pot' },
+  { id: 'tools', label: 'Tools', icon: 'tools' },
 ];
 
 const CategoriesNav = ({ onSelectCategory, searchQuery, onSearchChange }) => {

@@ -11,13 +11,18 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  SafeAreaView,
 } from 'react-native';
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 
+// Import the consistent header component
+import MarketplaceHeader from '../components/MarketplaceHeader';
+
 // Import API service
 import { fetchUserProfile, updateUserProfile } from '../services/marketplaceApi';
+import config from '../services/config';
 
 // Sample user data for development (same as in ProfileScreen)
 const SAMPLE_USER = {
@@ -62,20 +67,27 @@ const EditProfileScreen = () => {
       setError(null);
 
       // For real app, use API:
-      // const data = await fetchUserProfile();
+      let data;
+      try {
+        data = await fetchUserProfile();
+      } catch (apiError) {
+        console.log('API Error (Development Mode):', apiError);
+        // For development, use sample data with a delay to simulate API call:
+        await new Promise(resolve => setTimeout(resolve, 500));
+        data = { user: SAMPLE_USER };
+      }
 
-      // For development, use sample data with a delay to simulate API call:
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const data = SAMPLE_USER;
+      // Extract user info from the response
+      const userData = data.user || SAMPLE_USER;
 
-      setUser(data);
+      setUser(userData);
       setFormData({
-        name: data.name || '',
-        email: data.email || '',
-        phoneNumber: data.phoneNumber || '',
-        bio: data.bio || '',
-        location: data.location || '',
-        avatar: data.avatar || null,
+        name: userData.name || '',
+        email: userData.email || '',
+        phoneNumber: userData.phoneNumber || '',
+        bio: userData.bio || '',
+        location: userData.location || '',
+        avatar: userData.avatar || null,
       });
 
       setIsLoading(false);
@@ -91,6 +103,14 @@ const EditProfileScreen = () => {
       ...formData,
       [key]: value,
     });
+
+    // Clear error for this field if it exists
+    if (formErrors[key]) {
+      setFormErrors({
+        ...formErrors,
+        [key]: '',
+      });
+    }
   };
 
   const pickImage = async () => {
@@ -106,7 +126,7 @@ const EditProfileScreen = () => {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 1,
+        quality: 0.8,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
@@ -126,20 +146,24 @@ const EditProfileScreen = () => {
 
     if (!formData.name.trim()) {
       errors.name = 'Please enter your name';
+    } else if (formData.name.trim().length < 3 || formData.name.trim().length > 50) {
+      errors.name = 'Name should be between 3 and 50 characters';
     }
 
     if (!formData.email.trim()) {
       errors.email = 'Please enter your email';
-    }
-
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      errors.email = 'Please enter a valid email address';
+    } else {
+      // Basic email validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(formData.email)) {
+        errors.email = 'Please enter a valid email address';
+      }
     }
 
     if (!formData.phoneNumber.trim()) {
       errors.phoneNumber = 'Please enter your phone number';
+    } else if (formData.phoneNumber.trim().length < 7) {
+      errors.phoneNumber = 'Please enter a valid phone number';
     }
 
     setFormErrors(errors);
@@ -170,29 +194,39 @@ const EditProfileScreen = () => {
       }
   
       // For real app, use API
-      try {
-        // First try the API call
-        await updateUserProfile(user.id, updatedUserData);
+      if (config.isDevelopment && !config.features.useRealApi) {
+        // Simulate API delay in development
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Simulate success in development
+        console.log('Development mode: Simulating successful profile update');
         
         Alert.alert(
           'Success',
           'Your profile has been updated',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
+          [{ 
+            text: 'OK', 
+            onPress: () => {
+              // Always navigate back to ProfileScreen on success
+              navigation.goBack();
+            }
+          }]
         );
-      } catch (apiError) {
-        console.error('API Error:', apiError);
-        
-        // For development, simulate success after API failure
-        if (__DEV__) {
-          console.log('Development mode: Simulating successful profile update');
+      } else {
+        // Make the actual API call in production
+        try {
+          await updateUserProfile(user.id, updatedUserData);
           
           Alert.alert(
-            'Success (Dev Mode)',
-            'Your profile has been updated (simulated in development)',
-            [{ text: 'OK', onPress: () => navigation.goBack() }]
+            'Success',
+            'Your profile has been updated',
+            [{ 
+              text: 'OK', 
+              onPress: () => navigation.goBack() 
+            }]
           );
-        } else {
-          // In production, show the error
+        } catch (apiError) {
+          console.error('API Error:', apiError);
           throw apiError;
         }
       }
@@ -206,139 +240,161 @@ const EditProfileScreen = () => {
   };
 
   const handleCancel = () => {
+    // Simply go back to previous screen
     navigation.goBack();
   };
 
+  // Loading state with consistent header
   if (isLoading) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading profile...</Text>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="Edit Profile"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading profile...</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
+  // Error state with consistent header
   if (error && !user) {
     return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons name="error-outline" size={48} color="#f44336" />
-        <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity
-          style={styles.retryButton}
-          onPress={loadUserProfile}
-        >
-          <Text style={styles.retryText}>Retry</Text>
-        </TouchableOpacity>
-      </View>
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="Edit Profile"
+          showBackButton={true}
+          onNotificationsPress={() => navigation.navigate('Messages')}
+        />
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={loadUserProfile}
+          >
+            <Text style={styles.retryText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
-    >
-      <ScrollView style={styles.container}>
-        <Text style={styles.title}>Edit Profile</Text>
+    <SafeAreaView style={styles.container}>
+      <MarketplaceHeader
+        title="Edit Profile"
+        showBackButton={true}
+        showNotifications={false}
+      />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={{ flex: 1 }}
+      >
+        <ScrollView style={styles.scrollView}>
+          {/* Avatar */}
+          <View style={styles.avatarContainer}>
+            <TouchableOpacity onPress={pickImage}>
+              <Image
+                source={{ uri: formData.avatar || 'https://via.placeholder.com/150?text=User' }}
+                style={styles.avatar}
+              />
+              <View style={styles.editAvatarButton}>
+                <Feather name="camera" size={16} color="#fff" />
+              </View>
+            </TouchableOpacity>
+          </View>
 
-        {/* Avatar */}
-        <View style={styles.avatarContainer}>
-          <TouchableOpacity onPress={pickImage}>
-            <Image
-              source={{ uri: formData.avatar || 'https://via.placeholder.com/150?text=User' }}
-              style={styles.avatar}
-            />
-            <View style={styles.editAvatarButton}>
-              <Feather name="camera" size={16} color="#fff" />
+          {/* Form Fields */}
+          <View style={styles.formContainer}>
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Name</Text>
+              <TextInput
+                style={[styles.input, formErrors.name && styles.errorInput]}
+                value={formData.name}
+                onChangeText={(text) => handleChange('name', text)}
+                placeholder="Your name"
+              />
+              {formErrors.name && <Text style={styles.errorText}>{formErrors.name}</Text>}
             </View>
-          </TouchableOpacity>
-        </View>
 
-        {/* Form Fields */}
-        <View style={styles.formContainer}>
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Name</Text>
-            <TextInput
-              style={[styles.input, formErrors.name && styles.errorInput]}
-              value={formData.name}
-              onChangeText={(text) => handleChange('name', text)}
-              placeholder="Your name"
-            />
-            {formErrors.name && <Text style={styles.errorText}>{formErrors.name}</Text>}
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                style={[styles.input, formErrors.email && styles.errorInput]}
+                value={formData.email}
+                onChangeText={(text) => handleChange('email', text)}
+                placeholder="Your email"
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+              {formErrors.email && <Text style={styles.errorText}>{formErrors.email}</Text>}
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Phone Number</Text>
+              <TextInput
+                style={[styles.input, formErrors.phoneNumber && styles.errorInput]}
+                value={formData.phoneNumber}
+                onChangeText={(text) => handleChange('phoneNumber', text)}
+                placeholder="Your phone number"
+                keyboardType="phone-pad"
+              />
+              {formErrors.phoneNumber && <Text style={styles.errorText}>{formErrors.phoneNumber}</Text>}
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Location</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.location}
+                onChangeText={(text) => handleChange('location', text)}
+                placeholder="Your location (city, state)"
+              />
+            </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Bio</Text>
+              <TextInput
+                style={[styles.input, styles.textArea]}
+                value={formData.bio}
+                onChangeText={(text) => handleChange('bio', text)}
+                placeholder="Tell others about yourself and your plants"
+                multiline
+                numberOfLines={4}
+              />
+            </View>
           </View>
 
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Email</Text>
-            <TextInput
-              style={[styles.input, formErrors.email && styles.errorInput]}
-              value={formData.email}
-              onChangeText={(text) => handleChange('email', text)}
-              placeholder="Your email"
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
-            {formErrors.email && <Text style={styles.errorText}>{formErrors.email}</Text>}
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={[styles.button, styles.cancelButton]}
+              onPress={handleCancel}
+              disabled={isSaving}
+            >
+              <Text style={styles.cancelButtonText}>Cancel</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
+              onPress={handleSave}
+              disabled={isSaving}
+            >
+              {isSaving ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              )}
+            </TouchableOpacity>
           </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Phone Number</Text>
-            <TextInput
-              style={[styles.input, formErrors.phoneNumber && styles.errorInput]}
-              value={formData.phoneNumber}
-              onChangeText={(text) => handleChange('phoneNumber', text)}
-              placeholder="Your phone number"
-              keyboardType="phone-pad"
-            />
-            {formErrors.phoneNumber && <Text style={styles.errorText}>{formErrors.phoneNumber}</Text>}
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Location</Text>
-            <TextInput
-              style={styles.input}
-              value={formData.location}
-              onChangeText={(text) => handleChange('location', text)}
-              placeholder="Your location (city, state)"
-            />
-          </View>
-
-          <View style={styles.formGroup}>
-            <Text style={styles.label}>Bio</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              value={formData.bio}
-              onChangeText={(text) => handleChange('bio', text)}
-              placeholder="Tell others about yourself and your plants"
-              multiline
-              numberOfLines={4}
-            />
-          </View>
-        </View>
-
-        {/* Action Buttons */}
-        <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
-            onPress={handleCancel}
-            disabled={isSaving}
-          >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
-            onPress={handleSave}
-            disabled={isSaving}
-          >
-            {isSaving ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 };
 
@@ -346,6 +402,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#fff',
+  },
+  scrollView: {
+    flex: 1,
     padding: 16,
   },
   loadingContainer: {
@@ -365,32 +424,25 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   errorText: {
-    marginTop: 10,
     color: '#f44336',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 20,
+    fontSize: 14,
+    marginTop: 2,
   },
   retryButton: {
     backgroundColor: '#4CAF50',
     paddingVertical: 8,
     paddingHorizontal: 16,
     borderRadius: 4,
+    marginTop: 16,
   },
   retryText: {
     color: '#fff',
     fontWeight: '600',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 20,
-    color: '#333',
-    textAlign: 'center',
-  },
   avatarContainer: {
     alignItems: 'center',
     marginBottom: 30,
+    marginTop: 16,
   },
   avatar: {
     width: 120,
@@ -438,10 +490,6 @@ const styles = StyleSheet.create({
   },
   errorInput: {
     borderColor: '#f44336',
-  },
-  errorText: {
-    color: '#f44336',
-    fontSize: 12,
   },
   actionButtons: {
     flexDirection: 'row',

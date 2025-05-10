@@ -2,21 +2,22 @@
 const config = {
   // API Configuration
   api: {
-    baseUrl: 'https://usersfunctions.azurewebsites.net/api',
+    // During development, can use a placeholder URL since we're using mock data
+    baseUrl: 'https://yourfunctionapp.azurewebsites.net/api', 
     timeout: 10000, // 10 seconds
   },
   
   // Feature Flags
   features: {
-    useRealApi: false, // Set to true in production
+    useRealApi: false, // Keep it false during development
     enableMapView: true,
     enableImageUploads: true,
     enableNotifications: false, // Not yet implemented
   },
   
-  // Azure Maps Configuration
+  // Azure Maps Configuration - not needed for development with simplified map
   azureMaps: {
-    subscriptionKey: process.env.AZURE_MAPS_KEY || 'YOUR_AZURE_MAPS_KEY',
+    subscriptionKey: process.env.AZURE_MAPS_KEY || 'dummy-key-for-development',
     renderMode: 'hybrid', // 'vector', 'raster', or 'hybrid'
   },
   
@@ -28,7 +29,6 @@ const config = {
       androidClientId: process.env.ANDROID_GOOGLE_CLIENT_ID || 'YOUR_ANDROID_CLIENT_ID',
       webClientId: process.env.WEB_GOOGLE_CLIENT_ID || 'YOUR_WEB_CLIENT_ID',
     },
-    // How long tokens remain valid, in milliseconds
     // How long tokens remain valid, in milliseconds (1 hour)
     tokenExpiryTime: 60 * 60 * 1000,
   },

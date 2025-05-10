@@ -93,16 +93,82 @@ const PlantDetailScreen = () => {
   };
 
   // Share plant listing
-  const handleShareListing = async () => {
-    try {
-      await Share.share({
-        message: `Check out this ${plant.title || plant.name} on Greener: $${plant.price}`,
-        url: Platform.OS === 'ios' ? `greenerapp://plants/${plantId}` : undefined,
-      });
-    } catch (error) {
-      Alert.alert('Error', 'Could not share this listing');
+// This is a partial update showing just the share functionality in PlantDetailScreen.js
+// Replace the existing handleShareListing function with this enhanced version
+
+// Import ShareService if you're using the separate service approach
+// import { shareItem } from '../services/ShareService';
+
+// Enhanced share plant listing function
+const handleShareListing = async () => {
+  try {
+    // Get all the plant details
+    const plantName = plant.title || plant.name || 'Amazing plant';
+    const plantPrice = parseFloat(plant.price).toFixed(2);
+    const sellerName = plant.name || plant.seller?.name || 'a trusted seller';
+    const plantCategory = plant.category || 'Plants';
+    const plantLocation = plant.city || plant.location || 'Local pickup';
+    const plantDescription = plant.description 
+      ? (plant.description.length > 100 
+         ? plant.description.substring(0, 100) + '...' 
+         : plant.description)
+      : 'Check out this amazing plant!';
+      
+    // Create deep link URL for the app
+    const appURL = Platform.OS === 'ios' 
+      ? `greenerapp://plants/${plantId}` 
+      : `https://greenerapp.com/plants/${plantId}`;
+      
+    // Create rich share message with emojis and formatting
+    const shareMessage = 
+      `🌿 ${plantName} - $${plantPrice} 🌿\n\n` +
+      `${plantDescription}\n\n` +
+      `📋 Details:\n` +
+      `🏷️ Category: ${plantCategory}\n` +
+      `📍 Location: ${plantLocation}\n` +
+      `👤 Seller: ${sellerName}\n\n` +
+      `💬 Visit Greener app to contact the seller and see more amazing plants!`;
+      
+    // Use Share API with enhanced options
+    const result = await Share.share(
+      {
+        title: `Greener: ${plantName}`,
+        message: shareMessage,
+        url: appURL,
+      },
+      {
+        // iOS options
+        dialogTitle: 'Share This Plant With Friends',
+        // Android options
+        subject: `Check out this ${plantName} on Greener!`,
+        tintColor: '#4CAF50',
+        excludedActivityTypes: [
+          'com.apple.UIKit.activity.Print',
+          'com.apple.UIKit.activity.AssignToContact',
+        ],
+      }
+    );
+    
+    // Optional: Track share completion
+    if (result.action === Share.sharedAction) {
+      // Successfully shared
+      console.log('Plant shared successfully');
+      
+      // If available, you could track this in analytics
+      // analytics.trackEvent('plant_shared', { plantId, platform: result.activityType || 'unknown' });
     }
-  };
+  } catch (error) {
+    console.error('Error sharing plant:', error);
+    Alert.alert('Error', 'Could not share this listing');
+  }
+};
+
+// Then use this function in your Share Button in the render section:
+/*
+<TouchableOpacity style={styles.shareButton} onPress={handleShareListing}>
+  <MaterialIcons name="share" size={24} color="#fff" />
+</TouchableOpacity>
+*/
 
   // Format date for display
   const formatDate = (dateString) => {
