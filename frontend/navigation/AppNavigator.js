@@ -5,7 +5,6 @@ import { FormProvider } from '../context/FormContext';
 // Importing screens
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
-import SignUpScreen from '../screens/SignUpScreen';
 import SignInGoogleScreen from '../screens/SignInGoogleScreen';
 import PlantLocationScreen from '../screens/SignupPlantsLocation';
 import SignupIntersted from "../screens/SignupIntersted";
@@ -29,7 +28,6 @@ export default function AppNavigator() {
       <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
         {/* Login and Signup screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="SignUp" component={SignUpScreen} />
         <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
         <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
         <Stack.Screen name="SignupAnimals" component={SignupAnimals} />

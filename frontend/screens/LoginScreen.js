@@ -50,7 +50,7 @@ export default function LoginScreen({ navigation }) {
                 <View style={styles.buttonContainer}>
                   <TouchableOpacity
                     style={styles.getStartedButton}
-                    onPress={() => navigation.navigate("SignUp")}
+                    onPress={() => navigation.navigate("SignupPlantsLocation")}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.getStartedText}>
