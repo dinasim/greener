@@ -4,7 +4,6 @@ import azure.functions as func
 from requests_toolbelt.multipart import decoder
 
 PLANTNET_API_KEY = "2b10lLFTZi5uAsfZjCILnsIwie"
-IMGUR_CLIENT_ID = "0bee6dfee7e166a"
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
@@ -34,36 +33,27 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 headers={"Access-Control-Allow-Origin": "*"}
             )
 
-        # Extract filename and content type from headers
+        # Extract metadata
         content_disp = image_part.headers[b'Content-Disposition'].decode()
         filename = content_disp.split('filename="')[-1].split('"')[0]
         content_type_header = image_part.headers.get(b'Content-Type', b'image/jpeg').decode()
 
-        # Upload to Imgur
-        imgur_response = requests.post(
-            "https://api.imgur.com/3/image",
-            headers={"Authorization": f"Client-ID {IMGUR_CLIENT_ID}"},
-            files={"image": (filename, image_part.content, content_type_header)},
-        )
+        logging.info(f"Received image content-type: {content_type_header}, size: {len(image_part.content)} bytes")
 
-        if imgur_response.status_code != 200:
-            logging.error(f"Imgur upload failed: {imgur_response.text}")
-            return func.HttpResponse(
-                "Failed to upload image to Imgur",
-                status_code=500,
-                headers={"Access-Control-Allow-Origin": "*"}
-            )
-
-        image_url = imgur_response.json()["data"]["link"]
-        logging.info(f"Uploaded to Imgur: {image_url}")
-
-        # Call PlantNet
+        # Send directly to PlantNet with include-related-images
         plantnet_url = (
             f"https://my-api.plantnet.org/v2/identify/all?"
-            f"api-key={PLANTNET_API_KEY}&images={image_url}&organs=leaf"
+            f"api-key={PLANTNET_API_KEY}&include-related-images=true&no-reject=true"
         )
 
-        plantnet_response = requests.get(plantnet_url)
+        plantnet_response = requests.post(
+            plantnet_url,
+            files={"images": (filename, image_part.content, content_type_header)},
+            data={"organs": "leaf"}
+        )
+
+        # Log full JSON response for debugging
+        logging.info(f"PlantNet full response: {plantnet_response.text}")
 
         if plantnet_response.status_code != 200:
             logging.error(f"PlantNet error: {plantnet_response.text}")

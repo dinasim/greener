@@ -4,25 +4,55 @@ from azure.cosmos import CosmosClient
 import os
 import json
 
-COSMOS_URI = "https://greener-database.documents.azure.com:443/"
-COSMOS_KEY = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
+# These should live in your local.settings.json (or in App Settings)
+COSMOS_URI = os.getenv("COSMOS_URI")
+COSMOS_KEY = os.getenv("COSMOS_KEY")
 DATABASE_NAME = "GreenerDB"
 CONTAINER_NAME = "Plants"
 
 client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
-container = client.get_database_client(DATABASE_NAME).get_container_client(CONTAINER_NAME)
+container = client \
+    .get_database_client(DATABASE_NAME) \
+    .get_container_client(CONTAINER_NAME)
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('plantSearch function triggered.')
-    name = req.params.get('name')
-    if not name:
-        return func.HttpResponse("Missing 'name' parameter", status_code=400)
+    logging.info("plantSearch function triggered.")
 
-    query = "SELECT * FROM c WHERE CONTAINS(LOWER(c.common_name), LOWER(@name))"
-    parameters = [{"name": "@name", "value": name}]
+    # Grab the ?name= query parameter
+    name = req.params.get("name")
+    if not name:
+        return func.HttpResponse(
+            "Please pass a name on the query string, e.g. ?name=golden",
+            status_code=400
+        )
+
+    # Build a case‐insensitive CONTAINS over id, common_name, latin_name
+    query = """
+    SELECT *
+    FROM c
+    WHERE
+      CONTAINS(LOWER(c.id), LOWER(@name))
+      OR CONTAINS(LOWER(c.common_name), LOWER(@name))
+      OR CONTAINS(LOWER(c.latin_name), LOWER(@name))
+    """
+    parameters = [
+        { "name": "@name", "value": name }
+    ]
 
     try:
-        results = list(container.query_items(query=query, parameters=parameters, enable_cross_partition_query=True))
-        return func.HttpResponse(json.dumps(results), mimetype="application/json")
+        items = list(container.query_items(
+            query=query,
+            parameters=parameters,
+            enable_cross_partition_query=True
+        ))
+        return func.HttpResponse(
+            json.dumps(items, default=str),
+            mimetype="application/json",
+            status_code=200
+        )
     except Exception as e:
-        return func.HttpResponse(f"Error: {str(e)}", status_code=500)
+        logging.error(f"Cosmos query failed: {e}")
+        return func.HttpResponse(
+            f"Error querying database: {e}",
+            status_code=500
+        )
