@@ -1,0 +1,26 @@
+{
+    "bindings": [
+      {
+        "authLevel": "anonymous",
+        "type": "httpTrigger",
+        "direction": "in",
+        "name": "req",
+        "methods": [ "post" ],
+        "route": "marketplace/signalr-negotiate"
+      },
+      {
+        "type": "http",
+        "direction": "out",
+        "name": "$return"
+      },
+      {
+        "type": "signalRConnectionInfo",
+        "direction": "in",
+        "name": "connectionInfo",
+        "hubName": "chat",
+        "connectionStringSetting": "AzureSignalRConnectionString",
+        "userId": "{query.userId}"
+      }
+    ]
+  }
+  

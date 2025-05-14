@@ -16,10 +16,12 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import MarketplaceHeader
 import MarketplaceHeader from '../components/MarketplaceHeader';
 
+// SEARCH_KEY: MESSAGES_SCREEN_IMPORTS
 // Import services
 import {
   fetchConversations,
@@ -73,12 +75,17 @@ const MessagesScreen = () => {
   }, [sellerId, plantId]);
   
   // Helper functions to load data
+  // SEARCH_KEY: LOAD_CONVERSATIONS_API
   const loadConversations = async () => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const data = await fetchConversations();
+      // Get the current user's email (you might want to get this from a global context)
+      const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+      
+      // For real app, use API:
+      const data = await fetchConversations(userEmail);
       
       if (Array.isArray(data)) {
         setConversations(data);
@@ -127,12 +134,16 @@ const MessagesScreen = () => {
     }
   };
   
+  // SEARCH_KEY: LOAD_MESSAGES_API
   const loadMessages = async (conversationId) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const data = await fetchMessages(conversationId);
+      // Get the current user's email
+      const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+      
+      const data = await fetchMessages(conversationId, userEmail);
       
       // Handle different API response formats
       if (data && Array.isArray(data.messages)) {
@@ -161,6 +172,7 @@ const MessagesScreen = () => {
     }
   };
   
+  // SEARCH_KEY: HANDLE_SEND_MESSAGE_API
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
     
@@ -170,11 +182,14 @@ const MessagesScreen = () => {
     try {
       setIsSending(true);
       
+      // Get the current user's email
+      const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+      
       // Add message to state optimistically
       const tempMessage = {
         id: tempId,
-        senderId: 'currentUser',
-        message: newMessage, // Use 'message' instead of 'text' for consistency
+        senderId: userEmail,
+        text: newMessage,
         timestamp: new Date().toISOString(),
         pending: true
       };
@@ -196,10 +211,10 @@ const MessagesScreen = () => {
       // API call
       if (selectedConversation) {
         // Existing conversation
-        await sendMessage(selectedConversation.id, messageText);
+        await sendMessage(selectedConversation.id, messageText, userEmail);
       } else if (sellerId && plantId) {
         // New conversation
-        const result = await startConversation(sellerId, plantId, messageText);
+        const result = await startConversation(sellerId, plantId, messageText, userEmail);
         
         if (result?.messageId) {
           setSelectedConversation({

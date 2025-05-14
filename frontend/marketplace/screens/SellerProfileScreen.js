@@ -81,19 +81,17 @@ const SellerProfileScreen = () => {
     loadSellerProfile();
   }, [sellerId]);
   
+
+    // SEARCH_KEY: LOAD_SELLER_PROFILE_API
   const loadSellerProfile = async () => {
     try {
       setIsLoading(true);
       setError(null);
 
       // For real app, use API:
-      // const data = await fetchUserProfile(sellerId);
+      const data = await fetchUserProfile(sellerId);
 
-      // For development, use sample data with a delay to simulate API call:
-      await new Promise(resolve => setTimeout(resolve, 500));
-      const data = SAMPLE_SELLER;
-
-      setUser(data);
+      setUser(data.user);
       setIsLoading(false);
     } catch (err) {
       setError('Failed to load profile. Please try again later.');
@@ -101,7 +99,7 @@ const SellerProfileScreen = () => {
       console.error('Error loading profile:', err);
     }
   };
-  
+
   const handleSignOut = () => {
     Alert.alert(
       'Sign Out',
