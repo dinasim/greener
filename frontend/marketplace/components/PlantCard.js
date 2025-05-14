@@ -35,24 +35,31 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     });
   };
 
-  const handleToggleFavorite = async () => {
-    if (isLoading) return;
+// SEARCH_KEY: MARKETPLACE_CARD_TOGGLE_FAVORITE
+const handleToggleFavorite = async () => {
+  if (isLoading) return;
+  
+  try {
+    setIsLoading(true);
+    // Toggle state immediately for better UI experience
+    setIsFavorite(!isFavorite);
     
-    try {
-      setIsLoading(true);
-      // Toggle state immediately for better UI experience
-      setIsFavorite(!isFavorite);
-      
-      // Call the API to update wishlist status
-      await wishProduct(plant.id || plant._id);
-      setIsLoading(false);
-    } catch (error) {
-      // Revert state if the API call fails
-      setIsFavorite(isFavorite);
-      setIsLoading(false);
-      console.error('Failed to update wishlist:', error);
+    // Call the API to update wishlist status
+    const result = await wishProduct(plant.id || plant._id);
+    
+    // If the API returns a specific wishlist state, use that
+    if (result && 'isWished' in result) {
+      setIsFavorite(result.isWished);
     }
-  };
+    
+    setIsLoading(false);
+  } catch (error) {
+    // Revert state if the API call fails
+    setIsFavorite(isFavorite);
+    setIsLoading(false);
+    console.error('Failed to update wishlist:', error);
+  }
+};
 
   const handleStartChat = () => {
     navigation.navigate('Messages', { 

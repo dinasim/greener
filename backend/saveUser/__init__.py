@@ -2,10 +2,17 @@ import logging
 import azure.functions as func
 import json
 from azure.cosmos import CosmosClient, PartitionKey, exceptions
+import os
+
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
+    return response
 
 # Set up the Cosmos DB client
-endpoint = 'https://greener-database.documents.azure.com:443/'
-key = 'Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=='  # Replace with your real key
+endpoint = os.environ.get('COSMOS_URI')
+key = os.environ.get('COSMOS_KEY')
 client = CosmosClient(endpoint, credential=key)
 
 # Reference your Cosmos DB database and containers

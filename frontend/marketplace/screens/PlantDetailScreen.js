@@ -47,50 +47,64 @@ const PlantDetailScreen = () => {
   }, [plantId]);
 
   // Function to load plant details
-  const loadPlantDetail = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const data = await getSpecific(plantId);
+  // SEARCH_KEY: MARKETPLACE_DETAIL_SCREEN_API_CALL  
+const loadPlantDetail = async () => {
+  try {
+    setIsLoading(true);
+    setError(null);
+    const data = await getSpecific(plantId);
 
-      if (!data) {
-        throw new Error('Plant not found');
-      }
-
-      setPlant(data);
-      setIsFavorite(data.isWished || false);
-      setIsLoading(false);
-    } catch (err) {
-      setError('Failed to load plant details. Please try again later.');
-      setIsLoading(false);
-      console.error('Error fetching plant details:', err);
+    if (!data) {
+      throw new Error('Plant not found');
     }
-  };
+
+    setPlant(data);
+    setIsFavorite(data.isWished || false);
+    setIsLoading(false);
+  } catch (err) {
+    setError('Failed to load plant details. Please try again later.');
+    setIsLoading(false);
+    console.error('Error fetching plant details:', err);
+  }
+};
 
   // Toggle favorite/wishlist status
-  const toggleFavorite = async () => {
-    try {
-      // Update UI immediately for better user experience
-      setIsFavorite(!isFavorite);
-      
-      // Call API to update wishlist status
-      await wishProduct(plantId);
-    } catch (err) {
-      // Revert UI state if API call fails
-      setIsFavorite(isFavorite);
-      Alert.alert('Error', 'Failed to update favorites. Please try again.');
-      console.error('Error toggling favorite:', err);
+// SEARCH_KEY: MARKETPLACE_TOGGLE_FAVORITE
+const toggleFavorite = async () => {
+  try {
+    // Update UI immediately for better user experience
+    setIsFavorite(!isFavorite);
+    
+    // Call API to update wishlist status
+    const result = await wishProduct(plantId);
+    
+    // If the API returns a specific wishlist state, use that
+    if (result && 'isWished' in result) {
+      setIsFavorite(result.isWished);
     }
-  };
+  } catch (err) {
+    // Revert UI state if API call fails
+    setIsFavorite(isFavorite);
+    Alert.alert('Error', 'Failed to update favorites. Please try again.');
+    console.error('Error toggling favorite:', err);
+  }
+};
 
   // Navigate to contact seller screen
-  const handleContactSeller = () => {
-    navigation.navigate('Messages', { 
-      sellerId: plant.sellerId, 
-      plantId: plant._id,
-      plantName: plant.title || plant.name
-    });
-  };
+// SEARCH_KEY: HANDLE_CONTACT_SELLER
+const handleContactSeller = () => {
+  // Check if we have the seller ID
+  if (!plant.sellerId) {
+    Alert.alert('Error', 'Seller information is not available.');
+    return;
+  }
+  
+  navigation.navigate('Messages', { 
+    sellerId: plant.sellerId, 
+    plantId: plant._id || plant.id,
+    plantName: plant.title || plant.name
+  });
+};
 
   // Share plant listing
 // This is a partial update showing just the share functionality in PlantDetailScreen.js

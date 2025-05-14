@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// screens/AddPlantScreen.js
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,18 +13,40 @@ import {
   KeyboardAvoidingView,
   Platform,
   SafeAreaView,
+  Modal,
+  FlatList,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
+// Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
+
+// Import services
 import { createPlant } from '../services/marketplaceApi';
 import { getAddPlantCategories } from '../services/categories';
 
+// Simulated scientific names data
+// In a real app, this would be fetched from your Plants database
+const SCIENTIFIC_NAMES = [
+  { id: '1', name: 'Monstera Deliciosa', common: 'Swiss Cheese Plant' },
+  { id: '2', name: 'Ficus Lyrata', common: 'Fiddle Leaf Fig' },
+  { id: '3', name: 'Sansevieria Trifasciata', common: 'Snake Plant' },
+  { id: '4', name: 'Epipremnum Aureum', common: 'Pothos' },
+  { id: '5', name: 'Chlorophytum Comosum', common: 'Spider Plant' },
+  { id: '6', name: 'Spathiphyllum', common: 'Peace Lily' },
+  { id: '7', name: 'Zamioculcas Zamiifolia', common: 'ZZ Plant' },
+  { id: '8', name: 'Calathea Orbifolia', common: 'Prayer Plant' },
+  { id: '9', name: 'Dracaena Marginata', common: 'Dragon Tree' },
+  { id: '10', name: 'Crassula Ovata', common: 'Jade Plant' },
+];
+
 const AddPlantScreen = () => {
   const navigation = useNavigation();
+  
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState([]);
   const [formData, setFormData] = useState({
@@ -33,6 +56,7 @@ const AddPlantScreen = () => {
     description: '',
     careInstructions: '',
     city: '',
+    scientificName: '', 
   });
 
   const [formErrors, setFormErrors] = useState({
@@ -43,7 +67,51 @@ const AddPlantScreen = () => {
     images: '',
   });
 
+  const [showScientificNameModal, setShowScientificNameModal] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filteredScientificNames, setFilteredScientificNames] = useState(SCIENTIFIC_NAMES);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
+
+  // Load plant categories
   const categories = getAddPlantCategories();
+  
+  // Prefill city if available
+  useEffect(() => {
+    const loadUserLocation = async () => {
+      try {
+        const userProfile = await AsyncStorage.getItem('userProfile');
+        if (userProfile) {
+          const profile = JSON.parse(userProfile);
+          if (profile.location) {
+            setFormData(prevData => ({
+              ...prevData,
+              city: profile.location
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user location:', error);
+      }
+    };
+    
+    loadUserLocation();
+  }, []);
+  
+  // Filter scientific names when search query changes
+  useEffect(() => {
+    if (searchQuery.trim() === '') {
+      setFilteredScientificNames(SCIENTIFIC_NAMES);
+    } else {
+      const lowercaseQuery = searchQuery.toLowerCase();
+      const filtered = SCIENTIFIC_NAMES.filter(
+        plant => 
+          plant.name.toLowerCase().includes(lowercaseQuery) ||
+          plant.common.toLowerCase().includes(lowercaseQuery)
+      );
+      setFilteredScientificNames(filtered);
+    }
+  }, [searchQuery]);
 
   const handleChange = (key, value) => {
     setFormData({ ...formData, [key]: value });
@@ -66,23 +134,38 @@ const AddPlantScreen = () => {
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
-        allowsMultipleSelection: false,
+        allowsMultipleSelection: images.length < 4, // Limit multiple selection based on current count
       });
 
       if (!result.canceled && result.assets?.length > 0) {
-        const imageUri = result.assets[0].uri;
-
-        if (Platform.OS !== 'web') {
-          const fileInfo = await FileSystem.getInfoAsync(imageUri);
-          const fileSize = fileInfo.size;
-
-          if (fileSize > 5 * 1024 * 1024) {
-            Alert.alert('Image Too Large', 'Please select an image smaller than 5MB');
-            return;
-          }
+        // Check number of images
+        if (images.length + result.assets.length > 5) {
+          Alert.alert('Too Many Images', 'You can only upload up to 5 images');
+          return;
         }
-
-        setImages([...images, imageUri]);
+        
+        // Process each selected image
+        const newImages = [...images];
+        
+        for (const asset of result.assets) {
+          const imageUri = asset.uri;
+          
+          if (Platform.OS !== 'web') {
+            const fileInfo = await FileSystem.getInfoAsync(imageUri);
+            const fileSize = fileInfo.size;
+            
+            // Check file size (5MB limit)
+            if (fileSize > 5 * 1024 * 1024) {
+              Alert.alert('Image Too Large', 'Please select images smaller than 5MB');
+              continue;
+            }
+          }
+          
+          // Add image to array
+          newImages.push(imageUri);
+        }
+        
+        setImages(newImages);
 
         if (formErrors.images) {
           setFormErrors({ ...formErrors, images: '' });
@@ -94,10 +177,81 @@ const AddPlantScreen = () => {
     }
   };
 
+  const takePhoto = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'We need camera permission to take photos');
+        return;
+      }
+      
+      if (images.length >= 5) {
+        Alert.alert('Too Many Images', 'You can only upload up to 5 images');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets?.length > 0) {
+        const imageUri = result.assets[0].uri;
+        
+        if (Platform.OS !== 'web') {
+          const fileInfo = await FileSystem.getInfoAsync(imageUri);
+          const fileSize = fileInfo.size;
+          
+          if (fileSize > 5 * 1024 * 1024) {
+            Alert.alert('Image Too Large', 'Please select an image smaller than 5MB');
+            return;
+          }
+        }
+        
+        setImages([...images, imageUri]);
+
+        if (formErrors.images) {
+          setFormErrors({ ...formErrors, images: '' });
+        }
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
+    }
+  };
+
   const removeImage = (index) => {
     const newImages = [...images];
     newImages.splice(index, 1);
     setImages(newImages);
+  };
+
+  const selectScientificName = (item) => {
+    setFormData({
+      ...formData,
+      scientificName: item.name,
+      // Optionally set the title if it's empty
+      title: formData.title || item.common
+    });
+    setShowScientificNameModal(false);
+  };
+
+  const useCurrentLocation = async () => {
+    setIsLoadingLocation(true);
+    try {
+      // In a real app, you would use something like expo-location to get the current position
+      // For this demo, we'll simulate it with a timeout and hardcoded location
+      setTimeout(() => {
+        const location = "Tel Aviv, Israel";
+        setFormData({ ...formData, city: location });
+        setIsLoadingLocation(false);
+      }, 1000);
+    } catch (error) {
+      console.error('Error getting location:', error);
+      Alert.alert('Location Error', 'Could not get your current location. Please enter it manually.');
+      setIsLoadingLocation(false);
+    }
   };
 
   const validateForm = () => {
@@ -142,12 +296,40 @@ const AddPlantScreen = () => {
     return isValid;
   };
 
+  const prepareImageData = async () => {
+    // Convert image URIs to base64 for upload
+    let imageData = [];
+    for (const uri of images) {
+      try {
+        const base64 = await FileSystem.readAsStringAsync(uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        imageData.push(`data:image/jpeg;base64,${base64}`);
+      } catch (error) {
+        console.error('Error encoding image:', error);
+        throw new Error('Failed to encode images. Please try again.');
+      }
+    }
+    return imageData;
+  };
+
   const handleSubmit = async () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
 
     try {
+      // Get the user's email from AsyncStorage
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      
+      if (!userEmail) {
+        throw new Error('User is not authenticated');
+      }
+
+      // Prepare image data
+      const imageData = await prepareImageData();
+      
+      // Prepare plant data
       const plantData = {
         title: formData.title,
         price: parseFloat(formData.price),
@@ -155,11 +337,13 @@ const AddPlantScreen = () => {
         description: formData.description,
         city: formData.city,
         careInstructions: formData.careInstructions,
-        image: images[0],
-        images: images.length > 1 ? images.slice(1) : [],
-        addedAt: new Date().toISOString(),
+        scientificName: formData.scientificName,
+        image: imageData[0],  // Main image
+        images: imageData.slice(1),  // Additional images
+        sellerId: userEmail, // Use the authenticated user's email as sellerId
       };
 
+      // Submit to API
       const result = await createPlant(plantData);
 
       if (result?.productId) {
@@ -170,7 +354,7 @@ const AddPlantScreen = () => {
           },
           {
             text: 'Go to Marketplace',
-            onPress: () => navigation.navigate('Marketplace'),
+            onPress: () => navigation.navigate('MarketplaceHome'),
           },
         ]);
       } else {
@@ -182,6 +366,70 @@ const AddPlantScreen = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Render Scientific Name Modal
+  const renderScientificNameModal = () => {
+    return (
+      <Modal
+        visible={showScientificNameModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowScientificNameModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select a Plant Type</Text>
+              <TouchableOpacity 
+                onPress={() => setShowScientificNameModal(false)}
+                style={styles.closeButton}
+              >
+                <MaterialIcons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+            
+            <View style={styles.searchContainer}>
+              <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search by common or scientific name"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus={true}
+              />
+              {searchQuery ? (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
+                  <MaterialIcons name="clear" size={20} color="#999" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            
+            <FlatList
+              data={filteredScientificNames}
+              keyExtractor={(item) => item.id}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={styles.nameItem}
+                  onPress={() => selectScientificName(item)}
+                >
+                  <View>
+                    <Text style={styles.commonName}>{item.common}</Text>
+                    <Text style={styles.scientificName}>{item.name}</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={24} color="#999" />
+                </TouchableOpacity>
+              )}
+              ListEmptyComponent={
+                <View style={styles.emptyList}>
+                  <Text style={styles.emptyText}>No plants found matching your search</Text>
+                </View>
+              }
+            />
+          </View>
+        </View>
+      </Modal>
+    );
   };
 
   return (
@@ -198,6 +446,7 @@ const AddPlantScreen = () => {
         <ScrollView style={styles.scrollView}>
           <View style={styles.content}>
             <Text style={styles.title}>Add a New Plant</Text>
+            
             {/* Image Section */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Plant Images</Text>
@@ -213,18 +462,35 @@ const AddPlantScreen = () => {
                     </TouchableOpacity>
                   </View>
                 ))}
-                <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-                  <MaterialIcons name="add-a-photo" size={30} color="#4CAF50" />
-                  <Text style={styles.addImageText}>Add Photo</Text>
-                </TouchableOpacity>
+                
+                {images.length < 5 && (
+                  <View style={styles.imageActionButtons}>
+                    <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
+                      <MaterialIcons name="add-photo-alternate" size={30} color="#4CAF50" />
+                      <Text style={styles.addImageText}>Gallery</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.addImageButton} onPress={takePhoto}>
+                      <MaterialIcons name="camera-alt" size={30} color="#4CAF50" />
+                      <Text style={styles.addImageText}>Camera</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </ScrollView>
+              
               {formErrors.images ? (
                 <Text style={styles.errorText}>{formErrors.images}</Text>
-              ) : null}
+              ) : (
+                <Text style={styles.helperText}>
+                  Add up to 5 images. First image will be the main image.
+                </Text>
+              )}
             </View>
+            
             {/* Basic Info */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Basic Information</Text>
+              
               <Text style={styles.label}>Plant Name</Text>
               <TextInput
                 style={[styles.input, formErrors.title && styles.inputError]}
@@ -233,6 +499,26 @@ const AddPlantScreen = () => {
                 placeholder="What kind of plant is it?"
               />
               {formErrors.title ? <Text style={styles.errorText}>{formErrors.title}</Text> : null}
+
+              <Text style={styles.label}>Scientific Name (Optional)</Text>
+              <TouchableOpacity 
+                style={[
+                  styles.input, 
+                  styles.pickerButton,
+                  formData.scientificName ? styles.filledInput : null
+                ]}
+                onPress={() => setShowScientificNameModal(true)}
+              >
+                <Text 
+                  style={[
+                    styles.pickerButtonText,
+                    formData.scientificName ? styles.filledInputText : null
+                  ]}
+                >
+                  {formData.scientificName || "Select plant type to auto-fill care info"}
+                </Text>
+                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+              </TouchableOpacity>
 
               <Text style={styles.label}>Price</Text>
               <TextInput
@@ -268,14 +554,32 @@ const AddPlantScreen = () => {
               </ScrollView>
 
               <Text style={styles.label}>Location</Text>
-              <TextInput
-                style={[styles.input, formErrors.city && styles.inputError]}
-                value={formData.city}
-                onChangeText={(text) => handleChange('city', text)}
-                placeholder="Where can buyers pick up the plant?"
-              />
+              <View style={styles.locationContainer}>
+                <TextInput
+                  style={[
+                    styles.input, 
+                    styles.locationInput, 
+                    formErrors.city && styles.inputError
+                  ]}
+                  value={formData.city}
+                  onChangeText={(text) => handleChange('city', text)}
+                  placeholder="Where can buyers pick up the plant?"
+                />
+                <TouchableOpacity 
+                  style={styles.locationButton}
+                  onPress={useCurrentLocation}
+                  disabled={isLoadingLocation}
+                >
+                  {isLoadingLocation ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <MaterialIcons name="my-location" size={20} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </View>
               {formErrors.city ? <Text style={styles.errorText}>{formErrors.city}</Text> : null}
             </View>
+            
             {/* Description */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Description</Text>
@@ -290,6 +594,7 @@ const AddPlantScreen = () => {
                 <Text style={styles.errorText}>{formErrors.description}</Text>
               ) : null}
             </View>
+            
             {/* Care Instructions */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Care Instructions</Text>
@@ -300,7 +605,12 @@ const AddPlantScreen = () => {
                 placeholder="Share how to care for this plant (optional)"
                 multiline
               />
+              <Text style={styles.helperText}>
+                Providing care instructions can help increase interest in your plant.
+                {formData.scientificName ? " Care info will be auto-filled from our database." : ""}
+              </Text>
             </View>
+            
             {/* Submit */}
             <TouchableOpacity
               style={[styles.submitButton, isLoading && styles.disabledButton]}
@@ -316,6 +626,9 @@ const AddPlantScreen = () => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+      
+      {/* Scientific Name Selection Modal */}
+      {renderScientificNameModal()}
     </SafeAreaView>
   );
 };
@@ -353,6 +666,7 @@ const styles = StyleSheet.create({
   imageScroller: {
     flexDirection: 'row',
     marginBottom: 10,
+    minHeight: 110,
   },
   imageContainer: {
     position: 'relative',
@@ -375,6 +689,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  imageActionButtons: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   addImageButton: {
     width: 100,
     height: 100,
@@ -385,6 +704,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f9f9f9',
+    marginRight: 10,
   },
   addImageText: {
     marginTop: 4,
@@ -405,6 +725,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     backgroundColor: '#f9f9f9',
   },
+  pickerButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  pickerButtonText: {
+    color: '#999',
+    fontSize: 16,
+  },
+  filledInput: {
+    borderColor: '#A5D6A7',
+    backgroundColor: '#f0f9f0',
+  },
+  filledInputText: {
+    color: '#333',
+  },
   inputError: {
     borderColor: '#f44336',
   },
@@ -414,9 +750,34 @@ const styles = StyleSheet.create({
     marginTop: -12,
     marginBottom: 12,
   },
+  helperText: {
+    color: '#666',
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 12,
+  },
   textArea: {
     height: 120,
     textAlignVertical: 'top',
+  },
+  locationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationInput: {
+    flex: 1,
+    marginBottom: 0,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
+  },
+  locationButton: {
+    backgroundColor: '#4CAF50',
+    width: 50,
+    height: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderTopRightRadius: 8,
+    borderBottomRightRadius: 8,
   },
   categoryScroller: {
     marginBottom: 16,
@@ -453,7 +814,79 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    height: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  closeButton: {
+    padding: 4,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 10,
+    backgroundColor: '#f5f5f5',
+    margin: 10,
+    borderRadius: 8,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: '#333',
+  },
+  clearButton: {
+    padding: 4,
+  },
+  nameItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  commonName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  scientificName: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  emptyList: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
+    textAlign: 'center',
+  },
 });
 
-export default AddPlantScreen;
-// This code is a React Native component for an "Add Plant" screen in a marketplace app.
+export default AddPlantScreen
