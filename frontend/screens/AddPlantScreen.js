@@ -1,41 +1,108 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, FlatList, TouchableOpacity, Image,
-  SafeAreaView, StyleSheet, ActivityIndicator, Alert, Platform
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Image,
+  SafeAreaView,
+  StyleSheet,
+  ActivityIndicator,
+  Alert,
+  Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import { Swipeable } from 'react-native-gesture-handler';
+import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 
-const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
-const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyPlantPhoto';
+const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
+const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyplantphoto';
+
+// Stub data for names & origins; image_url is filled in dynamically below
+const fallbackPopular = [
+  { id: 'Epipremnum aureum', common_name: 'Golden Pothos',    scientific_name: 'Epipremnum aureum',    family_common_name: 'Araceae', image_url: null },
+  { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata', family_common_name: 'Asparagaceae', image_url: null },
+  { id: 'Monstera deliciosa',     common_name: 'Monstera',       scientific_name: 'Monstera deliciosa',     family_common_name: 'Araceae', image_url: null },
+  { id: 'Ocimum basilicum',       common_name: 'Basil',          scientific_name: 'Ocimum basilicum',       family_common_name: 'Lamiaceae', image_url: null },
+  { id: 'Zamioculcas zamiifolia', common_name: 'ZZ Plant',       scientific_name: 'Zamioculcas zamiifolia', family_common_name: 'Araceae', image_url: null },
+];
 
 export default function AddPlantScreen({ navigation }) {
-  const [searchType, setSearchType] = useState(null);
-  const [query, setQuery] = useState('');
-  const [plants, setPlants] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [query, setQuery]                 = useState('');
+  const [plants, setPlants]               = useState([]);
+  const [popularPlants, setPopularPlants] = useState(fallbackPopular);
+  const [loading, setLoading]             = useState(false);
+  const [searchDone, setSearchDone]       = useState(false);
 
-  const loadCosmosPlants = async () => {
-    if (!query || loading) return;
-    setLoading(true);
+  // normalize data shape
+  const normalize = p => ({
+    id:                  p.id,
+    common_name:         p.common_name || '',
+    scientific_name:     p.scientific_name || p.latin_name || '',
+    image_url:           p.image_url      || p.image_urls?.[0]    || null,
+    family_common_name:  p.family_common_name || p.origin      || '',
+    care_difficulty:     p.care_difficulty || null,
+    shade:               p.shade           || null,
+    moisture:            p.moisture        || null,
+    temperature:         p.temperature     || null,
+  });
 
+  // fetch full record by scientific name
+  async function fetchByScientificName(name) {
     try {
-      const response = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(query)}`);
-      const data = await response.json();
-
-      const parsed = data.map((p) => ({
-        id: p.id || p.common_name,
-        ...p,
-        image_url: null,
-        family_common_name: p.origin
-      }));
-
-      setPlants(parsed);
-    } catch (error) {
-      console.error('Cosmos DB search error:', error);
-      Alert.alert('Error', 'Failed to search for plants.');
+      const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      const match = data.find(p => p.scientific_name === name);
+      return match ? normalize(match) : null;
+    } catch {
+      return null;
     }
+  }
 
-    setLoading(false);
+  // on mount, load popular plants
+  useEffect(() => {
+    (async () => {
+      setLoading(true);
+      const results = await Promise.all(
+        fallbackPopular.map(async stub => {
+          const fetched = await fetchByScientificName(stub.scientific_name);
+          return fetched || stub;
+        })
+      );
+      setPopularPlants(results);
+      setLoading(false);
+    })();
+  }, []);
+
+  // text search
+  const loadCosmosPlants = async () => {
+    if (!query.trim() || loading) return;
+    setLoading(true);
+    setSearchDone(false);
+    try {
+      const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      setPlants(data.map(normalize));
+      setSearchDone(true);
+    } catch {
+      Alert.alert('Error', 'Failed to search for plants.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // photo search (native)
+  const processFileNative = async uri => {
+    const filename = uri.split('/').pop();
+    const extMatch = /\.(\w+)$/.exec(filename);
+    const type     = extMatch ? `image/${extMatch[1]}` : 'image/jpeg';
+    const form = new FormData();
+    form.append('images', { uri, name: filename, type });
+    form.append('organs', 'leaf');
+    const resp = await fetch(PLANTNET_PROXY_URL, { method: 'POST', body: form });
+    if (!resp.ok) throw new Error(await resp.text());
+    return resp.json();
   };
 
   const handlePhotoSearch = async () => {
@@ -43,199 +110,205 @@ export default function AddPlantScreen({ navigation }) {
       document.getElementById('web-file-input').click();
       return;
     }
-
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert('Permission Required', 'Access to media library is required!');
-      return;
-    }
-
-    const pickerResult = await ImagePicker.launchImageLibraryAsync({
-      allowsEditing: false,
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      base64: false,
-    });
-
-    if (pickerResult.canceled) return;
-
-    const uri = pickerResult.assets?.[0]?.uri;
-    if (!uri) {
-      Alert.alert('Error', 'No image selected.');
-      return;
-    }
-
-    const filename = uri.split('/').pop();
-    const match = /\.(\w+)$/.exec(filename ?? '');
-    const type = match ? `image/${match[1]}` : `image/jpeg`;
-
-    const formData = new FormData();
-    formData.append('images', {
-      uri,
-      name: filename ?? 'photo.jpg',
-      type,
-    });
-    formData.append('organs', 'leaf');
-
     setLoading(true);
+    setSearchDone(false);
+    setPlants([]);
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permission required', 'Please allow photo access.');
+      setLoading(false);
+      return;
+    }
+    const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const uri  = pick.assets?.[0]?.uri || pick.uri;
+    if (!uri) { setLoading(false); return; }
 
     try {
-      const res = await fetch(PLANTNET_PROXY_URL, {
-        method: 'POST',
-        body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
-      }
-
-      const data = await res.json();
-      const results = data.results || [];
-
-      const parsed = results.map((r) => ({
-        id: r.species?.scientificNameWithoutAuthor || Math.random().toString(),
-        common_name: r.species?.commonNames?.[0],
-        scientific_name: r.species?.scientificNameWithoutAuthor,
-        image_url: r.images?.[0]?.url?.m || null,
-        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
-      }));
-
-      setPlants(parsed);
+      const json    = await processFileNative(uri);
+      const results = json.results || [];
+      setPlants(results.map(r => ({
+        id:                 r.species.scientificNameWithoutAuthor,
+        common_name:        r.species.commonNames?.[0] || '',
+        scientific_name:    r.species.scientificNameWithoutAuthor,
+        image_url:          r.images[0]?.url?.o || r.images[0]?.url?.m || r.images[0]?.url?.s || null,
+        family_common_name: r.species.family.scientificNameWithoutAuthor,
+      })));
+      setSearchDone(true);
     } catch (err) {
-      console.error('PlantNet error:', err);
       Alert.alert('Error', 'Failed to identify plant.\n' + err.message);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
-  const handleWebFileUpload = async (event) => {
-    const file = event.target.files[0];
+  // web file upload
+  const handleWebFileUpload = async e => {
+    const file = e.target.files?.[0];
     if (!file) return;
-
-    const formData = new FormData();
-    formData.append('images', file);
-    formData.append('organs', 'leaf');
-
     setLoading(true);
-
+    setSearchDone(false);
+    setPlants([]);
+    const form = new FormData();
+    form.append('organs', 'leaf');
+    form.append('images', file, file.name);
     try {
-      const res = await fetch(PLANTNET_PROXY_URL, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text);
-      }
-
-      const data = await res.json();
-      const results = data.results || [];
-
-      const parsed = results.map((r) => ({
-        id: r.species?.scientificNameWithoutAuthor || Math.random().toString(),
-        common_name: r.species?.commonNames?.[0],
-        scientific_name: r.species?.scientificNameWithoutAuthor,
-        image_url: r.images?.[0]?.url?.m || null,
-        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
-      }));
-
-      setPlants(parsed);
+      const resp = await fetch(PLANTNET_PROXY_URL, { method: 'POST', body: form });
+      if (!resp.ok) throw new Error(await resp.text());
+      const json    = await resp.json();
+      const results = json.results || [];
+      setPlants(results.map(r => ({
+        id:                 r.species.scientificNameWithoutAuthor,
+        common_name:        r.species.commonNames?.[0] || '',
+        scientific_name:    r.species.scientificNameWithoutAuthor,
+        image_url:          r.images[0]?.url?.o || r.images[0]?.url?.m || r.images[0]?.url?.s || null,
+        family_common_name: r.species.family.scientificNameWithoutAuthor,
+      })));
+      setSearchDone(true);
     } catch (err) {
-      console.error('PlantNet error:', err);
       Alert.alert('Error', 'Failed to identify plant.\n' + err.message);
+    } finally {
+      setLoading(false);
+      e.target.value = '';
     }
-
-    setLoading(false);
   };
 
-  const renderCard = ({ item }) => (
-    <View style={styles.card}>
-      {item.image_url ? (
-        <Image source={{ uri: item.image_url }} style={styles.cardImage} />
-      ) : (
-        <View style={[styles.cardImage, styles.placeholderImage]}>
-          <Text style={styles.placeholderText}>No image</Text>
+  // render care icons
+  const renderCareIcons = p => {
+    const col = (v,c) => v ? c : '#ccc';
+    return (
+      <View style={styles.iconRow}>
+        {p.care_difficulty && (
+          <View style={[
+            styles.tag,
+            p.care_difficulty === 'Easy'     ? styles.tagEasy :
+            p.care_difficulty === 'Moderate' ? styles.tagModerate :
+                                               styles.tagHard
+          ]}>
+            <Text style={styles.tagText}>{p.care_difficulty}</Text>
+          </View>
+        )}
+        <MaterialIcons name="wb-sunny" size={18} color={col(p.shade,'#f39c12')} style={styles.icon}/>
+        <Ionicons       name="water" size={18} color={col(p.moisture,'#3498db')} style={styles.icon}/>
+        <FontAwesome5   name="thermometer-half" size={16} color={col(p.temperature,'#e74c3c')} style={styles.icon}/>
+      </View>
+    );
+  };
+
+  // render each card and handle navigation if exists
+  const renderCard = ({ item, index }) => (
+    <Swipeable
+      renderRightActions={() => (
+        <View style={styles.swipeAction}>
+          <Text style={styles.swipeText}>Save</Text>
         </View>
       )}
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.common_name || item.scientific_name}</Text>
-        <Text style={styles.cardSubtitle}>Origin: {item.family_common_name || 'N/A'}</Text>
-        <TouchableOpacity style={styles.cardButton} onPress={() => navigation.navigate('PlantDetailScreen', { plant: item })}>
-          <Text style={styles.cardButtonText}>View</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
+      onSwipeableRightOpen={() => Alert.alert('Saved', `${item.common_name || item.scientific_name} added!`)}
+    >
+      <TouchableOpacity
+        style={styles.card}
+        onPress={() => {
+          const exists = searchDone ? plants.find(p => p.id === item.id) : popularPlants.find(p => p.id === item.id);
+          if (exists) navigation.navigate('PlantDetail', { plantId: item.id });
+        }}
+      >
+        {item.image_url ? (
+          <Image source={{ uri: item.image_url }} style={styles.cardImage}/>
+        ) : (
+          <View style={[styles.cardImage,styles.placeholder]}>
+            <Text style={styles.placeholderText}>No image</Text>
+          </View>
+        )}
+        <View style={styles.content}>
+          <Text style={styles.title}>{item.common_name || item.scientific_name}</Text>
+          {item.scientific_name && <Text style={styles.subtitle}>{item.scientific_name}</Text>}
+          {item.family_common_name && <Text style={styles.origin}>Origin: {item.family_common_name}</Text>}
+          {renderCareIcons(item)}
+          {index===0 && <Text style={styles.hint}>Swipe left to save this plant</Text>}
+        </View>
+      </TouchableOpacity>
+    </Swipeable>
   );
 
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>Add a Plant</Text>
 
-      <View style={styles.buttonRow}>
-        <TouchableOpacity style={styles.button} onPress={() => { setSearchType('name'); setPlants([]); }}>
-          <Text style={styles.buttonText}>Search by Name</Text>
+      {/* Search + Scan */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={18} color="#999" onPress={loadCosmosPlants}/>
+          <TextInput
+            style={styles.input}
+            placeholder="Search plants"
+            placeholderTextColor="#999"
+            returnKeyType="search"
+            onSubmitEditing={loadCosmosPlants}
+            value={query}
+            onChangeText={setQuery}
+          />
+        </View>
+        <TouchableOpacity style={styles.scanBtn} onPress={handlePhotoSearch}>
+          <Ionicons name="camera" size={18} color="#fff"/>
+          <Text style={styles.scanText}>Scan</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.button} onPress={() => { setSearchType('photo'); setPlants([]); handlePhotoSearch(); }}>
-          <Text style={styles.buttonText}>Search by Photo</Text>
-        </TouchableOpacity>
-        {Platform.OS === 'web' && (
+        {Platform.OS==='web' && (
           <input
             id="web-file-input"
             type="file"
             accept="image/*"
             onChange={handleWebFileUpload}
-            style={{ display: 'none' }}
+            style={{ display:'none' }}
           />
         )}
       </View>
 
-      {searchType === 'name' && (
-        <View style={styles.searchSection}>
-          <TextInput
-            placeholder="Enter plant name"
-            value={query}
-            onChangeText={setQuery}
-            style={styles.input}
-          />
-          <TouchableOpacity style={styles.searchButton} onPress={loadCosmosPlants}>
-            <Text style={styles.searchButtonText}>Search</Text>
-          </TouchableOpacity>
-        </View>
+      {/* List */}
+      {!searchDone ? (
+        <FlatList
+          data={popularPlants}
+          renderItem={renderCard}
+          keyExtractor={i=>i.id}
+          ListFooterComponent={loading && <ActivityIndicator style={{margin:16}}/>}
+        />
+      ) : plants.length>0 ? (
+        <FlatList
+          data={plants}
+          renderItem={renderCard}
+          keyExtractor={i=>i.id}
+          ListFooterComponent={loading && <ActivityIndicator style={{margin:16}}/>}
+        />
+      ) : (
+        !loading && <Text style={styles.noResults}>No plants found. Try another search.</Text>
       )}
-
-      <FlatList
-        data={plants}
-        renderItem={renderCard}
-        keyExtractor={(item, index) => item.id || index.toString()}
-        contentContainerStyle={{ paddingBottom: 100 }}
-        ListFooterComponent={loading ? <ActivityIndicator size="large" color="#4CAF50" /> : null}
-      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16, backgroundColor: '#f0fdf4' },
-  header: { fontSize: 26, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 },
-  buttonRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: 16 },
-  button: { backgroundColor: '#4CAF50', padding: 12, borderRadius: 10 },
-  buttonText: { color: '#fff', fontWeight: 'bold' },
-  searchSection: { marginBottom: 16 },
-  input: { backgroundColor: '#fff', padding: 10, borderRadius: 10, marginBottom: 8, borderWidth: 1, borderColor: '#ccc' },
-  searchButton: { backgroundColor: '#2e7d32', padding: 12, borderRadius: 10, alignItems: 'center' },
-  searchButtonText: { color: '#fff', fontWeight: 'bold' },
-  card: { flexDirection: 'row', backgroundColor: '#fff', borderRadius: 12, marginBottom: 12, elevation: 3 },
-  cardImage: { width: 100, height: 100, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
-  placeholderImage: { backgroundColor: '#eee', justifyContent: 'center', alignItems: 'center' },
-  placeholderText: { color: '#888', fontSize: 12 },
-  cardContent: { flex: 1, padding: 10, justifyContent: 'center' },
-  cardTitle: { fontSize: 16, fontWeight: 'bold' },
-  cardSubtitle: { fontSize: 14, color: '#555', marginVertical: 4 },
-  cardButton: { backgroundColor: '#388E3C', paddingVertical: 6, paddingHorizontal: 12, borderRadius: 8, alignSelf: 'flex-start' },
-  cardButtonText: { color: '#fff', fontWeight: 'bold' },
+  container:      { flex:1, backgroundColor:'#fff', padding:16, paddingBottom:100 },
+  header:         { fontSize:26, fontWeight:'bold', textAlign:'center', marginBottom:16 },
+  searchRow:      { flexDirection:'row', alignItems:'center', marginBottom:12 },
+  searchBox:      { flex:1, flexDirection:'row', alignItems:'center', backgroundColor:'#f0f0f0', paddingHorizontal:12, borderRadius:20, height:44 },
+  input:          { flex:1, marginLeft:8, color:'#000' },
+  scanBtn:        { flexDirection:'row', alignItems:'center', backgroundColor:'#4CAF50', paddingHorizontal:16, paddingVertical:10, borderRadius:20, marginLeft:8 },
+  scanText:       { color:'#fff', fontWeight:'bold', marginLeft:6 },
+  card:           { flexDirection:'row', backgroundColor:'#fafafa', borderRadius:12, marginBottom:12, elevation:2, overflow:'hidden' },
+  cardImage:      { width:80, height:80 },
+  placeholder:    { backgroundColor:'#eee', justifyContent:'center', alignItems:'center' },
+  placeholderText:{ color:'#888', fontSize:12 },
+  content:        { flex:1, padding:10 },
+  title:          { fontSize:16, fontWeight:'bold' },
+  subtitle:       { color:'#555', marginTop:2 },
+  origin:         { color:'#777', marginTop:2 },
+  iconRow:        { flexDirection:'row', alignItems:'center', marginTop:6 },
+  icon:           { marginRight:10 },
+  tag:            { paddingHorizontal:6, paddingVertical:2, borderRadius:8, marginRight:10 },
+  tagEasy:        { backgroundColor:'#d4edda' },
+  tagModerate:    { backgroundColor:'#fff3cd' },
+  tagHard:        { backgroundColor:'#f8d7da' },
+  tagText:        { fontSize:12, color:'#333' },
+  swipeAction:    { backgroundColor:'#c8e6c9', justifyContent:'center', alignItems:'center', width:80 },
+  swipeText:      { color:'#2e7d32', fontWeight:'bold' },
+  hint:           { fontSize:12, color:'#888', marginTop:4, fontStyle:'italic', marginRight:6 },
+  noResults:      { textAlign:'center', color:'#666', marginTop:20 },
 });
