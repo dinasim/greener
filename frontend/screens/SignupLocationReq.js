@@ -9,12 +9,16 @@ import {
   Animated,
   Alert,
   Platform,
+  TextInput,
 } from "react-native";
 import * as Location from "expo-location";
+import { useForm } from "../context/FormContext";
 
 export default function SignupLocationReq({ navigation }) {
-  const [permissionStatus, setPermissionStatus] = useState(null);
   const scaleAnim = new Animated.Value(0.95);
+  const [typedLocation, setTypedLocation] = useState("");
+  const [permissionStatus, setPermissionStatus] = useState(null);
+  const { updateFormData, setLocationPermissionGranted } = useForm();
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -28,15 +32,26 @@ export default function SignupLocationReq({ navigation }) {
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
-      setPermissionStatus("granted");
-      Alert.alert("Location access granted ✅");
+      const location = await Location.getCurrentPositionAsync({});
+      updateFormData("userLocation", {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      setLocationPermissionGranted(true);
+      Alert.alert("Location access granted ✅", `Lat: ${location.coords.latitude}, Lon: ${location.coords.longitude}`);
     } else {
       setPermissionStatus("denied");
-      Alert.alert(
-        "Permission Denied",
-        "Location access is optional. You can still continue."
-      );
+      Alert.alert("Permission Denied", "Location access is optional. You can still continue.");
     }
+  };
+
+  const saveTypedLocation = () => {
+    if (!typedLocation.trim()) {
+      Alert.alert("Please enter a valid location");
+      return;
+    }
+    updateFormData("typedLocation", typedLocation.trim());
+    Alert.alert("Location Saved", typedLocation.trim());
   };
 
   const continueToNext = () => {
@@ -48,29 +63,37 @@ export default function SignupLocationReq({ navigation }) {
       <ScrollView style={styles.scrollView} contentContainerStyle={{ flexGrow: 1 }}>
         <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.header}>
-            <Text style={styles.title}>Allow Location Access</Text>
-            <Text style={styles.subtitle}>
-              We use your location to recommend the best plants for your area 🌱
-            </Text>
+            <Text style={styles.title}>Choose How to Provide Location</Text>
+            <Text style={styles.subtitle}>Use this to receive weather-based plant care tips 🌿</Text>
           </View>
 
-          <View style={styles.middle}>
-            <TouchableOpacity
-              style={styles.permissionButton}
-              onPress={requestLocationPermission}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.buttonText}>Enable Location Access</Text>
-            </TouchableOpacity>
-          </View>
+          <TextInput
+            style={styles.input}
+            placeholder="Enter your city, country"
+            value={typedLocation}
+            onChangeText={setTypedLocation}
+          />
+
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={saveTypedLocation}
+          >
+            <Text style={styles.buttonText}>Save Location</Text>
+          </TouchableOpacity>
+
+          <View style={{ height: 20 }} />
+
+          <TouchableOpacity
+            style={styles.permissionButton}
+            onPress={requestLocationPermission}
+          >
+            <Text style={styles.buttonText}>Use Current Location</Text>
+          </TouchableOpacity>
         </Animated.View>
       </ScrollView>
 
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupReminders")}
-        >
+        <TouchableOpacity style={styles.nextButton} onPress={continueToNext}>
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>
       </View>
@@ -106,9 +129,12 @@ const styles = StyleSheet.create({
     color: "#666",
     textAlign: "center",
   },
-  middle: {
-    alignItems: "center",
-    marginTop: 30,
+  input: {
+    borderColor: "#ccc",
+    borderWidth: 1,
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 10,
   },
   permissionButton: {
     backgroundColor: "#2e7d32",
