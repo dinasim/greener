@@ -1,7 +1,6 @@
 // marketplace/services/config.js
 import { Platform } from 'react-native';
 
-// SEARCH_KEY: MARKETPLACE_CONFIG
 const ENV = {
   DEV: 'development',
   STAGING: 'staging',
@@ -28,7 +27,8 @@ const baseConfig = {
     enableMapView: true,
     enableImageUploads: true,
     enableNotifications: false,
-    useRealApi: false, // Toggle this to use real API instead of mock data
+    useRealApi: true, // Set to true to use real Azure backend
+    useMockOnError: false, // Fall back to mock data on API error
   },
 };
 
@@ -58,20 +58,10 @@ const envSpecificConfigs = {
 };
 
 // Merge configs
-// Merge configs
-// services/config.js
 const config = {
   ...baseConfig,
   ...envSpecificConfigs[currentEnv],
-  api: {
-    baseUrl: 'https://usersfunctions.azurewebsites.net/api',
-    timeout: 15000, // 15 seconds
-  },
-  features: {
-    useRealApi: true, // Set to true to use real Azure backend
-    useMockOnError: true, // Fall back to mock data on API error
-  },
-
+  
   // Environment helpers
   isDevelopment: currentEnv === ENV.DEV,
   isStaging: currentEnv === ENV.STAGING,
@@ -82,6 +72,5 @@ const config = {
   isAndroid: Platform.OS === 'android',
   isWeb: Platform.OS === 'web',
 };
-
 
 export default config;

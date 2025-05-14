@@ -4,9 +4,11 @@ from azure.cosmos import CosmosClient
 import os
 import json
 
+
 # These should live in your local.settings.json (or in App Settings)
 COSMOS_URI = os.getenv("COSMOS_URI")
 COSMOS_KEY = os.getenv("COSMOS_KEY")
+
 DATABASE_NAME = "GreenerDB"
 CONTAINER_NAME = "Plants"
 

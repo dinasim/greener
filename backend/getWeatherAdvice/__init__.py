@@ -64,23 +64,3 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         logging.error(f"Error in getWeatherAdvice: {e}")
         return func.HttpResponse("Server error", status_code=500)
-
-
-
-
-{
-    "bindings": [
-      {
-        "authLevel": "function",
-        "type": "httpTrigger",
-        "direction": "in",
-        "name": "req",
-        "methods": ["post"]
-      },
-      {
-        "type": "http",
-        "direction": "out",
-        "name": "$return"
-      }
-    ]
-  }

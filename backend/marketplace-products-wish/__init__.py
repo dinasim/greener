@@ -1,36 +1,31 @@
-# This file should be placed at /marketplace-products-wish/__init__.py
-# Example of restructured wishlist toggle function
-
+# marketplace-products-wish/__init__.py
 import logging
 import json
 import azure.functions as func
-from shared.marketplace.db_client import get_container
+from db_helpers import get_container
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 import uuid
 from datetime import datetime
 
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
-
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function for wishlist toggle processed a request.')
+    
+    # Handle OPTIONS method for CORS preflight
+    if req.method == 'OPTIONS':
+        return handle_options_request()
     
     try:
         # Get plant ID from route parameters
         plant_id = req.route_params.get('id')
         
         if not plant_id:
-            return func.HttpResponse(
-                body=json.dumps({"error": "Plant ID is required"}),
-                mimetype="application/json",
-                status_code=400
-            )
+            return create_error_response("Plant ID is required", 400)
         
-        # Get user ID from request body or query parameter
-        request_json = req.get_json() if req.get_body() else {}
-        user_id = request_json.get('userId') or req.params.get('userId') or "default@example.com"
+        # Get user ID from request
+        user_id = extract_user_id(req)
+        
+        if not user_id:
+            return create_error_response("User ID is required", 400)
         
         # Access the marketplace_wishlists container
         wishlists_container = get_container('marketplace-wishlists')
@@ -123,20 +118,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             is_now_wished = True
         
-        return func.HttpResponse(
-            body=json.dumps({
-                "success": True,
-                "isWished": is_now_wished,
-                "message": f"Plant {'added to' if is_now_wished else 'removed from'} wishlist"
-            }),
-            mimetype="application/json",
-            status_code=200
-        )
+        return create_success_response({
+            "success": True,
+            "isWished": is_now_wished,
+            "message": f"Plant {'added to' if is_now_wished else 'removed from'} wishlist"
+        })
     
     except Exception as e:
         logging.error(f"Error toggling wishlist: {str(e)}")
-        return func.HttpResponse(
-            body=json.dumps({"error": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
+        return create_error_response(str(e), 500)

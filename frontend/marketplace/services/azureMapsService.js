@@ -20,7 +20,7 @@ export async function geocodeAddress(address) {
       throw new Error('Invalid address for geocoding');
     }
 
-    if (isDev) {
+    if (isDev && !global.useRealMaps) {
       // In development, return mock coordinates
       return getMockCoordinates(address);
     }
@@ -55,7 +55,7 @@ export async function geocodeAddress(address) {
  */
 export async function getProductsWithLocation(options = {}) {
   try {
-    if (isDev) {
+    if (isDev && !global.useRealMaps) {
       // In development, return mock products with location
       return getMockProductsWithLocation(options);
     }
@@ -97,7 +97,7 @@ export async function getProductsWithLocation(options = {}) {
  */
 export async function reverseGeocode(latitude, longitude) {
   try {
-    if (isDev) {
+    if (isDev && !global.useRealMaps) {
       // In development, return mock address
       return getMockAddress(latitude, longitude);
     }
@@ -132,7 +132,7 @@ export async function reverseGeocode(latitude, longitude) {
  */
 export async function getNearbyProducts(latitude, longitude, radius = 10) {
   try {
-    if (isDev) {
+    if (isDev && !global.useRealMaps) {
       // In development, return mock nearby products
       return getMockNearbyProducts(latitude, longitude, radius);
     }

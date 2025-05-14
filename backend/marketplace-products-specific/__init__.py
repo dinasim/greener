@@ -1,37 +1,26 @@
-# backend/marketplace-products-specific/__init__.py
+# marketplace-products-specific/__init__.py
 import logging
 import json
 import azure.functions as func
-from shared.marketplace.db_client import get_container
-
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
+from db_helpers import get_container
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function for marketplace specific product processed a request.')
     
     # Handle OPTIONS method for CORS preflight
     if req.method == 'OPTIONS':
-        response = func.HttpResponse()
-        return add_cors_headers(response)
+        return handle_options_request()
     
     try:
         # Get plant ID from route parameters
         plant_id = req.route_params.get('id')
         
         if not plant_id:
-            error_response = func.HttpResponse(
-                body=json.dumps({"error": "Plant ID is required"}),
-                mimetype="application/json",
-                status_code=400
-            )
-            return add_cors_headers(error_response)
+            return create_error_response("Plant ID is required", 400)
         
         # Get user ID for wishlist status check
-        user_id = req.params.get('userId')
+        user_id = extract_user_id(req)
         
         # Access the marketplace-plants container
         container = get_container("marketplace-plants")
@@ -47,12 +36,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         ))
         
         if not items:
-            error_response = func.HttpResponse(
-                body=json.dumps({"error": "Plant not found"}),
-                mimetype="application/json",
-                status_code=404
-            )
-            return add_cors_headers(error_response)
+            return create_error_response("Plant not found", 404)
         
         plant = items[0]
         
@@ -78,21 +62,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logging.warning(f"Error checking wishlist status: {str(e)}")
                 plant['isWished'] = False
         
-        # Return success response with CORS headers
-        response = func.HttpResponse(
-            body=json.dumps(plant, default=str),
-            mimetype="application/json",
-            status_code=200
-        )
-        return add_cors_headers(response)
+        # Return success response
+        return create_success_response(plant)
     
     except Exception as e:
         logging.error(f"Error retrieving specific plant: {str(e)}")
-        
-        # Return error response with CORS headers
-        error_response = func.HttpResponse(
-            body=json.dumps({"error": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
-        return add_cors_headers(error_response)
+        return create_error_response(str(e), 500)
