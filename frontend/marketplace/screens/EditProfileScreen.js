@@ -16,6 +16,7 @@ import {
 import { MaterialIcons, Feather } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import the consistent header component
 import MarketplaceHeader from '../components/MarketplaceHeader';

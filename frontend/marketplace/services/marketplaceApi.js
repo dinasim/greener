@@ -1,11 +1,10 @@
-/**
- * Consolidated API service for Greener app
- * Handles all API requests and provides mock data in development
- */
-
+// marketplace/services/marketplaceApi.js
 import config from './config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MOCK_USER, MOCK_PLANTS, getMockProducts, getMockProductById } from './mockData';
+import { MOCK_USER, MOCK_PLANTS, getMockProducts, getMockProductById, getMockMessageData } from './mockData';
+
+// API Base URL points to Azure Functions
+const API_BASE_URL = config.api.baseUrl;
 
 // AUTH TOKEN HANDLING
 let authToken = null;
@@ -42,12 +41,26 @@ export const initializeAuthToken = async () => {
 // HELPER FUNCTIONS
 const apiRequest = async (endpoint, method = 'GET', body = null) => {
   try {
+    // Get the user's email from AsyncStorage for request identification
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
     const headers = {
       'Content-Type': 'application/json',
     };
 
+    // Add auth token if available
     if (authToken) {
       headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    // Add user email for identification if available
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+      
+      // Add userId parameter to endpoint if it doesn't already have it
+      if (!endpoint.includes('userId=') && !endpoint.includes('email=')) {
+        endpoint += endpoint.includes('?') ? `&userId=${encodeURIComponent(userEmail)}` : `?userId=${encodeURIComponent(userEmail)}`;
+      }
     }
 
     const options = {
@@ -56,6 +69,11 @@ const apiRequest = async (endpoint, method = 'GET', body = null) => {
     };
 
     if (body) {
+      // Add user email to body if not already present and it's a POST/PUT/PATCH
+      if (userEmail && body && typeof body === 'object' && !body.userId && !body.email && method !== 'GET') {
+        body.userId = userEmail;
+      }
+      
       options.body = JSON.stringify(body);
     }
 
@@ -63,7 +81,7 @@ const apiRequest = async (endpoint, method = 'GET', body = null) => {
       setTimeout(() => reject(new Error('Request timeout')), config.api.timeout);
     });
 
-    const fetchPromise = fetch(`${config.api.baseUrl}/${endpoint}`, options);
+    const fetchPromise = fetch(`${API_BASE_URL}/${endpoint}`, options);
     const response = await Promise.race([fetchPromise, timeoutPromise]);
 
     if (!response.ok) {
@@ -77,10 +95,12 @@ const apiRequest = async (endpoint, method = 'GET', body = null) => {
 
     if (config.isDevelopment && !config.features.useRealApi) {
       console.log('Development mode: Using mock data');
-      if (endpoint.includes('products')) {
+      if (endpoint.includes('products') || endpoint.includes('plants')) {
         return getMockProductData(endpoint);
       } else if (endpoint.includes('user')) {
         return { user: MOCK_USER };
+      } else if (endpoint.includes('messages')) {
+        return getMockMessageData(endpoint);
       } else {
         return { success: true, mockData: true };
       }
@@ -91,24 +111,46 @@ const apiRequest = async (endpoint, method = 'GET', body = null) => {
 };
 
 const getMockProductData = (endpoint) => {
+  // Handle different endpoint patterns
   if (endpoint.includes('specific')) {
     const id = endpoint.split('/').pop();
     return getMockProductById(id);
+  } else if (endpoint.includes('wish')) {
+    // Wishlist toggle endpoint
+    return { 
+      success: true, 
+      isWished: Math.random() > 0.5, // Random toggle
+      message: 'Wishlist updated (mock)', 
+      status: 'success' 
+    };
   } else {
-    return getMockProducts();
+    // Default products endpoint
+    const params = new URLSearchParams(endpoint.split('?')[1] || '');
+    const category = params.get('category');
+    const search = params.get('search');
+    return getMockProducts(category, search);
   }
 };
 
 // PRODUCT API
-export const getAll = async (page = 1, category = null, search = '') => {
+export const getAll = async (page = 1, category = null, search = '', filters = {}) => {
   try {
     if (config.isDevelopment && !config.features.useRealApi) {
       return getMockProducts(category, search);
     }
 
-    let endpoint = `products?page=${page}`;
+    // Updated to match backend route: marketplace/products
+    let endpoint = `marketplace/products?page=${page}`;
     if (search) endpoint += `&search=${encodeURIComponent(search)}`;
-    if (category) endpoint = `products/${encodeURIComponent(category)}?page=${page}`;
+    if (category && category !== 'All') endpoint += `&category=${encodeURIComponent(category)}`;
+    
+    // Add any additional filters
+    if (filters) {
+      if (filters.minPrice) endpoint += `&minPrice=${filters.minPrice}`;
+      if (filters.maxPrice) endpoint += `&maxPrice=${filters.maxPrice}`;
+      if (filters.sortBy) endpoint += `&sortBy=${filters.sortBy}`;
+      if (filters.sortOrder) endpoint += `&sortOrder=${filters.sortOrder}`;
+    }
 
     return await apiRequest(endpoint);
   } catch (error) {
@@ -123,7 +165,8 @@ export const getSpecific = async (id) => {
       return getMockProductById(id);
     }
 
-    return await apiRequest(`products/specific/${id}`);
+    // Updated to match backend route: marketplace/products/specific/{id}
+    return await apiRequest(`marketplace/products/specific/${id}`);
   } catch (error) {
     console.error(`Error fetching product ${id}:`, error);
     return getMockProductById(id);
@@ -132,7 +175,23 @@ export const getSpecific = async (id) => {
 
 export const createPlant = async (plantData) => {
   try {
-    return await apiRequest('products/create', 'POST', plantData);
+    if (config.isDevelopment && !config.features.useRealApi) {
+      // Mock successful creation
+      return { 
+        success: true, 
+        productId: 'mock-' + Date.now(), 
+        message: "Plant listing created successfully (mock)" 
+      };
+    }
+
+    // Get user email for seller attribution
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    if (userEmail) {
+      plantData.sellerId = userEmail;
+    }
+
+    // Updated to match backend route: marketplace/products/create
+    return await apiRequest('marketplace/products/create', 'POST', plantData);
   } catch (error) {
     console.error('Error creating plant:', error);
     throw error;
@@ -141,7 +200,21 @@ export const createPlant = async (plantData) => {
 
 export const wishProduct = async (id) => {
   try {
-    return await apiRequest(`products/wish/${id}`);
+    if (config.isDevelopment && !config.features.useRealApi) {
+      // Return mock response
+      return { 
+        success: true, 
+        isWished: Math.random() > 0.5, // Randomly toggle
+        message: 'Wishlist toggled (mock)' 
+      };
+    }
+    
+    // Get user email for identification
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const body = { userId: userEmail };
+    
+    // Updated to match backend route: marketplace/products/wish/{id}
+    return await apiRequest(`marketplace/products/wish/${id}`, 'POST', body);
   } catch (error) {
     console.error(`Error toggling wishlist for product ${id}:`, error);
     if (config.isDevelopment) {
@@ -151,10 +224,92 @@ export const wishProduct = async (id) => {
   }
 };
 
-// USER API
-export const fetchUserProfile = async () => {
+// MESSAGING API
+export const fetchConversations = async () => {
   try {
-    return await apiRequest('auth/getUser');
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return getMockMessageData('getUserConversations');
+    }
+
+    // Updated to match backend route: marketplace/messages/getUserConversations
+    return await apiRequest(`marketplace/messages/getUserConversations`);
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    return getMockMessageData('getUserConversations');
+  }
+};
+
+export const fetchMessages = async (conversationId) => {
+  try {
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return getMockMessageData(`messages/${conversationId}`);
+    }
+
+    // Updated to match backend route: marketplace/messages/getMessages/{chatId}
+    return await apiRequest(`marketplace/messages/getMessages/${conversationId}`);
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    return getMockMessageData(`messages/${conversationId}`);
+  }
+};
+
+export const sendMessage = async (chatId, message) => {
+  try {
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return getMockMessageData('sendMessage');
+    }
+
+    // Get user email for identification
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    // Updated to match backend route: marketplace/messages/sendMessage
+    return await apiRequest('marketplace/messages/sendMessage', 'POST', { 
+      chatId, 
+      message, 
+      senderId: userEmail 
+    });
+  } catch (error) {
+    console.error('Error sending message:', error);
+    return getMockMessageData('sendMessage');
+  }
+};
+
+export const startConversation = async (receiver, plantId, message) => {
+  try {
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return getMockMessageData('createChatRoom');
+    }
+
+    // Get user email for identification
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    // Updated to match backend route: marketplace/messages/createChatRoom
+    return await apiRequest('marketplace/messages/createChatRoom', 'POST', { 
+      receiver, 
+      plantId, 
+      message,
+      sender: userEmail
+    });
+  } catch (error) {
+    console.error('Error starting conversation:', error);
+    return getMockMessageData('createChatRoom');
+  }
+};
+
+// USER API
+export const fetchUserProfile = async (userId = null) => {
+  try {
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return { user: MOCK_USER };
+    }
+
+    // If no userId provided, use current user
+    if (!userId) {
+      userId = await AsyncStorage.getItem('userEmail');
+    }
+
+    // Updated to match backend route: marketplace/users/{id}
+    return await apiRequest(`marketplace/users/${encodeURIComponent(userId)}`);
   } catch (error) {
     console.error('Error fetching user profile:', error);
     return { user: MOCK_USER };
@@ -163,73 +318,122 @@ export const fetchUserProfile = async () => {
 
 export const updateUserProfile = async (id, userData) => {
   try {
-    return await apiRequest(`user/edit-profile/${id}`, 'PATCH', userData);
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return { 
+        success: true, 
+        user: { ...MOCK_USER, ...userData },
+        message: "Profile updated successfully (mock)"
+      };
+    }
+
+    // Updated to match backend route: marketplace/users/{id}
+    return await apiRequest(`marketplace/users/${encodeURIComponent(id)}`, 'PATCH', userData);
   } catch (error) {
     console.error('Error updating user profile:', error);
     throw error;
   }
 };
 
-// MESSAGING API
-export const fetchConversations = async () => {
+// SignalR API
+export const getNegotiateToken = async () => {
   try {
-    return await apiRequest('messages/getUserConversations');
-  } catch (error) {
-    console.error('Error fetching conversations:', error);
-    if (config.isDevelopment) {
-      return [
-        {
-          id: 'conv1',
-          otherUserName: 'PlantLover123',
-          otherUserAvatar: 'https://via.placeholder.com/50?text=User1',
-          lastMessage: "Hi, is the Monstera still available?",
-          lastMessageTimestamp: new Date().toISOString(),
-          plantName: "Monstera Deliciosa",
-          plantId: "1",
-          sellerId: "seller1",
-          unreadCount: 2
-        },
-        {
-          id: 'conv2',
-          otherUserName: 'GreenThumb',
-          otherUserAvatar: 'https://via.placeholder.com/50?text=User2',
-          lastMessage: "Thanks for the quick response!",
-          lastMessageTimestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          plantName: "Snake Plant",
-          plantId: "2",
-          sellerId: "seller2",
-          unreadCount: 0
-        }
-      ];
+    // Get user email for identification
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    if (!userEmail) {
+      throw new Error('User not authenticated');
     }
+
+    // Updated to match backend route: marketplace/signalr-negotiate
+    return await apiRequest(`marketplace/signalr-negotiate?userId=${encodeURIComponent(userEmail)}`, 'POST');
+  } catch (error) {
+    console.error('Error getting SignalR negotiate token:', error);
     throw error;
   }
 };
 
-export const sendMessage = async (chatId, message) => {
+// Location and Maps API
+export const geocodeAddress = async (address) => {
   try {
-    return await apiRequest('messages/sendMessage', 'POST', { chatId, message });
-  } catch (error) {
-    console.error('Error sending message:', error);
-    if (config.isDevelopment) {
-      return { sender: 'currentUser' };
+    if (config.isDevelopment && !config.features.useRealApi) {
+      // Mock geocoding result
+      return {
+        latitude: 32.0853 + (Math.random() * 0.02 - 0.01),
+        longitude: 34.7818 + (Math.random() * 0.02 - 0.01),
+      };
     }
+
+    // Updated to match backend route: marketplace/geocode
+    return await apiRequest(`marketplace/geocode?address=${encodeURIComponent(address)}`);
+  } catch (error) {
+    console.error('Error geocoding address:', error);
     throw error;
   }
 };
 
-export const startConversation = async (receiver, message) => {
+export const getNearbyProducts = async (latitude, longitude, radius = 10) => {
   try {
-    return await apiRequest('messages/createChatRoom', 'POST', { receiver, message });
-  } catch (error) {
-    console.error('Error starting conversation:', error);
-    if (config.isDevelopment) {
-      return { messageId: 'mock-conversation-id' };
+    if (config.isDevelopment && !config.features.useRealApi) {
+      return getMockProducts();
     }
+
+    // Updated to match backend route: marketplace/nearbyProducts
+    return await apiRequest(`marketplace/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`);
+  } catch (error) {
+    console.error('Error getting nearby products:', error);
+    return getMockProducts();
+  }
+};
+
+// User Plant API (main app integration)
+export const getUserPlantsByLocation = async (location) => {
+  try {
+    // Get user email
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    // Updated to match backend route: getUserPlantsByLocation
+    return await apiRequest(`getUserPlantsByLocation?email=${encodeURIComponent(userEmail)}&location=${encodeURIComponent(location)}`);
+  } catch (error) {
+    console.error('Error getting user plants by location:', error);
     throw error;
   }
 };
 
+export const getUserLocations = async () => {
+  try {
+    // Get user email
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    // Updated to match backend route: getUserLocations
+    return await apiRequest(`getUserLocations?email=${encodeURIComponent(userEmail)}`);
+  } catch (error) {
+    console.error('Error getting user locations:', error);
+    throw error;
+  }
+};
+
+export const identifyPlantPhoto = async (photoFormData) => {
+  try {
+    // This needs a custom request function since it's multipart/form-data
+    const response = await fetch(`${API_BASE_URL}/identifyPlantPhoto`, {
+      method: 'POST',
+      body: photoFormData,
+      headers: {
+        'Authorization': authToken ? `Bearer ${authToken}` : '',
+      }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Plant identification failed: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error identifying plant photo:', error);
+    throw error;
+  }
+};
+
+// Export the API
 export default {
   setAuthToken,
   initializeAuthToken,
@@ -237,9 +441,16 @@ export default {
   getSpecific,
   createPlant,
   wishProduct,
-  fetchUserProfile,
-  updateUserProfile,
   fetchConversations,
   sendMessage,
-  startConversation
+  startConversation,
+  fetchMessages,
+  fetchUserProfile,
+  updateUserProfile,
+  getNegotiateToken,
+  geocodeAddress,
+  getNearbyProducts,
+  getUserPlantsByLocation,
+  getUserLocations,
+  identifyPlantPhoto
 };

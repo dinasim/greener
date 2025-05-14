@@ -63,14 +63,14 @@ const MarketplaceScreen = ({ navigation }) => {
   // Function to load plants from API
   const loadPlants = async (pageNum = 1, resetData = false) => {
     if (!hasMorePages && pageNum > 1 && !resetData) return;
-
+  
     try {
       setError(null);
-
+  
       if (pageNum === 1) {
         setIsLoading(true);
       }
-
+  
       // Get plants from API
       const data = await getAll(
         pageNum,
@@ -78,7 +78,7 @@ const MarketplaceScreen = ({ navigation }) => {
         searchQuery,
         { minPrice: priceRange.min, maxPrice: priceRange.max }
       );
-
+  
       // Update state with new data
       if (data && data.products) {
         if (resetData) {
@@ -86,11 +86,11 @@ const MarketplaceScreen = ({ navigation }) => {
         } else {
           setPlants(prevPlants => [...prevPlants, ...data.products]);
         }
-
+  
         setPage(pageNum);
         setHasMorePages(data.pages > pageNum);
       }
-
+  
       setIsLoading(false);
       setIsRefreshing(false);
     } catch (err) {
@@ -100,7 +100,7 @@ const MarketplaceScreen = ({ navigation }) => {
       setIsRefreshing(false);
     }
   };
-
+  
   // Load products with location data for map view
   const loadMapProducts = async () => {
     try {
