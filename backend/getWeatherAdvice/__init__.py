@@ -4,76 +4,83 @@ import os
 import requests
 import json
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 
-# Load environment variables
+# Load API key from .env file
 load_dotenv()
 AZURE_MAPS_KEY = os.getenv("AZURE_MAPS_KEY")
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('🌱 getWeatherAdvice function triggered.')
+    logging.info('getWeatherAdvice function triggered.')
 
     try:
+        # Parse incoming JSON from request body
         data = req.get_json()
         lat = data.get("latitude")
         lon = data.get("longitude")
-        location_name = data.get("locationName")  # e.g., "Tel Aviv, Israel"
         placement = data.get("placement", "outsidePotted")
 
-        if not AZURE_MAPS_KEY:
-            return func.HttpResponse("Missing Azure Maps Key", status_code=500)
-
-        # Resolve location to coordinates if locationName is provided
-        if location_name and not (lat and lon):
-            geocode_url = "https://atlas.microsoft.com/search/address/json"
-            geo_params = {
-                "api-version": "1.0",
-                "subscription-key": AZURE_MAPS_KEY,
-                "query": location_name
-            }
-            geo_res = requests.get(geocode_url, params=geo_params)
-            geo_res.raise_for_status()
-            geo_data = geo_res.json()
-
-            if geo_data["results"]:
-                coords = geo_data["results"][0]["position"]
-                lat = coords["lat"]
-                lon = coords["lon"]
-            else:
-                return func.HttpResponse("Location not found", status_code=404)
-
         if not lat or not lon:
-            return func.HttpResponse("Missing coordinates or location name", status_code=400)
+            return func.HttpResponse("Missing coordinates", status_code=400)
 
-        # Fetch weather data
-        weather_url = "https://atlas.microsoft.com/weather/currentConditions/json"
-        weather_params = {
+        # Call Azure Maps Weather Forecast API (1-day)
+        weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
+        params = {
             "api-version": "1.1",
             "query": f"{lat},{lon}",
-            "subscription-key": AZURE_MAPS_KEY
+            "subscription-key": AZURE_MAPS_KEY,
+            "duration": 1,
+            "unit": "imperial"  # Fahrenheit
         }
-        weather_res = requests.get(weather_url, params=weather_params)
-        weather_res.raise_for_status()
-        weather_data = weather_res.json()
-        temp_c = weather_data["results"][0]["temperature"]["value"]
+        res = requests.get(weather_url, params=params)
+        res.raise_for_status()
 
-        # Determine advice
-        if placement == "inside":
-            advice = "Your plant is inside — no action needed."
-        elif temp_c > 30:
-            advice = "It's hot 🌞. Move your plant to shade."
-        elif temp_c < 10:
-            advice = "It's cold 🥶. Bring your plant inside."
-        else:
-            advice = "Weather looks good for your plant outside! ✅"
+        forecast_data = res.json()
+        today = forecast_data["forecasts"][0]
+        temp_max = today["temperature"]['maximum']['value']
+        wind_speed = today["day"]['wind']['speed']['value']
+
+        advice_list = []
+
+        if temp_max > 86:
+            advice_list.append("It's over 86°F today 🌡️ — bring your plants inside.")
+
+        if wind_speed > 20:
+            advice_list.append("Strong winds expected today 💨 — protect your plants!")
+
+        if not advice_list:
+            advice_list.append("Weather looks good for your plants today ✅")
 
         return func.HttpResponse(
             json.dumps({
-                "temperature": temp_c,
-                "advice": advice
+                "temperature": temp_max,
+                "wind_speed": wind_speed,
+                "advice": advice_list,
+                "send_time": "08:00 local time"
             }),
             mimetype="application/json"
         )
 
     except Exception as e:
-        logging.error(f"❌ Error in getWeatherAdvice: {e}")
+        logging.error(f"Error in getWeatherAdvice: {e}")
         return func.HttpResponse("Server error", status_code=500)
+
+
+
+
+{
+    "bindings": [
+      {
+        "authLevel": "function",
+        "type": "httpTrigger",
+        "direction": "in",
+        "name": "req",
+        "methods": ["post"]
+      },
+      {
+        "type": "http",
+        "direction": "out",
+        "name": "$return"
+      }
+    ]
+  }
