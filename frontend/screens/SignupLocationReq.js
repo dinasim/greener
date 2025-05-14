@@ -7,13 +7,28 @@ import {
   SafeAreaView,
   ScrollView,
   Animated,
-  Alert,
   Platform,
+  TextInput,
 } from "react-native";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
+import { Picker } from '@react-native-picker/picker';
+import { useForm } from "../context/FormContext";
+
+const cityList = ['Acre', 'Afula', 'Arad', 'Arraba', 'Ashdod', 'Ashkelon', 'Baqa al-Gharbiyye', 'Bat Yam', 'Beersheba',
+                 "Beit She'an", 'Beit Shemesh', 'Bnei Brak', 'Dimona', 'Eilat', "El'ad", "Giv'at Shmuel", 'Givatayim', 
+                 'Hadera', 'Haifa', 'Herzliya', 'Hod HaSharon', 'Holon', 'Jerusalem', 'Kafr Qasim', 'Karmiel', 'Kfar Saba',
+                 'Kfar Yona', 'Kiryat Ata', 'Kiryat Bialik', 'Kiryat Gat', 'Kiryat Malakhi', 'Kiryat Motzkin', 'Kiryat Ono', 
+                 'Kiryat Shmona', 'Kiryat Yam', 'Lod', "Ma'alot-Tarshiha", 'Migdal HaEmek', "Modi'in-Maccabim-Re'ut", 'Nahariya',
+                 'Nazareth', 'Nesher', 'Ness Ziona', 'Netanya', 'Netivot', 'Nof HaGalil', 'Ofakim', 'Or Akiva', 'Or Yehuda', 
+                 'Petah Tikva', 'Qalansawe', "Ra'anana", 'Rahat', 'Ramat Gan', 'Ramat HaSharon', 'Ramla', 'Rehovot', 'Rishon LeZion',
+                 'Rosh HaAyin', 'Safed', 'Sakhnin', 'Sderot', "Shefa-'Amr", 'Tamra', 'Tayibe', 'Tel Aviv-Yafo', 'Tiberias', 'Tira',
+                 'Tirat Carmel', 'Umm al-Fahm', 'Yavne', 'Yehud-Monosson', 'Yokneam Illit'];
 
 export default function SignupLocationReq({ navigation }) {
   const [permissionStatus, setPermissionStatus] = useState(null);
+  const [selectedCity, setSelectedCity] = useState("");
+  const { updateFormData, setLocationPermissionGranted } = useForm();
   const scaleAnim = new Animated.Value(0.95);
 
   useEffect(() => {
@@ -28,19 +43,59 @@ export default function SignupLocationReq({ navigation }) {
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status === "granted") {
-      setPermissionStatus("granted");
-      Alert.alert("Location access granted ✅");
+      const location = await Location.getCurrentPositionAsync({});
+      setLocationPermissionGranted(true);
+      updateFormData("userLocation", {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      if (Platform.OS === "web") {
+        alert(`📍 Location Saved: Lat: ${location.coords.latitude}, Lon: ${location.coords.longitude}`);
+      } else {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "📍 Location Saved",
+            body: `Lat: ${location.coords.latitude}, Lon: ${location.coords.longitude}`,
+          },
+          trigger: null,
+        });
+      }
+      console.log("📬 Location saved and notification/alert sent");     
     } else {
       setPermissionStatus("denied");
-      Alert.alert(
-        "Permission Denied",
-        "Location access is optional. You can still continue."
-      );
+      if (Platform.OS === "web") {
+        alert("❌ Location Permission Denied\nYou can still continue.");
+      } else {
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: "❌ Location Permission Denied",
+            body: "You can still continue.",
+          },
+          trigger: null,
+        });
+      }
+  
+      console.log("📬 Denial message sent");
     }
   };
 
-  const continueToNext = () => {
-    navigation.navigate("SignupReminders");
+  const handleCitySelect = async () => {
+    if (!selectedCity) return;
+    // This is where you would implement actual geocoding for city names
+    updateFormData("userLocation", { city: selectedCity });
+
+    if (Platform.OS === "web") {
+      alert(`🏙️ City Saved: ${selectedCity}`);
+    } else {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "🏙️ City Saved",
+          body: `Selected city: ${selectedCity}`,
+        },
+        trigger: null,
+      });
+    }
+    console.log("📬 Notification should have been triggered");
   };
 
   return (
@@ -48,19 +103,35 @@ export default function SignupLocationReq({ navigation }) {
       <ScrollView style={styles.scrollView} contentContainerStyle={{ flexGrow: 1 }}>
         <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.header}>
-            <Text style={styles.title}>Allow Location Access</Text>
+            <Text style={styles.title}>Add Your Location</Text>
             <Text style={styles.subtitle}>
-              We use your location to recommend the best plants for your area 🌱
+              Select a city or allow location access to receive tailored plant care 🌿
             </Text>
           </View>
 
           <View style={styles.middle}>
-            <TouchableOpacity
-              style={styles.permissionButton}
-              onPress={requestLocationPermission}
-              activeOpacity={0.8}
+            <Text style={{ marginBottom: 10 }}>Choose your city:</Text>
+            <Picker
+              selectedValue={selectedCity}
+              onValueChange={(itemValue) => setSelectedCity(itemValue)}
+              style={{ width: "100%", height: 50 }}
             >
-              <Text style={styles.buttonText}>Enable Location Access</Text>
+              <Picker.Item label="-- Select a city --" value="" />
+              {cityList.map((city) => (
+                <Picker.Item key={city} label={city} value={city} />
+              ))}
+            </Picker>
+            <TouchableOpacity style={styles.permissionButton} onPress={handleCitySelect}>
+              <Text style={styles.buttonText}>Save City</Text>
+            </TouchableOpacity>
+
+            <View style={{ marginVertical: 20 }} />
+
+            <TouchableOpacity
+              style={[styles.permissionButton, { backgroundColor: "#4caf50" }]}
+              onPress={requestLocationPermission}
+            >
+              <Text style={styles.buttonText}>Use My Location</Text>
             </TouchableOpacity>
           </View>
         </Animated.View>
@@ -121,6 +192,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 3,
     elevation: 3,
+    marginTop: 10,
   },
   buttonText: {
     color: "#fff",

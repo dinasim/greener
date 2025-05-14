@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 load_dotenv()
 AZURE_MAPS_KEY = os.getenv("AZURE_MAPS_KEY")
 
-
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('getWeatherAdvice function triggered.')
 

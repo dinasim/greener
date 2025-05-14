@@ -16,6 +16,8 @@ import AddPlantScreen from '../screens/AddPlantScreen';
 import PlacePlantScreen from '../screens/PlacePlantScreen';
 import LocationsScreen from '../screens/LocationsScreen';
 import LocationPlantsScreen from '../screens/LocationPlantsScreen';
+import PlantDetail from '../screens/PlantDetailScreen';
+
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
@@ -48,6 +50,8 @@ export default function AppNavigator() {
         <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
         <Stack.Screen name="Locations" component={LocationsScreen} />
         <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
+        <Stack.Screen name="PlantDetail" component={PlantDetail} />
+        <Stack.Screen name="PlantLocationScreen" component={PlantLocationScreen} />
       </Stack.Navigator>
     </FormProvider>
   );
