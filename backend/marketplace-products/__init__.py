@@ -1,23 +1,17 @@
-# backend/marketplace-products/__init__.py
+# marketplace-products/__init__.py
 import logging
 import json
 import azure.functions as func
-from shared.marketplace.db_client import get_container
+from db_helpers import get_container
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 from datetime import datetime
-
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function for marketplace products processed a request.')
     
     # Handle OPTIONS method for CORS preflight
     if req.method == 'OPTIONS':
-        response = func.HttpResponse()
-        return add_cors_headers(response)
+        return handle_options_request()
     
     try:
         # Get query parameters
@@ -48,10 +42,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         # Add filters
         if category and category.lower() != 'all':
+            # Only show active listings by default
             param_name = get_param_name()
-            query_parts.append(f"AND LOWER(c.category) = {param_name}")
-            parameters.append({"name": param_name, "value": category.lower()})
-        
+            query_parts.append(f"AND (c.status = {param_name} OR (NOT IS_DEFINED(c.status)))")  # Fixed syntax
+            parameters.append({"name": param_name, "value": "active"})
         if search:
             param_name = get_param_name()
             query_parts.append(f"AND (CONTAINS(LOWER(c.title), {param_name}) OR CONTAINS(LOWER(c.description), {param_name}))")
@@ -69,7 +63,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         # Only show active listings by default
         param_name = get_param_name()
-        query_parts.append(f"AND (c.status = {param_name} OR c.status IS NULL)")
+        # Fixed query: Properly check for status (using either IS_DEFINED or simple equality)
+        query_parts.append(f"AND (c.status = {param_name} OR (NOT IS_DEFINED(c.status)))")
         parameters.append({"name": param_name, "value": "active"})
         
         # Determine sort field
@@ -108,33 +103,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         end_idx = min(start_idx + page_size, total_count)
         page_items = items[start_idx:end_idx]
         
-        # Enrich with seller and wishlist info
-        enriched_items = enrich_plant_items(page_items, user_id)
-        
         # Format response
         response_data = {
-            "products": enriched_items,
+            "products": page_items,
             "page": page,
             "pages": total_pages,
             "count": total_count,
             "currentPage": page
         }
         
-        # Return success response with CORS headers
-        response = func.HttpResponse(
-            body=json.dumps(response_data, default=str),
-            mimetype="application/json",
-            status_code=200
-        )
-        return add_cors_headers(response)
+        # Return success response
+        return create_success_response(response_data)
     
     except Exception as e:
         logging.error(f"Error retrieving marketplace products: {str(e)}")
-        
-        # Return error response with CORS headers
-        error_response = func.HttpResponse(
-            body=json.dumps({"error": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
-        return add_cors_headers(error_response)
+        return create_error_response(str(e), 500)

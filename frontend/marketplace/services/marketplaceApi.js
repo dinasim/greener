@@ -93,8 +93,8 @@ const apiRequest = async (endpoint, method = 'GET', body = null) => {
   } catch (error) {
     console.error(`API Error (${endpoint}):`, error);
 
-    if (config.isDevelopment && !config.features.useRealApi) {
-      console.log('Development mode: Using mock data');
+    if (config.features.useMockOnError) {
+      console.log('Using mock data due to API error');
       if (endpoint.includes('products') || endpoint.includes('plants')) {
         return getMockProductData(endpoint);
       } else if (endpoint.includes('user')) {
@@ -135,11 +135,6 @@ const getMockProductData = (endpoint) => {
 // PRODUCT API
 export const getAll = async (page = 1, category = null, search = '', filters = {}) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockProducts(category, search);
-    }
-
-    // Updated to match backend route: marketplace/products
     let endpoint = `marketplace/products?page=${page}`;
     if (search) endpoint += `&search=${encodeURIComponent(search)}`;
     if (category && category !== 'All') endpoint += `&category=${encodeURIComponent(category)}`;
@@ -155,42 +150,33 @@ export const getAll = async (page = 1, category = null, search = '', filters = {
     return await apiRequest(endpoint);
   } catch (error) {
     console.error('Error fetching products:', error);
-    return getMockProducts(category, search);
+    if (config.features.useMockOnError) {
+      return getMockProducts(category, search);
+    }
+    throw error;
   }
 };
 
 export const getSpecific = async (id) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockProductById(id);
-    }
-
-    // Updated to match backend route: marketplace/products/specific/{id}
     return await apiRequest(`marketplace/products/specific/${id}`);
   } catch (error) {
     console.error(`Error fetching product ${id}:`, error);
-    return getMockProductById(id);
+    if (config.features.useMockOnError) {
+      return getMockProductById(id);
+    }
+    throw error;
   }
 };
 
 export const createPlant = async (plantData) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      // Mock successful creation
-      return { 
-        success: true, 
-        productId: 'mock-' + Date.now(), 
-        message: "Plant listing created successfully (mock)" 
-      };
-    }
-
     // Get user email for seller attribution
     const userEmail = await AsyncStorage.getItem('userEmail');
     if (userEmail) {
       plantData.sellerId = userEmail;
     }
 
-    // Updated to match backend route: marketplace/products/create
     return await apiRequest('marketplace/products/create', 'POST', plantData);
   } catch (error) {
     console.error('Error creating plant:', error);
@@ -200,24 +186,10 @@ export const createPlant = async (plantData) => {
 
 export const wishProduct = async (id) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      // Return mock response
-      return { 
-        success: true, 
-        isWished: Math.random() > 0.5, // Randomly toggle
-        message: 'Wishlist toggled (mock)' 
-      };
-    }
-    
-    // Get user email for identification
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    const body = { userId: userEmail };
-    
-    // Updated to match backend route: marketplace/products/wish/{id}
-    return await apiRequest(`marketplace/products/wish/${id}`, 'POST', body);
+    return await apiRequest(`marketplace/products/wish/${id}`, 'POST');
   } catch (error) {
     console.error(`Error toggling wishlist for product ${id}:`, error);
-    if (config.isDevelopment) {
+    if (config.features.useMockOnError) {
       return { success: true, message: 'Wishlist toggled (mock)' };
     }
     throw error;
@@ -227,63 +199,48 @@ export const wishProduct = async (id) => {
 // MESSAGING API
 export const fetchConversations = async () => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockMessageData('getUserConversations');
-    }
-
-    // Updated to match backend route: marketplace/messages/getUserConversations
     return await apiRequest(`marketplace/messages/getUserConversations`);
   } catch (error) {
     console.error('Error fetching conversations:', error);
-    return getMockMessageData('getUserConversations');
+    if (config.features.useMockOnError) {
+      return getMockMessageData('getUserConversations');
+    }
+    throw error;
   }
 };
 
 export const fetchMessages = async (conversationId) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockMessageData(`messages/${conversationId}`);
-    }
-
-    // Updated to match backend route: marketplace/messages/getMessages/{chatId}
     return await apiRequest(`marketplace/messages/getMessages/${conversationId}`);
   } catch (error) {
     console.error('Error fetching messages:', error);
-    return getMockMessageData(`messages/${conversationId}`);
+    if (config.features.useMockOnError) {
+      return getMockMessageData(`messages/${conversationId}`);
+    }
+    throw error;
   }
 };
 
 export const sendMessage = async (chatId, message) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockMessageData('sendMessage');
-    }
-
-    // Get user email for identification
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    
-    // Updated to match backend route: marketplace/messages/sendMessage
     return await apiRequest('marketplace/messages/sendMessage', 'POST', { 
       chatId, 
-      message, 
-      senderId: userEmail 
+      message
     });
   } catch (error) {
     console.error('Error sending message:', error);
-    return getMockMessageData('sendMessage');
+    if (config.features.useMockOnError) {
+      return getMockMessageData('sendMessage');
+    }
+    throw error;
   }
 };
 
 export const startConversation = async (receiver, plantId, message) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockMessageData('createChatRoom');
-    }
-
-    // Get user email for identification
+    // Get user email for sender identification
     const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Updated to match backend route: marketplace/messages/createChatRoom
     return await apiRequest('marketplace/messages/createChatRoom', 'POST', { 
       receiver, 
       plantId, 
@@ -292,44 +249,43 @@ export const startConversation = async (receiver, plantId, message) => {
     });
   } catch (error) {
     console.error('Error starting conversation:', error);
-    return getMockMessageData('createChatRoom');
+    if (config.features.useMockOnError) {
+      return getMockMessageData('createChatRoom');
+    }
+    throw error;
   }
 };
 
 // USER API
 export const fetchUserProfile = async (userId = null) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return { user: MOCK_USER };
-    }
-
     // If no userId provided, use current user
     if (!userId) {
       userId = await AsyncStorage.getItem('userEmail');
     }
 
-    // Updated to match backend route: marketplace/users/{id}
     return await apiRequest(`marketplace/users/${encodeURIComponent(userId)}`);
   } catch (error) {
     console.error('Error fetching user profile:', error);
-    return { user: MOCK_USER };
+    if (config.features.useMockOnError) {
+      return { user: MOCK_USER };
+    }
+    throw error;
   }
 };
 
 export const updateUserProfile = async (id, userData) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
+    return await apiRequest(`marketplace/users/${encodeURIComponent(id)}`, 'PATCH', userData);
+  } catch (error) {
+    console.error('Error updating user profile:', error);
+    if (config.features.useMockOnError) {
       return { 
         success: true, 
         user: { ...MOCK_USER, ...userData },
         message: "Profile updated successfully (mock)"
       };
     }
-
-    // Updated to match backend route: marketplace/users/{id}
-    return await apiRequest(`marketplace/users/${encodeURIComponent(id)}`, 'PATCH', userData);
-  } catch (error) {
-    console.error('Error updating user profile:', error);
     throw error;
   }
 };
@@ -343,7 +299,6 @@ export const getNegotiateToken = async () => {
       throw new Error('User not authenticated');
     }
 
-    // Updated to match backend route: marketplace/signalr-negotiate
     return await apiRequest(`marketplace/signalr-negotiate?userId=${encodeURIComponent(userEmail)}`, 'POST');
   } catch (error) {
     console.error('Error getting SignalR negotiate token:', error);
@@ -354,33 +309,29 @@ export const getNegotiateToken = async () => {
 // Location and Maps API
 export const geocodeAddress = async (address) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
+    return await apiRequest(`marketplace/geocode?address=${encodeURIComponent(address)}`);
+  } catch (error) {
+    console.error('Error geocoding address:', error);
+    if (config.features.useMockOnError) {
       // Mock geocoding result
       return {
         latitude: 32.0853 + (Math.random() * 0.02 - 0.01),
         longitude: 34.7818 + (Math.random() * 0.02 - 0.01),
       };
     }
-
-    // Updated to match backend route: marketplace/geocode
-    return await apiRequest(`marketplace/geocode?address=${encodeURIComponent(address)}`);
-  } catch (error) {
-    console.error('Error geocoding address:', error);
     throw error;
   }
 };
 
 export const getNearbyProducts = async (latitude, longitude, radius = 10) => {
   try {
-    if (config.isDevelopment && !config.features.useRealApi) {
-      return getMockProducts();
-    }
-
-    // Updated to match backend route: marketplace/nearbyProducts
     return await apiRequest(`marketplace/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`);
   } catch (error) {
     console.error('Error getting nearby products:', error);
-    return getMockProducts();
+    if (config.features.useMockOnError) {
+      return getMockProducts();
+    }
+    throw error;
   }
 };
 
@@ -390,7 +341,6 @@ export const getUserPlantsByLocation = async (location) => {
     // Get user email
     const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Updated to match backend route: getUserPlantsByLocation
     return await apiRequest(`getUserPlantsByLocation?email=${encodeURIComponent(userEmail)}&location=${encodeURIComponent(location)}`);
   } catch (error) {
     console.error('Error getting user plants by location:', error);
@@ -403,7 +353,6 @@ export const getUserLocations = async () => {
     // Get user email
     const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Updated to match backend route: getUserLocations
     return await apiRequest(`getUserLocations?email=${encodeURIComponent(userEmail)}`);
   } catch (error) {
     console.error('Error getting user locations:', error);

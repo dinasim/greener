@@ -1,30 +1,24 @@
-# backend/marketplace/conversations/__init__.py
+# conversations/__init__.py
 import logging
 import json
 import azure.functions as func
-from shared.marketplace.db_client import get_container
+from db_helpers import get_container
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 from datetime import datetime
-
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function for getting user conversations processed a request.')
     
+    # Handle OPTIONS method for CORS preflight
+    if req.method == 'OPTIONS':
+        return handle_options_request()
+    
     try:
         # Get user ID from query parameters or request body
-        request_json = req.get_json() if req.get_body() else {}
-        user_id = request_json.get('userId') or req.params.get('userId')
+        user_id = extract_user_id(req)
         
         if not user_id:
-            return func.HttpResponse(
-                body=json.dumps({"error": "User ID is required"}),
-                mimetype="application/json",
-                status_code=400
-            )
+            return create_error_response("User ID is required", 400)
         
         # Access the marketplace-conversations container
         container = get_container("marketplace-conversations")
@@ -81,7 +75,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 
                 if 'plantId' in conv:
                     plants_container = get_container("marketplace-plants")
-                    plant_query = "SELECT c.id, c.title, c.images FROM c WHERE c.id = @id"
+                    plant_query = "SELECT c.id, c.title, c.image, c.images FROM c WHERE c.id = @id"
                     plant_params = [{"name": "@id", "value": conv['plantId']}]
                     
                     plants = list(plants_container.query_items(
@@ -92,10 +86,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     
                     if plants:
                         plant = plants[0]
+                        plant_image = plant.get('image')
+                        
+                        # If image is not directly available, try to get from images array
+                        if not plant_image and 'images' in plant and plant['images'] and len(plant['images']) > 0:
+                            plant_image = plant['images'][0]
+                            
                         plant_info = {
                             "name": plant.get('title', 'Plant Discussion'),
                             "id": plant.get('id'),
-                            "image": plant.get('images', [])[0] if plant.get('images') else None
+                            "image": plant_image
                         }
                 
                 # Format the conversation
@@ -131,16 +131,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             reverse=True
         )
         
-        return func.HttpResponse(
-            body=json.dumps(enhanced_conversations, default=str),
-            mimetype="application/json",
-            status_code=200
-        )
+        return create_success_response(enhanced_conversations)
     
     except Exception as e:
         logging.error(f"Error getting user conversations: {str(e)}")
-        return func.HttpResponse(
-            body=json.dumps({"error": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
+        return create_error_response(str(e), 500)
