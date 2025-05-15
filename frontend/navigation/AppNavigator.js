@@ -17,6 +17,7 @@ import PlacePlantScreen from '../screens/PlacePlantScreen';
 import LocationsScreen from '../screens/LocationsScreen';
 import LocationPlantsScreen from '../screens/LocationPlantsScreen';
 import PlantDetail from '../screens/PlantDetailScreen';
+import DiseaseChecker from '../screens/DiseaseCheckerScreen';
 
 
 // Import marketplace navigation
@@ -52,6 +53,7 @@ export default function AppNavigator() {
         <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
         <Stack.Screen name="PlantDetail" component={PlantDetail} />
         <Stack.Screen name="PlantLocationScreen" component={PlantLocationScreen} />
+        <Stack.Screen name="DiseaseChecker" component={DiseaseChecker} />
       </Stack.Navigator>
     </FormProvider>
   );

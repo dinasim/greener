@@ -1,7 +1,15 @@
-import React, { useEffect, useState } from 'react';
+// screens/HomeScreen.js
+
+import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
-  Modal, FlatList, Image
+  SafeAreaView,
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Modal,
+  FlatList,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -9,174 +17,202 @@ export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [showPopup, setShowPopup] = useState(false);
 
-  // Dummy data for FlatList to show
+  // Dummy data for FlatList
   const data = [
-    { id: '1', plantName: 'Plant 1', location: 'Living Room', status: 'On Time', image: 'https://via.placeholder.com/60' },
-    { id: '2', plantName: 'Plant 2', location: 'Kitchen', status: 'Late', image: 'https://via.placeholder.com/60' },
+    {
+      id: '1',
+      plantName: 'Ficus Elastica',
+      location: 'Living Room',
+      status: 'On Time',
+      image: 'https://via.placeholder.com/60',
+    },
+    {
+      id: '2',
+      plantName: 'Monstera Deliciosa',
+      location: 'Kitchen',
+      status: 'Late',
+      image: 'https://via.placeholder.com/60',
+    },
+    // … more items …
   ];
 
   useEffect(() => {
-    setGreeting(getGreeting());
+    const hour = new Date().getHours();
+    if (hour < 12) setGreeting('Good morning');
+    else if (hour < 18) setGreeting('Good afternoon');
+    else setGreeting('Good evening');
   }, []);
 
-  const getGreeting = () => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Good morning';
-    if (hour < 18) return 'Good afternoon';
-    return 'Good evening';
-  };
-
-  const handleAddPress = () => {
-    setShowPopup(true);
-  };
-
-  const handleOptionPress = (type) => {
-    setShowPopup(false);
-    if (type === 'plant') {
-      navigation.navigate('AddPlant');
-    } else if (type === 'site') {
-      navigation.navigate('AddSite'); // optional feature
-    }
-  };
-
-  const handleLeafPress = () => {
-    navigation.navigate('Locations');
-  };
-
-  const handleMarketplacePress = () => {
-    navigation.navigate('MainTabs'); // Navigate to MainTabs (not Marketplace)
-  };
-
-  const keyExtractor = (item) => item.id ? item.id.toString() : 'defaultKey'; // Handle undefined or null id
+  const renderItem = ({ item }) => (
+    <View style={styles.card}>
+      <Image source={{ uri: item.image }} style={styles.cardImage} />
+      <View style={styles.cardContent}>
+        <Text style={styles.cardTitle}>{item.plantName}</Text>
+        <Text style={styles.cardSubtitle}>{item.location}</Text>
+        <Text
+          style={[
+            styles.cardSubtitle,
+            item.status === 'Late' && styles.lateStatus,
+          ]}
+        >
+          {item.status}
+        </Text>
+      </View>
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
+      {/* Header: just the greeting */}
+      <View style={styles.headerRow}>
         <Text style={styles.greeting}>{greeting}</Text>
       </View>
 
-      <View style={styles.tabRow}>
-        <Text style={[styles.tab, styles.activeTab]}>Today</Text>
-        <Text style={styles.tab}>Upcoming</Text>
-      </View>
-
-      <FlatList
-        data={data} // Use the dummy data
-        keyExtractor={keyExtractor} // Use the updated keyExtractor function
-        renderItem={({ item }) => (
-          <View style={styles.taskCard}>
-            <Image source={{ uri: item.image }} style={styles.plantImage} />
-            <View style={styles.taskInfo}>
-              <Text style={styles.plantName}>{item.plantName}</Text>
-              <Text style={styles.location}>{item.location}</Text>
-              <Text style={styles.late}>{item.status}</Text>
-            </View>
-          </View>
-        )}
-      />
-
-      <View style={styles.navBar}>
-        <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
-        <TouchableOpacity onPress={handleLeafPress}>
-          <Ionicons name="leaf" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleMarketplacePress}>
-          <Image source={require('../assets/cart.png')} style={styles.cartIcon} />
-        </TouchableOpacity>
-        <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
-      </View>
-
-      <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
-        <Text style={styles.plus}>+</Text>
-      </TouchableOpacity>
-
+      {/* Modal for Add Plant */}
       <Modal
-        animationType="fade"
-        transparent={true}
         visible={showPopup}
+        transparent
+        animationType="slide"
         onRequestClose={() => setShowPopup(false)}
       >
-        <TouchableOpacity style={styles.popupOverlay} onPress={() => setShowPopup(false)}>
-          <View style={styles.popupMenu}>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('plant')}>
-              <Text style={styles.popupText}>Add Plant</Text>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Add a Plant</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                setShowPopup(false);
+                navigation.navigate('AddPlant', { via: 'name' });
+              }}
+            >
+              <Text style={styles.modalButtonText}>By Name</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('site')}>
-              <Text style={styles.popupText}>Add Site</Text>
+            <TouchableOpacity
+              style={styles.modalButton}
+              onPress={() => {
+                setShowPopup(false);
+                navigation.navigate('AddPlant', { via: 'photo' });
+              }}
+            >
+              <Text style={styles.modalButtonText}>By Photo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.modalButton, styles.modalCancel]}
+              onPress={() => setShowPopup(false)}
+            >
+              <Text style={styles.modalButtonText}>Cancel</Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
+        </View>
       </Modal>
+
+      {/* Plant list */}
+      <FlatList
+        data={data}
+        renderItem={renderItem}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContainer}
+      />
+
+      {/* Floating cluster: diagnostic above add */}
+      <View style={styles.floatingContainer}>
+        <TouchableOpacity
+          style={styles.floatingButton}
+          onPress={() => navigation.navigate('DiseaseChecker')}
+        >
+          <Ionicons name="search" size={32} color="#4CAF50" />
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.floatingButton}
+          onPress={() => setShowPopup(true)}
+        >
+          <Ionicons name="add-circle-outline" size={48} color="#4CAF50" />
+        </TouchableOpacity>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff', padding: 20 },
-  header: { marginTop: 20 },
-  greeting: { fontSize: 28, color: '#000', fontWeight: 'bold' },
-  tabRow: { flexDirection: 'row', marginBottom: 10 },
-  tab: { fontSize: 16, color: '#777', marginRight: 20 },
-  activeTab: { color: '#2e7d32', fontWeight: 'bold', textDecorationLine: 'underline' },
-  taskCard: { flexDirection: 'row', backgroundColor: '#f4f4f4', padding: 15, borderRadius: 12, marginBottom: 12 },
-  plantImage: { width: 60, height: 60, borderRadius: 30, marginRight: 15 },
-  taskInfo: { justifyContent: 'center' },
-  plantName: { color: '#000', fontSize: 18, fontWeight: 'bold' },
-  location: { color: '#555' },
-  late: { color: 'red', marginTop: 4 },
-  navBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#eee',
+  container: { flex: 1, backgroundColor: '#f0fdf4' },
+
+  headerRow: {
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  greeting: {
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+
+  listContainer: {
+    paddingBottom: 100, // so list isn't hidden under floating buttons
+  },
+  card: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  cartIcon: {
-    width: 24,
-    height: 24,
-    resizeMode: 'contain',
-  },
-  addButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 60,
-    backgroundColor: '#2e7d32',
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  plus: { fontSize: 32, color: '#fff', fontWeight: 'bold' },
-  popupOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
-    justifyContent: 'flex-end',
-    paddingRight: 20,
-    paddingBottom: 130,
-    alignItems: 'flex-end',
-  },
-  popupMenu: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 10,
-    width: 160,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 5,
+    marginHorizontal: 16,
+    marginBottom: 12,
+    elevation: 2,
+    overflow: 'hidden',
   },
-  popupOption: {
+  cardImage: {
+    width: 80,
+    height: 80,
+  },
+  cardContent: {
+    flex: 1,
+    padding: 10,
+    justifyContent: 'center',
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  cardSubtitle: {
+    fontSize: 14,
+    color: '#555',
+  },
+  lateStatus: {
+    color: 'red',
+  },
+
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: '#00000088',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: '#fff',
+    padding: 24,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  modalButton: {
     paddingVertical: 12,
   },
-  popupText: {
+  modalButtonText: {
     fontSize: 16,
-    color: '#101010',
-    textAlign: 'right',
+    color: '#4CAF50',
+  },
+  modalCancel: {
+    marginTop: 8,
+  },
+
+  floatingContainer: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    alignItems: 'center',
+  },
+  floatingButton: {
+    marginBottom: 12,
   },
 });

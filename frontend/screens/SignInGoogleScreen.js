@@ -225,7 +225,7 @@ export default function SignInGoogleScreen({ navigation }) {
                 <View style={styles.bottomContainer}>
                   <Text style={styles.signInText}>Don't have an account? </Text>
                   <TouchableOpacity
-                    onPress={() => navigation.navigate("SignUp")}
+                    onPress={() => navigation.navigate("Home")}
                     style={styles.signInButton}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
