@@ -1,4 +1,4 @@
-# Fixed get-messages/__init__.py
+# Fixed get-messages/__init__.py  marketplace file
 import logging
 import json
 import azure.functions as func

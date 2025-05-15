@@ -80,8 +80,8 @@ export default function HomeScreen({ navigation }) {
         <TouchableOpacity onPress={handleLeafPress}>
           <Ionicons name="leaf" size={24} color="black" />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleMarketplacePress}>
-          <Image source={require('../assets/cart.png')} style={styles.cartIcon} />
+        <TouchableOpacity onPress={handleMarketplacePress} style={styles.marketplaceCard}>
+            <Ionicons name="cart-outline" size={24} color="#2e7d32" />
         </TouchableOpacity>
         <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
       </View>
@@ -139,6 +139,12 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     resizeMode: 'contain',
+  },
+  marketplaceCard: {
+    backgroundColor: 'transparent',  // <-- make it blend in
+    padding: 0,                       // <-- match others
+    borderRadius: 0,                 // no rounding
+    elevation: 0,                    // remove shadow
   },
   addButton: {
     position: 'absolute',

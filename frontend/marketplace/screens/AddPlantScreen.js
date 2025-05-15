@@ -21,6 +21,8 @@ import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { uploadImage } from '../services/marketplaceApi'; 
+
 
 // Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
@@ -128,45 +130,39 @@ const AddPlantScreen = () => {
         Alert.alert('Permission Required', 'We need permission to access your photos');
         return;
       }
-
+  
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ImagePicker.MediaType.Images,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
-        allowsMultipleSelection: images.length < 4, // Limit multiple selection based on current count
+        selectionLimit: images.length < 4 ? 5 - images.length : 0, // NEW key for RN Web & Native
       });
-
+  
       if (!result.canceled && result.assets?.length > 0) {
-        // Check number of images
         if (images.length + result.assets.length > 5) {
           Alert.alert('Too Many Images', 'You can only upload up to 5 images');
           return;
         }
-        
-        // Process each selected image
+  
         const newImages = [...images];
-        
+  
         for (const asset of result.assets) {
           const imageUri = asset.uri;
-          
+  
           if (Platform.OS !== 'web') {
             const fileInfo = await FileSystem.getInfoAsync(imageUri);
-            const fileSize = fileInfo.size;
-            
-            // Check file size (5MB limit)
-            if (fileSize > 5 * 1024 * 1024) {
+            if (fileInfo.size > 5 * 1024 * 1024) {
               Alert.alert('Image Too Large', 'Please select images smaller than 5MB');
               continue;
             }
           }
-          
-          // Add image to array
+  
           newImages.push(imageUri);
         }
-        
+  
         setImages(newImages);
-
+  
         if (formErrors.images) {
           setFormErrors({ ...formErrors, images: '' });
         }
@@ -176,6 +172,7 @@ const AddPlantScreen = () => {
       Alert.alert('Error', 'Failed to pick image. Please try again.');
     }
   };
+  
 
   const takePhoto = async () => {
     try {
@@ -296,22 +293,21 @@ const AddPlantScreen = () => {
     return isValid;
   };
 
+
   const prepareImageData = async () => {
-    // Convert image URIs to base64 for upload
-    let imageData = [];
-    for (const uri of images) {
-      try {
-        const base64 = await FileSystem.readAsStringAsync(uri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-        imageData.push(`data:image/jpeg;base64,${base64}`);
-      } catch (error) {
-        console.error('Error encoding image:', error);
-        throw new Error('Failed to encode images. Please try again.');
+    try {
+      const uploaded = [];
+      for (const uri of images) {
+        const result = await uploadImage(uri, 'plant');
+        if (result?.url) uploaded.push(result.url);
       }
+      return uploaded;
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      throw new Error('Image upload failed. Please try again.');
     }
-    return imageData;
   };
+  
 
   const handleSubmit = async () => {
     if (!validateForm()) return;

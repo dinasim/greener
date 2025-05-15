@@ -1,58 +1,50 @@
-// File: components/MapToggle.js
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, TouchableOpacity, StyleSheet } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 
-/**
- * MapToggle component for switching between list/grid view and map view
- */
 const MapToggle = ({ viewMode, onViewModeChange }) => {
+  const handleViewChange = (mode) => {
+    if (viewMode !== mode) {
+      onViewModeChange(mode);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Grid/List toggle */}
       <View style={styles.viewToggle}>
-        <TouchableOpacity 
-          style={[styles.viewButton, viewMode === 'grid' && styles.activeViewButton]}
-          onPress={() => onViewModeChange('grid')}
+        <TouchableOpacity
+          style={[styles.button, viewMode === 'grid' && styles.active]}
+          onPress={() => handleViewChange('grid')}
         >
-          <MaterialIcons 
-            name="grid-view" 
-            size={22} 
-            color={viewMode === 'grid' ? '#4CAF50' : '#999'} 
-          />
+          <Feather name="grid" size={20} color={viewMode === 'grid' ? '#4CAF50' : '#999'} />
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.viewButton, viewMode === 'list' && styles.activeViewButton]}
-          onPress={() => onViewModeChange('list')}
+
+        <TouchableOpacity
+          style={[styles.button, viewMode === 'list' && styles.active]}
+          onPress={() => handleViewChange('list')}
         >
-          <MaterialIcons 
-            name="view-list" 
-            size={22} 
-            color={viewMode === 'list' ? '#4CAF50' : '#999'} 
-          />
+          <Feather name="list" size={20} color={viewMode === 'list' ? '#4CAF50' : '#999'} />
         </TouchableOpacity>
       </View>
-      
-      {/* Map view toggle */}
-      <TouchableOpacity 
-        style={[styles.mapButton, viewMode === 'map' && styles.activeViewButton]}
-        onPress={() => onViewModeChange('map')}
+
+      <TouchableOpacity
+        style={[styles.button, styles.mapButton, viewMode === 'map' && styles.active]}
+        onPress={() => handleViewChange('map')}
       >
-        <MaterialIcons 
-          name="map" 
-          size={22} 
-          color={viewMode === 'map' ? '#4CAF50' : '#999'} 
-        />
+        <Feather name="map" size={20} color={viewMode === 'map' ? '#4CAF50' : '#999'} />
       </TouchableOpacity>
     </View>
   );
 };
+
+export default MapToggle;
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    marginVertical: 10,
   },
   viewToggle: {
     flexDirection: 'row',
@@ -62,28 +54,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginRight: 8,
   },
-  viewButton: {
-    padding: 6,
+  button: {
+    padding: 8,
     backgroundColor: '#f5f5f5',
-    alignItems: 'center',
+    width: 40,
+    height: 40,
     justifyContent: 'center',
-    width: 36,
-    height: 36,
+    alignItems: 'center',
   },
   mapButton: {
-    padding: 6,
-    backgroundColor: '#f5f5f5',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: 36,
-    height: 36,
     borderWidth: 1,
     borderColor: '#ddd',
     borderRadius: 4,
   },
-  activeViewButton: {
+  active: {
     backgroundColor: '#e6f7e6',
   },
 });
-
-export default MapToggle;
