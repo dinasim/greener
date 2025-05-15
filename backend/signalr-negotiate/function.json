@@ -5,7 +5,7 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["post"],
+      "methods": ["post", "options"],
       "route": "marketplace/signalr-negotiate"
     },
     {
@@ -18,8 +18,7 @@
       "direction": "in", 
       "name": "connectionInfo",
       "hubName": "chat",
-      "connectionStringSetting": "AzureSignalRConnectionString",
-      "userId": "{query.userId}"
+      "connectionStringSetting": "SIGNALR_MARKETPLACE_CONNECTION_STRING"
     }
   ]
 }

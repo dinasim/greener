@@ -4,12 +4,6 @@ from azure.cosmos import CosmosClient
 import os
 from datetime import datetime, timedelta
 
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response 
-
 COSMOS_URI = "https://greener-database.documents.azure.com:443/"
 COSMOS_KEY = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
 DATABASE_NAME = "GreenerDB"

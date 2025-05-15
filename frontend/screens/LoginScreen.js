@@ -1,3 +1,4 @@
+// LoginScreen.js - Enhanced UI
 import React, { useState } from "react";
 import {
   View,
@@ -10,6 +11,7 @@ import {
   Dimensions,
   Platform,
 } from "react-native";
+import { Ionicons } from '@expo/vector-icons';
 
 const windowHeight = Dimensions.get("window").height;
 
@@ -41,34 +43,28 @@ export default function LoginScreen({ navigation }) {
             bounces={false}
           >
             <View style={styles.contentContainer}>
-              <View style={styles.view1}>
-                <Text style={styles.title}>Greener</Text>
-                <Text style={styles.subtitle}>
-                  Your chance to a more green world
-                </Text>
+              <Ionicons name="leaf" size={42} color="#2e7d32" style={{ marginBottom: 10 }} />
+              <Text style={styles.title}>Greener</Text>
+              <Text style={styles.subtitle}>
+                Your chance to a more green world
+              </Text>
 
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity
-                    style={styles.getStartedButton}
-                    onPress={() => navigation.navigate("SignupPlantsLocation")}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.getStartedText}>
-                      Get started with Greener
-                    </Text>
-                  </TouchableOpacity>
-                </View>
+              <TouchableOpacity
+                style={styles.getStartedButton}
+                onPress={() => navigation.navigate("SignupPlantsLocation")}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.getStartedText}>Get started with Greener</Text>
+              </TouchableOpacity>
 
-                <View style={styles.bottomContainer}>
-                  <Text style={styles.signInText}>Already a member? </Text>
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate("SignIn")}
-                    style={styles.signInButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                  >
-                    <Text style={styles.signInLink}>Sign in here</Text>
-                  </TouchableOpacity>
-                </View>
+              <View style={styles.bottomContainer}>
+                <Text style={styles.signInText}>Already a member? </Text>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate("SignIn")}
+                  style={styles.signInButton}
+                >
+                  <Text style={styles.signInLink}>Sign in here</Text>
+                </TouchableOpacity>
               </View>
             </View>
           </ScrollView>
@@ -90,7 +86,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.85)",
+    backgroundColor: "rgba(255,255,255,0.9)",
   },
   scrollContent: {
     flexGrow: 1,
@@ -98,76 +94,50 @@ const styles = StyleSheet.create({
     minHeight: windowHeight,
   },
   contentContainer: {
-    width: "100%",
-    paddingHorizontal: 20,
-    paddingVertical: Platform.OS === "ios" ? 40 : 20,
     alignItems: "center",
-  },
-  view1: {
-    position: "relative",
-    minHeight: 580,
-    height: "100%",
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    paddingVertical: 20,
+    padding: 24,
   },
   title: {
-    fontSize: Platform.OS === "ios" ? 36 : 32,
+    fontSize: 36,
     fontWeight: "bold",
     color: "#2e7d32",
-    marginBottom: 10,
-    textAlign: "center",
-    width: "100%",
-    includeFontPadding: false,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: Platform.OS === "ios" ? 18 : 16,
+    fontSize: 16,
     color: "#4caf50",
-    marginBottom: 40,
     textAlign: "center",
-    width: "100%",
-    paddingHorizontal: 20,
-  },
-  buttonContainer: {
-    width: "100%",
-    marginBottom: 30,
+    marginBottom: 40,
     paddingHorizontal: 20,
   },
   getStartedButton: {
     backgroundColor: "#2e7d32",
-    padding: Platform.OS === "ios" ? 16 : 15,
-    borderRadius: 8,
-    alignItems: "center",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    paddingVertical: 14,
+    paddingHorizontal: 26,
+    borderRadius: 30,
+    marginTop: 10,
+    elevation: 4,
   },
   getStartedText: {
     color: "white",
-    fontSize: Platform.OS === "ios" ? 18 : 16,
+    fontSize: 16,
     fontWeight: "600",
   },
   bottomContainer: {
     flexDirection: "row",
-    alignItems: "center",
     marginTop: 20,
-    width: "100%",
-    justifyContent: "center",
-    paddingVertical: 10,
   },
   signInText: {
-    fontSize: Platform.OS === "ios" ? 16 : 14,
-    color: "#000",
+    fontSize: 14,
+    color: "#333",
   },
   signInButton: {
-    padding: 8,
+    paddingHorizontal: 6,
   },
   signInLink: {
-    fontSize: Platform.OS === "ios" ? 16 : 14,
+    fontSize: 14,
     color: "#2e7d32",
     textDecorationLine: "underline",
+    fontWeight: "600",
   },
 });

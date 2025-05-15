@@ -119,7 +119,7 @@ export default function AddPlantScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    const pick = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images });
+    const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes: [ImagePicker.MediaType.IMAGE]});
     const uri  = pick.assets?.[0]?.uri || pick.uri;
     if (!uri) { setLoading(false); return; }
 

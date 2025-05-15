@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// components/PlantCard.js - Updated with seller rating display
+import React, { useState, useMemo } from 'react';
 import { 
   View, 
   Text, 
@@ -7,14 +8,16 @@ import {
   TouchableOpacity,
   Platform,
   Share,
-  Alert
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
+import syncService from '../services/SyncService';
 import { wishProduct } from '../services/marketplaceApi';
 
 /**
- * Plant Card component for displaying plant listings
+ * Enhanced PlantCard component with improved error handling, offline support, and seller rating
  * @param {Object} props - Component props
  * @param {Object} props.plant - Plant data
  * @param {boolean} props.showActions - Whether to show action buttons
@@ -22,9 +25,34 @@ import { wishProduct } from '../services/marketplaceApi';
  */
 const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
   const navigation = useNavigation();
-  const [isFavorite, setIsFavorite] = useState(plant.isFavorite || false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isFavorite, setIsFavorite] = useState(() => {
+    return (
+      plant.isFavorite === true ||
+      plant.isWished === true ||
+      plant.isInWishlist === true ||
+      false
+    );
+  });
+  const [isActionLoading, setIsActionLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
+  
+  // Track online status for offline mode UI
+  const [isOnline, setIsOnline] = useState(true);
+  
+  // Subscribe to sync service for online status
+  React.useEffect(() => {
+    const unsubscribe = syncService.registerSyncListener((event) => {
+      if (event.type === 'CONNECTION_CHANGE') {
+        setIsOnline(event.isOnline);
+      }
+    });
+    
+    // Get initial status
+    const status = syncService.getSyncStatus();
+    setIsOnline(status.isOnline);
+    
+    return unsubscribe;
+  }, []);
 
   const isListLayout = layout === 'list';
 
@@ -35,29 +63,81 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     });
   };
 
-// SEARCH_KEY: MARKETPLACE_CARD_TOGGLE_FAVORITE
+/**
+ * Toggle wishlist/favorite status with improved error handling and online/offline support
+ */
 const handleToggleFavorite = async () => {
-  if (isLoading) return;
+  if (isActionLoading) return;
   
   try {
-    setIsLoading(true);
+    setIsActionLoading(true);
+    
     // Toggle state immediately for better UI experience
-    setIsFavorite(!isFavorite);
+    setIsFavorite(prevState => !prevState);
     
-    // Call the API to update wishlist status
-    const result = await wishProduct(plant.id || plant._id);
+    // Determine the plant ID
+    const plantId = plant.id || plant._id;
     
-    // If the API returns a specific wishlist state, use that
-    if (result && 'isWished' in result) {
-      setIsFavorite(result.isWished);
+    if (!plantId) {
+      throw new Error('Invalid plant ID');
     }
     
-    setIsLoading(false);
+    console.log(`Toggling favorite for plant ${plantId}, current state: ${isFavorite}`);
+    
+    // Check if we're online
+    const syncStatus = syncService.getSyncStatus();
+    
+    if (syncStatus.isOnline) {
+      // We're online, try to update immediately
+      try {
+        const result = await wishProduct(plantId);
+        
+        console.log('Wishlist API response:', result);
+        
+        // If the API returns a specific wishlist state, use that
+        if (result && 'isWished' in result) {
+          setIsFavorite(result.isWished);
+          console.log(`Favorite state set to ${result.isWished} from API`);
+        }
+      } catch (error) {
+        console.error('Direct wishlist update failed:', error);
+        
+        // Add to sync queue for retry
+        await syncService.addToSyncQueue({
+          type: 'TOGGLE_WISHLIST',
+          data: {
+            plantId: plantId
+          }
+        });
+        
+        // Don't revert UI state - the sync service will handle it
+      }
+    } else {
+      // We're offline, add to sync queue
+      console.log('Device is offline, adding to sync queue');
+      
+      await syncService.addToSyncQueue({
+        type: 'TOGGLE_WISHLIST',
+        data: {
+          plantId: plantId
+        }
+      });
+    }
+    
+    setIsActionLoading(false);
   } catch (error) {
-    // Revert state if the API call fails
-    setIsFavorite(isFavorite);
-    setIsLoading(false);
-    console.error('Failed to update wishlist:', error);
+    // Revert state if the operation failed completely
+    setIsFavorite(prevState => !prevState);
+    setIsActionLoading(false);
+    
+    console.error('Error toggling favorite:', error);
+    
+    // Only show alert if a serious error occurred
+    Alert.alert(
+      'Error', 
+      'Failed to update favorites. Please try again later.',
+      [{ text: 'OK' }]
+    );
   }
 };
 
@@ -69,29 +149,40 @@ const handleToggleFavorite = async () => {
     });
   };
 
-  // Enhanced share functionality
+  /**
+   * Enhanced share functionality with error handling
+   */
   const handleShare = async () => {
     try {
       const plantName = plant.name || plant.title || 'Amazing plant';
       const price = formatPrice();
       const seller = plant.sellerName || plant.seller?.name || 'a seller';
       const category = plant.category || 'Plants';
-      const appURL = Platform.OS === 'ios' 
-        ? `greenerapp://plants/${plant.id || plant._id}` 
-        : `https://greenerapp.com/plants/${plant.id || plant._id}`;
-        
+      const locationText = getLocationText();
+      
       // Create a rich message with emojis and details
       const message = `🌱 Check out this ${plantName} for $${price} on Greener!\n\n` +
                      `🏷️ Category: ${category}\n` +
                      `👤 Sold by: ${seller}\n` +
-                     `📍 Location: ${getLocationText()}\n\n` +
+                     `📍 Location: ${locationText}\n\n` +
                      `Download Greener to view more amazing plants!`;
+      
+      // Try to create a deep link for the app
+      let appURL = '';
+      try {
+        appURL = Platform.OS === 'ios' 
+          ? `greenerapp://plants/${plant.id || plant._id}` 
+          : `https://greenerapp.com/plants/${plant.id || plant._id}`;
+      } catch (e) {
+        // If deep link fails, just share the message without URL
+        console.log('Error creating deep link', e);
+      }
       
       const result = await Share.share(
         {
           title: `Greener: ${plantName}`,
           message: message,
-          url: appURL,
+          url: appURL, // Only iOS supports URL as a separate field
         },
         {
           // Only iOS supports dialogTitle
@@ -103,24 +194,18 @@ const handleToggleFavorite = async () => {
       );
       
       if (result.action === Share.sharedAction) {
-        if (result.activityType) {
-          // Shared with activity type of result.activityType
-          console.log(`Shared via ${result.activityType}`);
-        } else {
-          // Shared
-          console.log('Shared successfully');
-        }
-      } else if (result.action === Share.dismissedAction) {
-        // Dismissed
-        console.log('Share dismissed');
+        // Track share analytics in a real app
+        console.log('Shared successfully');
       }
     } catch (error) {
-      Alert.alert('Error', 'Could not share this plant');
       console.error('Error sharing plant:', error);
+      Alert.alert('Error', 'Could not share this plant. Please try again.');
     }
   };
 
-  // Format location display
+  /**
+   * Get formatted location display text
+   */
   const getLocationText = () => {
     if (typeof plant.location === 'string') {
       return plant.location;
@@ -132,14 +217,24 @@ const handleToggleFavorite = async () => {
     return 'Local pickup';
   };
 
-  // Prepare image URL with error handling
-  const getImageSource = () => {
+  /**
+   * Get image source with error handling and fallback
+   */
+  const getImageSource = useMemo(() => {
     if (!imageError) {
       let imageUrl = plant.imageUrl || plant.image || null;
       
-      // Check if URL is valid
-      if (typeof imageUrl === 'string' && imageUrl.startsWith('http')) {
-        return { uri: imageUrl };
+      // Additional checks for image URLs
+      if (typeof imageUrl === 'string') {
+        // Handle relative URLs
+        if (imageUrl.startsWith('/')) {
+          imageUrl = `https://greenerapp.com${imageUrl}`;
+        }
+        
+        // Check if URL is valid
+        if (imageUrl.startsWith('http')) {
+          return { uri: imageUrl };
+        }
       }
     }
     
@@ -150,9 +245,11 @@ const handleToggleFavorite = async () => {
       // Fallback to a hardcoded URL as last resort
       return { uri: 'https://placehold.co/150x150/4CAF50/FFFFFF?text=Plant' };
     }
-  };
+  }, [plant.imageUrl, plant.image, imageError]);
 
-  // Format price display
+  /**
+   * Format price display with error handling
+   */
   const formatPrice = () => {
     // Handle different price formats
     let price;
@@ -176,42 +273,79 @@ const handleToggleFavorite = async () => {
     return price.toFixed(2);
   };
 
-  // Format date display
-  const formatDate = (dateString) => {
+  /**
+   * Format date display with relative time
+   */
+  const formatDate = () => {
+    const dateString = plant.listedDate || plant.addedAt;
     if (!dateString) return 'Recently listed';
     
     try {
       const date = new Date(dateString);
       const now = new Date();
+      
+      // Check for invalid date
+      if (isNaN(date.getTime())) {
+        return 'Recently listed';
+      }
+      
       const diffTime = Math.abs(now - date);
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diffHours = Math.ceil(diffTime / (1000 * 60 * 60));
       
-      if (diffDays < 1) {
-        return 'Today';
-      } else if (diffDays === 1) {
-        return 'Yesterday';
+      if (diffHours < 1) {
+        return 'Just now';
+      } else if (diffHours < 24) {
+        return `${diffHours} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
       } else if (diffDays < 7) {
-        return `${diffDays} days ago`;
+        return `${diffDays} ${diffDays === 1 ? 'day' : 'days'} ago`;
+      } else if (diffDays < 30) {
+        const weeks = Math.floor(diffDays / 7);
+        return `${weeks} ${weeks === 1 ? 'week' : 'weeks'} ago`;
       } else {
         return date.toLocaleDateString();
       }
     } catch (e) {
+      console.error('Error formatting date:', e);
       return 'Recently listed';
     }
   };
+
+  /**
+   * Get seller rating if available
+   */
+  const getSellerRating = () => {
+    // Check all possible places where seller rating might be stored
+    if (plant.seller && typeof plant.seller.rating !== 'undefined') {
+      return plant.seller.rating;
+    } else if (plant.sellerRating) {
+      return plant.sellerRating;
+    } else if (plant.rating) {
+      // Some plants might store the seller rating directly
+      return plant.rating;
+    }
+    return null;
+  };
+
+  // Get the seller's rating
+  const sellerRating = getSellerRating();
 
   return (
     <TouchableOpacity
       style={[
         styles.card,
-        isListLayout && styles.listCard
+        isListLayout && styles.listCard,
+        !isOnline && styles.offlineCard
       ]}
       activeOpacity={0.9}
       onPress={handleViewDetails}
+      accessible={true}
+      accessibilityLabel={`${plant.name || plant.title} for $${formatPrice()}`}
+      accessibilityRole="button"
     >
       <View style={[styles.imageContainer, isListLayout && styles.listImageContainer]}>
         <Image
-          source={getImageSource()}
+          source={getImageSource}
           style={[styles.image, isListLayout && styles.listImage]}
           resizeMode="cover"
           onError={() => {
@@ -228,18 +362,30 @@ const handleToggleFavorite = async () => {
           </Text>
         </View>
         
+        {/* Offline indicator */}
+        {!isOnline && (
+          <View style={styles.offlineIndicator}>
+            <MaterialIcons name="cloud-off" size={12} color="#fff" />
+          </View>
+        )}
+        
         {/* Favorite button over image */}
         {showActions && (
           <TouchableOpacity 
             style={styles.favoriteButton}
             onPress={handleToggleFavorite}
             activeOpacity={0.8}
+            disabled={isActionLoading}
           >
-            <MaterialIcons 
-              name={isFavorite ? "favorite" : "favorite-border"} 
-              size={20} 
-              color={isFavorite ? "#f44336" : "#fff"} 
-            />
+            {isActionLoading ? (
+              <ActivityIndicator size="small" color="#f44336" />
+            ) : (
+              <MaterialIcons 
+                name={isFavorite ? "favorite" : "favorite-border"} 
+                size={20} 
+                color={isFavorite ? "#f44336" : "#fff"} 
+              />
+            )}
           </TouchableOpacity>
         )}
       </View>
@@ -261,12 +407,12 @@ const handleToggleFavorite = async () => {
             {plant.sellerName || plant.seller?.name || 'Plant Seller'}
           </Text>
           
-          {/* Display rating if available */}
-          {plant.rating && (
+          {/* Display seller rating if available */}
+          {sellerRating !== null && (
             <View style={styles.ratingContainer}>
               <FontAwesome name="star" size={12} color="#FFD700" />
               <Text style={styles.ratingText}>
-                {typeof plant.rating === 'number' ? plant.rating.toFixed(1) : plant.rating}
+                {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
               </Text>
             </View>
           )}
@@ -274,7 +420,7 @@ const handleToggleFavorite = async () => {
         
         <View style={styles.footer}>
           <Text style={styles.date}>
-            {formatDate(plant.listedDate || plant.addedAt)}
+            {formatDate()}
           </Text>
           
           {showActions && (
@@ -292,9 +438,12 @@ const handleToggleFavorite = async () => {
               <TouchableOpacity 
                 style={styles.actionButton}
                 onPress={handleStartChat}
+                disabled={!isOnline}
               >
-                <MaterialIcons name="chat" size={16} color="#4CAF50" />
-                <Text style={styles.actionText}>Contact</Text>
+                <MaterialIcons name="chat" size={16} color={isOnline ? "#4CAF50" : "#aaa"} />
+                <Text style={[styles.actionText, !isOnline && styles.disabledText]}>
+                  {isOnline ? "Contact" : "Offline"}
+                </Text>
               </TouchableOpacity>
             </View>
           )}
@@ -332,6 +481,17 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     height: 130,
   },
+  offlineCard: {
+    opacity: 0.9,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#999',
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
+  },
   imageContainer: {
     position: 'relative',
   },
@@ -364,6 +524,14 @@ const styles = StyleSheet.create({
     marginLeft: 3,
     maxWidth: 90,
   },
+  offlineIndicator: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    padding: 4,
+  },
   favoriteButton: {
     position: 'absolute',
     top: 8,
@@ -385,7 +553,7 @@ const styles = StyleSheet.create({
   titleRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: 4,
   },
   name: {
@@ -455,6 +623,9 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#4CAF50',
     marginLeft: 4,
+  },
+  disabledText: {
+    color: '#aaa',
   },
 });
 

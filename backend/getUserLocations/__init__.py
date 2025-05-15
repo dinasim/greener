@@ -4,12 +4,6 @@ import os
 import json
 import logging
 
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
-
 COSMOS_URI = os.environ["COSMOS_URI"]
 COSMOS_KEY = os.environ["COSMOS_KEY"]
 DATABASE_NAME = "GreenerDB"

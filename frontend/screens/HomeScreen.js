@@ -2,22 +2,19 @@
 
 import React, { useState, useEffect } from 'react';
 import {
-  SafeAreaView,
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Modal,
-  FlatList,
-  Image,
+  View, Text, StyleSheet, TouchableOpacity, SafeAreaView,
+  Modal, FlatList, Image, Animated, Dimensions
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const { width } = Dimensions.get('window');
 
 export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [showPopup, setShowPopup] = useState(false);
+  const fadeAnim = useState(new Animated.Value(0))[0];
 
-  // Dummy data for FlatList
   const data = [
     {
       id: '1',
@@ -37,70 +34,90 @@ export default function HomeScreen({ navigation }) {
   ];
 
   useEffect(() => {
+    setGreeting(getGreeting());
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 800,
+      useNativeDriver: true,
+    }).start();
+  }, []);
+
+  const getGreeting = () => {
     const hour = new Date().getHours();
     if (hour < 12) setGreeting('Good morning');
     else if (hour < 18) setGreeting('Good afternoon');
     else setGreeting('Good evening');
   }, []);
 
-  const renderItem = ({ item }) => (
-    <View style={styles.card}>
-      <Image source={{ uri: item.image }} style={styles.cardImage} />
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{item.plantName}</Text>
-        <Text style={styles.cardSubtitle}>{item.location}</Text>
-        <Text
-          style={[
-            styles.cardSubtitle,
-            item.status === 'Late' && styles.lateStatus,
-          ]}
-        >
-          {item.status}
-        </Text>
-      </View>
-    </View>
-  );
+  const handleAddPress = () => setShowPopup(true);
+  const handleOptionPress = (type) => {
+    setShowPopup(false);
+    if (type === 'plant') navigation.navigate('AddPlant');
+    else if (type === 'site') navigation.navigate('AddSite');
+  };
+  const handleLeafPress = () => navigation.navigate('Locations');
+  const handleMarketplacePress = () => navigation.navigate('MainTabs');
+  const keyExtractor = (item) => item.id?.toString() || 'defaultKey';
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header: just the greeting */}
-      <View style={styles.headerRow}>
+      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
         <Text style={styles.greeting}>{greeting}</Text>
+      </Animated.View>
+
+      <View style={styles.tabRow}>
+        <LinearGradient colors={['#a8e063', '#56ab2f']} style={styles.activeTab}>
+          <Text style={styles.tabText}>Today</Text>
+        </LinearGradient>
+        <TouchableOpacity>
+          <Text style={styles.tab}>Upcoming</Text>
+        </TouchableOpacity>
       </View>
 
-      {/* Modal for Add Plant */}
+      <FlatList
+        data={data}
+        keyExtractor={keyExtractor}
+        renderItem={({ item }) => (
+          <View style={styles.taskCard}>
+            <Image source={{ uri: item.image }} style={styles.plantImage} />
+            <View style={styles.taskInfo}>
+              <Text style={styles.plantName}>{item.plantName}</Text>
+              <Text style={styles.location}>{item.location}</Text>
+              <Text style={[styles.late, item.status !== 'On Time' && { color: 'red' }]}>
+                {item.status}
+              </Text>
+            </View>
+          </View>
+        )}
+        showsVerticalScrollIndicator={false}
+      />
+
+      <View style={styles.navBar}>
+        <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
+        <TouchableOpacity onPress={handleLeafPress}><Ionicons name="leaf" size={24} color="black" /></TouchableOpacity>
+        <TouchableOpacity onPress={handleMarketplacePress}><Ionicons name="cart-outline" size={24} color="black" /></TouchableOpacity>
+        <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
+      </View>
+
+      <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
+        <Ionicons name="add" size={36} color="#fff" />
+      </TouchableOpacity>
+
       <Modal
+        animationType="slide"
+        transparent
         visible={showPopup}
         transparent
         animationType="slide"
         onRequestClose={() => setShowPopup(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Add a Plant</Text>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => {
-                setShowPopup(false);
-                navigation.navigate('AddPlant', { via: 'name' });
-              }}
-            >
-              <Text style={styles.modalButtonText}>By Name</Text>
+        <TouchableOpacity style={styles.popupOverlay} onPress={() => setShowPopup(false)}>
+          <View style={styles.popupMenu}>
+            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('plant')}>
+              <Text style={styles.popupText}>🌿 Add Plant</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.modalButton}
-              onPress={() => {
-                setShowPopup(false);
-                navigation.navigate('AddPlant', { via: 'photo' });
-              }}
-            >
-              <Text style={styles.modalButtonText}>By Photo</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.modalButton, styles.modalCancel]}
-              onPress={() => setShowPopup(false)}
-            >
-              <Text style={styles.modalButtonText}>Cancel</Text>
+            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('site')}>
+              <Text style={styles.popupText}>📍 Add Site</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -134,85 +151,89 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f0fdf4' },
-
-  headerRow: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 8,
-  },
-  greeting: {
-    fontSize: 20,
-    fontWeight: 'bold',
-  },
-
-  listContainer: {
-    paddingBottom: 100, // so list isn't hidden under floating buttons
-  },
-  card: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    marginHorizontal: 16,
-    marginBottom: 12,
+  container: { flex: 1, backgroundColor: '#fdfdfd', padding: 20 },
+  header: { marginTop: 10, marginBottom: 15 },
+  greeting: { fontSize: 30, color: '#2e7d32', fontWeight: 'bold' },
+  tabRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  tab: { fontSize: 16, color: '#777', marginLeft: 20 },
+  activeTab: {
+    paddingVertical: 6,
+    paddingHorizontal: 18,
+    borderRadius: 20,
     elevation: 2,
-    overflow: 'hidden',
   },
-  cardImage: {
-    width: 80,
-    height: 80,
+  tabText: { color: '#fff', fontWeight: 'bold' },
+  taskCard: {
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    padding: 15,
+    borderRadius: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  cardContent: {
-    flex: 1,
-    padding: 10,
+  plantImage: { width: 60, height: 60, borderRadius: 30, marginRight: 15 },
+  taskInfo: { justifyContent: 'center' },
+  plantName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
+  location: { color: '#555' },
+  late: { marginTop: 4 },
+  navBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#eee',
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    elevation: 10,
+  },
+  addButton: {
+    position: 'absolute',
+    right: 25,
+    bottom: 70,
+    backgroundColor: '#2e7d32',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
     justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
   },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: '#555',
-  },
-  lateStatus: {
-    color: 'red',
-  },
-
-  modalOverlay: {
+  popupOverlay: {
     flex: 1,
     backgroundColor: '#00000088',
     justifyContent: 'flex-end',
+    padding: 20,
   },
   modalContent: {
     backgroundColor: '#fff',
-    padding: 24,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
+    borderRadius: 16,
+    padding: 16,
+    width: width * 0.6,
+    alignSelf: 'flex-end',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
   },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 12,
-  },
-  modalButton: {
-    paddingVertical: 12,
+  popupOption: {
+    paddingVertical: 14,
   },
   modalButtonText: {
     fontSize: 16,
-    color: '#4CAF50',
-  },
-  modalCancel: {
-    marginTop: 8,
-  },
-
-  floatingContainer: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    alignItems: 'center',
-  },
-  floatingButton: {
-    marginBottom: 12,
+    color: '#333',
+    textAlign: 'right',
   },
 });

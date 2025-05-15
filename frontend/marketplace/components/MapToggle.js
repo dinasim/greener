@@ -1,48 +1,87 @@
-// File: components/MapToggle.js
 import React from 'react';
-import { View, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 /**
- * MapToggle component for switching between list/grid view and map view
+ * MapToggle component for switching between map and list views
+ * 
+ * @param {Object} props Component props
+ * @param {string} props.viewMode Current view mode ('grid', 'list', or 'map')
+ * @param {Function} props.onViewModeChange Callback when view mode changes
+ * @param {Object} props.style Additional styles for the container
  */
-const MapToggle = ({ viewMode, onViewModeChange }) => {
+const MapToggle = ({ viewMode, onViewModeChange, style }) => {
+  // Function to handle view mode change
+  const handleViewChange = (mode) => {
+    if (viewMode !== mode) {
+      onViewModeChange(mode);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      {/* Grid/List toggle */}
-      <View style={styles.viewToggle}>
-        <TouchableOpacity 
-          style={[styles.viewButton, viewMode === 'grid' && styles.activeViewButton]}
-          onPress={() => onViewModeChange('grid')}
+    <View style={[styles.container, style]}>
+      {/* List view toggle */}
+      <View style={styles.viewToggles}>
+        <TouchableOpacity
+          style={[styles.toggleButton, viewMode === 'grid' && styles.activeToggle]}
+          onPress={() => handleViewChange('grid')}
+          accessibilityLabel="Grid View"
+          accessibilityRole="button"
+          accessibilityState={{ selected: viewMode === 'grid' }}
         >
           <MaterialIcons 
             name="grid-view" 
-            size={22} 
+            size={20} 
             color={viewMode === 'grid' ? '#4CAF50' : '#999'} 
           />
+          <Text style={[
+            styles.toggleText, 
+            viewMode === 'grid' && styles.activeToggleText
+          ]}>
+            Grid
+          </Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.viewButton, viewMode === 'list' && styles.activeViewButton]}
-          onPress={() => onViewModeChange('list')}
+
+        <TouchableOpacity
+          style={[styles.toggleButton, viewMode === 'list' && styles.activeToggle]}
+          onPress={() => handleViewChange('list')}
+          accessibilityLabel="List View"
+          accessibilityRole="button"
+          accessibilityState={{ selected: viewMode === 'list' }}
         >
           <MaterialIcons 
             name="view-list" 
-            size={22} 
+            size={20} 
             color={viewMode === 'list' ? '#4CAF50' : '#999'} 
           />
+          <Text style={[
+            styles.toggleText, 
+            viewMode === 'list' && styles.activeToggleText
+          ]}>
+            List
+          </Text>
         </TouchableOpacity>
       </View>
-      
-      {/* Map view toggle */}
-      <TouchableOpacity 
-        style={[styles.mapButton, viewMode === 'map' && styles.activeViewButton]}
-        onPress={() => onViewModeChange('map')}
+
+      {/* Map toggle */}
+      <TouchableOpacity
+        style={[styles.mapButton, viewMode === 'map' && styles.activeToggle]}
+        onPress={() => handleViewChange('map')}
+        accessibilityLabel="Map View"
+        accessibilityRole="button"
+        accessibilityState={{ selected: viewMode === 'map' }}
       >
         <MaterialIcons 
           name="map" 
-          size={22} 
+          size={20} 
           color={viewMode === 'map' ? '#4CAF50' : '#999'} 
         />
+        <Text style={[
+          styles.toggleText, 
+          viewMode === 'map' && styles.activeToggleText
+        ]}>
+          Map
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -53,36 +92,45 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
-  viewToggle: {
+  viewToggles: {
     flexDirection: 'row',
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 4,
+    borderRadius: 8,
     overflow: 'hidden',
-    marginRight: 8,
+    marginRight: 12,
   },
-  viewButton: {
-    padding: 6,
-    backgroundColor: '#f5f5f5',
+  toggleButton: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    width: 36,
-    height: 36,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f5f5f5',
   },
   mapButton: {
-    padding: 6,
-    backgroundColor: '#f5f5f5',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    width: 36,
-    height: 36,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 4,
+    borderRadius: 8,
   },
-  activeViewButton: {
+  activeToggle: {
     backgroundColor: '#e6f7e6',
+  },
+  toggleText: {
+    fontSize: 14,
+    color: '#999',
+    marginLeft: 6,
+  },
+  activeToggleText: {
+    color: '#4CAF50',
+    fontWeight: '600',
   },
 });
 

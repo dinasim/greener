@@ -1,53 +1,29 @@
-# Function: signalr-negotiate/__init__.py
+# signalr-negotiate/__init__.py
 import logging
 import json
 import azure.functions as func
-import os
-from azure.functions import SignalRConnectionInfo
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 
-def add_cors_headers(response):
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS, PUT, PATCH, DELETE'
-    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization,X-User-Email'
-    return response
-
-def main(req: func.HttpRequest, connectionInfo: SignalRConnectionInfo) -> func.HttpResponse:
+def main(req: func.HttpRequest, connectionInfo) -> func.HttpResponse:
     logging.info('SignalR negotiate function processed a request.')
     
+    # Handle OPTIONS method for CORS preflight
+    if req.method == 'OPTIONS':
+        return handle_options_request()
+    
     try:
-        # Get user ID from query parameter
-        user_id = req.params.get('userId')
+        # Get user ID from request
+        user_id = extract_user_id(req)
         
         if not user_id:
-            return func.HttpResponse(
-                body=json.dumps({"error": "User ID is required"}),
-                mimetype="application/json",
-                status_code=400
-            )
+            return create_error_response("User ID is required", 400)
         
-        # Return the connection info with user ID as the client ID
-        connection_info = json.loads(connectionInfo)
+        # Return the connection info from the SignalR binding
+        connection_info_obj = json.loads(connectionInfo)
         
-        # Add user ID to connection info
-        if 'accessToken' in connection_info:
-            # The connection info already has the access token
-            return func.HttpResponse(
-                body=json.dumps(connection_info),
-                mimetype="application/json"
-            )
-        else:
-            # Something is wrong with the connection info
-            logging.error("Invalid connection info received")
-            return func.HttpResponse(
-                body=json.dumps({"error": "Failed to generate connection info"}),
-                mimetype="application/json",
-                status_code=500
-            )
+        # Add user ID to connection info if needed
+        return create_success_response(connection_info_obj)
     
     except Exception as e:
         logging.error(f"Error in SignalR negotiate: {str(e)}")
-        return func.HttpResponse(
-            body=json.dumps({"error": str(e)}),
-            mimetype="application/json",
-            status_code=500
-        )
+        return create_error_response(str(e), 500)
