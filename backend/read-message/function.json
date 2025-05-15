@@ -1,3 +1,4 @@
+
 {
   "bindings": [
     {
@@ -5,8 +6,8 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post", "patch", "options"],
-      "route": "marketplace/users/{id}"
+      "methods": ["post", "options"],
+      "route": "marketplace/messages/markAsRead"
     },
     {
       "type": "http",

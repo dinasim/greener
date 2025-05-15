@@ -5,8 +5,8 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post", "patch", "options"],
-      "route": "marketplace/users/{id}"
+      "methods": ["get", "options"],
+      "route": "marketplace/nearbyProducts"
     },
     {
       "type": "http",
