@@ -16,13 +16,13 @@ import {
   Modal,
   FlatList,
 } from 'react-native';
-import { MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialIcons, Ionicons,MaterialCommunityIcons,FontAwesome5  } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadImage } from '../services/marketplaceApi'; 
-
+import * as Location from 'expo-location';
 
 // Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
@@ -51,6 +51,7 @@ const AddPlantScreen = () => {
   
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState([]);
+  const [listingType, setListingType] = useState('plant'); // 'plant', 'accessory', or 'tool'
   const [formData, setFormData] = useState({
     title: '',
     price: '',
@@ -74,7 +75,8 @@ const AddPlantScreen = () => {
   const [filteredScientificNames, setFilteredScientificNames] = useState(SCIENTIFIC_NAMES);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
-
+  const [showSuccess, setShowSuccess] = useState(false);
+  const [newPlantId, setNewPlantId] = useState(null);
   // Load plant categories
   const categories = getAddPlantCategories();
   
@@ -115,6 +117,29 @@ const AddPlantScreen = () => {
     }
   }, [searchQuery]);
 
+  // Update category based on listing type
+  useEffect(() => {
+    if (listingType === 'accessory') {
+      setFormData(prev => ({
+        ...prev,
+        category: 'Accessories'
+      }));
+    } else if (listingType === 'tool') {
+      setFormData(prev => ({
+        ...prev,
+        category: 'Tools'
+      }));
+    } else {
+      // For plants, keep the current category if it's not accessories or tools
+      if (formData.category === 'Accessories' || formData.category === 'Tools') {
+        setFormData(prev => ({
+          ...prev,
+          category: 'Indoor Plants'
+        }));
+      }
+    }
+  }, [listingType]);
+
   const handleChange = (key, value) => {
     setFormData({ ...formData, [key]: value });
 
@@ -123,98 +148,177 @@ const AddPlantScreen = () => {
     }
   };
 
-  const pickImage = async () => {
-    try {
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'We need permission to access your photos');
-        return;
-      }
-  
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.Images,
-        allowsEditing: true,
-        aspect: [4, 3],
-        quality: 0.8,
-        selectionLimit: images.length < 4 ? 5 - images.length : 0, // NEW key for RN Web & Native
-      });
-  
-      if (!result.canceled && result.assets?.length > 0) {
-        if (images.length + result.assets.length > 5) {
-          Alert.alert('Too Many Images', 'You can only upload up to 5 images');
-          return;
-        }
-  
-        const newImages = [...images];
-  
-        for (const asset of result.assets) {
-          const imageUri = asset.uri;
-  
-          if (Platform.OS !== 'web') {
-            const fileInfo = await FileSystem.getInfoAsync(imageUri);
-            if (fileInfo.size > 5 * 1024 * 1024) {
-              Alert.alert('Image Too Large', 'Please select images smaller than 5MB');
-              continue;
-            }
-          }
-  
-          newImages.push(imageUri);
-        }
-  
-        setImages(newImages);
-  
-        if (formErrors.images) {
-          setFormErrors({ ...formErrors, images: '' });
-        }
-      }
-    } catch (error) {
-      console.error('Error picking image:', error);
-      Alert.alert('Error', 'Failed to pick image. Please try again.');
-    }
-  };
-  
-
   const takePhoto = async () => {
     try {
+      // Request camera permissions
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
       if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'We need camera permission to take photos');
+        Alert.alert(
+          'Permission Required', 
+          'We need camera permission to take photos',
+          [{ text: 'OK' }]
+        );
         return;
       }
       
+      // Check if we've reached max images
       if (images.length >= 5) {
-        Alert.alert('Too Many Images', 'You can only upload up to 5 images');
+        Alert.alert(
+          'Too Many Images', 
+          'You can only upload up to 5 images',
+          [{ text: 'OK' }]
+        );
         return;
       }
 
+      // Launch camera
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
 
-      if (!result.canceled && result.assets?.length > 0) {
-        const imageUri = result.assets[0].uri;
+      // Handle cancellation
+      if (result.canceled) {
+        return;
+      }
+      
+      // Handle result - compatibility with different Expo versions
+      const selectedAsset = result.assets?.[0] || { uri: result.uri };
+      
+      if (selectedAsset?.uri) {
+        const imageUri = selectedAsset.uri;
         
+        // Check file size on supported platforms
         if (Platform.OS !== 'web') {
-          const fileInfo = await FileSystem.getInfoAsync(imageUri);
-          const fileSize = fileInfo.size;
-          
-          if (fileSize > 5 * 1024 * 1024) {
-            Alert.alert('Image Too Large', 'Please select an image smaller than 5MB');
-            return;
+          try {
+            const fileInfo = await FileSystem.getInfoAsync(imageUri);
+            if (fileInfo.size > 5 * 1024 * 1024) {
+              Alert.alert(
+                'Image Too Large', 
+                'This image is larger than 5MB. It may upload slowly or fail.',
+                [{ text: 'Continue Anyway' }]
+              );
+            }
+          } catch (e) {
+            // Cannot check size, just continue
+            console.warn('Could not check image size:', e);
           }
         }
         
         setImages([...images, imageUri]);
-
+        
+        // Clear any error
         if (formErrors.images) {
           setFormErrors({ ...formErrors, images: '' });
         }
       }
     } catch (error) {
       console.error('Error taking photo:', error);
-      Alert.alert('Error', 'Failed to take photo. Please try again.');
+      Alert.alert(
+        'Error', 
+        'Failed to take photo. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  const pickImage = async () => {
+    try {
+      // Request permissions first
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (!permissionResult.granted) {
+        Alert.alert(
+          'Permission Required', 
+          'We need permission to access your photos',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+      
+      // Check if we've reached max images
+      if (images.length >= 5) {
+        Alert.alert(
+          'Too Many Images', 
+          'You can only upload up to 5 images',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+        // Only specify multiple selection on supported platforms
+        allowsMultipleSelection: Platform.OS === 'ios' || Platform.OS === 'android',
+        selectionLimit: images.length < 4 ? 5 - images.length : 1,
+      });
+
+      // Handle cancellation
+      if (result.canceled) {
+        return;
+      }
+      
+      // Handle results - compatibility with different Expo versions
+      const selectedAssets = result.assets || (result.uri ? [{ uri: result.uri }] : []);
+      
+      if (selectedAssets.length > 0) {
+        // Validate max images limit
+        if (images.length + selectedAssets.length > 5) {
+          Alert.alert(
+            'Too Many Images', 
+            'You can only upload up to 5 images. Only the first few will be added.',
+            [{ text: 'OK' }]
+          );
+          // Only take what we can fit
+          selectedAssets.length = 5 - images.length;
+        }
+        
+        // Add new images to state
+        const newImages = [...images];
+        
+        for (const asset of selectedAssets) {
+          const imageUri = asset.uri;
+          
+          // Check file size on supported platforms
+          if (Platform.OS !== 'web') {
+            try {
+              const fileInfo = await FileSystem.getInfoAsync(imageUri);
+              if (fileInfo.size > 5 * 1024 * 1024) {
+                Alert.alert(
+                  'Image Too Large', 
+                  'This image is larger than 5MB. It may upload slowly or fail.',
+                  [{ text: 'Continue Anyway' }]
+                );
+              }
+            } catch (e) {
+              // Cannot check size, just continue
+              console.warn('Could not check image size:', e);
+            }
+          }
+          
+          newImages.push(imageUri);
+        }
+        
+        setImages(newImages);
+        
+        // Clear any error
+        if (formErrors.images) {
+          setFormErrors({ ...formErrors, images: '' });
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert(
+        'Error', 
+        'Failed to pick image. Please try again or use a different image.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -237,16 +341,109 @@ const AddPlantScreen = () => {
   const useCurrentLocation = async () => {
     setIsLoadingLocation(true);
     try {
-      // In a real app, you would use something like expo-location to get the current position
-      // For this demo, we'll simulate it with a timeout and hardcoded location
-      setTimeout(() => {
-        const location = "Tel Aviv, Israel";
-        setFormData({ ...formData, city: location });
+      // Request permissions first
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Denied',
+          'We need location access to use your current location. You can still enter your location manually.',
+          [{ text: 'OK' }]
+        );
         setIsLoadingLocation(false);
-      }, 1000);
+        return;
+      }
+      
+      // Get current position
+      const position = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+        timeout: 15000 // 15 seconds timeout
+      });
+      
+      // Get readable address from coordinates
+      const { latitude, longitude } = position.coords;
+      
+      try {
+        // First try reverse geocoding through our API
+        const locationData = await marketplaceApi.geocodeAddress(`${latitude},${longitude}`);
+        // screens/AddPlantScreen.js (continued)
+        if (locationData && locationData.city) {
+          // Use formatted address from our API
+          const formattedLocation = locationData.city + 
+            (locationData.country ? `, ${locationData.country}` : '');
+          
+          setFormData({
+            ...formData,
+            city: formattedLocation
+          });
+          
+          setIsLoadingLocation(false);
+          return;
+        }
+      } catch (apiError) {
+        // API geocoding failed, fall back to Expo's geocoder
+        console.warn('API geocoding failed, falling back to Expo geocoder:', apiError);
+      }
+      
+      // Fall back to Expo's reverse geocoding
+      const addresses = await Location.reverseGeocodeAsync({
+        latitude,
+        longitude
+      });
+      
+      if (addresses && addresses.length > 0) {
+        const address = addresses[0];
+        
+        // Format the address components
+        let formattedLocation = '';
+        
+        if (address.city) {
+          formattedLocation += address.city;
+        } else if (address.region) {
+          formattedLocation += address.region;
+        }
+        
+        if (address.country) {
+          if (formattedLocation) {
+            formattedLocation += `, ${address.country}`;
+          } else {
+            formattedLocation = address.country;
+          }
+        }
+        
+        // Default if no location found
+        if (!formattedLocation) {
+          formattedLocation = 'Unknown location';
+        }
+        
+        setFormData({
+          ...formData,
+          city: formattedLocation
+        });
+      } else {
+        // No address found, just use coordinates
+        setFormData({
+          ...formData,
+          city: `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`
+        });
+      }
+      
+      setIsLoadingLocation(false);
     } catch (error) {
       console.error('Error getting location:', error);
-      Alert.alert('Location Error', 'Could not get your current location. Please enter it manually.');
+      
+      let errorMessage = 'Could not get your current location. Please enter it manually.';
+      
+      // Provide more specific error messages based on the error
+      if (error.code === 'E_LOCATION_SETTINGS_UNSATISFIED') {
+        errorMessage = 'Please enable location services in your device settings.';
+      } else if (error.code === 'E_LOCATION_GEOCODING_FAILED') {
+        errorMessage = 'Could not determine your address. Please enter it manually.';
+      } else if (error.code === 'E_LOCATION_ACTIVITY_MISSING') {
+        errorMessage = 'Location provider is unavailable. Please enter your location manually.';
+      }
+      
+      Alert.alert('Location Error', errorMessage, [{ text: 'OK' }]);
       setIsLoadingLocation(false);
     }
   };
@@ -293,7 +490,6 @@ const AddPlantScreen = () => {
     return isValid;
   };
 
-
   const prepareImageData = async () => {
     try {
       const uploaded = [];
@@ -307,13 +503,12 @@ const AddPlantScreen = () => {
       throw new Error('Image upload failed. Please try again.');
     }
   };
-  
 
   const handleSubmit = async () => {
     if (!validateForm()) return;
-
+  
     setIsLoading(true);
-
+  
     try {
       // Get the user's email from AsyncStorage
       const userEmail = await AsyncStorage.getItem('userEmail');
@@ -321,10 +516,10 @@ const AddPlantScreen = () => {
       if (!userEmail) {
         throw new Error('User is not authenticated');
       }
-
+  
       // Prepare image data
       const imageData = await prepareImageData();
-      
+  
       // Prepare plant data
       const plantData = {
         title: formData.title,
@@ -337,22 +532,21 @@ const AddPlantScreen = () => {
         image: imageData[0],  // Main image
         images: imageData.slice(1),  // Additional images
         sellerId: userEmail, // Use the authenticated user's email as sellerId
+        productType: listingType, // Add product type field
       };
-
+  
       // Submit to API
       const result = await createPlant(plantData);
-
+  
       if (result?.productId) {
-        Alert.alert('Success', 'Your plant has been listed!', [
-          {
-            text: 'View Listing',
-            onPress: () => navigation.navigate('PlantDetail', { plantId: result.productId }),
-          },
-          {
-            text: 'Go to Marketplace',
-            onPress: () => navigation.navigate('MarketplaceHome'),
-          },
-        ]);
+        setNewPlantId(result.productId);
+        setShowSuccess(true);
+  
+        // Auto-navigate to Profile screen after a delay
+        setTimeout(() => {
+          setShowSuccess(false);
+          navigation.navigate('Profile', { refresh: true });
+        }, 2500);
       } else {
         throw new Error('Failed to create listing');
       }
@@ -363,6 +557,7 @@ const AddPlantScreen = () => {
       setIsLoading(false);
     }
   };
+  
 
   // Render Scientific Name Modal
   const renderScientificNameModal = () => {
@@ -428,10 +623,29 @@ const AddPlantScreen = () => {
     );
   };
 
+  // Success overlay
+  const renderSuccessOverlay = () => {
+    return (
+      <Modal
+        visible={showSuccess}
+        transparent={true}
+        animationType="fade"
+      >
+        <View style={styles.successOverlay}>
+          <View style={styles.successContent}>
+            <MaterialIcons name="check-circle" size={60} color="#4CAF50" />
+            <Text style={styles.successTitle}>Successfully Listed!</Text>
+            <Text style={styles.successText}>Your item has been added to the marketplace</Text>
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader
-        title="Add New Plant"
+        title="Add New Listing"
         showBackButton={true}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
@@ -441,11 +655,88 @@ const AddPlantScreen = () => {
       >
         <ScrollView style={styles.scrollView}>
           <View style={styles.content}>
-            <Text style={styles.title}>Add a New Plant</Text>
+            {/* Listing Type Selector */}
+            <View style={styles.listingTypeContainer}>
+              <Text style={styles.listingTypeTitle}>What are you listing?</Text>
+              
+              <View style={styles.listingTypeButtons}>
+                <TouchableOpacity
+                  style={[
+                    styles.listingTypeButton,
+                    listingType === 'plant' && styles.selectedListingType
+                  ]}
+                  onPress={() => setListingType('plant')}
+                >
+                  <MaterialIcons
+                    name="eco"
+                    size={24}
+                    color={listingType === 'plant' ? '#fff' : '#4CAF50'}
+                  />
+                  <Text 
+                    style={[
+                      styles.listingTypeText,
+                      listingType === 'plant' && styles.selectedListingTypeText
+                    ]}
+                  >
+                    Plant
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.listingTypeButton,
+                    listingType === 'accessory' && styles.selectedListingType
+                  ]}
+                  onPress={() => setListingType('accessory')}
+                >
+                  <MaterialIcons
+                    name="pot-mix-outline"
+                    size={24}
+                    color={listingType === 'accessory' ? '#fff' : '#4CAF50'}
+                  />
+                  <Text 
+                    style={[
+                      styles.listingTypeText,
+                      listingType === 'accessory' && styles.selectedListingTypeText
+                    ]}
+                  >
+                    Accessory
+                  </Text>
+                </TouchableOpacity>
+                
+                <TouchableOpacity
+                  style={[
+                    styles.listingTypeButton,
+                    listingType === 'tool' && styles.selectedListingType
+                  ]}
+                  onPress={() => setListingType('tool')}
+                >
+                  <MaterialCommunityIcons 
+                    name="tools"
+                    size={24}
+                    color={listingType === 'tool' ? '#fff' : '#4CAF50'}
+                  />
+                  <Text 
+                    style={[
+                      styles.listingTypeText,
+                      listingType === 'tool' && styles.selectedListingTypeText
+                    ]}
+                  >
+                    Tool
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <Text style={styles.title}>
+              Add New {listingType === 'plant' ? 'Plant' : listingType === 'accessory' ? 'Accessory' : 'Tool'}
+            </Text>
             
             {/* Image Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Plant Images</Text>
+              <Text style={styles.sectionTitle}>
+                Images <Text style={styles.requiredField}>*</Text>
+              </Text>
               <ScrollView horizontal style={styles.imageScroller}>
                 {images.map((uri, index) => (
                   <View key={index} style={styles.imageContainer}>
@@ -487,36 +778,50 @@ const AddPlantScreen = () => {
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Basic Information</Text>
               
-              <Text style={styles.label}>Plant Name</Text>
+              <Text style={styles.label}>
+                {listingType === 'plant' ? 'Plant Name' : listingType === 'accessory' ? 'Accessory Name' : 'Tool Name'} <Text style={styles.requiredField}>*</Text>
+              </Text>
               <TextInput
                 style={[styles.input, formErrors.title && styles.inputError]}
                 value={formData.title}
                 onChangeText={(text) => handleChange('title', text)}
-                placeholder="What kind of plant is it?"
+                placeholder={
+                  listingType === 'plant' 
+                    ? "What kind of plant is it?" 
+                    : listingType === 'accessory' 
+                      ? "What is the accessory?" 
+                      : "What kind of tool is it?"
+                }
               />
               {formErrors.title ? <Text style={styles.errorText}>{formErrors.title}</Text> : null}
 
-              <Text style={styles.label}>Scientific Name (Optional)</Text>
-              <TouchableOpacity 
-                style={[
-                  styles.input, 
-                  styles.pickerButton,
-                  formData.scientificName ? styles.filledInput : null
-                ]}
-                onPress={() => setShowScientificNameModal(true)}
-              >
-                <Text 
-                  style={[
-                    styles.pickerButtonText,
-                    formData.scientificName ? styles.filledInputText : null
-                  ]}
-                >
-                  {formData.scientificName || "Select plant type to auto-fill care info"}
-                </Text>
-                <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
-              </TouchableOpacity>
+              {listingType === 'plant' && (
+                <>
+                  <Text style={styles.label}>Scientific Name (Optional)</Text>
+                  <TouchableOpacity 
+                    style={[
+                      styles.input, 
+                      styles.pickerButton,
+                      formData.scientificName ? styles.filledInput : null
+                    ]}
+                    onPress={() => setShowScientificNameModal(true)}
+                  >
+                    <Text 
+                      style={[
+                        styles.pickerButtonText,
+                        formData.scientificName ? styles.filledInputText : null
+                      ]}
+                    >
+                      {formData.scientificName || "Select plant type to auto-fill care info"}
+                    </Text>
+                    <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
+                  </TouchableOpacity>
+                </>
+              )}
 
-              <Text style={styles.label}>Price</Text>
+              <Text style={styles.label}>
+                Price <Text style={styles.requiredField}>*</Text>
+              </Text>
               <TextInput
                 style={[styles.input, formErrors.price && styles.inputError]}
                 value={formData.price}
@@ -528,28 +833,43 @@ const AddPlantScreen = () => {
 
               <Text style={styles.label}>Category</Text>
               <ScrollView horizontal style={styles.categoryScroller}>
-                {categories.map((category) => (
-                  <TouchableOpacity
-                    key={category}
-                    style={[
-                      styles.categoryButton,
-                      formData.category === category && styles.selectedCategoryButton,
-                    ]}
-                    onPress={() => handleChange('category', category)}
-                  >
-                    <Text
+                {categories
+                  .filter(category => {
+                    // Filter categories based on listing type
+                    if (listingType === 'plant') {
+                      return category !== 'Accessories' && category !== 'Tools';
+                    } else if (listingType === 'accessory') {
+                      return category === 'Accessories';
+                    } else if (listingType === 'tool') {
+                      return category === 'Tools';
+                    }
+                    return true;
+                  })
+                  .map((category) => (
+                    <TouchableOpacity
+                      key={category}
                       style={[
-                        styles.categoryText,
-                        formData.category === category && styles.selectedCategoryText,
+                        styles.categoryButton,
+                        formData.category === category && styles.selectedCategoryButton,
                       ]}
+                      onPress={() => handleChange('category', category)}
                     >
-                      {category}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          styles.categoryText,
+                          formData.category === category && styles.selectedCategoryText,
+                        ]}
+                      >
+                        {category}
+                      </Text>
+                    </TouchableOpacity>
+                  ))
+                }
               </ScrollView>
 
-              <Text style={styles.label}>Location</Text>
+              <Text style={styles.label}>
+                Location <Text style={styles.requiredField}>*</Text>
+              </Text>
               <View style={styles.locationContainer}>
                 <TextInput
                   style={[
@@ -559,7 +879,7 @@ const AddPlantScreen = () => {
                   ]}
                   value={formData.city}
                   onChangeText={(text) => handleChange('city', text)}
-                  placeholder="Where can buyers pick up the plant?"
+                  placeholder="Where can buyers pick up the item?"
                 />
                 <TouchableOpacity 
                   style={styles.locationButton}
@@ -578,12 +898,20 @@ const AddPlantScreen = () => {
             
             {/* Description */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Description</Text>
+              <Text style={styles.sectionTitle}>
+                Description <Text style={styles.requiredField}>*</Text>
+              </Text>
               <TextInput
                 style={[styles.input, styles.textArea, formErrors.description && styles.inputError]}
                 value={formData.description}
                 onChangeText={(text) => handleChange('description', text)}
-                placeholder="Describe your plant (size, age, condition, etc.)"
+                placeholder={
+                  listingType === 'plant' 
+                    ? "Describe your plant (size, age, condition, etc.)" 
+                    : listingType === 'accessory' 
+                      ? "Describe the accessory (size, material, condition, etc.)" 
+                      : "Describe the tool (brand, condition, age, etc.)"
+                }
                 multiline
               />
               {formErrors.description ? (
@@ -591,21 +919,28 @@ const AddPlantScreen = () => {
               ) : null}
             </View>
             
-            {/* Care Instructions */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Care Instructions</Text>
-              <TextInput
-                style={[styles.input, styles.textArea]}
-                value={formData.careInstructions}
-                onChangeText={(text) => handleChange('careInstructions', text)}
-                placeholder="Share how to care for this plant (optional)"
-                multiline
-              />
-              <Text style={styles.helperText}>
-                Providing care instructions can help increase interest in your plant.
-                {formData.scientificName ? " Care info will be auto-filled from our database." : ""}
-              </Text>
-            </View>
+            {/* Care Instructions - only for plants */}
+            {listingType === 'plant' && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Care Instructions (Optional)</Text>
+                <TextInput
+                  style={[styles.input, styles.textArea]}
+                  value={formData.careInstructions}
+                  onChangeText={(text) => handleChange('careInstructions', text)}
+                  placeholder="Share how to care for this plant"
+                  multiline
+                />
+                <Text style={styles.helperText}>
+                  Providing care instructions can help increase interest in your plant.
+                  {formData.scientificName ? " Care info will be auto-filled from our database." : ""}
+                </Text>
+              </View>
+            )}
+            
+            {/* Required Fields Note */}
+            <Text style={styles.requiredNote}>
+              <Text style={styles.requiredField}>*</Text> Required fields
+            </Text>
             
             {/* Submit */}
             <TouchableOpacity
@@ -616,7 +951,9 @@ const AddPlantScreen = () => {
               {isLoading ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.submitText}>List Plant for Sale</Text>
+                <Text style={styles.submitText}>
+                  List {listingType === 'plant' ? 'Plant' : listingType === 'accessory' ? 'Accessory' : 'Tool'} for Sale
+                </Text>
               )}
             </TouchableOpacity>
           </View>
@@ -625,6 +962,9 @@ const AddPlantScreen = () => {
       
       {/* Scientific Name Selection Modal */}
       {renderScientificNameModal()}
+      
+      {/* Success Overlay */}
+      {renderSuccessOverlay()}
     </SafeAreaView>
   );
 };
@@ -632,7 +972,7 @@ const AddPlantScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#FAFAFA',
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -641,23 +981,72 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
+    padding: 20,
+    paddingBottom: 50,
+  },
+  listingTypeContainer: {
+    marginBottom: 24,
+    backgroundColor: '#ffffff',
     padding: 16,
-    paddingBottom: 40,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  listingTypeTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#2E7D32',
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  listingTypeButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+  },
+  listingTypeButton: {
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
+    minWidth: 100,
+    backgroundColor: '#F1F8E9',
+  },
+  selectedListingType: {
+    backgroundColor: '#4CAF50',
+  },
+  listingTypeText: {
+    marginTop: 4,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  selectedListingTypeText: {
+    color: '#fff',
   },
   title: {
-    fontSize: 24,
-    fontWeight: 'bold',
+    fontSize: 26,
+    fontWeight: '700',
     marginBottom: 20,
-    color: '#2E7D32',
+    color: '#1B5E20',
+    textAlign: 'center',
   },
   section: {
-    marginBottom: 24,
+    marginBottom: 28,
+    padding: 16,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    elevation: 2,
   },
   sectionTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 12,
-    color: '#333',
+    fontWeight: '600',
+    marginBottom: 14,
+    color: '#2E7D32',
   },
   imageScroller: {
     flexDirection: 'row',
@@ -666,19 +1055,19 @@ const styles = StyleSheet.create({
   },
   imageContainer: {
     position: 'relative',
-    marginRight: 10,
+    marginRight: 12,
   },
   plantImage: {
     width: 100,
     height: 100,
-    borderRadius: 8,
-    backgroundColor: '#f0f0f0',
+    borderRadius: 12,
+    backgroundColor: '#e0e0e0',
   },
   removeImageButton: {
     position: 'absolute',
     top: 5,
     right: 5,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: '#D32F2F',
     borderRadius: 12,
     width: 24,
     height: 24,
@@ -687,73 +1076,73 @@ const styles = StyleSheet.create({
   },
   imageActionButtons: {
     flexDirection: 'row',
-    justifyContent: 'center',
     alignItems: 'center',
   },
   addImageButton: {
     width: 100,
     height: 100,
-    borderRadius: 8,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#ccc',
+    borderColor: '#BDBDBD',
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#F5F5F5',
     marginRight: 10,
   },
   addImageText: {
     marginTop: 4,
-    color: '#4CAF50',
-    fontSize: 12,
+    color: '#388E3C',
+    fontSize: 13,
+    fontWeight: '500',
   },
   label: {
     fontSize: 16,
-    marginBottom: 8,
-    color: '#555',
+    marginBottom: 6,
+    color: '#333',
   },
   input: {
     borderWidth: 1,
     borderColor: '#ddd',
-    borderRadius: 8,
+    borderRadius: 10,
     padding: 12,
-    marginBottom: 16,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#F1FDF4',
+    marginBottom: 14,
   },
   pickerButton: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 12,
   },
   pickerButtonText: {
-    color: '#999',
+    color: '#2E7D32',
     fontSize: 16,
   },
   filledInput: {
-    borderColor: '#A5D6A7',
-    backgroundColor: '#f0f9f0',
+    borderColor: '#AED581',
+    backgroundColor: '#F1FDF4',
   },
   filledInputText: {
-    color: '#333',
+    color: '#2E7D32',
   },
   inputError: {
     borderColor: '#f44336',
   },
   errorText: {
-    color: '#f44336',
-    fontSize: 12,
-    marginTop: -12,
-    marginBottom: 12,
+    color: '#D32F2F',
+    fontSize: 13,
+    marginTop: -8,
+    marginBottom: 8,
   },
   helperText: {
-    color: '#666',
+    color: '#757575',
     fontSize: 12,
     marginTop: 4,
-    marginBottom: 12,
   },
   textArea: {
-    height: 120,
+    height: 100,
     textAlignVertical: 'top',
   },
   locationContainer: {
@@ -772,34 +1161,45 @@ const styles = StyleSheet.create({
     height: 50,
     justifyContent: 'center',
     alignItems: 'center',
-    borderTopRightRadius: 8,
-    borderBottomRightRadius: 8,
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
   },
   categoryScroller: {
-    marginBottom: 16,
+    marginVertical: 10,
   },
   categoryButton: {
     paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     borderRadius: 20,
-    backgroundColor: '#f0f0f0',
+    backgroundColor: '#E8F5E9',
     marginRight: 8,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   selectedCategoryButton: {
-    backgroundColor: '#C8E6C9',
+    backgroundColor: '#81C784',
   },
   categoryText: {
-    color: '#333',
+    color: '#2E7D32',
   },
   selectedCategoryText: {
-    color: '#2E7D32',
+    color: '#fff',
+    fontWeight: '600',
+  },
+  requiredField: {
+    color: '#D32F2F',
     fontWeight: 'bold',
   },
+  requiredNote: {
+    fontSize: 12,
+    color: '#777',
+    marginBottom: 16,
+    marginTop: -8,
+    fontStyle: 'italic',
+  },
   submitButton: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#388E3C',
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
   },
   disabledButton: {
@@ -807,8 +1207,8 @@ const styles = StyleSheet.create({
   },
   submitText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '600',
   },
   modalOverlay: {
     flex: 1,
@@ -820,6 +1220,10 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     height: '80%',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -832,7 +1236,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333',
+    color: '#2E7D32',
   },
   closeButton: {
     padding: 4,
@@ -866,7 +1270,7 @@ const styles = StyleSheet.create({
   },
   commonName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
   },
   scientificName: {
@@ -880,9 +1284,38 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+  },
+  successOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  successContent: {
+    backgroundColor: '#fff',
+    padding: 30,
+    borderRadius: 14,
+    alignItems: 'center',
+    width: '80%',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  successTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#2E7D32',
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  successText: {
+    fontSize: 16,
     color: '#666',
     textAlign: 'center',
   },
 });
 
-export default AddPlantScreen
+export default AddPlantScreen;

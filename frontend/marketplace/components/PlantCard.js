@@ -1,4 +1,4 @@
-// components/PlantCard.js - Enhanced Version
+// components/PlantCard.js - Updated with seller rating display
 import React, { useState, useMemo } from 'react';
 import { 
   View, 
@@ -17,7 +17,7 @@ import syncService from '../services/SyncService';
 import { wishProduct } from '../services/marketplaceApi';
 
 /**
- * Enhanced PlantCard component with improved error handling and offline support
+ * Enhanced PlantCard component with improved error handling, offline support, and seller rating
  * @param {Object} props - Component props
  * @param {Object} props.plant - Plant data
  * @param {boolean} props.showActions - Whether to show action buttons
@@ -25,7 +25,14 @@ import { wishProduct } from '../services/marketplaceApi';
  */
 const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
   const navigation = useNavigation();
-  const [isFavorite, setIsFavorite] = useState(plant.isFavorite || plant.isWished || false);
+  const [isFavorite, setIsFavorite] = useState(() => {
+    return (
+      plant.isFavorite === true ||
+      plant.isWished === true ||
+      plant.isInWishlist === true ||
+      false
+    );
+  });
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [imageError, setImageError] = useState(false);
   
@@ -56,54 +63,83 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     });
   };
 
-  /**
-   * Toggle wishlist/favorite status with offline support
-   */
-  const handleToggleFavorite = async () => {
-    if (isActionLoading) return;
+/**
+ * Toggle wishlist/favorite status with improved error handling and online/offline support
+ */
+const handleToggleFavorite = async () => {
+  if (isActionLoading) return;
+  
+  try {
+    setIsActionLoading(true);
     
-    try {
-      setIsActionLoading(true);
+    // Toggle state immediately for better UI experience
+    setIsFavorite(prevState => !prevState);
+    
+    // Determine the plant ID
+    const plantId = plant.id || plant._id;
+    
+    if (!plantId) {
+      throw new Error('Invalid plant ID');
+    }
+    
+    console.log(`Toggling favorite for plant ${plantId}, current state: ${isFavorite}`);
+    
+    // Check if we're online
+    const syncStatus = syncService.getSyncStatus();
+    
+    if (syncStatus.isOnline) {
+      // We're online, try to update immediately
+      try {
+        const result = await wishProduct(plantId);
+        
+        console.log('Wishlist API response:', result);
+        
+        // If the API returns a specific wishlist state, use that
+        if (result && 'isWished' in result) {
+          setIsFavorite(result.isWished);
+          console.log(`Favorite state set to ${result.isWished} from API`);
+        }
+      } catch (error) {
+        console.error('Direct wishlist update failed:', error);
+        
+        // Add to sync queue for retry
+        await syncService.addToSyncQueue({
+          type: 'TOGGLE_WISHLIST',
+          data: {
+            plantId: plantId
+          }
+        });
+        
+        // Don't revert UI state - the sync service will handle it
+      }
+    } else {
+      // We're offline, add to sync queue
+      console.log('Device is offline, adding to sync queue');
       
-      // Toggle state immediately for better UI experience
-      setIsFavorite(!isFavorite);
-      
-      // Add to sync queue for offline support
       await syncService.addToSyncQueue({
         type: 'TOGGLE_WISHLIST',
         data: {
-          plantId: plant.id || plant._id
+          plantId: plantId
         }
       });
-      
-      // If online, also try to update immediately
-      if (isOnline) {
-        try {
-          const result = await wishProduct(plant.id || plant._id);
-          
-          // If the API returns a specific wishlist state, use that
-          if (result && 'isWished' in result) {
-            setIsFavorite(result.isWished);
-          }
-        } catch (error) {
-          // Will be handled by sync service later
-          console.log('Direct wishlist update failed, will sync later', error);
-        }
-      }
-      
-      setIsActionLoading(false);
-    } catch (error) {
-      // Revert state if the operation failed completely
-      setIsFavorite(isFavorite);
-      setIsActionLoading(false);
-      
-      // Only show alert if online - otherwise it's expected to fail
-      if (isOnline) {
-        Alert.alert('Error', 'Failed to update favorites. It will be retried automatically.');
-      }
-      console.error('Error toggling favorite:', error);
     }
-  };
+    
+    setIsActionLoading(false);
+  } catch (error) {
+    // Revert state if the operation failed completely
+    setIsFavorite(prevState => !prevState);
+    setIsActionLoading(false);
+    
+    console.error('Error toggling favorite:', error);
+    
+    // Only show alert if a serious error occurred
+    Alert.alert(
+      'Error', 
+      'Failed to update favorites. Please try again later.',
+      [{ text: 'OK' }]
+    );
+  }
+};
 
   const handleStartChat = () => {
     navigation.navigate('Messages', { 
@@ -275,6 +311,25 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
     }
   };
 
+  /**
+   * Get seller rating if available
+   */
+  const getSellerRating = () => {
+    // Check all possible places where seller rating might be stored
+    if (plant.seller && typeof plant.seller.rating !== 'undefined') {
+      return plant.seller.rating;
+    } else if (plant.sellerRating) {
+      return plant.sellerRating;
+    } else if (plant.rating) {
+      // Some plants might store the seller rating directly
+      return plant.rating;
+    }
+    return null;
+  };
+
+  // Get the seller's rating
+  const sellerRating = getSellerRating();
+
   return (
     <TouchableOpacity
       style={[
@@ -352,12 +407,12 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid' }) => {
             {plant.sellerName || plant.seller?.name || 'Plant Seller'}
           </Text>
           
-          {/* Display rating if available */}
-          {plant.rating && (
+          {/* Display seller rating if available */}
+          {sellerRating !== null && (
             <View style={styles.ratingContainer}>
               <FontAwesome name="star" size={12} color="#FFD700" />
               <Text style={styles.ratingText}>
-                {typeof plant.rating === 'number' ? plant.rating.toFixed(1) : plant.rating}
+                {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
               </Text>
             </View>
           )}

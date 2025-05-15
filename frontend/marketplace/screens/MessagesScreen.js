@@ -467,78 +467,81 @@ const MessagesScreen = () => {
     };
     
     return (
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.chatContainer}
-        keyboardVerticalOffset={90}
-      >
-        <View style={styles.chatHeader}>
-          <TouchableOpacity 
-            style={styles.backButton}
-            onPress={() => setActiveTab('conversations')}
-          >
-            <MaterialIcons name="arrow-back" size={24} color="#333" />
-          </TouchableOpacity>
-          
-          <View style={styles.chatHeaderInfo}>
-            <Text style={styles.chatHeaderName} numberOfLines={1}>
-              {selectedConversation?.otherUserName || 'New Message'}
-            </Text>
-            <Text style={styles.chatHeaderPlant} numberOfLines={1}>
-              {selectedConversation?.plantName || plantName || 'Plant Discussion'}
-            </Text>
-          </View>
-        </View>
-        
-        {isLoading && messages.length === 0 ? (
-          <View style={styles.centerContainer}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.loadingText}>Loading messages...</Text>
-          </View>
-        ) : error ? (
-          <View style={styles.centerContainer}>
-            <MaterialIcons name="error-outline" size={48} color="#f44336" />
-            <Text style={styles.errorText}>{error}</Text>
+      <View style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
+        >
+          <View style={styles.chatHeader}>
             <TouchableOpacity 
-              style={styles.retryButton}
-              onPress={() => loadMessages(selectedConversation?.id)}
+              style={styles.backButton}
+              onPress={() => setActiveTab('conversations')}
             >
-              <Text style={styles.retryText}>Retry</Text>
+              <MaterialIcons name="arrow-back" size={24} color="#333" />
             </TouchableOpacity>
+    
+            <View style={styles.chatHeaderInfo}>
+              <Text style={styles.chatHeaderName} numberOfLines={1}>
+                {selectedConversation?.otherUserName || 'New Message'}
+              </Text>
+              <Text style={styles.chatHeaderPlant} numberOfLines={1}>
+                {selectedConversation?.plantName || plantName || 'Plant Discussion'}
+              </Text>
+            </View>
           </View>
-        ) : (
-          <FlatList
-            ref={flatListRef}
-            data={messages}
-            renderItem={renderMessageItem}
-            keyExtractor={item => item.id || `msg-${item.timestamp}`}
-            contentContainerStyle={styles.messagesList}
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            ListEmptyComponent={() => (
-              <View style={styles.emptyChatContainer}>
-                {isNewConversation ? (
-                  <>
-                    <MaterialIcons name="forum" size={48} color="#aaa" />
-                    <Text style={styles.emptyChatText}>New Conversation</Text>
-                    <Text style={styles.emptyChatSubtext}>
-                      Send a message about {plantName || 'this plant'}
-                    </Text>
-                  </>
-                ) : (
-                  <>
-                    <MaterialIcons name="forum" size={48} color="#aaa" />
-                    <Text style={styles.emptyChatText}>No messages yet</Text>
-                    <Text style={styles.emptyChatSubtext}>
-                      Send a message to start the conversation
-                    </Text>
-                  </>
-                )}
-              </View>
-            )}
-          />
-        )}
-        
+    
+          {isLoading && messages.length === 0 ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+              <Text style={styles.loadingText}>Loading messages...</Text>
+            </View>
+          ) : error ? (
+            <View style={styles.centerContainer}>
+              <MaterialIcons name="error-outline" size={48} color="#f44336" />
+              <Text style={styles.errorText}>{error}</Text>
+              <TouchableOpacity 
+                style={styles.retryButton}
+                onPress={() => loadMessages(selectedConversation?.id)}
+              >
+                <Text style={styles.retryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <FlatList
+              ref={flatListRef}
+              data={messages}
+              renderItem={renderMessageItem}
+              keyExtractor={item => item.id || `msg-${item.timestamp}`}
+              contentContainerStyle={styles.messagesList}
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              ListEmptyComponent={() => (
+                <View style={styles.emptyChatContainer}>
+                  {isNewConversation ? (
+                    <>
+                      <MaterialIcons name="forum" size={48} color="#aaa" />
+                      <Text style={styles.emptyChatText}>New Conversation</Text>
+                      <Text style={styles.emptyChatSubtext}>
+                        Send a message about {plantName || 'this plant'}
+                      </Text>
+                    </>
+                  ) : (
+                    <>
+                      <MaterialIcons name="forum" size={48} color="#aaa" />
+                      <Text style={styles.emptyChatText}>No messages yet</Text>
+                      <Text style={styles.emptyChatSubtext}>
+                        Send a message to start the conversation
+                      </Text>
+                    </>
+                  )}
+                </View>
+              )}
+            />
+          )}
+        </KeyboardAvoidingView>
+    
+        {/* Input always pinned to bottom */}
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
@@ -546,7 +549,7 @@ const MessagesScreen = () => {
             value={newMessage}
             onChangeText={setNewMessage}
             multiline
-            maxLength={500} // Reasonable limit
+            maxLength={500}
           />
           <TouchableOpacity
             style={[
@@ -563,10 +566,10 @@ const MessagesScreen = () => {
             )}
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     );
-  };
-  
+  }
+    
   return (
     <SafeAreaView style={styles.container}>
       {/* Use MarketplaceHeader */}
@@ -619,32 +622,36 @@ const MessagesScreen = () => {
   );
 };
 
+// Updated styles only for better UI/UX look and animation-friendly layout
+// Replace the existing `StyleSheet.create({...})` object in your file with the following
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: '#F9FAFB',
   },
   tabContainer: {
     flexDirection: 'row',
+    backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e0e0e0',
   },
   tabButton: {
     flex: 1,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   activeTabButton: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#4CAF50',
+    borderBottomWidth: 3,
+    borderBottomColor: '#388E3C',
   },
   tabText: {
     fontSize: 16,
-    color: '#666',
+    color: '#888',
   },
   activeTabText: {
-    color: '#4CAF50',
-    fontWeight: '600',
+    color: '#388E3C',
+    fontWeight: '700',
   },
   centerContainer: {
     flex: 1,
@@ -655,20 +662,20 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#666',
+    color: '#888',
   },
   errorText: {
     marginTop: 10,
     fontSize: 16,
-    color: '#f44336',
+    color: '#D32F2F',
     textAlign: 'center',
   },
   retryButton: {
     marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#4CAF50',
-    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#388E3C',
+    borderRadius: 8,
   },
   retryText: {
     color: '#fff',
@@ -677,48 +684,45 @@ const styles = StyleSheet.create({
   noConversationsText: {
     marginTop: 10,
     fontSize: 18,
+    fontWeight: '700',
     color: '#333',
     textAlign: 'center',
-    fontWeight: '600',
   },
   startConversationText: {
     marginTop: 8,
     fontSize: 14,
-    color: '#666',
+    color: '#777',
     textAlign: 'center',
     paddingHorizontal: 32,
   },
   browseButton: {
     marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    backgroundColor: '#4CAF50',
-    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    backgroundColor: '#388E3C',
+    borderRadius: 8,
   },
   browseButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
-  emptyList: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   conversationsList: {
     flexGrow: 1,
+    paddingVertical: 4,
   },
   conversationItem: {
     flexDirection: 'row',
-    padding: 16,
+    padding: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#eee',
+    backgroundColor: '#fff',
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    marginRight: 12,
-    backgroundColor: '#f0f0f0', // Placeholder color
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    marginRight: 14,
+    backgroundColor: '#e0e0e0',
   },
   conversationInfo: {
     flex: 1,
@@ -726,13 +730,12 @@ const styles = StyleSheet.create({
   conversationHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   userName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
+    fontWeight: '700',
+    color: '#212121',
     flex: 1,
   },
   timeStamp: {
@@ -743,21 +746,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
   },
   messagePreview: {
     fontSize: 14,
-    color: '#666',
+    color: '#757575',
     flex: 1,
   },
   unreadBadge: {
-    backgroundColor: '#4CAF50',
+    backgroundColor: '#388E3C',
     borderRadius: 10,
     minWidth: 20,
     height: 20,
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 8,
+    marginLeft: 6,
   },
   unreadCount: {
     color: '#fff',
@@ -766,19 +768,15 @@ const styles = StyleSheet.create({
   },
   plantName: {
     fontSize: 12,
-    color: '#4CAF50',
-  },
-  chatContainer: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
+    color: '#66BB6A',
   },
   chatHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#e0e0e0',
   },
   backButton: {
     padding: 4,
@@ -788,12 +786,12 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   chatHeaderName: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: '#333',
   },
   chatHeaderPlant: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#4CAF50',
   },
   messagesList: {
@@ -802,7 +800,7 @@ const styles = StyleSheet.create({
   },
   messageContainer: {
     flexDirection: 'row',
-    marginBottom: 16,
+    marginBottom: 14,
     maxWidth: '80%',
   },
   ownMessageContainer: {
@@ -849,10 +847,38 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
   },
   ownMessageTime: {
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   otherMessageTime: {
     color: '#999',
+  },
+  inputContainer: {
+    flexDirection: 'row',
+    padding: 10,
+    backgroundColor: '#fff',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#F1F3F4',
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 15,
+    maxHeight: 100,
+  },
+  sendButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 20,
+    width: 42,
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 10,
+  },
+  disabledSendButton: {
+    backgroundColor: '#bdbdbd',
   },
   emptyChatContainer: {
     flex: 1,
@@ -864,44 +890,18 @@ const styles = StyleSheet.create({
   emptyChatText: {
     marginTop: 10,
     fontSize: 18,
+    fontWeight: '700',
     color: '#333',
     textAlign: 'center',
-    fontWeight: '600',
   },
   emptyChatSubtext: {
     marginTop: 8,
     fontSize: 14,
-    color: '#666',
+    color: '#777',
     textAlign: 'center',
     paddingHorizontal: 32,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    padding: 8,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-  },
-  input: {
-    flex: 1,
-    backgroundColor: '#f5f5f5',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    maxHeight: 100,
-  },
-  sendButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 20,
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginLeft: 8,
-  },
-  disabledSendButton: {
-    backgroundColor: '#ccc',
-  },
 });
+
 
 export default MessagesScreen;

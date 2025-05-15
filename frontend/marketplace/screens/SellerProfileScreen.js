@@ -5,126 +5,64 @@ import {
   StyleSheet,
   Image,
   TouchableOpacity,
-  ScrollView,
   ActivityIndicator,
   Alert,
   FlatList,
 } from 'react-native';
-import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
-
-// Import components
 import PlantCard from '../components/PlantCard';
-
-// Import API service
 import { fetchUserProfile } from '../services/marketplaceApi';
-
-// Sample user data for development (same as ProfileScreen)
-const SAMPLE_SELLER = {
-  id: 'user123',
-  name: 'Plant Enthusiast',
-  email: 'plant.lover@example.com',
-  phoneNumber: '+1 (555) 123-4567',
-  avatar: 'https://via.placeholder.com/150?text=Seller',
-  bio: 'Passionate plant enthusiast with a love for tropical houseplants. I enjoy propagating plants and helping others grow their own indoor jungles.',
-  location: 'Seattle, WA',
-  stats: {
-    plantsCount: 8,
-    salesCount: 5,
-    rating: 4.9,
-  },
-  listings: [
-    {
-      id: '1',
-      name: 'Monstera Deliciosa',
-      description: 'Beautiful Swiss Cheese Plant with large fenestrated leaves',
-      price: 29.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Monstera',
-      category: 'Indoor Plants',
-      listedDate: new Date().toISOString(),
-      status: 'active',
-    },
-    {
-      id: '2',
-      name: 'Snake Plant',
-      description: 'Low maintenance indoor plant, perfect for beginners',
-      price: 19.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Snake+Plant',
-      category: 'Indoor Plants',
-      listedDate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 7 days ago
-      status: 'active',
-    },
-    {
-      id: '3',
-      name: 'Fiddle Leaf Fig',
-      description: 'Trendy houseplant with violin-shaped leaves',
-      price: 34.99,
-      imageUrl: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
-      category: 'Indoor Plants',
-      listedDate: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(), // 14 days ago
-      status: 'sold',
-    },
-  ],
-};
 
 const SellerProfileScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
-  const sellerId = route.params?.sellerId || SAMPLE_SELLER.id; // Get seller ID from params or use sample data for testing
-  
+  const sellerId = route.params?.sellerId || 'user123';
+
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [activeTab, setActiveTab] = useState('myPlants'); // 'myPlants', 'favorites', 'sold'
-  
-  useEffect(() => {
-    loadSellerProfile();
-  }, [sellerId]);
-  
+  const [activeTab, setActiveTab] = useState('myPlants');
 
-    // SEARCH_KEY: LOAD_SELLER_PROFILE_API
+  useEffect(() => { loadSellerProfile(); }, [sellerId]);
+
   const loadSellerProfile = async () => {
     try {
       setIsLoading(true);
-      setError(null);
-
-      // For real app, use API:
       const data = await fetchUserProfile(sellerId);
-
       setUser(data.user);
       setIsLoading(false);
     } catch (err) {
       setError('Failed to load profile. Please try again later.');
       setIsLoading(false);
-      console.error('Error loading profile:', err);
     }
   };
 
-  const handleSignOut = () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out?',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Sign Out',
-          onPress: () => {
-            // In a real app, this would call an API to sign out
-            navigation.reset({
-              index: 0,
-              routes: [{ name: 'Login' }], // Replace with your auth screen name
-            });
-          },
-          style: 'destructive',
-        },
-      ]
+  const renderTabContent = () => {
+    const listings = user?.listings || [];
+    const filtered = listings.filter(p => (activeTab === 'myPlants' ? p.status === 'active' : p.status === 'sold'));
+    if (filtered.length === 0) {
+      return (
+        <View style={styles.emptyStateContainer}>
+          <MaterialIcons name={activeTab === 'myPlants' ? 'eco' : 'local-offer'} size={48} color="#ccc" />
+          <Text style={styles.emptyStateText}>
+            {activeTab === 'myPlants' ? 'This seller has no active listings' : 'No sold plants yet'}
+          </Text>
+        </View>
+      );
+    }
+    return (
+      <FlatList
+        data={filtered}
+        renderItem={({ item }) => <PlantCard plant={item} showActions={false} />}
+        keyExtractor={item => item.id}
+        numColumns={2}
+        contentContainerStyle={styles.plantGrid}
+      />
     );
   };
-  
-  if (isLoading && !user) {
+
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4CAF50" />
@@ -132,179 +70,87 @@ const SellerProfileScreen = () => {
       </View>
     );
   }
-  
+
   if (error) {
     return (
       <View style={styles.errorContainer}>
         <MaterialIcons name="error-outline" size={48} color="#f44336" />
         <Text style={styles.errorText}>{error}</Text>
-        <TouchableOpacity 
-          style={styles.retryButton}
-          onPress={loadSellerProfile}
-        >
+        <TouchableOpacity style={styles.retryButton} onPress={loadSellerProfile}>
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
   }
-  
-  if (!user) {
-    return (
-      <View style={styles.errorContainer}>
-        <MaterialIcons name="person-off" size={48} color="#f44336" />
-        <Text style={styles.errorText}>User not found</Text>
-      </View>
-    );
-  }
-
-  // Render tab content based on active tab
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'myPlants':
-        const activePlants = user.listings.filter(plant => plant.status === 'active');
-        
-        if (activePlants.length === 0) {
-          return (
-            <View style={styles.emptyStateContainer}>
-              <MaterialIcons name="eco" size={48} color="#ccc" />
-              <Text style={styles.emptyStateText}>This seller has no active listings</Text>
-            </View>
-          );
-        }
-        
-        return (
-          <FlatList
-            data={activePlants}
-            renderItem={({ item }) => (
-              <PlantCard plant={item} showActions={false} />
-            )}
-            keyExtractor={item => item.id}
-            numColumns={2}
-            contentContainerStyle={styles.plantGrid}
-          />
-        );
-        
-      case 'sold':
-        const soldPlants = user.listings.filter(plant => plant.status === 'sold');
-        
-        if (soldPlants.length === 0) {
-          return (
-            <View style={styles.emptyStateContainer}>
-              <MaterialIcons name="local-offer" size={48} color="#ccc" />
-              <Text style={styles.emptyStateText}>This seller has not sold any plants</Text>
-            </View>
-          );
-        }
-        
-        return (
-          <FlatList
-            data={soldPlants}
-            renderItem={({ item }) => (
-              <PlantCard plant={item} showActions={false} />
-            )}
-            keyExtractor={item => item.id}
-            numColumns={2}
-            contentContainerStyle={styles.plantGrid}
-          />
-        );
-        
-      default:
-        return null;
-    }
-  };
 
   return (
     <View style={styles.container}>
-      {/* Profile Header */}
-      <View style={styles.profileHeader}>
-        <View style={styles.coverContainer}>
-          <Image
-            source={require('../../assets/images/plant-banner.jpg')}
-            style={styles.coverImage}
-          />
-        </View>
-
-        <View style={styles.avatarContainer}>
-          <Image
-            source={{ uri: user.avatar }}
-            style={styles.avatar}
-          />
-          <View style={styles.userInfo}>
-            <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userEmail}>{user.email}</Text>
-            <Text style={styles.joinDate}>
-              Joined {new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
-            </Text>
-          </View>
-        </View>
-
-        {user.bio && (
-          <View style={styles.bioContainer}>
-            <Text style={styles.bioText}>{user.bio}</Text>
-          </View>
-        )}
-
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.plantsCount}</Text>
-            <Text style={styles.statLabel}>Listings</Text>
-          </View>
-          
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.salesCount}</Text>
-            <Text style={styles.statLabel}>Sold</Text>
-          </View>
-          
-          <View style={styles.statItem}>
-            <Text style={styles.statValue}>{user.stats.rating}</Text>
-            <Text style={styles.statLabel}>Rating</Text>
+      <View style={styles.headerWrapper}>
+        <Image source={require('../../assets/images/plant-banner.jpg')} style={styles.banner} />
+        <View style={styles.avatarSection}>
+          <Image source={{ uri: user.avatar }} style={styles.avatar} />
+          <View style={styles.nameBlock}>
+            <Text style={styles.name}>{user.name}</Text>
+            <Text style={styles.email}>{user.email}</Text>
+            <Text style={styles.join}>Joined {new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}</Text>
           </View>
         </View>
       </View>
 
-      {/* Tab Buttons */}
-      <View style={styles.tabsContainer}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'myPlants' && styles.activeTabButton]}
-          onPress={() => setActiveTab('myPlants')}
-        >
-          <MaterialIcons
-            name="eco"
-            size={24}
-            color={activeTab === 'myPlants' ? '#4CAF50' : '#666'}
-          />
+      {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
+
+      <View style={styles.statsRow}>
+        <View style={styles.statBox}><Text style={styles.statNum}>{user.stats.plantsCount}</Text><Text style={styles.statLabel}>Listings</Text></View>
+        <View style={styles.statBox}><Text style={styles.statNum}>{user.stats.salesCount}</Text><Text style={styles.statLabel}>Sold</Text></View>
+        <View style={styles.statBox}><Text style={styles.statNum}>{user.stats.rating}</Text><Text style={styles.statLabel}>Rating</Text></View>
+      </View>
+
+      <View style={styles.tabRow}>
+        <TouchableOpacity style={[styles.tabBtn, activeTab === 'myPlants' && styles.activeTab]} onPress={() => setActiveTab('myPlants')}>
+          <MaterialIcons name="eco" size={22} color={activeTab === 'myPlants' ? '#4CAF50' : '#999'} />
           <Text style={[styles.tabText, activeTab === 'myPlants' && styles.activeTabText]}>My Plants</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === 'sold' && styles.activeTabButton]}
-          onPress={() => setActiveTab('sold')}
-        >
-          <MaterialIcons
-            name="local-offer"
-            size={24}
-            color={activeTab === 'sold' ? '#4CAF50' : '#666'}
-          />
+        <TouchableOpacity style={[styles.tabBtn, activeTab === 'sold' && styles.activeTab]} onPress={() => setActiveTab('sold')}>
+          <MaterialIcons name="local-offer" size={22} color={activeTab === 'sold' ? '#4CAF50' : '#999'} />
           <Text style={[styles.tabText, activeTab === 'sold' && styles.activeTabText]}>Sold</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Tab Content */}
-      <View style={styles.tabContent}>
-        {renderTabContent()}
-      </View>
+      <View style={styles.contentWrapper}>{renderTabContent()}</View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  // Styles here (same as ProfileScreen)
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  // Additional styles for seller profile
-  // ...
+  container: { flex: 1, backgroundColor: '#fff' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorText: { fontSize: 16, color: '#f44336', textAlign: 'center', marginVertical: 10 },
+  retryButton: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#4CAF50', borderRadius: 6 },
+  retryText: { color: '#fff', fontWeight: '600' },
+  headerWrapper: { backgroundColor: '#f0f0f0' },
+  banner: { width: '100%', height: 120 },
+  avatarSection: { flexDirection: 'row', marginTop: -40, padding: 16 },
+  avatar: { width: 80, height: 80, borderRadius: 40, borderWidth: 3, borderColor: '#fff', backgroundColor: '#ddd' },
+  nameBlock: { marginLeft: 16, justifyContent: 'center' },
+  name: { fontSize: 20, fontWeight: '700', color: '#222' },
+  email: { color: '#555' },
+  join: { color: '#888', fontSize: 12 },
+  bio: { paddingHorizontal: 16, marginVertical: 8, fontSize: 14, color: '#444', fontStyle: 'italic' },
+  statsRow: { flexDirection: 'row', justifyContent: 'space-around', paddingVertical: 12, borderTopWidth: 1, borderBottomWidth: 1, borderColor: '#eee' },
+  statBox: { alignItems: 'center' },
+  statNum: { fontSize: 18, fontWeight: '700', color: '#4CAF50' },
+  statLabel: { fontSize: 12, color: '#666' },
+  tabRow: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#eee' },
+  tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 12 },
+  activeTab: { borderBottomWidth: 2, borderColor: '#4CAF50' },
+  tabText: { fontSize: 14, color: '#666' },
+  activeTabText: { color: '#4CAF50', fontWeight: '600' },
+  contentWrapper: { flex: 1, padding: 8 },
+  emptyStateContainer: { alignItems: 'center', justifyContent: 'center', padding: 32 },
+  emptyStateText: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 8 },
+  plantGrid: { paddingBottom: 80 },
 });
 
 export default SellerProfileScreen;

@@ -1,14 +1,13 @@
+// screens/SignInGoogleScreen.js
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   StyleSheet,
   Text,
   TouchableOpacity,
-  Platform,
   SafeAreaView,
   ImageBackground,
   ActivityIndicator,
-  Alert,
   ScrollView,
   Dimensions,
   Animated,
@@ -159,45 +158,34 @@ export default function SignInGoogleScreen({ navigation }) {
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
             <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
-              <View style={styles.view1}>
-                <Text style={styles.title}>Login</Text>
-                <Text style={styles.subtitle}>Use your Google account to log into Greener</Text>
+              <Text style={styles.title}>Sign In</Text>
+              <Text style={styles.subtitle}>Use your Google account to log in</Text>
 
-                {authError && (
-                  <View style={styles.errorContainer}>
-                    <Text style={styles.errorText}>{authError}</Text>
+              {authError && (
+                <View style={styles.errorContainer}>
+                  <Text style={styles.errorText}>{authError}</Text>
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={styles.googleButton}
+                onPress={() => promptAsync()}
+                disabled={isLoading}
+                activeOpacity={0.85}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <View style={styles.googleContent}>
+                    <AntDesign name="google" size={22} color="white" style={{ marginRight: 8 }} />
+                    <Text style={styles.googleButtonText}>Continue with Google</Text>
                   </View>
                 )}
+              </TouchableOpacity>
 
-                <View style={styles.buttonContainer}>
-                  <TouchableOpacity
-                    style={styles.googleButton}
-                    onPress={() => promptAsync()}
-                    disabled={isLoading}
-                    activeOpacity={0.8}
-                  >
-                    {isLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <View style={styles.googleContent}>
-  <AntDesign name="google" size={22} color="white" />
-  <Text style={styles.googleButtonText}>Login with Google</Text>
-</View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.bottomContainer}>
-                  <Text style={styles.signInText}>Don't have an account? </Text>
-                  <TouchableOpacity onPress={() => navigation.navigate("SignUp")} style={styles.signInButton}>
-                    <Text style={styles.signInLink}>Sign up here</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-                  <Text style={styles.backButtonText}>Back to other login options</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+                <Text style={styles.backButtonText}>Back to other login options</Text>
+              </TouchableOpacity>
             </Animated.View>
           </ScrollView>
         </View>
@@ -209,75 +197,27 @@ export default function SignInGoogleScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#fff" },
   background: { flex: 1, width: "100%", height: "100%" },
-  overlay: { flex: 1, backgroundColor: "rgba(255,255,255,0.85)" },
+  overlay: { flex: 1, backgroundColor: "rgba(255,255,255,0.88)", justifyContent: "center" },
   scrollContent: { flexGrow: 1, justifyContent: "center", minHeight: windowHeight },
-  contentContainer: { width: "100%", paddingHorizontal: 20, alignItems: "center" },
-  view1: { minHeight: 580, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 20 },
-  title: {
-    fontSize: 34,
-    fontWeight: "bold",
-    color: "#2e7d32",
-    marginBottom: 10,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#388e3c",
-    marginBottom: 40,
-    textAlign: "center",
-    lineHeight: 22,
-    paddingHorizontal: 10,
-  },
-  buttonContainer: { width: "100%", marginBottom: 30, paddingHorizontal: 20 },
+  contentContainer: { paddingHorizontal: 24, alignItems: "center" },
+  title: { fontSize: 32, fontWeight: "bold", color: "#2e7d32", marginBottom: 10 },
+  subtitle: { fontSize: 16, color: "#388e3c", marginBottom: 30, textAlign: "center" },
   googleButton: {
     backgroundColor: "#4285F4",
-    padding: 14,
-    borderRadius: 8,
-    flexDirection: "row",
+    paddingVertical: 14,
+    borderRadius: 10,
+    width: "100%",
     alignItems: "center",
-    justifyContent: "center",
     elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
   },
-  googleButtonText: {
-    color: "white",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  bottomContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 20,
-    justifyContent: "center",
-    paddingVertical: 10,
-  },
-  signInText: { fontSize: 14, color: "#000" },
-  signInButton: { padding: 8 },
-  signInLink: {
-    fontSize: 14,
-    color: "#2e7d32",
-    textDecorationLine: "underline",
-  },
-  googleContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10, // if gap doesn't work in your version, use marginRight in icon instead
-  },
-  googleButtonText: {
-    color: 'white',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backButton: { marginTop: 20, padding: 10 },
-  backButtonText: { fontSize: 14, color: "#666" },
+  googleContent: { flexDirection: "row", alignItems: "center" },
+  googleButtonText: { color: "white", fontSize: 16, fontWeight: "600" },
+  backButton: { marginTop: 30 },
+  backButtonText: { fontSize: 14, color: "#777" },
   errorContainer: {
     backgroundColor: "#ffebee",
     padding: 10,
-    borderRadius: 5,
+    borderRadius: 6,
     marginBottom: 20,
     width: "100%",
   },

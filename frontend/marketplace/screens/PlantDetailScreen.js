@@ -13,15 +13,21 @@ import {
   Share,
   Platform,
   SafeAreaView,
+  Modal,
+  Linking,
 } from 'react-native';
 import { MaterialIcons, FontAwesome, Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { StatusBar } from 'expo-status-bar';
 
-// Import fixed header component
+// Import consistent header
 import MarketplaceHeader from '../components/MarketplaceHeader';
 
-// Import services
+// Import API service
 import { getSpecific, wishProduct } from '../services/marketplaceApi';
+
+// Import PlantLocationMap component
+import PlantLocationMap from '../components/PlantLocationMap';
 
 const { width } = Dimensions.get('window');
 
@@ -40,6 +46,7 @@ const PlantDetailScreen = () => {
   const [error, setError] = useState(null);
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [mapModalVisible, setMapModalVisible] = useState(false);
 
   // Load plant details when component mounts
   useEffect(() => {
@@ -47,142 +54,180 @@ const PlantDetailScreen = () => {
   }, [plantId]);
 
   // Function to load plant details
-  // SEARCH_KEY: MARKETPLACE_DETAIL_SCREEN_API_CALL  
-const loadPlantDetail = async () => {
-  try {
-    setIsLoading(true);
-    setError(null);
-    const data = await getSpecific(plantId);
+  const loadPlantDetail = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const data = await getSpecific(plantId);
 
-    if (!data) {
-      throw new Error('Plant not found');
+      if (!data) {
+        throw new Error('Plant not found');
+      }
+
+      setPlant(data);
+      setIsFavorite(data.isWished || false);
+      setIsLoading(false);
+    } catch (err) {
+      setError('Failed to load plant details. Please try again later.');
+      setIsLoading(false);
+      console.error('Error fetching plant details:', err);
     }
-
-    setPlant(data);
-    setIsFavorite(data.isWished || false);
-    setIsLoading(false);
-  } catch (err) {
-    setError('Failed to load plant details. Please try again later.');
-    setIsLoading(false);
-    console.error('Error fetching plant details:', err);
-  }
-};
+  };
 
   // Toggle favorite/wishlist status
-// SEARCH_KEY: MARKETPLACE_TOGGLE_FAVORITE
-const toggleFavorite = async () => {
-  try {
-    // Update UI immediately for better user experience
-    setIsFavorite(!isFavorite);
-    
-    // Call API to update wishlist status
-    const result = await wishProduct(plantId);
-    
-    // If the API returns a specific wishlist state, use that
-    if (result && 'isWished' in result) {
-      setIsFavorite(result.isWished);
+  const toggleFavorite = async () => {
+    try {
+      // Update UI immediately for better user experience
+      setIsFavorite(!isFavorite);
+      
+      // Call API to update wishlist status
+      const result = await wishProduct(plantId);
+      
+      // If the API returns a specific wishlist state, use that
+      if (result && 'isWished' in result) {
+        setIsFavorite(result.isWished);
+      }
+    } catch (err) {
+      // Revert UI state if API call fails
+      setIsFavorite(isFavorite);
+      Alert.alert('Error', 'Failed to update favorites. Please try again.');
+      console.error('Error toggling favorite:', err);
     }
-  } catch (err) {
-    // Revert UI state if API call fails
-    setIsFavorite(isFavorite);
-    Alert.alert('Error', 'Failed to update favorites. Please try again.');
-    console.error('Error toggling favorite:', err);
-  }
-};
+  };
 
   // Navigate to contact seller screen
-// SEARCH_KEY: HANDLE_CONTACT_SELLER
-const handleContactSeller = () => {
-  // Check if we have the seller ID
-  if (!plant.sellerId) {
-    Alert.alert('Error', 'Seller information is not available.');
-    return;
-  }
-  
-  navigation.navigate('Messages', { 
-    sellerId: plant.sellerId, 
-    plantId: plant._id || plant.id,
-    plantName: plant.title || plant.name
-  });
-};
+  const handleContactSeller = () => {
+    // Check if we have the seller ID
+    if (!plant.sellerId) {
+      Alert.alert('Error', 'Seller information is not available.');
+      return;
+    }
+    
+    navigation.navigate('Messages', { 
+      sellerId: plant.sellerId, 
+      plantId: plant._id || plant.id,
+      plantName: plant.title || plant.name
+    });
+  };
+
+  // Helper function to get location text safely
+  const getLocationText = () => {
+    if (typeof plant.location === 'string') {
+      return plant.location;
+    } else if (plant.location && typeof plant.location === 'object') {
+      // Handle object-type location with city property
+      return plant.location.city || 'Local pickup';
+    } else if (plant.city) {
+      return plant.city;
+    }
+    return 'Local pickup';
+  };
+
+  /**
+   * Open the map app with directions to the plant location
+   */
+  const handleGetDirections = () => {
+    try {
+      if (!plant.location || typeof plant.location !== 'object' || 
+          !plant.location.latitude || !plant.location.longitude) {
+        Alert.alert('Error', 'Location coordinates not available');
+        return;
+      }
+      
+      const { latitude, longitude } = plant.location;
+      const label = plant.title || plant.name || 'Plant location';
+      
+      // Use different URL schemes based on platform
+      let url;
+      if (Platform.OS === 'ios') {
+        url = `maps:0,0?q=${label}@${latitude},${longitude}`;
+      } else {
+        url = `geo:0,0?q=${latitude},${longitude}(${encodeURI(label)})`;
+      }
+      
+      Linking.canOpenURL(url).then(supported => {
+        if (supported) {
+          Linking.openURL(url);
+        } else {
+          // Fallback to Google Maps web URL
+          Linking.openURL(
+            `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`
+          );
+        }
+      });
+    } catch (error) {
+      console.error('Error opening directions:', error);
+      Alert.alert('Error', 'Could not open directions. Please try again later.');
+    }
+  };
+
+  /**
+   * Show the full-screen map modal
+   */
+  const handleExpandMap = () => {
+    setMapModalVisible(true);
+  };
 
   // Share plant listing
-// This is a partial update showing just the share functionality in PlantDetailScreen.js
-// Replace the existing handleShareListing function with this enhanced version
-
-// Import ShareService if you're using the separate service approach
-// import { shareItem } from '../services/ShareService';
-
-// Enhanced share plant listing function
-const handleShareListing = async () => {
-  try {
-    // Get all the plant details
-    const plantName = plant.title || plant.name || 'Amazing plant';
-    const plantPrice = parseFloat(plant.price).toFixed(2);
-    const sellerName = plant.name || plant.seller?.name || 'a trusted seller';
-    const plantCategory = plant.category || 'Plants';
-    const plantLocation = plant.city || plant.location || 'Local pickup';
-    const plantDescription = plant.description 
-      ? (plant.description.length > 100 
-         ? plant.description.substring(0, 100) + '...' 
-         : plant.description)
-      : 'Check out this amazing plant!';
+  const handleShareListing = async () => {
+    try {
+      // Get all the plant details
+      const plantName = plant.title || plant.name || 'Amazing plant';
+      const plantPrice = parseFloat(plant.price).toFixed(2);
+      const sellerName = plant.seller?.name || 'a trusted seller';
+      const plantCategory = plant.category || 'Plants';
+      const plantLocation = getLocationText();
+      const plantDescription = plant.description 
+        ? (plant.description.length > 100 
+           ? plant.description.substring(0, 100) + '...' 
+           : plant.description)
+        : 'Check out this amazing plant!';
+        
+      // Create deep link URL for the app
+      const appURL = Platform.OS === 'ios' 
+        ? `greenerapp://plants/${plantId}` 
+        : `https://greenerapp.com/plants/${plantId}`;
+        
+      // Create rich share message with emojis and formatting
+      const shareMessage = 
+        `🌿 ${plantName} - $${plantPrice} 🌿\n\n` +
+        `${plantDescription}\n\n` +
+        `📋 Details:\n` +
+        `🏷️ Category: ${plantCategory}\n` +
+        `📍 Location: ${plantLocation}\n` +
+        `👤 Seller: ${sellerName}\n\n` +
+        `💬 Visit Greener app to contact the seller and see more amazing plants!`;
+        
+      // Use Share API with enhanced options
+      const result = await Share.share(
+        {
+          title: `Greener: ${plantName}`,
+          message: shareMessage,
+          url: appURL,
+        },
+        {
+          // iOS options
+          dialogTitle: 'Share This Plant With Friends',
+          // Android options
+          subject: `Check out this ${plantName} on Greener!`,
+          tintColor: '#4CAF50',
+          excludedActivityTypes: [
+            'com.apple.UIKit.activity.Print',
+            'com.apple.UIKit.activity.AssignToContact',
+          ],
+        }
+      );
       
-    // Create deep link URL for the app
-    const appURL = Platform.OS === 'ios' 
-      ? `greenerapp://plants/${plantId}` 
-      : `https://greenerapp.com/plants/${plantId}`;
-      
-    // Create rich share message with emojis and formatting
-    const shareMessage = 
-      `🌿 ${plantName} - $${plantPrice} 🌿\n\n` +
-      `${plantDescription}\n\n` +
-      `📋 Details:\n` +
-      `🏷️ Category: ${plantCategory}\n` +
-      `📍 Location: ${plantLocation}\n` +
-      `👤 Seller: ${sellerName}\n\n` +
-      `💬 Visit Greener app to contact the seller and see more amazing plants!`;
-      
-    // Use Share API with enhanced options
-    const result = await Share.share(
-      {
-        title: `Greener: ${plantName}`,
-        message: shareMessage,
-        url: appURL,
-      },
-      {
-        // iOS options
-        dialogTitle: 'Share This Plant With Friends',
-        // Android options
-        subject: `Check out this ${plantName} on Greener!`,
-        tintColor: '#4CAF50',
-        excludedActivityTypes: [
-          'com.apple.UIKit.activity.Print',
-          'com.apple.UIKit.activity.AssignToContact',
-        ],
+      // Optional: Track share completion
+      if (result.action === Share.sharedAction) {
+        // Successfully shared
+        console.log('Plant shared successfully');
       }
-    );
-    
-    // Optional: Track share completion
-    if (result.action === Share.sharedAction) {
-      // Successfully shared
-      console.log('Plant shared successfully');
-      
-      // If available, you could track this in analytics
-      // analytics.trackEvent('plant_shared', { plantId, platform: result.activityType || 'unknown' });
+    } catch (error) {
+      console.error('Error sharing plant:', error);
+      Alert.alert('Error', 'Could not share this listing');
     }
-  } catch (error) {
-    console.error('Error sharing plant:', error);
-    Alert.alert('Error', 'Could not share this listing');
-  }
-};
-
-// Then use this function in your Share Button in the render section:
-/*
-<TouchableOpacity style={styles.shareButton} onPress={handleShareListing}>
-  <MaterialIcons name="share" size={24} color="#fff" />
-</TouchableOpacity>
-*/
+  };
 
   // Format date for display
   const formatDate = (dateString) => {
@@ -198,6 +243,74 @@ const handleShareListing = async () => {
     } catch (e) {
       return 'Recently listed';
     }
+  };
+
+  /**
+   * Render plant location section
+   */
+  const renderLocationSection = () => {
+    const hasLocation = !!(
+      plant.location && 
+      typeof plant.location === 'object' && 
+      plant.location.latitude && 
+      plant.location.longitude
+    );
+    
+    // Skip section if no map data available
+    if (!hasLocation && !plant.city) {
+      return null;
+    }
+    
+    return (
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Location</Text>
+        
+        {/* Location Map */}
+        <PlantLocationMap
+          plant={plant}
+          onGetDirections={handleGetDirections}
+          onExpandMap={handleExpandMap}
+        />
+      </View>
+    );
+  };
+
+  /**
+   * Render full-screen map modal
+   */
+  const renderMapModal = () => {
+    return (
+      <Modal
+        visible={mapModalVisible}
+        onRequestClose={() => setMapModalVisible(false)}
+        animationType="slide"
+        statusBarTranslucent
+      >
+        <View style={styles.modalContainer}>
+          <StatusBar style="light" />
+          
+          {/* Header */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setMapModalVisible(false)}
+            >
+              <MaterialIcons name="close" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>
+              {plant.title || plant.name || 'Plant Location'}
+            </Text>
+          </View>
+          
+          {/* Map */}
+          <PlantLocationMap
+            plant={plant}
+            onGetDirections={handleGetDirections}
+            expanded={true}
+          />
+        </View>
+      </Modal>
+    );
   };
 
   // Loading state with consistent header
@@ -326,8 +439,11 @@ const handleShareListing = async () => {
               <MaterialIcons name="location-on" size={20} color="#4CAF50" />
               <Text style={styles.locationTitle}>Location</Text>
             </View>
-            <Text style={styles.locationText}>{plant.city || plant.location || 'Local pickup'}</Text>
+            <Text style={styles.locationText}>{getLocationText()}</Text>
           </View>
+
+          {/* Map view (if available) */}
+          {renderLocationSection()}
 
           {/* Description */}
           <Text style={styles.sectionTitle}>Description</Text>
@@ -368,12 +484,12 @@ const handleShareListing = async () => {
               style={styles.sellerAvatar} 
             />
             <View style={styles.sellerInfo}>
-              <Text style={styles.sellerName}>{plant.name || 'Plant Enthusiast'}</Text>
-              {plant.rating && (
+              <Text style={styles.sellerName}>{plant.seller?.name || 'Plant Enthusiast'}</Text>
+              {plant.seller?.rating && (
                 <View style={styles.sellerRatingContainer}>
                   <MaterialIcons name="star" size={16} color="#FFC107" />
                   <Text style={styles.sellerRating}>
-                    {plant.rating} ({plant.totalSells || 0} plants)
+                    {plant.seller.rating} ({plant.seller.totalSells || 0} sales)
                   </Text>
                 </View>
               )}
@@ -414,6 +530,9 @@ const handleShareListing = async () => {
           </View>
         </View>
       </ScrollView>
+
+      {/* Map Modal */}
+      {renderMapModal()}
     </SafeAreaView>
   );
 };
@@ -459,6 +578,9 @@ const styles = StyleSheet.create({
     width, 
     height: 250,
     backgroundColor: '#f0f0f0',
+  },
+  section: {
+    marginVertical: 16,
   },
   pagination: { 
     position: 'absolute', 
@@ -674,6 +796,28 @@ const styles = StyleSheet.create({
   safetyBold: { 
     fontWeight: 'bold',
     color: '#333',
+  },
+  // Map modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+  modalHeader: {
+    height: 60,
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  modalTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
+    flex: 1,
+    marginLeft: 16,
   },
 });
 

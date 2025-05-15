@@ -212,32 +212,113 @@ export const deleteProduct = async (productId) => {
   }
 };
 
-// Update Product API
+
+// In services/marketplaceApi.js
+// Fix for update-product API in marketplaceApi.js
+
+/**
+ * Update an existing product with improved error handling and debugging
+ * @param {string} productId - The ID of the product to update
+ * @param {Object} updateData - The data to update the product with
+ * @returns {Promise<Object>} The response from the server
+ */
 export const updateProduct = async (productId, updateData) => {
   try {
-    return await apiRequest(`marketplace/products/${productId}`, 'PATCH', updateData);
+    if (!productId) {
+      throw new Error('Product ID is required');
+    }
+    
+    console.log(`Updating product ${productId}:`, updateData);
+    
+    // Process any image updates before sending to API
+    const processedUpdateData = { ...updateData };
+    
+    // Process main image if it's a local file
+    if (processedUpdateData.image && typeof processedUpdateData.image === 'string' && 
+        (processedUpdateData.image.startsWith('file:') || processedUpdateData.image.startsWith('data:'))) {
+      try {
+        console.log('Uploading updated main image...');
+        const uploadResult = await uploadImage(processedUpdateData.image, 'plant');
+        
+        if (uploadResult && uploadResult.url) {
+          console.log('Main image uploaded successfully:', uploadResult.url);
+          processedUpdateData.image = uploadResult.url;
+        } else {
+          console.warn('Image upload returned unexpected result:', uploadResult);
+        }
+      } catch (err) {
+        console.error('Failed to upload updated main image:', err);
+        // Continue with update but with original image
+        delete processedUpdateData.image;
+      }
+    }
+    
+    // Process additional images array if present
+    if (Array.isArray(processedUpdateData.images)) {
+      const processedImages = [];
+      let uploadFailed = false;
+      
+      console.log(`Processing ${processedUpdateData.images.length} additional images...`);
+      
+      for (const imgUri of processedUpdateData.images) {
+        // Only process if it's a local file
+        if (typeof imgUri === 'string' && 
+            (imgUri.startsWith('file:') || imgUri.startsWith('data:'))) {
+          try {
+            const uploadResult = await uploadImage(imgUri, 'plant');
+            
+            if (uploadResult && uploadResult.url) {
+              processedImages.push(uploadResult.url);
+            } else {
+              console.warn('Additional image upload returned unexpected result:', uploadResult);
+              uploadFailed = true;
+            }
+          } catch (err) {
+            console.error('Failed to upload additional image:', err);
+            uploadFailed = true;
+          }
+        } else {
+          // Keep existing remote URLs
+          processedImages.push(imgUri);
+        }
+      }
+      
+      if (uploadFailed) {
+        console.warn('Some images failed to upload. Proceeding with the images that succeeded.');
+      }
+      
+      processedUpdateData.images = processedImages;
+    }
+    
+    // Make the API request
+    // First try with PATCH which is the correct method
+    try {
+      console.log(`Sending PATCH request to marketplace/products/${productId}`);
+      const result = await apiRequest(`marketplace/products/${productId}`, 'PATCH', processedUpdateData);
+      console.log('Update successful with PATCH:', result);
+      return result;
+    } catch (patchError) {
+      // If PATCH fails with 404 or 405, try with PUT as fallback
+      if (patchError.message && (
+          patchError.message.includes('404') || 
+          patchError.message.includes('405') ||
+          patchError.message.includes('Method Not Allowed'))) {
+        console.log('PATCH failed, trying PUT instead...');
+        try {
+          const result = await apiRequest(`marketplace/products/${productId}`, 'PUT', processedUpdateData);
+          console.log('Update successful with PUT:', result);
+          return result;
+        } catch (putError) {
+          console.error('Both PATCH and PUT failed:', putError);
+          throw putError;
+        }
+      } else {
+        // Re-throw other errors
+        throw patchError;
+      }
+    }
   } catch (error) {
     console.error(`Error updating product ${productId}:`, error);
-    if (config.features.useMockOnError) {
-      return { 
-        success: true, 
-        message: 'Product updated successfully (mock)',
-        product: { ...getMockProductById(productId), ...updateData }
-      };
-    }
-    throw error;
-  }
-};
-
-// Mark Product as Sold API
-export const markProductAsSold = async (productId, buyerInfo = null) => {
-  try {
-    return await apiRequest(`marketplace/products/${productId}/sold`, 'POST', buyerInfo);
-  } catch (error) {
-    console.error(`Error marking product ${productId} as sold:`, error);
-    if (config.features.useMockOnError) {
-      return { success: true, message: 'Product marked as sold successfully (mock)' };
-    }
     throw error;
   }
 };
@@ -426,51 +507,147 @@ export const getUserListings = async (status = null) => {
 };
 
 // Image Upload API
+// Updated ImageUpload Service for marketplaceApi.js
+
+/**
+ * Upload an image to the server with improved error handling and cross-platform support
+ * @param {string} imageUri - The URI of the image to upload
+ * @param {string} type - The type of image (plant, avatar, etc.)
+ * @returns {Promise<Object>} The response from the server
+ */
 export const uploadImage = async (imageUri, type = 'plant') => {
   try {
+    // Get user email for identification
     const userEmail = await AsyncStorage.getItem('userEmail');
-
+    
+    // Validate image URI
+    if (!imageUri) {
+      throw new Error('Image URI is required');
+    }
+    
+    console.log(`Uploading ${type} image: ${imageUri.substring(0, 50)}...`);
+    
+    // Handle different platforms differently
     if (Platform.OS === 'web') {
-      // Web uses FormData
+      // Web implementation - use FormData
       const formData = new FormData();
-      formData.append('image', {
-        uri: imageUri,
-        name: `upload_${Date.now()}.jpg`,
-        type: 'image/jpeg',
-      });
+      
+      // For web, we need to handle the File/Blob differently
+      if (imageUri.startsWith('data:')) {
+        // Already a Data URI - convert to blob
+        const response = await fetch(imageUri);
+        const blob = await response.blob();
+        formData.append('image', blob, 'image.jpg');
+      } else {
+        // Assume it's a File object or similar
+        formData.append('image', {
+          uri: imageUri,
+          name: `${type}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        });
+      }
+      
+      // Add additional metadata
       formData.append('type', type);
-
+      if (userEmail) {
+        formData.append('userId', userEmail);
+      }
+      
+      // Make the request
       const response = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Authorization': authToken ? `Bearer ${authToken}` : '',
-        },
+        headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
       });
-
+      
       if (!response.ok) {
-        throw new Error(`Web upload failed: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`Upload failed with status ${response.status}: ${errorText}`);
+        throw new Error(`Upload failed: ${response.status}`);
       }
-
+      
       return await response.json();
     } else {
-      // Mobile: convert to base64
-      const base64 = await FileSystem.readAsStringAsync(imageUri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      const res = await apiRequest('marketplace/uploadImage', 'POST', {
-        image: `data:image/jpeg;base64,${base64}`,
-        type,
-      });
-
-      return res;
+      // Mobile implementation - convert to base64
+      // Check if already base64
+      if (imageUri.startsWith('data:image')) {
+        // Already in base64 format
+        return await apiRequest('marketplace/uploadImage', 'POST', {
+          image: imageUri,
+          type,
+          userId: userEmail
+        });
+      }
+      
+      // Get file info to check size
+      const fileInfo = await FileSystem.getInfoAsync(imageUri);
+      if (!fileInfo.exists) {
+        throw new Error('Image file does not exist');
+      }
+      
+      // Check file size - warn if too large
+      if (fileInfo.size > 5 * 1024 * 1024) {
+        console.warn('Image is large (>5MB), upload may fail or be slow');
+      }
+      
+      try {
+        // Read as base64
+        const base64 = await FileSystem.readAsStringAsync(imageUri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        
+        // Determine MIME type based on file extension
+        let mimeType = 'image/jpeg'; // Default
+        if (imageUri.toLowerCase().endsWith('.png')) {
+          mimeType = 'image/png';
+        } else if (imageUri.toLowerCase().endsWith('.gif')) {
+          mimeType = 'image/gif';
+        }
+        
+        // Create data URI
+        const dataUri = `data:${mimeType};base64,${base64}`;
+        
+        // Send the request
+        return await apiRequest('marketplace/uploadImage', 'POST', {
+          image: dataUri,
+          type,
+          userId: userEmail
+        });
+      } catch (readError) {
+        console.error('Error reading file as base64:', readError);
+        
+        // Fallback to FormData approach for mobile
+        const formData = new FormData();
+        formData.append('image', {
+          uri: imageUri,
+          name: `${type}_${Date.now()}.jpg`,
+          type: 'image/jpeg',
+        });
+        formData.append('type', type);
+        if (userEmail) {
+          formData.append('userId', userEmail);
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
+          method: 'POST',
+          body: formData,
+          headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed with status: ${response.status}`);
+        }
+        
+        return await response.json();
+      }
     }
   } catch (error) {
     console.error('Image upload error:', error);
     throw error;
   }
 };
+
+
 
 // SignalR API
 export const getNegotiateToken = async () => {
@@ -489,26 +666,78 @@ export const getNegotiateToken = async () => {
 };
 
 // Location and Maps API
+/**
+ * Geocode an address to get coordinates
+ * @param {string} address The address to geocode
+ * @returns {Promise<Object>} Location data with coordinates
+ */
 export const geocodeAddress = async (address) => {
   try {
-    return await apiRequest(`marketplace/geocode?address=${encodeURIComponent(address)}`);
-  } catch (error) {
-    console.error('Error geocoding address:', error);
-    if (config.features.useMockOnError) {
+    if (!address || address === 'Unknown location' || address.length < 3) {
+      throw new Error('Invalid address for geocoding');
+    }
+
+    // Check for cached geocode results first
+    const cacheKey = `geocode_${address.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    try {
+      const cachedData = await AsyncStorage.getItem(cacheKey);
+      if (cachedData) {
+        return JSON.parse(cachedData);
+      }
+    } catch (e) {
+      // Failed to check cache, continue with API request
+      console.warn('Failed to check geocode cache:', e);
+    }
+
+    // Development mockup mode
+    if (config.isDevelopment && !config.features.useRealApi) {
       // Generate mock coordinates from hash of address
       const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      return {
+      const mockResult = {
         latitude: 32.0853 + (hash % 20 - 10) / 100,
         longitude: 34.7818 + (hash % 20 - 10) / 100,
         city: address.split(',')[0],
         country: 'Israel'
       };
+      
+      // Cache the mock result
+      try {
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(mockResult));
+      } catch (e) {
+        console.warn('Failed to cache geocode result:', e);
+      }
+      
+      return mockResult;
     }
+
+    // Make the API request
+    const response = await apiRequest(`marketplace/geocode?address=${encodeURIComponent(address)}`);
+    
+    // Cache the result
+    if (response && response.latitude && response.longitude) {
+      try {
+        await AsyncStorage.setItem(cacheKey, JSON.stringify(response));
+      } catch (e) {
+        console.warn('Failed to cache geocode result:', e);
+      }
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('Error geocoding address:', error);
     throw error;
   }
 };
 
 // Nearby Products API
+/**
+ * Get nearby products within a radius from location
+ * @param {number} latitude Latitude coordinate
+ * @param {number} longitude Longitude coordinate
+ * @param {number} radius Radius in kilometers (default: 10)
+ * @param {string} category Optional category filter
+ * @returns {Promise<Object>} Object containing nearby products
+ */
 export const getNearbyProducts = async (latitude, longitude, radius = 10, category = null) => {
   try {
     let endpoint = `marketplace/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`;
@@ -520,19 +749,58 @@ export const getNearbyProducts = async (latitude, longitude, radius = 10, catego
     return await apiRequest(endpoint);
   } catch (error) {
     console.error('Error getting nearby products:', error);
-    if (config.features.useMockOnError) {
+    
+    if (config.features.useMockOnError || (config.isDevelopment && !config.features.useRealApi)) {
       // Generate mock nearby products
-      return {
-        products: MOCK_PLANTS.map(plant => ({
-          ...plant,
-          distance: Math.random() * radius
-        })).slice(0, 5),
-        count: 5
+      const mockProducts = [];
+      
+      // Create 5-10 mock products
+      const count = 5 + Math.floor(Math.random() * 6);
+      
+      for (let i = 0; i < count; i++) {
+        // Generate a random position within the radius
+        const angle = Math.random() * Math.PI * 2;
+        const distance = Math.random() * radius;
+        
+        // Convert distance to lat/lon offset (approximate)
+        const latOffset = distance * Math.cos(angle) / 111; // 1 degree lat is about 111 km
+        const lonOffset = distance * Math.sin(angle) / (111 * Math.cos(latitude * Math.PI / 180));
+        
+        mockProducts.push({
+          id: `nearby-${i}`,
+          title: `${category || 'Plant'} ${i+1}`,
+          price: (Math.random() * 50 + 5).toFixed(2),
+          category: category || 'Indoor Plants',
+          location: {
+            latitude: latitude + latOffset,
+            longitude: longitude + lonOffset,
+            city: 'Nearby Location'
+          },
+          image: `https://via.placeholder.com/150?text=Plant${i+1}`,
+          description: 'This is a mock plant generated for the map view.',
+          distance: distance,
+          seller: {
+            name: 'Local Seller',
+            _id: `seller-${i}`
+          }
+        });
+      }
+      
+      return { 
+        products: mockProducts,
+        count: mockProducts.length,
+        center: {
+          latitude,
+          longitude
+        },
+        radius
       };
     }
+    
     throw error;
   }
 };
+
 
 // User Plant API (main app integration)
 export const getUserPlantsByLocation = async (location) => {
@@ -592,6 +860,184 @@ export const createImageFormData = async (uri, name = 'image', type = 'image/jpe
   return formData;
 };
 
+/**
+ * Mark a product as sold
+ * @param {string} productId - The ID of the product to mark as sold
+ * @param {Object} buyerInfo - Optional information about the buyer
+ * @returns {Promise<Object>} The response from the API
+ */
+export const markProductAsSold = async (productId, transactionInfo = {}) => {
+  try {
+    return await apiRequest(`marketplace/products/${productId}/sold`, 'POST', transactionInfo);
+  } catch (error) {
+    console.error(`Error marking product ${productId} as sold:`, error);
+    
+    if (config.features.useMockOnError || (config.isDevelopment && !config.features.useRealApi)) {
+      return { 
+        success: true, 
+        message: 'Product marked as sold successfully (mock)',
+        productId
+      };
+    }
+    
+    throw error;
+  }
+};
+/**
+ * Get user's current location if available
+ * @returns {Promise<Object>} Location object with coordinates
+ */
+export const getCurrentLocation = async () => {
+  try {
+    // Check if we have cached location
+    const cachedLocation = await AsyncStorage.getItem('@UserLocation');
+    if (cachedLocation) {
+      return JSON.parse(cachedLocation);
+    }
+    
+    // Request location permission
+    if (Platform.OS !== 'web') {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        throw new Error('Location permission denied');
+      }
+    }
+    
+    // Get current location
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Balanced
+    });
+    
+    const result = {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      accuracy: location.coords.accuracy,
+      timestamp: location.timestamp
+    };
+    
+    // Cache the result
+    await AsyncStorage.setItem('@UserLocation', JSON.stringify(result));
+    
+    return result;
+  } catch (error) {
+    console.error('Error getting current location:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get reviews for a product or seller
+ * @param {string} targetId - The ID of the product or seller
+ * @param {string} type - The type of review: 'product' or 'seller'
+ * @returns {Promise<Object>} - The response with reviews array
+ */
+export const getReviews = async (targetId, type = 'seller') => {
+  try {
+    return await apiRequest(`marketplace/${type}s/${targetId}/reviews`);
+  } catch (error) {
+    console.error(`Error fetching ${type} reviews:`, error);
+    
+    if (config.features.useMockOnError) {
+      // Return mock reviews for development
+      return {
+        reviews: [
+          {
+            id: '1',
+            rating: 5,
+            text: 'Great seller! Plants arrived in perfect condition.',
+            userName: 'Plant Lover',
+            userId: 'user1@example.com',
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: '2',
+            rating: 4,
+            text: 'Good communication and nice plants.',
+            userName: 'Green Thumb',
+            userId: 'user2@example.com',
+            createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
+          },
+        ]
+      };
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Submit a review for a product or seller
+ * @param {string} targetId - The ID of the product or seller
+ * @param {string} type - The type of review: 'product' or 'seller' 
+ * @param {Object} reviewData - The review data with rating and text
+ * @returns {Promise<Object>} - The response with success status
+ */
+export const submitReview = async (targetId, type = 'seller', reviewData) => {
+  try {
+    return await apiRequest(`marketplace/${type}s/${targetId}/reviews`, 'POST', reviewData);
+  } catch (error) {
+    console.error(`Error submitting ${type} review:`, error);
+    
+    if (config.features.useMockOnError) {
+      // Return mock success response for development
+      return {
+        success: true,
+        review: {
+          id: 'new-' + Date.now(),
+          ...reviewData,
+          userName: 'You',
+          userId: await AsyncStorage.getItem('userEmail'),
+          createdAt: new Date().toISOString()
+        }
+      };
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Delete a review
+ * @param {string} reviewId - The ID of the review to delete
+ * @returns {Promise<Object>} - The response with success status
+ */
+export const deleteReview = async (reviewId) => {
+  try {
+    return await apiRequest(`marketplace/reviews/${reviewId}`, 'DELETE');
+  } catch (error) {
+    console.error('Error deleting review:', error);
+    
+    if (config.features.useMockOnError) {
+      // Return mock success response for development
+      return { success: true };
+    }
+    
+    throw error;
+  }
+};
+
+export async function speechToText(audioUrl) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/speechToText`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ audioUrl }),
+    });
+
+    const data = await response.json();
+    if (response.ok && data.text) {
+      return data.text;
+    } else {
+      throw new Error(data.error || 'Speech recognition failed');
+    }
+  } catch (error) {
+    console.error('speechToText error:', error);
+    throw error;
+  }
+}
+
 // Export the API
 export default {
   // Auth methods
@@ -633,5 +1079,7 @@ export default {
   // Main app integration
   getUserPlantsByLocation,
   getUserLocations,
-  identifyPlantPhoto
+  identifyPlantPhoto,
+  //Speech recognition
+  speechToText
 };
