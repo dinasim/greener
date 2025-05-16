@@ -574,10 +574,11 @@ const MessagesScreen = () => {
     <SafeAreaView style={styles.container}>
       {/* Use MarketplaceHeader */}
       <MarketplaceHeader
-        title="Messages"
-        showBackButton={true}
-        showNotifications={false}
-      />
+  title="Messages"
+  showBackButton={true}
+  onBackPress={() => navigation.goBack()}
+  showNotifications={false}
+/>
       
       <View style={styles.tabContainer}>
         <TouchableOpacity

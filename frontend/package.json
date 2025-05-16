@@ -23,6 +23,7 @@
     "@react-navigation/stack": "^7.3.2",
     "azure-maps-control": "^3.6.1",
     "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
     "dayjs": "^1.11.13",
     "expo": "^53.0.9",
     "expo-auth-session": "~6.1.5",

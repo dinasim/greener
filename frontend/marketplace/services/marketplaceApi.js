@@ -411,20 +411,55 @@ export const markMessagesAsRead = async (conversationId, messageIds = []) => {
   }
 };
 
-// USER API
-export const fetchUserProfile = async (userId = null) => {
+/**
+ * Fetch user profile with improved error handling and cross-database support
+ * @param {string} userId User ID or email
+ * @returns {Promise<Object>} User profile data
+ */
+export const fetchUserProfile = async (userId) => {
   try {
-    // If no userId provided, use current user
-    if (!userId) {
-      userId = await AsyncStorage.getItem('userEmail');
+    console.log(`Fetching user profile for: ${userId}`);
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}`, { headers });
+    
+    // Handle response with proper error checking
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error (${response.status}): ${errorText}`);
     }
-
-    return await apiRequest(`marketplace/users/${encodeURIComponent(userId)}`);
+    
+    const data = await response.json();
+    
+    // If we got the user but no listings, fetch their listings
+    if (data.user && (!data.user.listings || data.user.listings.length === 0)) {
+      try {
+        const listingsResponse = await fetch(
+          `${API_BASE_URL}/marketplace/users/${userId}/listings`, 
+          { headers }
+        );
+        
+        if (listingsResponse.ok) {
+          const listingsData = await listingsResponse.json();
+          
+          // Combine both active and sold listings
+          if (listingsData) {
+            const allListings = [
+              ...(listingsData.active || []),
+              ...(listingsData.sold || [])
+            ];
+            
+            data.user.listings = allListings;
+          }
+        }
+      } catch (listingsError) {
+        console.warn('Failed to fetch listings:', listingsError);
+        // Continue without listings
+      }
+    }
+    
+    return data;
   } catch (error) {
     console.error('Error fetching user profile:', error);
-    if (config.features.useMockOnError) {
-      return { user: MOCK_USER };
-    }
     throw error;
   }
 };
@@ -506,6 +541,7 @@ export const getUserListings = async (status = null) => {
   }
 };
 
+
 // Enhanced version of the uploadImage function for services/marketplaceApi.js
 
 /**
@@ -534,7 +570,6 @@ export const uploadImage = async (fileUri, type = 'plant') => {
     
     if (type === 'speech') {
       // For speech files, explicitly set audio content type
-      // Use WebM for web platform since it's more widely supported
       contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/wav';
     } else if (fileUri) {
       // Try to determine from URI for other types
@@ -561,8 +596,45 @@ export const uploadImage = async (fileUri, type = 'plant') => {
     if (Platform.OS === 'web') {
       console.log('Using web upload method with content type:', contentType);
       
-      if (fileUri.startsWith('blob:') || fileUri.startsWith('data:')) {
-        console.log('Processing blob or data URI');
+      // Handle data URIs directly for web platform
+      if (fileUri.startsWith('data:')) {
+        console.log('Direct upload of data URI');
+        
+        // Send data URI directly in JSON payload
+        const body = {
+          image: fileUri, // Send full data URI
+          type,
+          userId: userEmail,
+          contentType
+        };
+        
+        const response = await fetch(uploadEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          },
+          body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+          let errorText;
+          try {
+            const errorJson = await response.json();
+            errorText = errorJson.error || errorJson.message || JSON.stringify(errorJson);
+          } catch (e) {
+            errorText = await response.text();
+          }
+          throw new Error(`Upload failed (${response.status}): ${errorText}`);
+        }
+        
+        const result = await response.json();
+        console.log('Direct upload successful');
+        return result;
+      }
+      // Handle blob URIs for web platform
+      else if (fileUri.startsWith('blob:')) {
+        console.log('Processing blob URI');
         
         // Fetch blob from URI
         const response = await fetch(fileUri);
@@ -615,31 +687,6 @@ export const uploadImage = async (fileUri, type = 'plant') => {
         
         const result = await uploadResponse.json();
         console.log('Upload successful:', result);
-        return result;
-      } else {
-        // JSON approach for base64 encoded data
-        const body = {
-          image: fileUri,
-          type,
-          userId: userEmail,
-          contentType
-        };
-        
-        const response = await fetch(uploadEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
-          },
-          body: JSON.stringify(body)
-        });
-        
-        if (!response.ok) {
-          throw new Error(`Upload failed with status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        console.log('Direct upload successful');
         return result;
       }
     } 

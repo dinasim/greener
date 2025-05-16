@@ -1,15 +1,10 @@
+# backend/user-profile/__init__.py
 import logging
 import json
 from datetime import datetime
 import azure.functions as func
 from db_helpers import get_container, get_main_container, get_marketplace_container
-from http_helpers import (
-    add_cors_headers,
-    handle_options_request,
-    create_error_response,
-    create_success_response,
-    extract_user_id,
-)
+from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('User profile API triggered.')
