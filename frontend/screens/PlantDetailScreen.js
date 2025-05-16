@@ -1,4 +1,3 @@
-// PlantDetailScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -10,8 +9,10 @@ import {
   TouchableOpacity,
   Dimensions,
   SafeAreaView,
+  Platform,
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import LottieView from 'lottie-react-native';
 
 const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const { width } = Dimensions.get('window');
@@ -23,13 +24,18 @@ export default function PlantDetailScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!plantId) return;
+    if (!plantId) {
+      setLoading(false);
+      return;
+    }
     (async () => {
       try {
         const res = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(plantId)}`);
         const data = await res.json();
-        if (data.length) setPlant(data[0]);
+        if (data && data.length) setPlant(data[0]);
+        else setPlant(null);
       } catch (e) {
+        setPlant(null);
         console.warn(e);
       } finally {
         setLoading(false);
@@ -37,18 +43,45 @@ export default function PlantDetailScreen({ route, navigation }) {
     })();
   }, [plantId]);
 
-  if (loading) return <ActivityIndicator style={styles.loader} size="large" />;
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <LottieView
+          autoPlay
+          loop
+          style={{ width: 110, height: 110, marginBottom: 14 }}
+          source={require('../assets/lottie-leaf.json')}
+        />
+        <Text style={{ fontSize: 18, color: "#2e7d32", fontWeight: "bold" }}>Loading plant details…</Text>
+      </SafeAreaView>
+    );
+  }
 
   if (!plant) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={styles.message}>No data available</Text>
+        <LottieView
+          autoPlay
+          loop
+          style={{ width: 120, height: 120, marginBottom: 10 }}
+          source={require('../assets/lottie-search.json')}
+        />
+        <Ionicons name="alert-circle" size={70} color="#bdbdbd" style={{ marginBottom: 14 }} />
+        <Text style={{ fontSize: 24, fontWeight: "bold", color: "#333", marginBottom: 10 }}>
+          Plant Not Found
+        </Text>
+        <Text style={{ color: "#666", fontSize: 17, marginBottom: 18, textAlign: 'center' }}>
+          Sorry, we couldn't find details for this plant in our encyclopedia.
+        </Text>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>Go Back</Text>
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
       </SafeAreaView>
     );
   }
+
+  // Make sure image_urls is always an array or fallback to image_url
+  const plantImage = plant.image_urls?.[0] || plant.image_url || null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -57,24 +90,24 @@ export default function PlantDetailScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={28} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{plant.common_name || plant.latin_name}</Text>
-        <TouchableOpacity onPress={() => {/* share logic */}}>
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {plant.common_name || plant.latin_name || 'Plant details'}
+        </Text>
+        {/* Share placeholder (no-op) */}
+        <TouchableOpacity>
           <Ionicons name="share-social-outline" size={24} color="#fff" />
         </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
         {/* Image */}
-        {plant.image_urls?.[0] && (
-          <Image
-            source={{ uri: plant.image_urls[0] }}
-            style={styles.image}
-          />
+        {plantImage && (
+          <Image source={{ uri: plantImage }} style={styles.image} />
         )}
 
         {/* Names */}
         <Text style={styles.commonName}>{plant.common_name || '—'}</Text>
-        <Text style={styles.latinName}>{plant.latin_name || '—'}</Text>
+        <Text style={styles.latinName}>{plant.latin_name || plant.scientific_name || '—'}</Text>
 
         {/* Info Cards */}
         <View style={styles.infoRow}>
@@ -89,7 +122,7 @@ export default function PlantDetailScreen({ route, navigation }) {
           <View style={styles.infoCard}>
             <FontAwesome5 name="temperature-low" size={24} color="#f07a5f" />
             <Text style={styles.infoText}>
-              {plant.temperature?.min || '-'}° - {plant.temperature?.max || '-'}°
+              {(plant.temperature?.min ?? '-')}° - {(plant.temperature?.max ?? '-')}°
             </Text>
           </View>
           <View style={styles.infoCard}>
@@ -133,9 +166,21 @@ const styles = StyleSheet.create({
   loader: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   message: { fontSize: 16, marginBottom: 12 },
-  backBtn: { padding: 10, backgroundColor: '#2e7d32', borderRadius: 6 },
-  backText: { color: '#fff' },
-  header: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2e7d32', padding: 12 },
+  backBtn: {
+    padding: 10,
+    backgroundColor: '#2e7d32',
+    borderRadius: 7,
+    marginTop: 8,
+    alignSelf: 'center'
+  },
+  backText: { color: '#fff', fontWeight: "bold", fontSize: 17 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#2e7d32',
+    padding: 12,
+    paddingTop: Platform.OS === 'android' ? 28 : 12
+  },
   headerTitle: { flex: 1, textAlign: 'center', color: '#fff', fontSize: 18, fontWeight: '600' },
   contentContainer: { padding: 16, paddingBottom: 120 },
   image: { width: '100%', height: IMAGE_HEIGHT, borderRadius: 12, marginBottom: 16 },

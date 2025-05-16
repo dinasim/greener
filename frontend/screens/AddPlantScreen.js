@@ -13,19 +13,19 @@ import {
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { Swipeable } from 'react-native-gesture-handler';
+import { SwipeListView } from 'react-native-swipe-list-view';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 
 const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyplantphoto';
 
-// Stub data for names & origins; image_url is filled in dynamically below
+// Stub data for popular plants (for first load)
 const fallbackPopular = [
-  { id: 'Epipremnum aureum', common_name: 'Golden Pothos',    scientific_name: 'Epipremnum aureum',    family_common_name: 'Araceae', image_url: null },
+  { id: 'Epipremnum aureum', common_name: 'Golden Pothos', scientific_name: 'Epipremnum aureum', family_common_name: 'Araceae', image_url: null },
   { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata', family_common_name: 'Asparagaceae', image_url: null },
-  { id: 'Monstera deliciosa',     common_name: 'Monstera',       scientific_name: 'Monstera deliciosa',     family_common_name: 'Araceae', image_url: null },
-  { id: 'Ocimum basilicum',       common_name: 'Basil',          scientific_name: 'Ocimum basilicum',       family_common_name: 'Lamiaceae', image_url: null },
-  { id: 'Zamioculcas zamiifolia', common_name: 'ZZ Plant',       scientific_name: 'Zamioculcas zamiifolia', family_common_name: 'Araceae', image_url: null },
+  { id: 'Monstera deliciosa', common_name: 'Monstera', scientific_name: 'Monstera deliciosa', family_common_name: 'Araceae', image_url: null },
+  { id: 'Ocimum basilicum', common_name: 'Basil', scientific_name: 'Ocimum basilicum', family_common_name: 'Lamiaceae', image_url: null },
+  { id: 'Zamioculcas zamiifolia', common_name: 'ZZ Plant', scientific_name: 'Zamioculcas zamiifolia', family_common_name: 'Araceae', image_url: null },
 ];
 
 export default function AddPlantScreen({ navigation }) {
@@ -35,13 +35,13 @@ export default function AddPlantScreen({ navigation }) {
   const [loading, setLoading]             = useState(false);
   const [searchDone, setSearchDone]       = useState(false);
 
-  // normalize data shape
+  // Normalize API shape
   const normalize = p => ({
     id:                  p.id,
     common_name:         p.common_name || '',
     scientific_name:     p.scientific_name || p.latin_name || '',
-    image_url:           p.image_url      || p.image_urls?.[0]    || null,
-    family_common_name:  p.family_common_name || p.origin      || '',
+    image_url:           p.image_url || p.image_urls?.[0] || null,
+    family_common_name:  p.family_common_name || p.origin || '',
     care_difficulty:     p.care_difficulty || null,
     shade:               p.shade           || null,
     moisture:            p.moisture        || null,
@@ -196,37 +196,48 @@ export default function AddPlantScreen({ navigation }) {
 
   // render each card and handle navigation if exists
   const renderCard = ({ item, index }) => (
-    <Swipeable
-      renderRightActions={() => (
+    <SwipeListView
+      data={[item]}
+      renderItem={(data) => (
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => {
+            // Preview/encyclopedia view:
+            navigation.navigate('PlantDetail', { plantId: item.id });
+          }}
+        >
+          {item.image_url ? (
+            <Image source={{ uri: item.image_url }} style={styles.cardImage}/>
+          ) : (
+            <View style={[styles.cardImage,styles.placeholder]}>
+              <Text style={styles.placeholderText}>No image</Text>
+            </View>
+          )}
+          <View style={styles.content}>
+            <Text style={styles.title}>{item.common_name || item.scientific_name}</Text>
+            {item.scientific_name && <Text style={styles.subtitle}>{item.scientific_name}</Text>}
+            {item.family_common_name && <Text style={styles.origin}>Origin: {item.family_common_name}</Text>}
+            {renderCareIcons(item)}
+            {index===0 && <Text style={styles.hint}>Swipe left to add this plant</Text>}
+          </View>
+        </TouchableOpacity>
+      )}
+      renderHiddenItem={(data, rowMap) => (
         <View style={styles.swipeAction}>
-          <Text style={styles.swipeText}>Save</Text>
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={() => navigation.navigate('PlantReview', { plant: data.item })}
+          >
+            <Text style={styles.swipeText}>Add</Text>
+          </TouchableOpacity>
         </View>
       )}
-      onSwipeableRightOpen={() => Alert.alert('Saved', `${item.common_name || item.scientific_name} added!`)}
-    >
-      <TouchableOpacity
-        style={styles.card}
-        onPress={() => {
-          const exists = searchDone ? plants.find(p => p.id === item.id) : popularPlants.find(p => p.id === item.id);
-          if (exists) navigation.navigate('PlantDetail', { plantId: item.id });
-        }}
-      >
-        {item.image_url ? (
-          <Image source={{ uri: item.image_url }} style={styles.cardImage}/>
-        ) : (
-          <View style={[styles.cardImage,styles.placeholder]}>
-            <Text style={styles.placeholderText}>No image</Text>
-          </View>
-        )}
-        <View style={styles.content}>
-          <Text style={styles.title}>{item.common_name || item.scientific_name}</Text>
-          {item.scientific_name && <Text style={styles.subtitle}>{item.scientific_name}</Text>}
-          {item.family_common_name && <Text style={styles.origin}>Origin: {item.family_common_name}</Text>}
-          {renderCareIcons(item)}
-          {index===0 && <Text style={styles.hint}>Swipe left to save this plant</Text>}
-        </View>
-      </TouchableOpacity>
-    </Swipeable>
+      leftOpenValue={75}
+      rightOpenValue={-75}
+      disableLeftSwipe={false}
+      disableRightSwipe={false}
+      keyExtractor={i=>i.id}
+    />
   );
 
   return (
@@ -307,8 +318,9 @@ const styles = StyleSheet.create({
   tagModerate:    { backgroundColor:'#fff3cd' },
   tagHard:        { backgroundColor:'#f8d7da' },
   tagText:        { fontSize:12, color:'#333' },
-  swipeAction:    { backgroundColor:'#c8e6c9', justifyContent:'center', alignItems:'center', width:80 },
-  swipeText:      { color:'#2e7d32', fontWeight:'bold' },
+  swipeAction:    { backgroundColor:'#c8e6c9', justifyContent:'center', alignItems:'center', width:80, height:80, borderRadius:12 },
+  saveBtn:        { flex:1, justifyContent:'center', alignItems:'center' },
+  swipeText:      { color:'#2e7d32', fontWeight:'bold', fontSize:16 },
   hint:           { fontSize:12, color:'#888', marginTop:4, fontStyle:'italic', marginRight:6 },
   noResults:      { textAlign:'center', color:'#666', marginTop:20 },
 });

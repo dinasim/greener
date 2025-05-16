@@ -18,6 +18,7 @@ import LocationsScreen from '../screens/LocationsScreen';
 import LocationPlantsScreen from '../screens/LocationPlantsScreen';
 import PlantDetail from '../screens/PlantDetailScreen';
 import DiseaseChecker from '../screens/DiseaseCheckerScreen';
+import PlantReviewScreen from '../screens/PlantReviewScreen';
 
 
 // Import marketplace navigation
@@ -38,6 +39,8 @@ export default function AppNavigator() {
         <Stack.Screen name="SignupReminders" component={SignupReminders} />
         <Stack.Screen name="SignInGoogleScreen" component={SignInGoogleScreen} />
         <Stack.Screen name="SignIn" component={SignInGoogleScreen} />
+        
+        <Stack.Screen name="PlantReview" component={PlantReviewScreen} />
 
         {/* Home and Other Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
