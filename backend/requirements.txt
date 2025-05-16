@@ -1,6 +1,8 @@
 # DO NOT include azure-functions-worker in this file
 # The Python Worker is managed by Azure Functions platform
 azure-functions
+azure.functions
+google-generativeai
 azure-cosmos>=4.0.0
 azure-storage-blob>=12.0.0
 azure-identity>=1.5.0

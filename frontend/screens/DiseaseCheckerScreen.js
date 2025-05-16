@@ -1,5 +1,3 @@
-// screens/DiseaseCheckerScreen.js
-
 import React, { useState } from 'react';
 import {
   View,
@@ -18,7 +16,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
-  const [debugText, setDebugText] = useState('');  // debug log
+  const [debugText, setDebugText] = useState('');
 
   // Pick image from library / camera
   const pickImage = async () => {
@@ -51,7 +49,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
     }
   };
 
-  // Convert picked image to base64 and call your Azure proxy→Gemini
+  // Convert picked image to base64 and call Azure Function
   const analyzeImage = async () => {
     if (!imageUri) {
       Alert.alert('No image', 'Pick a photo first.');
@@ -61,6 +59,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
     setDebugText('Reading image and converting to Base64…');
     setLoading(true);
     try {
+      // Convert to base64
       const response = await fetch(imageUri);
       const blob = await response.blob();
       const base64 = await new Promise((resolve, reject) => {
@@ -69,56 +68,38 @@ export default function DiseaseCheckerScreen({ navigation }) {
         reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.readAsDataURL(blob);
       });
-      setDebugText('Base64 conversion done; calling proxy…');
+      setDebugText('Base64 conversion done; calling backend…');
 
+      // Call your Azure Function with the base64
       const apiRes = await fetch(
         'https://usersfunctions.azurewebsites.net/api/diseaseCheck',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            messages: [
-              { contentType: 'image', image: { imageBytes: base64 } },
-              {
-                contentType: 'text',
-                role: 'user',
-                text: `
-Please analyze this plant image and return ONLY a JSON object in the following format, with no extra text:
-
-{
-  "diagnosis": "<short disease name or 'healthy'>",
-  "treatment": [
-    "<step 1 recommendation>",
-    "<step 2 recommendation>",
-    "..."]
-}
-
-Do not wrap in code fences—output raw JSON.
-                `.trim(),
-              },
-            ],
+            imageBase64: base64
           }),
         }
       );
 
       if (!apiRes.ok) {
         const txt = await apiRes.text();
-        throw new Error(`Status ${apiRes.status}: ${txt}`);
+        setDebugText('Error from backend: ' + txt);
+        let jsonErr = {};
+        try {
+          jsonErr = JSON.parse(txt);
+        } catch {}
+        setResult({ error: jsonErr.error || txt, raw_response: jsonErr.raw_response });
+        return;
       }
 
       const json = await apiRes.json();
-      setDebugText('Raw proxy response: ' + JSON.stringify(json, null, 2));
-
-      const raw =
-        json.candidates?.[0]?.content ||
-        json.choices?.[0]?.message?.content ||
-        '';
-      const parsed = JSON.parse(raw);
-      setDebugText('Parsed JSON: ' + JSON.stringify(parsed, null, 2));
-      setResult(parsed);
+      setDebugText('API response: ' + JSON.stringify(json, null, 2));
+      setResult(json);
     } catch (err) {
       console.error(err);
       setDebugText('Error in analyzeImage: ' + err.message);
+      setResult({ error: err.message });
       Alert.alert('Error', err.message);
     } finally {
       setLoading(false);
@@ -127,7 +108,6 @@ Do not wrap in code fences—output raw JSON.
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      {/* Debug box */}
       <View style={styles.debugBox}>
         <Text style={styles.debugTitle}>Debug:</Text>
         <Text style={styles.debugText}>{debugText}</Text>
@@ -150,22 +130,47 @@ Do not wrap in code fences—output raw JSON.
 
       {loading && <ActivityIndicator size="large" style={{ margin: 20 }} />}
 
-      {result && (
+      {/* Robust result handling */}
+      {result && result.treatmentOptions && Array.isArray(result.treatmentOptions) ? (
         <View style={styles.resultBox}>
           <Text style={styles.heading}>Diagnosis:</Text>
-          <Text style={styles.diagnosis}>{result.diagnosis}</Text>
-
-          <Text style={[styles.heading, { marginTop: 12 }]}>
-            Treatment Steps:
-          </Text>
-          {result.treatment.map((step, i) => (
+          <Text style={styles.diagnosis}>{result.diagnosis || result.plant_name || "Unknown"}</Text>
+          <Text style={[styles.heading, { marginTop: 12 }]}>Treatment Steps:</Text>
+          {result.treatmentOptions.map((step, i) => (
             <View key={i} style={styles.stepRow}>
               <Text style={styles.bullet}>•</Text>
               <Text style={styles.stepText}>{step}</Text>
             </View>
           ))}
         </View>
-      )}
+      ) : result && result.results && Array.isArray(result.results) ? (
+        <View style={styles.resultBox}>
+          <Text style={styles.heading}>Plant Name:</Text>
+          <Text style={styles.diagnosis}>{result.plant_name || "Unknown"}</Text>
+          <Text style={styles.heading}>Diagnosis Results:</Text>
+          {result.results.map((res, i) => (
+            <View key={i} style={styles.stepRow}>
+              <Text style={styles.bullet}>•</Text>
+              <Text style={styles.stepText}>
+                {res.name ? `${res.name} (${res.type || ""})` : ""}
+                {res.symptoms ? ` - Symptoms: ${res.symptoms}` : ""}
+                {res.treatment ? ` - Treatment: ${res.treatment}` : ""}
+              </Text>
+            </View>
+          ))}
+        </View>
+      ) : result && result.error ? (
+        <View style={styles.resultBox}>
+          <Text style={styles.heading}>Error:</Text>
+          <Text style={{ color: "red" }}>{result.error}</Text>
+          {result.raw_response && (
+            <>
+              <Text style={{ fontWeight: "bold" }}>Gemini raw:</Text>
+              <Text style={{ fontSize: 12 }}>{result.raw_response}</Text>
+            </>
+          )}
+        </View>
+      ) : null}
     </ScrollView>
   );
 }
