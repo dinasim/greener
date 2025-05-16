@@ -60,11 +60,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         # Determine the appropriate container based on image type
         container_name = 'marketplace-misc'  # Default
-        
+                    
         if image_type == 'plant' or image_type == 'product':
             container_name = 'marketplace-plants'
         elif image_type == 'user' or image_type == 'avatar' or image_type == 'profile':
             container_name = 'marketplace-users'
+        elif image_type == 'speech':
+            container_name = 'marketplace-speech'
+        else:
+            container_name = 'marketplace-misc'
+
         
         # Generate filename if not provided
         if not filename:
