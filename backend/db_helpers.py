@@ -92,21 +92,30 @@ def get_container(container_name):
         
         # Convert container names with dashes to env var format
         env_var_name = f"COSMOS_CONTAINER_{container_name.upper().replace('-', '_')}"
-        if container_name == "marketplace-conversations":
+        
+        # Special handling for reviews container - make sure we're using the new container
+        if container_name == "marketplace-reviews":
+            actual_container_name = os.environ.get(env_var_name, "marketplace-reviews")
+            logging.info(f"Using marketplace-reviews container: {actual_container_name}")
+        elif container_name == "marketplace-conversations":
             actual_container_name = "marketplace_conversations_new"
         else:
             actual_container_name = os.environ.get(env_var_name, normalized_name)
         
         # Select right database based on container prefix using normalized name for checking
         if (normalized_name.startswith('marketplace_') or normalized_name in 
-            ['marketplace_plants', 'marketplace_conversations', 
+            ['marketplace_plants', 'marketplace_conversations', 'marketplace_reviews',
              'marketplace_messages', 'marketplace_wishlists', 'users']):
             database = get_marketplace_db_client()
         else:
             database = get_database_client()
             
         logging.info(f"Accessing container: {actual_container_name} from database")
-        return database.get_container_client(actual_container_name)
+        
+        # Get container client with proper partition key handling
+        container_client = database.get_container_client(actual_container_name)
+        
+        return container_client
     except Exception as e:
         logging.error(f"Failed to get container {container_name}: {str(e)}")
         raise

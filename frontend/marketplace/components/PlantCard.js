@@ -224,27 +224,24 @@ const handleToggleFavorite = async () => {
     if (!imageError) {
       let imageUrl = plant.imageUrl || plant.image || null;
       
-      // Additional checks for image URLs
-      if (typeof imageUrl === 'string') {
+      // Check if we have a valid image URL
+      if (typeof imageUrl === 'string' && imageUrl.trim() !== '') {
         // Handle relative URLs
         if (imageUrl.startsWith('/')) {
           imageUrl = `https://greenerapp.com${imageUrl}`;
         }
         
-        // Check if URL is valid
+        // Only use URLs that start with http or https
         if (imageUrl.startsWith('http')) {
           return { uri: imageUrl };
         }
       }
     }
     
-    // Return a local placeholder image
-    try {
-      return require('../../assets/images/plant-placeholder.png');
-    } catch(err) {
-      // Fallback to a hardcoded URL as last resort
-      return { uri: 'https://placehold.co/150x150/4CAF50/FFFFFF?text=Plant' };
-    }
+    // Return a hardcoded placeholder URL as the safest fallback
+    return { 
+      uri: 'https://placehold.co/150x150/4CAF50/FFFFFF?text=Plant' 
+    };
   }, [plant.imageUrl, plant.image, imageError]);
 
   /**
