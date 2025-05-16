@@ -1,6 +1,3 @@
-// Improved MarketplaceHeader component with better handling of props
-// Replace components/MarketplaceHeader.js with this version
-
 import React from 'react';
 import {
   View,
@@ -11,90 +8,70 @@ import {
   StatusBar,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 /**
- * Consistent header component for all marketplace screens
+ * MarketplaceHeader component - Consistent header for marketplace screens
  * @param {Object} props Component props
  * @param {string} props.title Header title text
- * @param {boolean} props.showBackButton Whether to show the back button
- * @param {boolean} props.showNotifications Whether to show the notifications button
- * @param {Function} props.onBackPress Custom back button handler (optional)
- * @param {Function} props.onNotificationsPress Custom notifications handler (optional)
+ * @param {boolean} props.showBackButton Whether to show back button (default: false)
+ * @param {Function} props.onBackPress Handler for back button press
+ * @param {boolean} props.showNotifications Whether to show notifications button (default: true)
+ * @param {Function} props.onNotificationsPress Handler for notifications button press
  */
 const MarketplaceHeader = ({
-  title = 'PlantMarket',
-  showBackButton = true, 
-  showNotifications = true,
+  title,
+  showBackButton = false,
   onBackPress,
+  showNotifications = true,
   onNotificationsPress,
 }) => {
-  const navigation = useNavigation();
-  
-  const handleBackPress = () => {
-    if (onBackPress) {
-      onBackPress();
-    } else {
-      navigation.goBack();
-    }
-  };
-  
-  const handleNotificationsPress = () => {
-    if (onNotificationsPress) {
-      onNotificationsPress();
-    } else {
-      navigation.navigate('Messages');
-    }
-  };
+  // Get safe area insets for proper spacing
+  const insets = useSafeAreaInsets();
   
   return (
-    <View style={styles.container}>
+    <View style={[
+      styles.container,
+      { paddingTop: Platform.OS === 'ios' ? 0 : insets.top }
+    ]}>
       <StatusBar
+        backgroundColor="#388E3C"
         barStyle="light-content"
-        backgroundColor="#4CAF50"
-        translucent={false}
       />
+      
       <View style={styles.headerContent}>
-        {showBackButton && (
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={handleBackPress}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessible={true}
-            accessibilityLabel="Back"
-            accessibilityHint="Go back to previous screen"
-            accessibilityRole="button"
-          >
-            <MaterialIcons name="arrow-back" size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
-
-        <Text 
-          style={[
-            styles.title, 
-            !showBackButton && styles.centeredTitle,
-            showBackButton && !showNotifications && styles.rightPadding
-          ]} 
-          numberOfLines={1}
-          accessible={true}
-          accessibilityRole="header"
-        >
+        {/* Left side - Back button */}
+        <View style={styles.leftSection}>
+          {showBackButton && (
+            <TouchableOpacity 
+              style={styles.backButton}
+              onPress={onBackPress}
+              accessibilityLabel="Go back"
+              accessibilityRole="button"
+            >
+              <MaterialIcons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
+        
+        {/* Center - Title */}
+        <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
-
-        {showNotifications && (
-          <TouchableOpacity
-            style={styles.notificationButton}
-            onPress={handleNotificationsPress}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            accessible={true}
-            accessibilityLabel="Notifications"
-            accessibilityHint="View your notifications and messages"
-            accessibilityRole="button"
-          >
-            <MaterialIcons name="notifications" size={24} color="#fff" />
-          </TouchableOpacity>
-        )}
+        
+        {/* Right side - Notifications */}
+        <View style={styles.rightSection}>
+          {showNotifications && (
+            <TouchableOpacity 
+              style={styles.iconButton}
+              onPress={onNotificationsPress}
+              accessibilityLabel="Notifications"
+              accessibilityRole="button"
+            >
+              <MaterialIcons name="notifications" size={24} color="#fff" />
+            </TouchableOpacity>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -102,39 +79,42 @@ const MarketplaceHeader = ({
 
 const styles = StyleSheet.create({
   container: {
-    height: Platform.OS === 'ios' ? 90 : 60,
-    width: '100%',
     backgroundColor: '#4CAF50',
-    zIndex: 100,
-    justifyContent: 'flex-end', // Align content to bottom for iOS
-    paddingTop: Platform.OS === 'ios' ? 40 : 0,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 3,
   },
   headerContent: {
-    height: 60,
+    height: 56,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
   },
-  backButton: {
-    padding: 8,
-    opacity: 1,
+  leftSection: {
+    width: 40,
+    alignItems: 'flex-start',
+  },
+  rightSection: {
+    width: 40,
+    alignItems: 'flex-end',
   },
   title: {
+    flex: 1,
     fontSize: 20,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#fff',
-    flex: 1, 
-  },
-  centeredTitle: {
     textAlign: 'center',
   },
-  rightPadding: {
-    paddingRight: 40, // Balance the header when there's only back button
-  },
-  notificationButton: {
+  backButton: {
     padding: 8,
-    position: 'relative',
+    marginLeft: -8,
+  },
+  iconButton: {
+    padding: 8,
+    marginRight: -8,
   },
 });
 

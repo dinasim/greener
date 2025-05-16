@@ -1,3 +1,4 @@
+// screens/SellerProfileScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -14,9 +15,11 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
-import ReviewForm from '../components/ReviewForm';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import { fetchUserProfile } from '../services/marketplaceApi';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ReviewForm from '../components/ReviewForm';
+
 
 const SellerProfileScreen = () => {
   const navigation = useNavigation();
@@ -32,15 +35,79 @@ const SellerProfileScreen = () => {
   const [avatarError, setAvatarError] = useState(false);
   const [bannerError, setBannerError] = useState(false);
 
-  useEffect(() => { loadSellerProfile(); }, [sellerId]);
+  useEffect(() => { 
+    loadSellerProfile();
+    
+    // Check if favorites were updated
+    const checkFavoritesUpdates = async () => {
+      try {
+        // Check both old and new keys for backward compatibility
+        const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
+                            || await AsyncStorage.getItem('WISHLIST_UPDATED');
+                            
+        if (favoritesUpdated) {
+          // Clear both flags
+          await AsyncStorage.removeItem('FAVORITES_UPDATED');
+          await AsyncStorage.removeItem('WISHLIST_UPDATED');
+          // Refresh data
+          loadSellerProfile();
+        }
+      } catch (error) {
+        console.warn('Error checking favorites updates:', error);
+      }
+    };
+    
+    checkFavoritesUpdates();
+  }, [sellerId]);
 
   const loadSellerProfile = async () => {
     try {
       setIsLoading(true);
+      
+      // Make sure we have a valid seller ID
+      if (!sellerId) {
+        console.error("No seller ID provided");
+        setError('Unable to load seller profile. Missing seller ID.');
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log("Loading seller profile for ID:", sellerId);
+      
+      // Attempt to fetch the user profile
       const data = await fetchUserProfile(sellerId);
-      setUser(data.user);
+      
+      if (data && data.user) {
+        console.log("Seller profile loaded successfully");
+        setUser(data.user);
+      } else {
+        // If the API returns empty data, use a fallback approach
+        console.warn("API returned empty user data, using fallback");
+        
+        // Try to construct a minimal seller object from product data if available
+        if (route.params?.sellerData) {
+          const sellerData = route.params.sellerData;
+          setUser({
+            id: sellerId,
+            name: sellerData.name || 'Unknown Seller',
+            email: sellerData.email || sellerId,
+            avatar: sellerData.avatar || `https://via.placeholder.com/150?text=${sellerData.name?.[0] || 'S'}`,
+            joinDate: sellerData.joinDate || new Date().toISOString(),
+            stats: {
+              plantsCount: sellerData.plantsCount || 0,
+              salesCount: sellerData.salesCount || 0,
+              rating: sellerData.rating || 0
+            },
+            listings: []
+          });
+        } else {
+          setError('Seller profile could not be loaded.');
+        }
+      }
+      
       setIsLoading(false);
     } catch (err) {
+      console.error('Error fetching seller profile:', err);
       setError('Failed to load profile. Please try again later.');
       setIsLoading(false);
     }
@@ -113,6 +180,7 @@ const SellerProfileScreen = () => {
         <MarketplaceHeader
           title="Seller Profile"
           showBackButton={true}
+          onBackPress={() => navigation.goBack()}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.loadingContainer}>
@@ -129,6 +197,7 @@ const SellerProfileScreen = () => {
         <MarketplaceHeader
           title="Seller Profile"
           showBackButton={true}
+          onBackPress={() => navigation.goBack()}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.errorContainer}>
@@ -156,6 +225,7 @@ const SellerProfileScreen = () => {
       <MarketplaceHeader
         title="Seller Profile"
         showBackButton={true}
+        onBackPress={() => navigation.goBack()}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
       

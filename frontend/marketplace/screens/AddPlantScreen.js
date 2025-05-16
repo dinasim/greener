@@ -504,59 +504,74 @@ const AddPlantScreen = () => {
     }
   };
 
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
-  
-    setIsLoading(true);
-  
-    try {
-      // Get the user's email from AsyncStorage
-      const userEmail = await AsyncStorage.getItem('userEmail');
-      
-      if (!userEmail) {
-        throw new Error('User is not authenticated');
-      }
-  
-      // Prepare image data
-      const imageData = await prepareImageData();
-  
-      // Prepare plant data
-      const plantData = {
-        title: formData.title,
-        price: parseFloat(formData.price),
-        category: formData.category,
-        description: formData.description,
-        city: formData.city,
-        careInstructions: formData.careInstructions,
-        scientificName: formData.scientificName,
-        image: imageData[0],  // Main image
-        images: imageData.slice(1),  // Additional images
-        sellerId: userEmail, // Use the authenticated user's email as sellerId
-        productType: listingType, // Add product type field
-      };
-  
-      // Submit to API
-      const result = await createPlant(plantData);
-  
-      if (result?.productId) {
-        setNewPlantId(result.productId);
-        setShowSuccess(true);
-  
-        // Auto-navigate to Profile screen after a delay
-        setTimeout(() => {
-          setShowSuccess(false);
-          navigation.navigate('Profile', { refresh: true });
-        }, 2500);
-      } else {
-        throw new Error('Failed to create listing');
-      }
-    } catch (error) {
-      console.error('Error creating plant:', error);
-      Alert.alert('Error', 'Failed to create listing. Please try again.');
-    } finally {
-      setIsLoading(false);
+  // screens/AddPlantScreen.js
+// Update the handleSubmit function to add the product update flag:
+
+const handleSubmit = async () => {
+  if (!validateForm()) return;
+
+  setIsLoading(true);
+
+  try {
+    // Get the user's email from AsyncStorage
+    const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+    
+    if (!userEmail) {
+      throw new Error('User is not authenticated');
     }
-  };
+
+    // Prepare image data
+    const imageData = await prepareImageData();
+
+    // Prepare plant data
+    const plantData = {
+      title: formData.title,
+      price: parseFloat(formData.price),
+      category: formData.category,
+      description: formData.description,
+      city: formData.city,
+      careInstructions: formData.careInstructions,
+      scientificName: formData.scientificName,
+      image: imageData[0],  // Main image
+      images: imageData.slice(1),  // Additional images
+      sellerId: userEmail, // Use the authenticated user's email as sellerId
+      productType: listingType, // Add product type field
+    };
+
+    // Submit to API
+    const result = await createPlant(plantData);
+
+    if (result?.productId) {
+      setNewPlantId(result.productId);
+      
+      // Set product updated flag
+      AsyncStorage.setItem('PRODUCT_UPDATED', Date.now().toString())
+        .catch(err => console.warn('Failed to set product update flag:', err));
+      
+      setShowSuccess(true);
+
+      // Auto-navigate to Marketplace screen after a delay
+      setTimeout(() => {
+        setShowSuccess(false);
+        
+        // First navigate to MarketplaceHome with refresh flag
+        navigation.navigate('MarketplaceHome', { refresh: true });
+        
+        // Then navigate to Profile after a short delay with refresh flag
+        setTimeout(() => {
+          navigation.navigate('Profile', { refresh: true });
+        }, 300);
+      }, 1500); // Show success message for 1.5 seconds
+    } else {
+      throw new Error('Failed to create listing');
+    }
+  } catch (error) {
+    console.error('Error creating plant:', error);
+    Alert.alert('Error', 'Failed to create listing. Please try again.');
+  } finally {
+    setIsLoading(false);
+  }
+};
   
 
   // Render Scientific Name Modal
@@ -645,10 +660,11 @@ const AddPlantScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader
-        title="Add New Listing"
-        showBackButton={true}
-        onNotificationsPress={() => navigation.navigate('Messages')}
-      />
+  title="Add New Listing"
+  showBackButton={true}
+  onBackPress={() => navigation.goBack()}
+  onNotificationsPress={() => navigation.navigate('Messages')}
+/>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
