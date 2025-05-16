@@ -506,149 +506,265 @@ export const getUserListings = async (status = null) => {
   }
 };
 
+// Enhanced version of the uploadImage function for services/marketplaceApi.js
 
 /**
  * Upload an image or audio file to the Azure Function backend
- * Supports web and mobile (with base64 fallback)
+ * With proper content type handling and improved WebM support
  * @param {string} fileUri - URI or base64 data of the file
  * @param {string} type - File category ('plant', 'avatar', 'speech', etc.)
- * @returns {Promise<Object>} - Response from the server
+ * @returns {Promise<Object>} - Response from the server with URL
  */
 export const uploadImage = async (fileUri, type = 'plant') => {
   try {
+    if (!fileUri) {
+      throw new Error('File URI is required');
+    }
+    
+    console.log(`Uploading ${type} file from: ${fileUri.substring(0, 50)}...`);
+    
+    // Get user email for attribution
     const userEmail = await AsyncStorage.getItem('userEmail');
-
-    if (!fileUri) throw new Error('File URI is required');
-    console.log(`Uploading ${type} file: ${fileUri.substring(0, 50)}...`);
-
-    const url = 'https://usersfunctions.azurewebsites.net/api/marketplace/uploadImage';
-
-    // Helper: get filename and mime based on type
-    const getFilenameAndMime = (type) => {
-      let filename = `${type}_${Date.now()}`;
-      let mimeType = 'image/jpeg';
-
-      if (type === 'speech') {
-        filename += '.wav';          // or '.mp3' if needed
-        mimeType = 'audio/wav';
-      } else if (type === 'plant' || type === 'avatar') {
-        filename += '.jpg';
-        mimeType = 'image/jpeg';
-      } else {
-        // Default fallback
-        filename += '.jpg';
+    
+    // Define the upload endpoint
+    const uploadEndpoint = `${API_BASE_URL}/marketplace/uploadImage`;
+    
+    // Determine correct content type based on file type
+    let contentType = 'image/jpeg'; // Default
+    
+    if (type === 'speech') {
+      // For speech files, explicitly set audio content type
+      // Use WebM for web platform since it's more widely supported
+      contentType = Platform.OS === 'web' ? 'audio/webm' : 'audio/wav';
+    } else if (fileUri) {
+      // Try to determine from URI for other types
+      if (fileUri.endsWith('.png')) {
+        contentType = 'image/png';
+      } else if (fileUri.endsWith('.gif')) {
+        contentType = 'image/gif';
+      } else if (fileUri.endsWith('.webm')) {
+        contentType = 'audio/webm';
+      } else if (fileUri.endsWith('.wav')) {
+        contentType = 'audio/wav';
+      } else if (fileUri.endsWith('.mp3')) {
+        contentType = 'audio/mp3';
+      } else if (fileUri.startsWith('data:')) {
+        // Extract MIME type from data URI if available
+        const mimeMatch = fileUri.match(/^data:([^;]+);/);
+        if (mimeMatch && mimeMatch[1]) {
+          contentType = mimeMatch[1];
+        }
       }
-
-      return { filename, mimeType };
-    };
-
+    }
+    
+    // Different upload methods for web vs native
     if (Platform.OS === 'web') {
-      const formData = new FormData();
-
+      console.log('Using web upload method with content type:', contentType);
+      
       if (fileUri.startsWith('blob:') || fileUri.startsWith('data:')) {
+        console.log('Processing blob or data URI');
+        
+        // Fetch blob from URI
         const response = await fetch(fileUri);
         const blob = await response.blob();
-
-        const { filename, mimeType } = getFilenameAndMime(type);
-        formData.append('image', blob, filename); // use correct filename
-
-      } else {
-        // fallback for standard URI or File on web
-        const { filename, mimeType } = getFilenameAndMime(type);
-        formData.append('image', {
-          uri: fileUri,
-          name: filename,
-          type: mimeType,
-        });
-      }
-
-      formData.append('type', type);
-      if (userEmail) {
-        formData.append('userId', userEmail);
-      }
-
-      const response = await fetch(url, {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
-      }
-
-      return await response.json();
-    } else {
-      // === Mobile (React Native) ===
-
-      if (fileUri.startsWith('data:image') || fileUri.startsWith('data:audio')) {
-        return await apiRequest('marketplace/uploadImage', 'POST', {
-          image: fileUri,
-          type,
-          userId: userEmail,
-        });
-      }
-
-      // Load from file path
-      const fileInfo = await FileSystem.getInfoAsync(fileUri);
-      if (!fileInfo.exists) throw new Error('File does not exist');
-
-      if (fileInfo.size > 5 * 1024 * 1024) {
-        console.warn('File is large (>5MB), upload may fail or be slow');
-      }
-
-      try {
-        const base64 = await FileSystem.readAsStringAsync(fileUri, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        let mimeType = 'image/jpeg';
-        if (type === 'speech') mimeType = 'audio/wav'; // or .mp3
-        else if (fileUri.endsWith('.png')) mimeType = 'image/png';
-        else if (fileUri.endsWith('.gif')) mimeType = 'image/gif';
-
-        const dataUri = `data:${mimeType};base64,${base64}`;
-
-        return await apiRequest('marketplace/uploadImage', 'POST', {
-          image: dataUri,
-          type,
-          userId: userEmail,
-        });
-
-      } catch (readError) {
-        console.error('Error reading base64. Using FormData fallback:', readError);
-
-        const { filename, mimeType } = getFilenameAndMime(type);
+        
+        // Create form data
         const formData = new FormData();
-        formData.append('image', {
-          uri: fileUri,
-          name: filename,
-          type: mimeType,
-        });
+        
+        // Generate filename with proper extension
+        let extension = '.jpg';
+        if (contentType === 'audio/webm') {
+          extension = '.webm';
+        } else if (contentType === 'audio/wav') {
+          extension = '.wav';
+        } else if (contentType === 'image/png') {
+          extension = '.png';
+        }
+        
+        const timestamp = Date.now();
+        const filename = `${type}_${timestamp}${extension}`;
+        
+        // Directly append blob with filename and content type
+        formData.append('file', blob, filename);
         formData.append('type', type);
+        formData.append('contentType', contentType);
+        
         if (userEmail) {
           formData.append('userId', userEmail);
         }
-
-        const response = await fetch(url, {
+        
+        // Make the upload request
+        console.log(`Uploading ${filename} with content type ${contentType}`);
+        const uploadResponse = await fetch(uploadEndpoint, {
           method: 'POST',
           body: formData,
+          headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
         });
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+        
+        if (!uploadResponse.ok) {
+          let errorMessage = '';
+          try {
+            const errorJson = await uploadResponse.json();
+            errorMessage = errorJson.error || errorJson.message || '';
+          } catch (e) {
+            errorMessage = await uploadResponse.text();
+          }
+          
+          throw new Error(`Upload failed (${uploadResponse.status}): ${errorMessage}`);
         }
-
-        return await response.json();
+        
+        const result = await uploadResponse.json();
+        console.log('Upload successful:', result);
+        return result;
+      } else {
+        // JSON approach for base64 encoded data
+        const body = {
+          image: fileUri,
+          type,
+          userId: userEmail,
+          contentType
+        };
+        
+        const response = await fetch(uploadEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          },
+          body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Direct upload successful');
+        return result;
+      }
+    } 
+    // Native platform upload
+    else {
+      console.log('Using native upload method');
+      
+      // Handle base64 data URIs directly
+      if (fileUri.startsWith('data:')) {
+        console.log('Uploading data URI directly');
+        
+        const body = {
+          image: fileUri,
+          type,
+          userId: userEmail,
+          contentType
+        };
+        
+        const response = await fetch(uploadEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+          },
+          body: JSON.stringify(body)
+        });
+        
+        if (!response.ok) {
+          throw new Error(`Upload failed with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('Direct upload successful');
+        return result;
+      }
+      
+      // File URI handling - convert to base64 first
+      try {
+        console.log('Checking file info...');
+        const fileInfo = await FileSystem.getInfoAsync(fileUri);
+        
+        if (!fileInfo.exists) {
+          throw new Error(`File does not exist at path: ${fileUri}`);
+        }
+        
+        console.log(`Reading file as base64. Size: ${fileInfo.size} bytes`);
+        
+        try {
+          // Try reading as base64
+          console.log('Reading file as base64...');
+          const base64 = await FileSystem.readAsStringAsync(fileUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
+          console.log(`File read successful, base64 length: ${base64.length}`);
+          
+          // Create data URI with the appropriate mime type
+          const dataUri = `data:${contentType};base64,${base64}`;
+          
+          // Send as JSON
+          console.log(`Sending base64 data to server with content type: ${contentType}`);
+          const result = await apiRequest('marketplace/uploadImage', 'POST', {
+            image: dataUri,
+            type,
+            userId: userEmail,
+            contentType
+          });
+          
+          console.log('Upload successful:', result);
+          return result;
+        } catch (readError) {
+          // If reading as base64 fails, fall back to FormData
+          console.error('Error reading as base64, falling back to FormData:', readError);
+          
+          const timestamp = Date.now();
+          const filename = `${type}_${timestamp}${type === 'speech' ? '.wav' : '.jpg'}`;
+          
+          const formData = new FormData();
+          
+          formData.append('image', {
+            uri: fileUri,
+            name: filename,
+            type: contentType,
+          });
+          
+          formData.append('type', type);
+          formData.append('contentType', contentType);
+          
+          if (userEmail) {
+            formData.append('userId', userEmail);
+          }
+          
+          console.log(`Sending file using FormData fallback with content type: ${contentType}`);
+          const response = await fetch(uploadEndpoint, {
+            method: 'POST',
+            body: formData,
+            headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
+          });
+          
+          if (!response.ok) {
+            let errorText;
+            try {
+              const errorJson = await response.json();
+              errorText = errorJson.error || errorJson.message || JSON.stringify(errorJson);
+            } catch (e) {
+              errorText = await response.text();
+            }
+            
+            throw new Error(`Upload failed (${response.status}): ${errorText}`);
+          }
+          
+          const result = await response.json();
+          console.log('FormData upload successful:', result);
+          return result;
+        }
+      } catch (fileError) {
+        console.error('File error:', fileError);
+        throw new Error(`File processing error: ${fileError.message}`);
       }
     }
   } catch (error) {
     console.error('File upload error:', error);
     throw error;
   }
-};
-
+}
 
 // SignalR API
 export const getNegotiateToken = async () => {
@@ -1095,40 +1211,111 @@ export const deleteReview = async (reviewId, targetType, targetId) => {
   }
 };
 
-async function speechToText(audioUrl) {
-  const API_URL = 'https://usersfunctions.azurewebsites.net/api/speechToText';
-
+/**
+ * Convert audio to text using Azure Cognitive Services
+ * @param {string} audioUrl - URL to the uploaded audio file
+ * @param {string} language - Language code (default: 'en-US')
+ * @returns {Promise<string>} Recognized text
+ */
+export const speechToText = async (audioUrl, language = 'en-US') => {
   try {
+    console.log(`Starting speech-to-text for audio: ${audioUrl}`);
+    
+    if (!audioUrl) {
+      throw new Error('Audio URL is required');
+    }
+    
+    const API_URL = `${API_BASE_URL}/marketplace/speechToText`;
+    console.log(`Using speech-to-text API URL: ${API_URL}`);
+    
+    // For debugging - log the request details
+    console.log(`Request details:
+      URL: ${API_URL}
+      Method: POST
+      Headers: Content-Type: application/json
+      Body: {
+        audioUrl: ${audioUrl.substring(0, 50)}...,
+        language: ${language}
+      }
+    `);
+    
     const response = await fetch(API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        // Add authorization if available
+        ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
       },
-      body: JSON.stringify({ audioUrl }),
+      body: JSON.stringify({ 
+        audioUrl,
+        language
+      })
     });
 
+    console.log(`Speech-to-text API response status: ${response.status}`);
+    
+    // Get response body regardless of status code for better error reporting
+    let responseData;
+    try {
+      responseData = await response.json();
+      console.log('Speech-to-text response data:', responseData);
+    } catch (parseError) {
+      const textResponse = await response.text();
+      console.error('Failed to parse JSON response:', textResponse);
+      responseData = { error: textResponse || 'Invalid response format' };
+    }
+    
+    // Handle non-200 responses
     if (!response.ok) {
-      // Throw an error with status code
-      throw new Error(`HTTP error ${response.status}: ${response.statusText}`);
+      let errorMessage;
+      
+      if (responseData && responseData.error) {
+        errorMessage = typeof responseData.error === 'string' 
+          ? responseData.error 
+          : JSON.stringify(responseData.error);
+      } else if (responseData && responseData.message) {
+        errorMessage = responseData.message;
+      } else {
+        errorMessage = `HTTP error ${response.status}`;
+      }
+      
+      console.error('Speech-to-text error response:', responseData);
+      throw new Error(`Speech recognition failed: ${errorMessage}`);
     }
 
-    const data = await response.json();
-
-    if (data.error) {
-      throw new Error(data.error);
+    // Validate successful response
+    if (!responseData || typeof responseData.text !== 'string') {
+      console.error('Invalid speech-to-text response format:', responseData);
+      throw new Error('Received invalid response format from speech service');
     }
 
-    return data.text; // recognized speech text
-
+    // Clean up the text for search - remove punctuation and extra spaces
+    const cleanText = cleanupTranscriptionText(responseData.text);
+    
+    console.log('Speech-to-text successful, result:', cleanText);
+    return cleanText; // Return the cleaned recognized text
   } catch (error) {
-    console.error('speechToText error:', error);
+    console.error('Speech-to-text error:', error);
     throw error;
   }
 }
 
+/**
+ * Clean up transcription text for better search queries
+ * @param {string} text - The text to clean up
+ * @returns {string} Cleaned text without punctuation
+ */
+const cleanupTranscriptionText = (text) => {
+  if (!text) return '';
+  
+  // Remove punctuation that shouldn't be in search queries
+  return text
+    .replace(/[.,!?;:'"()\[\]{}]/g, '')  // Remove punctuation
+    .replace(/\s+/g, ' ')                // Replace multiple spaces with a single space
+    .trim();                            // Remove leading/trailing spaces
+};
 
-
-// Export the API
+// Export the API with speech to text function
 export default {
   // Auth methods
   setAuthToken,
@@ -1165,14 +1352,13 @@ export default {
   geocodeAddress,
   getNearbyProducts,
   
-  // Image methods
+  // Image and Speech methods
   uploadImage,
   createImageFormData,
+  speechToText,
   
   // Main app integration
   getUserPlantsByLocation,
   getUserLocations,
-  identifyPlantPhoto,
-  //Speech recognition
-  speechToText
+  identifyPlantPhoto
 };
