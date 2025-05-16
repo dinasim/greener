@@ -191,8 +191,12 @@ const EditProfileScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <LinearGradient colors={['#4CAF50', '#81C784']}>
-        <MarketplaceHeader title="Edit Profile" showBackButton showNotifications={false} />
-      </LinearGradient>
+      <MarketplaceHeader 
+  title="Edit Profile" 
+  showBackButton 
+  onBackPress={() => navigation.goBack()}
+  showNotifications={false} 
+/>      </LinearGradient>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
         <ScrollView style={styles.scrollView}>

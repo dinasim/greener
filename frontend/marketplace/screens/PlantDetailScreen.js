@@ -74,19 +74,35 @@ const PlantDetailScreen = () => {
     }
   };
 
+  // Function to get a reliable seller avatar URL
+  const getSellerAvatarUrl = () => {
+    // Check different possible paths where the avatar might be stored
+    const avatarUrl = 
+      plant.seller?.avatar || // Check if nested in seller object
+      plant.avatar ||         // Some APIs put it directly on the plant
+      plant.sellerAvatar ||   // Another possible location
+      `https://via.placeholder.com/50?text=${encodeURIComponent(plant.seller?.name?.[0] || 'S')}`;  // Fallback with first letter
+      
+    return avatarUrl;
+  };
+
   // Toggle favorite/wishlist status
   const toggleFavorite = async () => {
     try {
       // Update UI immediately for better user experience
       setIsFavorite(!isFavorite);
       
-      // Call API to update wishlist status
+      // Call API
       const result = await wishProduct(plantId);
       
       // If the API returns a specific wishlist state, use that
       if (result && 'isWished' in result) {
         setIsFavorite(result.isWished);
       }
+      
+      // Set favorites updated flag
+      AsyncStorage.setItem('FAVORITES_UPDATED', Date.now().toString())
+        .catch(err => console.warn('Failed to set favorites update flag:', err));
     } catch (err) {
       // Revert UI state if API call fails
       setIsFavorite(isFavorite);
@@ -98,13 +114,13 @@ const PlantDetailScreen = () => {
   // Navigate to contact seller screen
   const handleContactSeller = () => {
     // Check if we have the seller ID
-    if (!plant.sellerId) {
+    if (!plant.sellerId && !plant.seller?._id) {
       Alert.alert('Error', 'Seller information is not available.');
       return;
     }
     
     navigation.navigate('Messages', { 
-      sellerId: plant.sellerId, 
+      sellerId: plant.sellerId || plant.seller?._id, 
       plantId: plant._id || plant.id,
       plantName: plant.title || plant.name
     });
@@ -320,6 +336,7 @@ const PlantDetailScreen = () => {
         <MarketplaceHeader 
           title="Plant Details"
           showBackButton={true}
+          onBackPress={() => navigation.goBack()}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
@@ -337,6 +354,7 @@ const PlantDetailScreen = () => {
         <MarketplaceHeader 
           title="Plant Details"
           showBackButton={true}
+          onBackPress={() => navigation.goBack()}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
@@ -361,6 +379,7 @@ const PlantDetailScreen = () => {
       <MarketplaceHeader 
         title={plant.title || plant.name || "Plant Details"}
         showBackButton={true}
+        onBackPress={() => navigation.goBack()}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
       
@@ -381,7 +400,7 @@ const PlantDetailScreen = () => {
                 key={index} 
                 source={{ uri: image }} 
                 style={styles.image} 
-                resizeMode="cover" 
+                resizeMode="contain" 
               />
             ))}
           </ScrollView>
@@ -477,10 +496,19 @@ const PlantDetailScreen = () => {
           <Text style={styles.sectionTitle}>About the Seller</Text>
           <TouchableOpacity 
             style={styles.sellerContainer} 
-            onPress={() => navigation.navigate('SellerProfile', { sellerId: plant.sellerId })}
+            onPress={() => navigation.navigate('SellerProfile', { 
+              sellerId: plant.sellerId || plant.seller?._id,
+              sellerData: {
+                name: plant.seller?.name || 'Unknown Seller',
+                avatar: getSellerAvatarUrl(),
+                rating: plant.seller?.rating || 0,
+                plantsCount: plant.seller?.plantsCount || 0,
+                salesCount: plant.seller?.salesCount || 0
+              }
+            })}
           >
             <Image 
-              source={{ uri: plant.avatar || 'https://via.placeholder.com/50?text=Seller' }} 
+              source={{ uri: getSellerAvatarUrl() }} 
               style={styles.sellerAvatar} 
             />
             <View style={styles.sellerInfo}>
@@ -489,7 +517,8 @@ const PlantDetailScreen = () => {
                 <View style={styles.sellerRatingContainer}>
                   <MaterialIcons name="star" size={16} color="#FFC107" />
                   <Text style={styles.sellerRating}>
-                    {plant.seller.rating} ({plant.seller.totalSells || 0} sales)
+                    {typeof plant.seller.rating === 'number' ? plant.seller.rating.toFixed(1) : plant.seller.rating} 
+                    ({plant.seller.totalReviews || plant.seller.totalSells || 0})
                   </Text>
                 </View>
               )}
@@ -508,7 +537,7 @@ const PlantDetailScreen = () => {
                 size={24} 
                 color={isFavorite ? "#f44336" : "#4CAF50"} 
               />
-              <Text style={styles.actionButtonText}>{isFavorite ? 'Saved' : 'Save'}</Text>
+              <Text style={styles.actionButtonText}>{isFavorite ? 'Favorited' : 'Favorite'}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity 

@@ -16,7 +16,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Audio } from 'expo-av';
 import { uploadImage, speechToText } from '../services/marketplaceApi'; 
-
 // Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
@@ -52,6 +51,11 @@ const MarketplaceScreen = ({ navigation }) => {
   const [activeFilters, setActiveFilters] = useState([]);
   const [isOnline, setIsOnline] = useState(true);
   const [recording, setRecording] = useState(null);
+
+  // Handler for back button press - navigate to Home screen
+  const handleBackPress = () => {
+    navigation.navigate('Home');
+  };
 
   // Subscribe to sync service for online status
   useEffect(() => {
@@ -121,6 +125,50 @@ const MarketplaceScreen = ({ navigation }) => {
       }
     })();
   }, []);
+
+
+  useEffect(() => {
+    // Check if wishlist was updated
+    const checkWishlistUpdates = async () => {
+      try {
+        const wishlistUpdated = await AsyncStorage.getItem('WISHLIST_UPDATED');
+        if (wishlistUpdated) {
+          // Clear the flag
+          await AsyncStorage.removeItem('WISHLIST_UPDATED');
+          // Refresh data
+          loadPlants(1, true);
+        }
+      } catch (error) {
+        console.warn('Error checking wishlist updates:', error);
+      }
+    };
+    
+    checkWishlistUpdates();
+  }, []);
+
+useEffect(() => {
+  // Check if favorites were updated
+  const checkFavoritesUpdates = async () => {
+    try {
+      // Check both old and new keys for backward compatibility
+      const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
+                           || await AsyncStorage.getItem('WISHLIST_UPDATED');
+                           
+      if (favoritesUpdated) {
+        // Clear both flags
+        await AsyncStorage.removeItem('FAVORITES_UPDATED');
+        await AsyncStorage.removeItem('WISHLIST_UPDATED');
+        // Refresh data
+        loadPlants(1, true);
+      }
+    } catch (error) {
+      console.warn('Error checking favorites updates:', error);
+    }
+  };
+  
+  checkFavoritesUpdates();
+}, []);
+
 
   /**
    * Load plants from API
@@ -549,7 +597,8 @@ const MarketplaceScreen = ({ navigation }) => {
       <SafeAreaView style={styles.container}>
         <MarketplaceHeader
           title="Plant Marketplace"
-          showBackButton={false}
+          showBackButton={true}
+          onBackPress={handleBackPress}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
@@ -566,7 +615,8 @@ const MarketplaceScreen = ({ navigation }) => {
       <SafeAreaView style={styles.container}>
         <MarketplaceHeader
           title="Plant Marketplace"
-          showBackButton={false}
+          showBackButton={true}
+          onBackPress={handleBackPress}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
@@ -585,10 +635,11 @@ const MarketplaceScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Custom Header */}
+      {/* Custom Header with back button enabled */}
       <MarketplaceHeader
         title="Plant Marketplace"
-        showBackButton={false}
+        showBackButton={true}
+        onBackPress={handleBackPress}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
 
@@ -654,17 +705,17 @@ const MarketplaceScreen = ({ navigation }) => {
       ) : (
         // List or Grid View
         <FlatList
-          data={filteredPlants}
-          renderItem={({ item }) => (
-            <PlantCard 
-              plant={item} 
-              showActions={true}
-              layout={viewMode}
-            />
-          )}
-          numColumns={viewMode === 'grid' ? 2 : 1}
-          key={viewMode} // Forces remount when view mode changes
-          keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
+  data={filteredPlants}
+  renderItem={({ item }) => (
+    <PlantCard 
+      plant={item} 
+      showActions={true}
+      layout={viewMode}
+    />
+  )}
+  numColumns={viewMode === 'grid' ? (Platform.OS === 'web' ? 3 : 2) : 1}
+  key={`${viewMode}-${Platform.OS}`} // Forces remount when view mode or platform changes
+  keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
           contentContainerStyle={[
             styles.listContainer,
             filteredPlants.length === 0 && styles.emptyListContainer,
