@@ -42,25 +42,63 @@ export default function SignupLocationReq({ navigation }) {
 
   const requestLocationPermission = async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
+
     if (status === "granted") {
-      const location = await Location.getCurrentPositionAsync({});
-      setLocationPermissionGranted(true);
-      updateFormData("userLocation", {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      });
-      if (Platform.OS === "web") {
-        alert(`📍 Location Saved: Lat: ${location.coords.latitude}, Lon: ${location.coords.longitude}`);
-      } else {
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "📍 Location Saved",
-            body: `Lat: ${location.coords.latitude}, Lon: ${location.coords.longitude}`,
-          },
-          trigger: null,
-        });
+      try {
+        const location = await Location.getCurrentPositionAsync({});
+        const coords = {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        };
+
+        setLocationPermissionGranted(true);
+        updateFormData("userLocation", coords);
+
+        // Reverse geocode to get city
+        const [place] = await Location.reverseGeocodeAsync(coords);
+        const city = place?.city || place?.region || null;
+
+        if (city) {
+          updateFormData("userLocation", { ...coords, city });
+
+          const message = `📍 Location Detected: ${city}`;
+          if (Platform.OS === "web") {
+            alert(message);
+          } else {
+            await Notifications.scheduleNotificationAsync({
+              content: { title: "📍 Location Detected", body: `You are in ${city}` },
+              trigger: null,
+            });
+          }
+        } else {
+          if (Platform.OS === "web") {
+            alert("⚠️ Could not determine city from location.");
+          } else {
+            await Notifications.scheduleNotificationAsync({
+              content: {
+                title: "⚠️ Location Accessed",
+                body: "Could not determine city from your location.",
+              },
+              trigger: null,
+            });
+          }
+        }
+
+        console.log("📬 Location and (maybe) city saved");
+      } catch (error) {
+        console.error("❌ Error getting location:", error);
+        if (Platform.OS === "web") {
+          alert("❌ Failed to get location.");
+        } else {
+          await Notifications.scheduleNotificationAsync({
+            content: {
+              title: "❌ Error",
+              body: "Something went wrong getting your location.",
+            },
+            trigger: null,
+          });
+        }
       }
-      console.log("📬 Location saved and notification/alert sent");     
     } else {
       setPermissionStatus("denied");
       if (Platform.OS === "web") {
@@ -74,7 +112,7 @@ export default function SignupLocationReq({ navigation }) {
           trigger: null,
         });
       }
-  
+
       console.log("📬 Denial message sent");
     }
   };
