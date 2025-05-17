@@ -212,15 +212,16 @@ const FilterSection = ({
                 <ScrollView>
                   {/* Price Range in Modal */}
                   <View style={styles.modalSection}>
-                    <Text style={styles.sectionTitle}>Price Range</Text>
-                    <PriceRange
-                      onPriceChange={handlePriceRangeChange}
-                      initialMin={priceRange.min}
-                      initialMax={priceRange.max}
-                      style={styles.priceRange}
-                      hideTitle={true} // Hide the component title since we have a section title
-                    />
-                  </View>
+  <Text style={styles.sectionTitle}>Price Range</Text>
+  <PriceRange
+    onPriceChange={handlePriceRangeChange}
+    initialMin={priceRange.min}
+    initialMax={priceRange.max}
+    style={styles.priceRange}
+    hideTitle={true} // Hide the component title since we have a section title
+    max={1000} // Set maximum price limit
+  />
+</View>
                   
                   {/* Action Buttons */}
                   <View style={styles.modalActions}>

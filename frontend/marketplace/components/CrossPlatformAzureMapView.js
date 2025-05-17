@@ -1,4 +1,3 @@
-//cross platrform map
 // components/CrossPlatformAzureMapView.js
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
@@ -30,7 +29,7 @@ const CrossPlatformAzureMapView = ({
   showControls = true,
   mapStyle = 'road',
   onMapReady,
-  azureMapsKey, // Azure Maps subscription key
+  azureMapsKey, // Azure Maps subscription key directly passed as prop
 }) => {
   const webViewRef = useRef(null);
   const mapDivRef = useRef(null);
@@ -46,9 +45,8 @@ const CrossPlatformAzureMapView = ({
   const [nearbyProducts, setNearbyProducts] = useState([]);
   const [sortOrder, setSortOrder] = useState('nearest'); // 'nearest' or 'farthest'
 
-  // Environment variables
-  const AZURE_MAPS_KEY = azureMapsKey || (typeof process !== 'undefined' && process.env ? 
-    process.env.AZURE_MAPS_MARKETPLACE_KEY : '');
+  // Use the Azure Maps key directly from props
+  const AZURE_MAPS_KEY = azureMapsKey;
 
   /* ------------------------------------------------------------------ */
   /* HTML/JS template injected into WebView or <iframe> (web)           */
@@ -777,7 +775,7 @@ const CrossPlatformAzureMapView = ({
         <MaterialIcons name="error-outline" size={48} color="#f44336" />
         <Text style={styles.errorText}>Azure Maps API Key Missing</Text>
         <Text style={styles.errorDescription}>
-          Please configure AZURE_MAPS_MARKETPLACE_KEY in your environment variables.
+          Could not load map configuration. Please try again later.
         </Text>
       </View>
     );
