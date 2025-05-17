@@ -1,4 +1,5 @@
-// components/PlantCard.js
+// components/PlantCard.js (updated version with map navigation)
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -33,7 +34,8 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
   const handleSellerPress = (e) => {
     e.stopPropagation();
     navigation.navigate('SellerProfile', {
-      sellerId: plant.seller?._id || plant.sellerId || 'unknown',
+      sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
+      sellerData: plant.seller || { name: plant.sellerName || 'Unknown Seller' }
     });
   };
 
@@ -44,17 +46,28 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     try {
       setIsSubmitting(true);
       // Optimistically update UI
-      setIsFavorite(!isFavorite);
+      const newFavoriteState = !isFavorite;
+      setIsFavorite(newFavoriteState);
 
       // Call API
       const result = await wishProduct(plant.id || plant._id);
       
-      // Trigger global update with associated data
-      await triggerUpdate(UPDATE_TYPES.WISHLIST, {
-        plantId: plant.id || plant._id,
-        isFavorite: !isFavorite,
-        timestamp: Date.now()
-      });
+      // If API returns specific wishlist state, use it
+      if (result && 'isWished' in result) {
+        setIsFavorite(result.isWished);
+      }
+      
+      // Store update notification for other components
+      AsyncStorage.setItem('WISHLIST_UPDATED', Date.now().toString())
+        .then(() => {
+          // Trigger global update with associated data
+          triggerUpdate(UPDATE_TYPES.WISHLIST, {
+            plantId: plant.id || plant._id,
+            isFavorite: newFavoriteState,
+            timestamp: Date.now()
+          }).catch(e => console.warn('Failed to trigger update:', e));
+        })
+        .catch(err => console.warn('Failed to set wishlist update flag:', err));
     } catch (err) {
       // Revert on error
       setIsFavorite(isFavorite);
@@ -71,10 +84,12 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
   const handleContact = (e) => {
     e.stopPropagation();
+    const sellerName = plant.seller?.name || 'Plant Seller'; 
     navigation.navigate('Messages', {
       sellerId: plant.seller?._id || plant.sellerId,
       plantId: plant.id || plant._id,
       plantName: plant.title || plant.name,
+      sellerName: sellerName // Add seller name to navigate with the correct title
     });
   };
 
@@ -108,6 +123,30 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
       return plant.city;
     }
     return 'Local pickup';
+  };
+
+  // Check if we have valid location coordinates for map navigation
+  const hasLocationCoordinates = () => {
+    return (
+      plant.location && 
+      typeof plant.location === 'object' && 
+      plant.location.latitude && 
+      plant.location.longitude
+    );
+  };
+
+  // Handle map navigation
+  const handleOpenMap = (e) => {
+    e.stopPropagation();
+    if (!hasLocationCoordinates()) return;
+    
+    navigation.navigate('MapView', {
+      products: [plant],
+      initialLocation: {
+        latitude: plant.location.latitude,
+        longitude: plant.location.longitude
+      }
+    });
   };
 
   const isList = layout === 'list';
@@ -152,10 +191,18 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
         </View>
         
-        {/* Location information */}
+        {/* Location information with map button */}
         <View style={styles.locationRow}>
           <MaterialIcons name="location-on" size={12} color="#666" />
           <Text style={styles.locationText} numberOfLines={1}>{getLocationText()}</Text>
+          {hasLocationCoordinates() && (
+            <TouchableOpacity 
+              style={styles.mapButton}
+              onPress={handleOpenMap}
+            >
+              <MaterialIcons name="map" size={12} color="#fff" />
+            </TouchableOpacity>
+          )}
         </View>
         
         {!isList && <Text style={styles.category} numberOfLines={1}>{plant.category}</Text>}
@@ -163,7 +210,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
         <View style={styles.sellerRow}>
           <TouchableOpacity onPress={handleSellerPress}>
             <Text style={styles.sellerName} numberOfLines={1}>
-              {plant.seller?.name || 'Unknown Seller'}
+              {plant.seller?.name || plant.sellerName || 'Unknown Seller'}
             </Text>
           </TouchableOpacity>
           
@@ -306,7 +353,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4CAF50',
   },
-  // New location row styles
+  // Location row with map button
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -317,6 +364,12 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 4,
     flex: 1,
+  },
+  mapButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 4,
+    padding: 4,
+    marginLeft: 4,
   },
   category: {
     fontSize: 14,

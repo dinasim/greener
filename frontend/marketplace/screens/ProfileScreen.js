@@ -1,4 +1,3 @@
-// screens/ProfileScreen.js
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, FlatList, 
@@ -23,22 +22,15 @@ const ProfileScreen = () => {
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
-  // Set up update listeners
   useEffect(() => {
     const listenerId = 'profile-screen';
-    
     const handleUpdate = (updateType, data) => {
       console.log(`[ProfileScreen] Received update: ${updateType}`, data);
-      
       if ([UPDATE_TYPES.PROFILE, UPDATE_TYPES.WISHLIST, UPDATE_TYPES.PRODUCT, UPDATE_TYPES.REVIEW].includes(updateType)) {
         loadUserProfile();
       }
     };
-    
-    // Add web event listener
     addUpdateListener(listenerId, handleUpdate);
-    
-    // Clean up listener on unmount
     return () => {
       removeUpdateListener(listenerId);
     };
@@ -46,16 +38,11 @@ const ProfileScreen = () => {
 
   useFocusEffect(
     useCallback(() => {
-      // Load user profile
       loadUserProfile();
-      
-      // Check for updates
       const checkUpdates = async () => {
         try {
-          // Check relevant update types
           const updateTypes = [UPDATE_TYPES.PROFILE, UPDATE_TYPES.WISHLIST, UPDATE_TYPES.PRODUCT, UPDATE_TYPES.REVIEW];
           let needsRefresh = false;
-          
           for (const updateType of updateTypes) {
             const hasUpdate = await checkForUpdate(updateType, lastUpdateTime);
             if (hasUpdate) {
@@ -63,12 +50,9 @@ const ProfileScreen = () => {
               await clearUpdate(updateType);
             }
           }
-          
           if (needsRefresh || route.params?.refresh) {
             loadUserProfile();
             setLastUpdateTime(Date.now());
-            
-            // Clear route params
             if (route.params?.refresh) {
               navigation.setParams({ refresh: undefined });
             }
@@ -77,7 +61,6 @@ const ProfileScreen = () => {
           console.error('[ProfileScreen] Error checking updates:', error);
         }
       };
-      
       checkUpdates();
     }, [])
   );
@@ -191,20 +174,17 @@ const ProfileScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader title="My Profile" showBackButton onBackPress={() => navigation.goBack()} onNotificationsPress={() => navigation.navigate('Messages')} />
-      
       <View style={styles.profileCard}>
         <Image source={{ uri: user.avatar }} style={styles.avatar} />
         <Text style={styles.userName}>{user.name}</Text>
         <Text style={styles.userEmail}>{user.email}</Text>
         <Text style={styles.joinDate}>Joined {user.joinDate ? new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}</Text>
         {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
-
         <TouchableOpacity style={styles.editProfileButton} onPress={() => navigation.navigate('EditProfile')}>
           <Feather name="edit" size={16} color="#4CAF50" />
           <Text style={styles.editProfileText}>Edit Profile</Text>
         </TouchableOpacity>
       </View>
-
       <View style={styles.statsRow}>
         <View style={styles.statBox}>
           <Text style={styles.statValue}>{user.stats?.plantsCount || 0}</Text>
@@ -221,7 +201,6 @@ const ProfileScreen = () => {
           <Text style={styles.statLabel}>Rating ({ratingData.count || 0})</Text>
         </View>
       </View>
-
       <View style={styles.tabsContainer}>
         {['myPlants', 'favorites', 'sold', 'reviews'].map(tab => (
           <TouchableOpacity
@@ -240,9 +219,7 @@ const ProfileScreen = () => {
           </TouchableOpacity>
         ))}
       </View>
-
       <View style={styles.tabContent}>{renderTabContent()}</View>
-
       <TouchableOpacity style={styles.addPlantButton} onPress={() => navigation.navigate('AddPlant')}>
         <MaterialIcons name="add" size={24} color="#fff" />
       </TouchableOpacity>
@@ -256,8 +233,7 @@ const styles = StyleSheet.create({
   loadingText: { marginTop: 10, color: '#666', fontSize: 16 },
   errorText: { color: '#f44336', fontSize: 16, textAlign: 'center', marginTop: 10 },
   profileCard: {
-    backgroundColor: '#f0f9f3', // Light green background
-    margin: 16, padding: 20, borderRadius: 16, alignItems: 'center',
+    backgroundColor: '#f0f9f3', margin: 16, padding: 20, borderRadius: 16, alignItems: 'center',
     shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, 
     shadowRadius: 6, elevation: 4,
   },
