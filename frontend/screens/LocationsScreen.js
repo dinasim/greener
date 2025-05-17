@@ -12,6 +12,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
 import { Ionicons } from '@expo/vector-icons';
+import HomeToolbar from '../components/HomeTool';
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 // const GEAR_ICON = require('../assets/gear.png'); // Use Ionicons for gear if you don't have a PNG
@@ -53,7 +54,7 @@ export default function LocationPlantsScreen() {
       <TouchableOpacity
         key={loc}
         style={styles.siteCard}
-        onPress={() => navigation.navigate('PlacePlantScreen', { location: loc })}
+        onPress={() => navigation.navigate('LocationPlants', { location: loc })}
         activeOpacity={0.85}
       >
         <Image
@@ -88,7 +89,7 @@ export default function LocationPlantsScreen() {
 
       {/* Tabs */}
       <View style={styles.tabBar}>
-        {['Sites', 'Plants', 'Photos'].map(tabLabel => (
+        {['Sites', 'Plants'].map(tabLabel => (
           <TouchableOpacity
             key={tabLabel}
             style={[styles.tabBtn, tab === tabLabel && styles.activeTab]}
@@ -124,7 +125,7 @@ export default function LocationPlantsScreen() {
           renderItem={({ item }) => (
             <TouchableOpacity
               style={styles.plantCard}
-              onPress={() => navigation.navigate('PlantDetail', { plantId: item.id })}
+              onPress={() => navigation.navigate('UserPlantDetail', { plantId: item.id })}
             >
               <Image
                 source={item.image_url ? { uri: item.image_url } : PLANT_PHOTO_PLACEHOLDER}
@@ -153,30 +154,7 @@ export default function LocationPlantsScreen() {
         />
       )}
 
-      {/* Photos List */}
-      {tab === 'Photos' && (
-        <FlatList
-          data={plants.filter(p => p.image_url)}
-          renderItem={({ item }) => (
-            <View style={styles.photoCard}>
-              <Image source={{ uri: item.image_url }} style={styles.photoImg} />
-              <Text numberOfLines={1} style={styles.photoLabel}>{item.nickname}</Text>
-              <Text numberOfLines={1} style={styles.photoLoc}>{item.location}</Text>
-            </View>
-          )}
-          keyExtractor={(item) => item.id}
-          numColumns={3}
-          contentContainerStyle={styles.photoList}
-          ListEmptyComponent={
-            !loading && (
-              <View style={styles.emptyState}>
-                <Ionicons name="image-outline" size={60} color="#e0e0e0" style={{ marginBottom: 10 }} />
-                <Text style={styles.emptyText}>No photos yet!</Text>
-              </View>
-            )
-          }
-        />
-      )}
+    <HomeToolbar navigation={navigation} />  
     </SafeAreaView>
   );
 }

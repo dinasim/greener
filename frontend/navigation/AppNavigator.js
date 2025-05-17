@@ -20,7 +20,7 @@ import PlantDetail from '../screens/PlantDetailScreen';
 import DiseaseChecker from '../screens/DiseaseCheckerScreen';
 import PlantReviewScreen from '../screens/PlantReviewScreen';
 import searchPlants from '../screens/SearchPlantScreen';
-
+import UserPlantDetails from '../screens/UserPlantDetails';
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
@@ -45,6 +45,7 @@ export default function AppNavigator() {
 
         {/* Home and Other Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="UserPlantDetail" component={UserPlantDetails} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen name="MainTabs" component={MainTabs} />

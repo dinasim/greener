@@ -17,6 +17,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { SwipeListView } from 'react-native-swipe-list-view';
+import HomeToolbar from '../components/HomeTool';
 
 const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyPlantPhoto';
@@ -42,7 +43,7 @@ export default function AddPlantScreen({ navigation }) {
     id:                  p.id,
     common_name:         p.common_name || '',
     scientific_name:     p.scientific_name || p.latin_name || '',
-    image_url:           p.image_url || p.image_urls?.[0] || null,
+    image_url: p.image_url || (Array.isArray(p.image_urls) ? p.image_urls[0] : null) || null,
     family_common_name:  p.family_common_name || p.origin || '',
     care_difficulty:     p.care_difficulty || null,
     shade:               p.shade           || null,
@@ -296,6 +297,7 @@ export default function AddPlantScreen({ navigation }) {
       ) : (
         !loading && <Text style={styles.noResults}>No plants found. Try another search.</Text>
       )}
+    <HomeToolbar navigation={navigation} />
     </SafeAreaView>
   );
 }

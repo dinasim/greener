@@ -250,7 +250,7 @@ export default function AddPlantScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Add a Plant</Text>
+      <Text style={styles.header}>Let's find your plant!</Text>
       {/* Search + Scan */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>

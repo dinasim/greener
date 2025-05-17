@@ -1,5 +1,3 @@
-// screens/PlantReviewScreen.js
-
 import React, { useState } from 'react';
 import {
   View,
@@ -11,6 +9,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
+  ScrollView,
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -36,6 +35,13 @@ async function uploadPlantPhotoToAzure(uri) {
   if (!apiRes.ok) throw new Error(await apiRes.text());
   const json = await apiRes.json();
   return json.url;
+}
+
+// Normalizes email and nickname for Cosmos-safe ID: replaces all non-alphanumeric chars with "_"
+function normalizeId(email, nickname) {
+  const safeEmail = (email || '').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const safeNick = (nickname || 'plant').replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  return `${safeEmail}_${safeNick}`;
 }
 
 export default function PlantReviewScreen({ route, navigation }) {
@@ -78,7 +84,9 @@ export default function PlantReviewScreen({ route, navigation }) {
         uploadedUrl = await uploadPlantPhotoToAzure(photoUri);
       }
       // Compose plant record
+      const id = normalizeId(userEmail, nickname); // normalized, deterministic!
       const payload = {
+        id,
         email: userEmail,
         nickname,
         location,
@@ -96,11 +104,11 @@ export default function PlantReviewScreen({ route, navigation }) {
         common_problems: plant.common_problems || [],
         image_url: uploadedUrl || plant.image_url || plant.image_urls?.[0] || "",
         avg_watering: 0,
-        // You can add any other custom fields as needed
+        // Any other custom fields...
       };
 
       // Save to backend
-      const apiRes = await fetch('https://usersfunctions.azurewebsites.net/api/adduserplant', {
+      const apiRes = await fetch('https://usersfunctions.azurewebsites.net/api/userplants/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -117,56 +125,58 @@ export default function PlantReviewScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Back Button */}
-      <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-        <Ionicons name="arrow-back" size={24} color="#2e7d32" />
-        <Text style={{ color: "#2e7d32", marginLeft: 7, fontWeight: "bold", fontSize: 17 }}>Back</Text>
-      </TouchableOpacity>
+      <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
+        {/* Back Button */}
+        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
+          <Ionicons name="arrow-back" size={24} color="#2e7d32" />
+          <Text style={{ color: "#2e7d32", marginLeft: 7, fontWeight: "bold", fontSize: 17 }}>Back</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.header}>Review Plant</Text>
-      {/* Plant Image */}
-      <Image
-        source={{
-          uri:
-            photoUri ||
-            plant.image_url ||
-            (plant.image_urls && plant.image_urls[0]) ||
-            "https://www.pngitem.com/pimgs/m/113-1136906_transparent-background-plant-pot-png-png-download.png"
-        }}
-        style={styles.image}
-      />
+        <Text style={styles.header}>Review Plant</Text>
+        {/* Plant Image */}
+        <Image
+          source={{
+            uri:
+              photoUri ||
+              plant.image_url ||
+              (plant.image_urls && plant.image_urls[0]) ||
+              "https://www.pngitem.com/pimgs/m/113-1136906_transparent-background-plant-pot-png-png-download.png"
+          }}
+          style={styles.image}
+        />
 
-      <Text style={styles.label}>Plant Name</Text>
-      <Text style={styles.value}>{plant.common_name || plant.scientific_name}</Text>
-      <Text style={styles.label}>Scientific Name</Text>
-      <Text style={styles.value}>{plant.scientific_name || "—"}</Text>
+        <Text style={styles.label}>Plant Name</Text>
+        <Text style={styles.value}>{plant.common_name || plant.scientific_name}</Text>
+        <Text style={styles.label}>Scientific Name</Text>
+        <Text style={styles.value}>{plant.scientific_name || "—"}</Text>
 
-      <Text style={styles.label}>Nickname</Text>
-      <TextInput
-        style={styles.input}
-        value={nickname}
-        onChangeText={setNickname}
-        placeholder="E.g. Ficus on window"
-      />
+        <Text style={styles.label}>Nickname</Text>
+        <TextInput
+          style={styles.input}
+          value={nickname}
+          onChangeText={setNickname}
+          placeholder="E.g. Ficus on window"
+        />
 
-      <Text style={styles.label}>Location</Text>
-      <TextInput
-        style={styles.input}
-        value={location}
-        onChangeText={setLocation}
-        placeholder="E.g. Living Room"
-      />
+        <Text style={styles.label}>Location</Text>
+        <TextInput
+          style={styles.input}
+          value={location}
+          onChangeText={setLocation}
+          placeholder="E.g. Living Room"
+        />
 
-      <Text style={styles.label}>Custom Photo (optional)</Text>
-      <TouchableOpacity style={styles.uploadBtn} onPress={handlePhotoPick}>
-        <Ionicons name="camera" size={20} color="#fff" />
-        <Text style={styles.uploadBtnText}>Pick Photo</Text>
-      </TouchableOpacity>
-      {photoUri && <Image source={{ uri: photoUri }} style={styles.imagePreview} />}
+        <Text style={styles.label}>Custom Photo (optional)</Text>
+        <TouchableOpacity style={styles.uploadBtn} onPress={handlePhotoPick}>
+          <Ionicons name="camera" size={20} color="#fff" />
+          <Text style={styles.uploadBtnText}>Pick Photo</Text>
+        </TouchableOpacity>
+        {photoUri && <Image source={{ uri: photoUri }} style={styles.imagePreview} />}
 
-      <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
-        {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Plant</Text>}
-      </TouchableOpacity>
+        <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Plant</Text>}
+        </TouchableOpacity>
+      </ScrollView>
     </SafeAreaView>
   );
 }

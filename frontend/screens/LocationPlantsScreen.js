@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
+import HomeToolbar from '../components/HomeTool';
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 
@@ -38,7 +39,7 @@ export default function LocationPlantsDetail() {
   const renderPlantCard = ({ item }) => (
     <TouchableOpacity
       style={styles.card}
-      onPress={() => navigation.navigate('PlantDetail', { plantId: item.id })}
+      onPress={() => navigation.navigate('UserPlantDetail', { plantId: item.id })}
     >
       <Image
         source={item.image_url ? { uri: item.image_url } : PLANT_PHOTO_PLACEHOLDER}
@@ -83,6 +84,7 @@ export default function LocationPlantsDetail() {
           contentContainerStyle={styles.list}
         />
       )}
+       <HomeToolbar navigation={navigation} />
     </SafeAreaView>
   );
 }
