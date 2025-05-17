@@ -14,6 +14,7 @@ import {
   Alert,
   Platform,
 } from 'react-native';
+import HomeToolbar from '../components/HomeTool';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { SwipeListView } from 'react-native-swipe-list-view';
@@ -296,6 +297,7 @@ export default function AddPlantScreen({ navigation }) {
       ) : (
         !loading && <Text style={styles.noResults}>No plants found. Try another search.</Text>
       )}
+      <HomeToolbar navigation={navigation} />
     </SafeAreaView>
   );
 }

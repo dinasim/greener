@@ -1,5 +1,3 @@
-// screens/HomeScreen.js
-
 import React, { useState, useEffect } from 'react';
 import {
   SafeAreaView,
@@ -15,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import HomeToolbar from '../components/HomeTool';
 
 const { width } = Dimensions.get('window');
 
@@ -29,7 +28,6 @@ export default function HomeScreen({ navigation }) {
     // … more items …
   ];
 
-  // Compute greeting on mount
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour < 12) setGreeting('Good morning');
@@ -41,7 +39,7 @@ export default function HomeScreen({ navigation }) {
       duration: 800,
       useNativeDriver: true,
     }).start();
-  }, []);  // <-- dependency array belongs here
+  }, []);
 
   const handleAddPress = () => setShowPopup(true);
   const handleOptionPress = (type) => {
@@ -49,8 +47,6 @@ export default function HomeScreen({ navigation }) {
     if (type === 'plant') navigation.navigate('AddPlant');
     else if (type === 'site') navigation.navigate('AddSite');
   };
-  const handleLeafPress = () => navigation.navigate('Locations');
-  const handleMarketplacePress = () => navigation.navigate('MainTabs');
 
   const renderItem = ({ item }) => (
     <View style={styles.taskCard}>
@@ -86,16 +82,9 @@ export default function HomeScreen({ navigation }) {
         contentContainerStyle={styles.listContainer}
       />
 
-      <View style={styles.navBar}>
-        <TouchableOpacity><Ionicons name="home" size={24} color="black" /></TouchableOpacity>
-        <TouchableOpacity onPress={handleLeafPress}><Ionicons name="leaf" size={24} color="black" /></TouchableOpacity>
-        <TouchableOpacity onPress={handleMarketplacePress}><Ionicons name="cart-outline" size={24} color="black" /></TouchableOpacity>
-        <TouchableOpacity><Ionicons name="medkit" size={24} color="black" /></TouchableOpacity>
-      </View>
-
       {/* Floating buttons */}
       <View style={styles.floatingContainer}>
-        <TouchableOpacity style={styles.floatingButton} onPress={() => navigation.navigate('DiseaseChecker')}>
+        <TouchableOpacity style={styles.floatingButton} onPress={() => navigation.navigate('SearchPlants')}>
           <Ionicons name="search" size={32} color="#4CAF50" />
         </TouchableOpacity>
         <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
@@ -116,12 +105,15 @@ export default function HomeScreen({ navigation }) {
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* Shared Home Toolbar (bottom navigation bar) */}
+      <HomeToolbar navigation={navigation} />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fdfdfd', padding: 20 },
+  container: { flex: 1, backgroundColor: '#fdfdfd', padding: 20, paddingBottom: 90 },
   header: { marginTop: 10, marginBottom: 15 },
   greeting: { fontSize: 30, color: '#2e7d32', fontWeight: 'bold' },
   tabRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
@@ -140,13 +132,7 @@ const styles = StyleSheet.create({
   plantName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
   location: { color: '#555' },
   late: { marginTop: 4 },
-  navBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#eee', flexDirection: 'row',
-    justifyContent: 'space-around', alignItems: 'center',
-    paddingVertical: 10, borderTopLeftRadius: 20,
-    borderTopRightRadius: 20, elevation: 10,
-  },
+  // Removed navBar, now handled by HomeToolbar.js
   floatingContainer: {
     position: 'absolute', bottom: 70, right: 25, alignItems: 'center',
   },

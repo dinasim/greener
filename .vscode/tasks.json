@@ -28,6 +28,26 @@
 			"label": "npm prune (functions)",
 			"command": "npm prune --production",
 			"problemMatcher": []
+		},
+		{
+			"type": "func",
+			"label": "func: host start",
+			"command": "host start",
+			"problemMatcher": "$func-python-watch",
+			"isBackground": true,
+			"dependsOn": "func: extensions install",
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			}
+		},
+		{
+			"type": "func",
+			"command": "extensions install",
+			"dependsOn": "pip install (functions)",
+			"problemMatcher": [],
+			"options": {
+				"cwd": "${workspaceFolder}/backend"
+			}
 		}
 	]
 }

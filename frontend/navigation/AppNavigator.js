@@ -19,6 +19,7 @@ import LocationPlantsScreen from '../screens/LocationPlantsScreen';
 import PlantDetail from '../screens/PlantDetailScreen';
 import DiseaseChecker from '../screens/DiseaseCheckerScreen';
 import PlantReviewScreen from '../screens/PlantReviewScreen';
+import searchPlants from '../screens/SearchPlantScreen';
 
 
 // Import marketplace navigation
@@ -51,6 +52,7 @@ export default function AppNavigator() {
         {/* Other screens */}
         <Stack.Screen name="Camera" component={CameraScreen} />
         <Stack.Screen name="AddPlant" component={AddPlantScreen} />
+        <Stack.Screen name="SearchPlants" component={searchPlants} />
         <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
         <Stack.Screen name="Locations" component={LocationsScreen} />
         <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
