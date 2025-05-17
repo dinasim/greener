@@ -3,83 +3,94 @@ import azure.functions as func
 import os
 import requests
 import json
+from azure.cosmos import CosmosClient
 from dotenv import load_dotenv
 
-# Load environment variables
+# Load env vars
 load_dotenv()
 AZURE_MAPS_KEY = os.getenv("AZURE_MAPS_KEY")
+COSMOS_URI = os.getenv("COSMOS_URI")
+COSMOS_KEY = os.getenv("COSMOS_KEY")
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
 
+# Cosmos setup
+client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
+database = client.get_database_client("GreenerDB")
+users_container = database.get_container_client("Users")
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('getWeatherAdvice function triggered.')
+    logging.info("🌿 Weather notification function started.")
 
     try:
-        # Parse request data
-        data = req.get_json()
-        lat = data.get("latitude")
-        lon = data.get("longitude")
-        expo_token = data.get("expoPushToken")
+        # Fetch all users
+        users = list(users_container.read_all_items())
+        sent_notifications = []
 
-        # ✅ Exit early if location or token is missing
-        if not lat or not lon or not expo_token:
-            return func.HttpResponse(
-                "Location not provided or missing Expo token. Skipping notification.",
-                status_code=200
-            )
+        for user in users:
+            location = user.get("location")
+            token = user.get("expoPushToken")
 
-        # Fetch weather forecast from Azure Maps
-        weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
-        params = {
-            "api-version": "1.1",
-            "query": f"{lat},{lon}",
-            "subscription-key": AZURE_MAPS_KEY,
-            "duration": 1,
-            "unit": "imperial"
-        }
+            if not location or not token:
+                continue
 
-        res = requests.get(weather_url, params=params)
-        res.raise_for_status()
-        forecast_data = res.json()
+            # Handle both formats: string or dict with coords
+            if isinstance(location, dict) and "latitude" in location:
+                lat = location["latitude"]
+                lon = location["longitude"]
+            elif isinstance(location, dict) and "city" in location:
+                # Optional: convert city to lat/lon (needs Azure Maps geocoding)
+                continue
+            else:
+                continue
 
-        today = forecast_data["forecasts"][0]
-        temp_max = today["temperature"]["maximum"]["value"]
-        wind_speed = today["day"]["wind"]["speed"]["value"]
-        rain_chance = today["day"].get("precipitationProbability", 0)
+            # Get forecast
+            weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
+            params = {
+                "api-version": "1.1",
+                "query": f"{lat},{lon}",
+                "subscription-key": AZURE_MAPS_KEY,
+                "duration": 1,
+                "unit": "imperial"
+            }
 
-        # Determine advice
-        advice_list = []
+            res = requests.get(weather_url, params=params)
+            res.raise_for_status()
+            forecast = res.json()["forecasts"][0]
 
-        if rain_chance > 50:
-            advice_list.append("🌧️ Rain expected today — bring your plants inside.")
-        if wind_speed > 20:
-            advice_list.append("💨 Strong winds today — protect your plants!")
-        if temp_max > 86:
-            advice_list.append("🌡️ It's hot today — consider moving your plants to shade.")
-        if not advice_list:
-            advice_list.append("✅ Weather looks good for your plants today.")
+            temp = forecast["temperature"]["maximum"]["value"]
+            wind = forecast["day"]["wind"]["speed"]["value"]
+            rain = forecast["day"].get("precipitationProbability", 0)
 
-        # Send notification via Expo
-        notification = {
-            "to": expo_token,
-            "sound": "default",
-            "title": "🌿 Plant Weather Alert",
-            "body": advice_list[0]  # First relevant message
-        }
+            # Weather advice
+            if rain > 50:
+                message = "🌧️ Rain expected today — bring your plants inside."
+            elif wind > 20:
+                message = "💨 Strong winds today — protect your plants!"
+            elif temp > 86:
+                message = "🌡️ It's hot today — move your plants to the shade."
+            else:
+                message = "✅ Weather looks great for your plants today!"
 
-        push_res = requests.post(EXPO_PUSH_URL, json=notification)
-        push_res.raise_for_status()
+            # Send Expo push
+            push_payload = {
+                "to": token,
+                "sound": "default",
+                "title": "🌿 Plant Weather Alert",
+                "body": message
+            }
+
+            push_res = requests.post(EXPO_PUSH_URL, json=push_payload)
+            push_res.raise_for_status()
+            sent_notifications.append(user["email"])
 
         return func.HttpResponse(
             json.dumps({
-                "temperature": temp_max,
-                "wind_speed": wind_speed,
-                "rain_chance": rain_chance,
-                "advice": advice_list,
-                "notification_status": "sent"
+                "status": "done",
+                "notified_users": sent_notifications
             }),
             mimetype="application/json"
         )
 
     except Exception as e:
-        logging.error(f"Error in getWeatherAdvice: {e}")
+        logging.error(f"🔥 Error sending weather advice: {e}")
         return func.HttpResponse("Server error", status_code=500)
