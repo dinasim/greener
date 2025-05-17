@@ -14,16 +14,17 @@ import { formatDistanceToNow } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { wishProduct } from '../services/marketplaceApi';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = false }) => {
   const navigation = useNavigation();
-  const [isFavorite, setIsFavorite] = useState(plant.isFavorite || false);
+  const [isFavorite, setIsFavorite] = useState(plant.isFavorite || plant.isWished || false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Update favorite state when plant prop changes
   useEffect(() => {
-    setIsFavorite(plant.isFavorite || false);
-  }, [plant.isFavorite]);
+    setIsFavorite(plant.isFavorite || plant.isWished || false);
+  }, [plant.isFavorite, plant.isWished]);
 
   const handlePress = () => {
     navigation.navigate('PlantDetail', { plantId: plant.id || plant._id });
@@ -46,11 +47,14 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
       setIsFavorite(!isFavorite);
 
       // Call API
-      await wishProduct(plant.id || plant._id); // API function to toggle favorites status
+      const result = await wishProduct(plant.id || plant._id);
       
-      // Set a global refresh flag with a standardized name
-      AsyncStorage.setItem('FAVORITES_UPDATED', Date.now().toString())
-        .catch(err => console.warn('Failed to set favorites update flag:', err));
+      // Trigger global update with associated data
+      await triggerUpdate(UPDATE_TYPES.WISHLIST, {
+        plantId: plant.id || plant._id,
+        isFavorite: !isFavorite,
+        timestamp: Date.now()
+      });
     } catch (err) {
       // Revert on error
       setIsFavorite(isFavorite);
@@ -89,7 +93,17 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     if (typeof plant.location === 'string') {
       return plant.location;
     } else if (plant.location && typeof plant.location === 'object') {
-      return plant.location.city || 'Local pickup';
+      // If we have a formatted city name, use it
+      if (plant.location.city) {
+        return plant.location.city;
+      }
+      
+      // If we have coordinates but no city, format them nicely
+      if (plant.location.latitude && plant.location.longitude) {
+        return `Near ${plant.location.latitude.toFixed(2)}, ${plant.location.longitude.toFixed(2)}`;
+      }
+      
+      return 'Local pickup';
     } else if (plant.city) {
       return plant.city;
     }
@@ -115,11 +129,6 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           resizeMode="contain"
         />
         
-        <View style={styles.locationPill}>
-          <MaterialIcons name="location-on" size={12} color="#fff" />
-          <Text style={styles.locationText} numberOfLines={1}>{getLocationText()}</Text>
-        </View>
-        
         {isOffline && (
           <View style={styles.offlineIndicator}>
             <MaterialIcons name="cloud-off" size={12} color="#fff" />
@@ -141,6 +150,12 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
             {plant.title || plant.name}
           </Text>
           <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
+        </View>
+        
+        {/* Location information */}
+        <View style={styles.locationRow}>
+          <MaterialIcons name="location-on" size={12} color="#666" />
+          <Text style={styles.locationText} numberOfLines={1}>{getLocationText()}</Text>
         </View>
         
         {!isList && <Text style={styles.category} numberOfLines={1}>{plant.category}</Text>}
@@ -196,7 +211,7 @@ const styles = StyleSheet.create({
     margin: 8,
     overflow: 'hidden',
     flex: 1,
-    maxWidth: Platform.OS === 'web' ? '31%' : '47%', // Changed to 31% for web (3 columns)
+    maxWidth: Platform.OS === 'web' ? '31%' : '47%',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
@@ -235,31 +250,14 @@ const styles = StyleSheet.create({
     width: 130,
   },
   image: {
-    height: 180, // Increased from 160px to 180px
+    height: 180,
     width: '100%',
     backgroundColor: '#f0f0f0',
   },
   listImage: {
     height: 130,
     width: 130,
-    resizeMode: 'contain',
-  },
-  locationPill: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  locationText: {
-    color: '#fff',
-    fontSize: 10,
-    marginLeft: 3,
-    maxWidth: 90,
+    backgroundColor: '#f0f0f0',
   },
   offlineIndicator: {
     position: 'absolute',
@@ -307,6 +305,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#4CAF50',
+  },
+  // New location row styles
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#666',
+    marginLeft: 4,
+    flex: 1,
   },
   category: {
     fontSize: 14,

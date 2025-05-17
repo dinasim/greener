@@ -16,6 +16,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { submitReview } from '../services/marketplaceApi';
 import { colors, spacing, typography, borderRadius } from '../services/theme';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
+
 
 /**
  * Enhanced ReviewForm component with better error handling and user feedback
@@ -61,27 +63,36 @@ const ReviewForm = ({
         setError('Please enter a review comment');
         return;
       }
-
+  
       setIsSubmitting(true);
       setError(null);
       setErrorDetails(null);
-
+  
       // Log submission attempt
       console.log(`Submitting review for ${targetType} ${targetId}, rating: ${rating}`);
-
+  
       const reviewData = {
         rating,
         text: reviewText.trim()
       };
-
+  
       // Submit review using the updated API function
       const result = await submitReview(targetId, targetType, reviewData);
       console.log('Review submission result:', result);
-
+  
       setIsSubmitting(false);
-
+  
       if (result && result.success) {
         console.log('Review submitted successfully');
+        
+        // Trigger global update notification
+        await triggerUpdate(UPDATE_TYPES.REVIEW, {
+          targetId,
+          targetType,
+          rating,
+          timestamp: Date.now()
+        });
+        
         resetForm();
         onClose();
         
