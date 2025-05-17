@@ -1,8 +1,9 @@
 // components/PlantLocationMap.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import CrossPlatformAzureMapView from './CrossPlatformAzureMapView';
+import { getAzureMapsKey } from '../services/azureMapsService';
 
 const { width } = Dimensions.get('window');
 
@@ -23,6 +24,27 @@ const PlantLocationMap = ({
   expanded = false
 }) => {
   const [isMapReady, setIsMapReady] = useState(false);
+  const [azureMapsKey, setAzureMapsKey] = useState(null);
+  const [isKeyLoading, setIsKeyLoading] = useState(true);
+  const [error, setError] = useState(null);
+  
+  // Fetch Azure Maps key when component mounts
+  useEffect(() => {
+    const loadMapsKey = async () => {
+      try {
+        setIsKeyLoading(true);
+        const key = await getAzureMapsKey();
+        setAzureMapsKey(key);
+        setIsKeyLoading(false);
+      } catch (err) {
+        console.error('Error fetching Azure Maps key:', err);
+        setError('Could not load map configuration.');
+        setIsKeyLoading(false);
+      }
+    };
+    
+    loadMapsKey();
+  }, []);
   
   // Check if plant has valid location data
   const hasLocation = !!(
@@ -47,12 +69,36 @@ const PlantLocationMap = ({
   const mapProducts = hasLocation ? [plant] : [];
 
   // Empty state if no location data
-  if (!hasLocation) {
+  if (!hasLocation && !plant.city) {
     return (
       <View style={[styles.container, { height: 120 }]}>
         <View style={styles.noLocationContainer}>
           <MaterialIcons name="location-off" size={24} color="#aaa" />
           <Text style={styles.noLocationText}>No location data available</Text>
+        </View>
+      </View>
+    );
+  }
+  
+  // If still loading the API key
+  if (isKeyLoading) {
+    return (
+      <View style={[styles.container, { height: expanded ? 'auto' : 200 }]}>
+        <View style={styles.noLocationContainer}>
+          <MaterialIcons name="hourglass-empty" size={24} color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading map...</Text>
+        </View>
+      </View>
+    );
+  }
+  
+  // If there was an error loading the API key
+  if (error) {
+    return (
+      <View style={[styles.container, { height: expanded ? 'auto' : 200 }]}>
+        <View style={styles.noLocationContainer}>
+          <MaterialIcons name="error-outline" size={24} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
         </View>
       </View>
     );
@@ -73,6 +119,7 @@ const PlantLocationMap = ({
           }}
           showControls={expanded}
           onMapReady={() => setIsMapReady(true)}
+          azureMapsKey={azureMapsKey}
         />
         
         {/* Location overlay */}
@@ -140,6 +187,16 @@ const styles = StyleSheet.create({
   noLocationText: {
     marginTop: 8,
     color: '#666',
+    fontSize: 14,
+  },
+  loadingText: {
+    marginTop: 8,
+    color: '#4CAF50',
+    fontSize: 14,
+  },
+  errorText: {
+    marginTop: 8,
+    color: '#f44336',
     fontSize: 14,
   },
   locationOverlay: {

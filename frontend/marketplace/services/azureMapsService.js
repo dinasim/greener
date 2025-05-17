@@ -1,262 +1,238 @@
-// File: services/azureMapsService.js
-
-/**
- * Azure Maps Service for geocoding and location services
- * This service interacts with the Azure Maps API through your Azure Functions backend
- */
-
-// Replace this with your actual Azure Functions endpoint
+// services/azureMapsService.js
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
-
-// Detect development mode
-const isDev = process.env.NODE_ENV === 'development' || __DEV__;
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 /**
- * Geocode an address to get coordinates
+ * Get Azure Maps API key from the server with authentication
+ * @returns {Promise<string>} Azure Maps API key
  */
-export async function geocodeAddress(address) {
+export const getAzureMapsKey = async () => {
   try {
-    if (!address || address === 'Unknown location' || address.length < 3) {
-      throw new Error('Invalid address for geocoding');
+    console.log('=== AZURE MAPS KEY DEBUG ===');
+    console.log('Starting request to fetch Azure Maps key');
+    
+    // Get user email for authenticated requests
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const token = await AsyncStorage.getItem('googleAuthToken');
+    
+    // Setup request headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Add authentication headers if available
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+      console.log('Added user email to headers:', userEmail);
+    } else {
+      console.log('No user email found in AsyncStorage');
     }
-
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock coordinates
-      return getMockCoordinates(address);
+    
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      console.log('Added auth token to headers (token hidden)');
+    } else {
+      console.log('No auth token found in AsyncStorage');
     }
-
-    const response = await fetch(`${API_BASE_URL}/geocode?address=${encodeURIComponent(address)}`, {
+    
+    // Log the full request details
+    const requestUrl = `${API_BASE_URL}/marketplace/maps-config`;
+    console.log('Making request to:', requestUrl);
+    console.log('With headers:', JSON.stringify(headers, null, 2));
+    
+    // Get Azure Maps key from backend
+    const response = await fetch(requestUrl, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
-
+    
+    console.log('Response status:', response.status);
+    
+    // Get the response text first for debugging
+    const responseText = await response.text();
+    console.log('Response text:', responseText);
+    
     if (!response.ok) {
-      throw new Error(`Geocoding failed with status: ${response.status}`);
+      throw new Error(`Failed to get Azure Maps key: ${response.status} - ${responseText}`);
     }
-
-    const data = await response.json();
-
-    if (!data?.latitude || !data?.longitude) {
-      throw new Error('No coordinates returned from geocoding service');
+    
+    // Parse the text response as JSON
+    let data;
+    try {
+      data = JSON.parse(responseText);
+      console.log('Parsed response data:', JSON.stringify(data, null, 2));
+    } catch (parseError) {
+      console.error('Failed to parse response as JSON:', parseError);
+      throw new Error('Invalid JSON response from server');
     }
-
-    return { latitude: data.latitude, longitude: data.longitude };
+    
+    if (!data || !data.azureMapsKey) {
+      console.error('Response missing azureMapsKey property:', data);
+      throw new Error('No Azure Maps key returned from server');
+    }
+    
+    console.log('Successfully retrieved Azure Maps key');
+    
+    // Cache the key for fallback
+    try {
+      await AsyncStorage.setItem('AZURE_MAPS_KEY_CACHE', data.azureMapsKey);
+      await AsyncStorage.setItem('AZURE_MAPS_KEY_TIMESTAMP', Date.now().toString());
+    } catch (cacheError) {
+      console.warn('Failed to cache Azure Maps key:', cacheError);
+    }
+    
+    return data.azureMapsKey;
   } catch (error) {
-    console.error('Error geocoding address:', error);
-    return getMockCoordinates(address);
+    console.error('Error getting Azure Maps key:', error);
+    
+    // Try to use cached key if available
+    try {
+      const cachedKey = await AsyncStorage.getItem('AZURE_MAPS_KEY_CACHE');
+      const keyTimestamp = await AsyncStorage.getItem('AZURE_MAPS_KEY_TIMESTAMP');
+      
+      if (cachedKey && keyTimestamp) {
+        const timestamp = parseInt(keyTimestamp, 10);
+        const now = Date.now();
+        
+        // Use cached key if it's less than 24 hours old
+        if (!isNaN(timestamp) && (now - timestamp) < 86400000) {
+          console.log('Using cached Azure Maps key');
+          return cachedKey;
+        }
+      }
+    } catch (cacheError) {
+      console.warn('Failed to retrieve cached Azure Maps key:', cacheError);
+    }
+    
+    // TEMPORARY FOR DEBUGGING: Use a direct fallback key
+    if (__DEV__) {
+      console.warn('*** USING HARDCODED DEVELOPMENT KEY ***');
+      const devKey = 'x4lgzsiW3KfzGLWVhIcgG3p0VavqZH7iUlPQ1VJgC0k';
+      return devKey;
+    }
+    
+    throw error;
   }
-}
+};
 
 /**
- * Get products with location data
+ * Geocode an address to coordinates
+ * @param {string} address Address to geocode
+ * @returns {Promise<Object>} Geocoded location data
  */
-export async function getProductsWithLocation(options = {}) {
+export const geocodeAddress = async (address) => {
   try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock products with location
-      return getMockProductsWithLocation(options);
+    if (!address || typeof address !== 'string') {
+      throw new Error('Invalid address provided');
     }
-
-    const queryParams = new URLSearchParams();
-
-    if (options.category) queryParams.append('category', options.category);
-    if (options.minPrice) queryParams.append('minPrice', options.minPrice);
-    if (options.maxPrice) queryParams.append('maxPrice', options.maxPrice);
-    queryParams.append('withLocation', 'true');
-
-    const response = await fetch(`${API_BASE_URL}/productsWithLocation?${queryParams.toString()}`, {
+    
+    // Setup request headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Make the geocode request
+    const response = await fetch(`${API_BASE_URL}/marketplace/geocode?address=${encodeURIComponent(address)}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
-
+    
     if (!response.ok) {
-      throw new Error(`Failed to get products with location: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Geocoding failed: ${errorText}`);
     }
-
+    
     const data = await response.json();
-
-    if (!data || !Array.isArray(data.products)) {
-      throw new Error('Invalid response format from productsWithLocation endpoint');
-    }
-
-    return data.products;
+    
+    return {
+      latitude: data.latitude,
+      longitude: data.longitude,
+      formattedAddress: data.formattedAddress,
+      city: data.city,
+      country: data.country,
+      street: data.street,
+      houseNumber: data.houseNumber,
+      postalCode: data.postalCode
+    };
   } catch (error) {
-    console.error('Error getting products with location:', error);
-    return getMockProductsWithLocation(options);
+    console.error('Geocoding error:', error);
+    throw error;
   }
-}
+};
 
 /**
  * Reverse geocode coordinates to an address
+ * @param {number} latitude Latitude
+ * @param {number} longitude Longitude
+ * @returns {Promise<Object>} Address information
  */
-export async function reverseGeocode(latitude, longitude) {
+export const reverseGeocode = async (latitude, longitude) => {
   try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock address
-      return getMockAddress(latitude, longitude);
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      throw new Error('Invalid coordinates provided');
     }
-
-    const response = await fetch(`${API_BASE_URL}/reverseGeocode?lat=${latitude}&lon=${longitude}`, {
+    
+    // Setup request headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    // Make the reverse geocode request
+    const response = await fetch(`${API_BASE_URL}/marketplace/reverseGeocode?lat=${latitude}&lon=${longitude}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
-
+    
     if (!response.ok) {
-      throw new Error(`Reverse geocoding failed: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Reverse geocoding failed: ${errorText}`);
     }
-
+    
     const data = await response.json();
-
-    if (!data?.address) {
-      throw new Error('No address returned from reverse geocoding');
-    }
-
-    return data.address;
+    
+    return {
+      formattedAddress: data.formattedAddress,
+      city: data.city,
+      country: data.country,
+      street: data.street,
+      houseNumber: data.houseNumber,
+      postalCode: data.postalCode,
+      latitude: data.latitude,
+      longitude: data.longitude
+    };
   } catch (error) {
-    console.error('Error reverse geocoding:', error);
-    return getMockAddress(latitude, longitude);
+    console.error('Reverse geocoding error:', error);
+    throw error;
   }
-}
+};
 
 /**
- * Get nearby products within a radius from location
+ * Calculate distance between two coordinates in kilometers
+ * @param {number} lat1 First point latitude
+ * @param {number} lon1 First point longitude
+ * @param {number} lat2 Second point latitude
+ * @param {number} lon2 Second point longitude
+ * @returns {number} Distance in kilometers
  */
-export async function getNearbyProducts(latitude, longitude, radius = 10) {
-  try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock nearby products
-      return getMockNearbyProducts(latitude, longitude, radius);
-    }
-
-    const response = await fetch(
-      `${API_BASE_URL}/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Failed to get nearby products: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    if (!data?.products || !Array.isArray(data.products)) {
-      throw new Error('Invalid response format from nearbyProducts');
-    }
-
-    return data.products;
-  } catch (error) {
-    console.error('Error getting nearby products:', error);
-    return getMockNearbyProducts(latitude, longitude, radius);
-  }
-}
-
-// -----------------------------
-// MOCK FUNCTIONS (for development)
-// -----------------------------
-
-function getMockCoordinates(address) {
-  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return {
-    latitude: 47.6062 + (hash % 20 - 10) / 100,
-    longitude: -122.3321 + (hash % 20 - 10) / 100,
-  };
-}
-
-function getMockAddress(lat, lon) {
-  const cities = ['Seattle', 'Portland', 'San Francisco', 'Los Angeles'];
-  const streets = ['Maple', 'Oak', 'Pine', 'Cedar'];
-  const hash = Math.floor((lat * 100 + lon * 100) % 100);
-  return `${100 + hash} ${streets[hash % streets.length]} St, ${cities[hash % cities.length]}, WA`;
-}
-
-function getMockProductsWithLocation() {
-  return [
-    {
-      id: '1',
-      title: 'Monstera Deliciosa',
-      price: 25.0,
-      category: 'indoor',
-      location: {
-        address: 'Seattle, WA',
-        latitude: 47.6062,
-        longitude: -122.3321,
-      },
-      image: 'https://via.placeholder.com/150?text=Monstera',
-    },
-    {
-      id: '2',
-      title: 'Snake Plant',
-      price: 15.0,
-      category: 'indoor',
-      location: {
-        address: 'Portland, OR',
-        latitude: 45.5051,
-        longitude: -122.6750,
-      },
-      image: 'https://via.placeholder.com/150?text=Snake+Plant',
-    },
-    {
-      id: '3',
-      title: 'Fiddle Leaf Fig',
-      price: 30.0,
-      category: 'indoor',
-      location: {
-        address: 'San Francisco, CA',
-        latitude: 37.7749,
-        longitude: -122.4194,
-      },
-      image: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
-    }
-  ];
-}
-
-function getMockNearbyProducts(lat, lon, radius) {
-  return [
-    {
-      id: 'nearby-1',
-      title: 'Nearby Pothos',
-      price: 15.0,
-      category: 'indoor',
-      location: {
-        address: 'Nearby Area',
-        latitude: lat + 0.01,
-        longitude: lon - 0.01,
-      },
-      image: 'https://via.placeholder.com/150?text=Pothos',
-    },
-    {
-      id: 'nearby-2',
-      title: 'Local Succulent',
-      price: 8.0,
-      category: 'succulent',
-      location: {
-        address: 'Just Around the Corner',
-        latitude: lat - 0.005,
-        longitude: lon + 0.008,
-      },
-      image: 'https://via.placeholder.com/150?text=Succulent',
-    }
-  ];
-}
+export const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const toRad = (value) => (value * Math.PI) / 180;
+  const R = 6371; // Earth's radius in km
+  
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+    
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
 
 export default {
+  getAzureMapsKey,
   geocodeAddress,
-  getProductsWithLocation,
   reverseGeocode,
-  getNearbyProducts
+  calculateDistance
 };
