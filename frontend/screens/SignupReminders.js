@@ -15,12 +15,8 @@ import { useForm } from "../context/FormContext";
 
 export default function SignupReminders({ navigation }) {
   const [granted, setGranted] = useState(null);
-  const { formData } = useForm();
+  const { formData, updateFormData } = useForm();
   const scaleAnim = new Animated.Value(0.95);
-  useEffect(() => {
-    console.log("🧪 FINAL location in formData:", formData.userLocation);
-    console.log("📦 Final location from formData:", formData.userLocation);
-  }, []);
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -35,6 +31,14 @@ export default function SignupReminders({ navigation }) {
     const { status } = await Notifications.requestPermissionsAsync();
     if (status === "granted") {
       setGranted(true);
+
+      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const expoPushToken = tokenData.data;
+      console.log("📱 Expo Push Token:", expoPushToken);
+
+      updateFormData("expoPushToken", expoPushToken);
+
+      await saveUserToBackend(expoPushToken);
       Alert.alert("Notifications Enabled ✅");
     } else {
       setGranted(false);
@@ -42,11 +46,11 @@ export default function SignupReminders({ navigation }) {
     }
   };
 
-  const saveUserToBackend = async () => {
+  const saveUserToBackend = async (tokenOverride) => {
     try {
       const payload = {
         email: formData.email,
-        expoPushToken: formData.expoPushToken || null,
+        expoPushToken: tokenOverride || formData.expoPushToken || null,
         location: formData.userLocation || null,
         name: formData.name || null,
         kids: formData.kids || null,
@@ -69,7 +73,12 @@ export default function SignupReminders({ navigation }) {
   };
 
   const handleContinue = async () => {
-    await saveUserToBackend();
+    if (!formData.expoPushToken) {
+      console.warn("⚠️ No push token yet, not saving again.");
+    } else {
+      await saveUserToBackend();
+    }
+
     navigation.navigate("SignInGoogleScreen");
   };
 

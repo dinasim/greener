@@ -40,24 +40,17 @@ const cityList = ['Acre', 'Afula', 'Arad', 'Arraba', 'Ashdod', 'Ashkelon', 'Baqa
       }).start();
   
       const registerForPushNotifications = async () => {
-        const { status: existingStatus } = await Notifications.getPermissionsAsync();
-        let finalStatus = existingStatus;
-  
-        if (existingStatus !== 'granted') {
-          const { status } = await Notifications.requestPermissionsAsync();
-          finalStatus = status;
-        }
-  
-        if (finalStatus !== 'granted') {
-          console.warn('Push notification permission not granted');
+        const { status } = await Notifications.requestPermissionsAsync();
+        if (status !== 'granted') {
+          console.warn("🚫 Notification permission denied");
           return;
         }
-  
+    
         const tokenData = await Notifications.getExpoPushTokenAsync();
         const expoPushToken = tokenData.data;
-  
-        console.log('📱 Expo Push Token:', expoPushToken);
-        updateFormData('expoPushToken', expoPushToken);
+    
+        console.log("📱 Token received:", expoPushToken);  // ✅ Add this!
+        updateFormData("expoPushToken", expoPushToken);
       };
   
       registerForPushNotifications();
