@@ -1,9 +1,8 @@
-# Backend: Fix for nearby-products/__init__.py
-
 import logging
 import json
 import azure.functions as func
 import math
+import traceback
 from db_helpers import get_container
 from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 
@@ -37,6 +36,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         lon = req.params.get('lon')
         radius = req.params.get('radius', '10')  # Default radius is 10 km
         category = req.params.get('category')
+        sort_by = req.params.get('sortBy', 'distance')  # Default sort by distance
         
         # Validate coordinates
         if not lat or not lon:
@@ -49,8 +49,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         except ValueError:
             return create_error_response("Invalid coordinate or radius format", 400)
         
-        # Access the marketplace-plants container
-        container = get_container("marketplace-plants")
+        # Add some debug info
+        logging.info(f"Search parameters: lat={lat}, lon={lon}, radius={radius}, category={category}, sortBy={sort_by}")
+        
+        # Access the marketplace_plants container
+        container_name = "marketplace_plants"
+        try:
+            container = get_container(container_name)
+            logging.info(f"Successfully connected to container: {container_name}")
+        except Exception as e:
+            logging.error(f"Error connecting to container {container_name}: {str(e)}")
+            return create_error_response(f"Database error: {str(e)}", 500)
         
         # Get all products with active status
         query = "SELECT * FROM c WHERE c.status = 'active' OR NOT IS_DEFINED(c.status)"
@@ -62,48 +71,45 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         else:
             parameters = []
         
-        products = list(container.query_items(
-            query=query,
-            parameters=parameters,
-            enable_cross_partition_query=True
-        ))
+        # Execute the query with debugging
+        try:
+            products = list(container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True
+            ))
+            logging.info(f"Found {len(products)} products in total")
+        except Exception as e:
+            logging.error(f"Query error: {str(e)}")
+            logging.error(f"Query: {query}")
+            logging.error(f"Parameters: {parameters}")
+            return create_error_response(f"Query error: {str(e)}", 500)
         
         # Filter products by distance if they have location data
         nearby_products = []
+        products_without_location = 0
         
         for product in products:
-            # Skip products without proper location data
-            if 'location' not in product or not product['location']:
+            # Skip products with status=deleted
+            if product.get('status') == 'deleted':
                 continue
                 
+            # Skip products without location data
+            if 'location' not in product or not product['location']:
+                products_without_location += 1
+                continue
+                
+            # Get coordinates from standardized location object
             location = product['location']
             
-            # Extract coordinates, handling different possible formats
-            product_lat = None
-            product_lon = None
-            
-            if isinstance(location, dict):
-                product_lat = location.get('latitude')
-                product_lon = location.get('longitude')
-                
-                # Alternative property names
-                if product_lat is None:
-                    product_lat = location.get('lat')
-                if product_lon is None:
-                    product_lon = location.get('lon')
-                if product_lon is None:
-                    product_lon = location.get('lng')
-            
-            # Skip if coordinates are missing
-            if product_lat is None or product_lon is None:
-                continue
-                
+            # Expected standard format: location.latitude and location.longitude 
             try:
-                product_lat = float(product_lat)
-                product_lon = float(product_lon)
-            except (ValueError, TypeError):
+                product_lat = float(location.get('latitude'))
+                product_lon = float(location.get('longitude'))
+            except (ValueError, TypeError, AttributeError):
+                products_without_location += 1
                 continue
-            
+                
             # Calculate distance using Haversine formula
             distance = calculate_distance(lat, lon, product_lat, product_lon)
             
@@ -113,8 +119,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 product['distance'] = round(distance, 2)
                 nearby_products.append(product)
         
-        # Sort by distance
-        nearby_products.sort(key=lambda p: p.get('distance', float('inf')))
+        logging.info(f"Found {len(nearby_products)} nearby products within {radius}km")
+        logging.info(f"{products_without_location} products had no location data")
+        
+        # Sort by distance if requested
+        if sort_by == 'distance':
+            nearby_products.sort(key=lambda p: p.get('distance', float('inf')))
+        elif sort_by == 'distance_desc':
+            nearby_products.sort(key=lambda p: p.get('distance', 0), reverse=True)
         
         # Return the nearby products
         return create_success_response({
@@ -129,4 +141,5 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     
     except Exception as e:
         logging.error(f"Error finding nearby products: {str(e)}")
+        logging.error(traceback.format_exc())
         return create_error_response(str(e), 500)

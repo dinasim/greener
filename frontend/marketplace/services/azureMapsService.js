@@ -1,18 +1,68 @@
-// File: services/azureMapsService.js
+// azure maps service
+// services/azureMapsService.js
 
 /**
  * Azure Maps Service for geocoding and location services
  * This service interacts with the Azure Maps API through your Azure Functions backend
  */
 
-// Replace this with your actual Azure Functions endpoint
+// API base URL from configuration
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-// Detect development mode
-const isDev = process.env.NODE_ENV === 'development' || __DEV__;
+// Import AsyncStorage
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+/**
+ * Get the Azure Maps API key from the server
+ * This allows secure access to the Azure Maps key without exposing it in client code
+ * @returns {Promise<string>} The Azure Maps API key
+ */
+export async function getAzureMapsKey() {
+  try {
+    // Get user email and auth token if available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const authToken = global.googleAuthToken || await AsyncStorage.getItem('googleAuthToken');
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+
+    // Make the request to the secure endpoint
+    const response = await fetch(`${API_BASE_URL}/marketplace/maps-config`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get maps configuration: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (!data || !data.azureMapsKey) {
+      throw new Error('Invalid response: Maps API key not found');
+    }
+
+    return data.azureMapsKey;
+  } catch (error) {
+    console.error('Error getting Azure Maps API key:', error);
+    throw error;
+  }
+}
 
 /**
  * Geocode an address to get coordinates
+ * @param {string} address Address to geocode
+ * @returns {Promise<Object>} Location data with coordinates
  */
 export async function geocodeAddress(address) {
   try {
@@ -20,17 +70,38 @@ export async function geocodeAddress(address) {
       throw new Error('Invalid address for geocoding');
     }
 
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock coordinates
-      return getMockCoordinates(address);
+    // Check for cached geocode results first
+    const cacheKey = `geocode_${address.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+    try {
+      const cachedData = await AsyncStorage.getItem(cacheKey);
+      if (cachedData) {
+        return JSON.parse(cachedData);
+      }
+    } catch (e) {
+      console.warn('Failed to check geocode cache:', e);
     }
 
-    const response = await fetch(`${API_BASE_URL}/geocode?address=${encodeURIComponent(address)}`, {
+    // Get user email and auth token if available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const authToken = global.googleAuthToken || await AsyncStorage.getItem('googleAuthToken');
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+
+    // Make the request
+    const response = await fetch(`${API_BASE_URL}/marketplace/geocode?address=${encodeURIComponent(address)}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -39,27 +110,32 @@ export async function geocodeAddress(address) {
 
     const data = await response.json();
 
+    // Validate response data
     if (!data?.latitude || !data?.longitude) {
       throw new Error('No coordinates returned from geocoding service');
     }
 
-    return { latitude: data.latitude, longitude: data.longitude };
+    // Cache successful results
+    try {
+      await AsyncStorage.setItem(cacheKey, JSON.stringify(data));
+    } catch (e) {
+      console.warn('Failed to cache geocode result:', e);
+    }
+
+    return data;
   } catch (error) {
     console.error('Error geocoding address:', error);
-    return getMockCoordinates(address);
+    throw error;
   }
 }
 
 /**
  * Get products with location data
+ * @param {Object} options Filter options
+ * @returns {Promise<Array>} Products with location data
  */
 export async function getProductsWithLocation(options = {}) {
   try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock products with location
-      return getMockProductsWithLocation(options);
-    }
-
     const queryParams = new URLSearchParams();
 
     if (options.category) queryParams.append('category', options.category);
@@ -67,12 +143,26 @@ export async function getProductsWithLocation(options = {}) {
     if (options.maxPrice) queryParams.append('maxPrice', options.maxPrice);
     queryParams.append('withLocation', 'true');
 
+    // Get user email and auth token if available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const authToken = global.googleAuthToken || await AsyncStorage.getItem('googleAuthToken');
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+
     const response = await fetch(`${API_BASE_URL}/productsWithLocation?${queryParams.toString()}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -88,26 +178,38 @@ export async function getProductsWithLocation(options = {}) {
     return data.products;
   } catch (error) {
     console.error('Error getting products with location:', error);
-    return getMockProductsWithLocation(options);
+    throw error;
   }
 }
 
 /**
  * Reverse geocode coordinates to an address
+ * @param {number} latitude Latitude coordinate
+ * @param {number} longitude Longitude coordinate
+ * @returns {Promise<string>} Formatted address
  */
 export async function reverseGeocode(latitude, longitude) {
   try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock address
-      return getMockAddress(latitude, longitude);
+    // Get user email and auth token if available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const authToken = global.googleAuthToken || await AsyncStorage.getItem('googleAuthToken');
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
     }
 
     const response = await fetch(`${API_BASE_URL}/reverseGeocode?lat=${latitude}&lon=${longitude}`, {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-      },
+      headers,
     });
 
     if (!response.ok) {
@@ -123,140 +225,79 @@ export async function reverseGeocode(latitude, longitude) {
     return data.address;
   } catch (error) {
     console.error('Error reverse geocoding:', error);
-    return getMockAddress(latitude, longitude);
+    throw error;
   }
 }
 
 /**
  * Get nearby products within a radius from location
+ * Enhanced version with sort options
+ * @param {number} latitude Latitude coordinate
+ * @param {number} longitude Longitude coordinate
+ * @param {number} radius Radius in kilometers (default: 10)
+ * @param {string} category Optional category filter
+ * @param {string} sortBy Sort method ('distance' or 'distance_desc')
+ * @returns {Promise<Object>} Object containing nearby products
  */
-export async function getNearbyProducts(latitude, longitude, radius = 10) {
+export async function getNearbyProducts(latitude, longitude, radius = 10, category = null, sortBy = 'distance') {
   try {
-    if (isDev && !global.useRealMaps) {
-      // In development, return mock nearby products
-      return getMockNearbyProducts(latitude, longitude, radius);
+    // Build URL with parameters
+    let endpoint = `${API_BASE_URL}/marketplace/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`;
+    
+    if (category && category !== 'All') {
+      endpoint += `&category=${encodeURIComponent(category)}`;
+    }
+    
+    if (sortBy) {
+      endpoint += `&sortBy=${encodeURIComponent(sortBy)}`;
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/nearbyProducts?lat=${latitude}&lon=${longitude}&radius=${radius}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${global.googleAuthToken || ''}`,
-        },
-      }
-    );
+    // Get user email and auth token if available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const authToken = global.googleAuthToken || await AsyncStorage.getItem('googleAuthToken');
+
+    // Build headers
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    if (authToken) {
+      headers['Authorization'] = `Bearer ${authToken}`;
+    }
+
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+
+    console.log(`Fetching nearby products with URL: ${endpoint}`);
+    const response = await fetch(endpoint, {
+      method: 'GET',
+      headers,
+    });
 
     if (!response.ok) {
-      throw new Error(`Failed to get nearby products: ${response.status}`);
+      const errorText = await response.text();
+      throw new Error(`Failed to get nearby products: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json();
+    console.log(`Got nearby products response with ${data?.products?.length || 0} products`);
 
     if (!data?.products || !Array.isArray(data.products)) {
       throw new Error('Invalid response format from nearbyProducts');
     }
 
-    return data.products;
+    return data;
   } catch (error) {
     console.error('Error getting nearby products:', error);
-    return getMockNearbyProducts(latitude, longitude, radius);
+    throw error;
   }
-}
-
-// -----------------------------
-// MOCK FUNCTIONS (for development)
-// -----------------------------
-
-function getMockCoordinates(address) {
-  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  return {
-    latitude: 47.6062 + (hash % 20 - 10) / 100,
-    longitude: -122.3321 + (hash % 20 - 10) / 100,
-  };
-}
-
-function getMockAddress(lat, lon) {
-  const cities = ['Seattle', 'Portland', 'San Francisco', 'Los Angeles'];
-  const streets = ['Maple', 'Oak', 'Pine', 'Cedar'];
-  const hash = Math.floor((lat * 100 + lon * 100) % 100);
-  return `${100 + hash} ${streets[hash % streets.length]} St, ${cities[hash % cities.length]}, WA`;
-}
-
-function getMockProductsWithLocation() {
-  return [
-    {
-      id: '1',
-      title: 'Monstera Deliciosa',
-      price: 25.0,
-      category: 'indoor',
-      location: {
-        address: 'Seattle, WA',
-        latitude: 47.6062,
-        longitude: -122.3321,
-      },
-      image: 'https://via.placeholder.com/150?text=Monstera',
-    },
-    {
-      id: '2',
-      title: 'Snake Plant',
-      price: 15.0,
-      category: 'indoor',
-      location: {
-        address: 'Portland, OR',
-        latitude: 45.5051,
-        longitude: -122.6750,
-      },
-      image: 'https://via.placeholder.com/150?text=Snake+Plant',
-    },
-    {
-      id: '3',
-      title: 'Fiddle Leaf Fig',
-      price: 30.0,
-      category: 'indoor',
-      location: {
-        address: 'San Francisco, CA',
-        latitude: 37.7749,
-        longitude: -122.4194,
-      },
-      image: 'https://via.placeholder.com/150?text=Fiddle+Leaf',
-    }
-  ];
-}
-
-function getMockNearbyProducts(lat, lon, radius) {
-  return [
-    {
-      id: 'nearby-1',
-      title: 'Nearby Pothos',
-      price: 15.0,
-      category: 'indoor',
-      location: {
-        address: 'Nearby Area',
-        latitude: lat + 0.01,
-        longitude: lon - 0.01,
-      },
-      image: 'https://via.placeholder.com/150?text=Pothos',
-    },
-    {
-      id: 'nearby-2',
-      title: 'Local Succulent',
-      price: 8.0,
-      category: 'succulent',
-      location: {
-        address: 'Just Around the Corner',
-        latitude: lat - 0.005,
-        longitude: lon + 0.008,
-      },
-      image: 'https://via.placeholder.com/150?text=Succulent',
-    }
-  ];
 }
 
 export default {
   geocodeAddress,
   getProductsWithLocation,
   reverseGeocode,
-  getNearbyProducts
+  getNearbyProducts,
+  getAzureMapsKey
 };
