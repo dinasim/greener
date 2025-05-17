@@ -23,6 +23,7 @@ import * as FileSystem from 'expo-file-system';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { uploadImage } from '../services/marketplaceApi'; 
 import * as Location from 'expo-location';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 // Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
@@ -544,9 +545,14 @@ const handleSubmit = async () => {
     if (result?.productId) {
       setNewPlantId(result.productId);
       
-      // Set product updated flag
-      AsyncStorage.setItem('PRODUCT_UPDATED', Date.now().toString())
-        .catch(err => console.warn('Failed to set product update flag:', err));
+      // Trigger global update notification
+      await triggerUpdate(UPDATE_TYPES.PRODUCT, {
+        productId: result.productId,
+        action: 'create',
+        category: formData.category,
+        seller: userEmail,
+        timestamp: Date.now()
+      });
       
       setShowSuccess(true);
 

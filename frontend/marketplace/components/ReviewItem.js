@@ -5,10 +5,12 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Modal from 'react-native-modal';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 const ReviewItem = ({
   review,
@@ -79,6 +81,20 @@ const ReviewItem = ({
 
       if (response.ok) {
         if (onDelete) onDelete(review.id);
+        
+        // Trigger an update to refresh the seller rating
+        try {
+          await triggerUpdate(UPDATE_TYPES.REVIEW, {
+            targetId,
+            targetType,
+            action: 'delete',
+            rating: review.rating,
+            timestamp: Date.now()
+          });
+        } catch (updateError) {
+          console.warn('Could not trigger update:', updateError);
+        }
+        
         if (onReviewDeleted) onReviewDeleted();
       } else {
         throw new Error(`Delete failed: ${responseData.message}`);
@@ -86,6 +102,7 @@ const ReviewItem = ({
     } catch (error) {
       console.error('[REVIEW_ITEM] Error deleting review:', error);
       setIsDeleting(false);
+      Alert.alert('Error', 'Failed to delete review. Please try again.');
     }
   };
 

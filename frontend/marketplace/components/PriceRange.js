@@ -4,7 +4,7 @@ import Slider from '@react-native-community/slider';
 import { MaterialIcons } from '@expo/vector-icons';
 
 /**
- * PriceRange component with two sliders and draggable small thumbs
+ * PriceRange component with two sliders and improved UI
  */
 const PriceRange = ({
   minValue = 0,
@@ -12,7 +12,8 @@ const PriceRange = ({
   initialMin = 0,
   initialMax = 1000,
   onPriceChange,
-  style
+  style,
+  hideTitle = false,
 }) => {
   const [minPrice, setMinPrice] = useState(initialMin);
   const [maxPrice, setMaxPrice] = useState(initialMax);
@@ -111,11 +112,13 @@ const PriceRange = ({
 
   return (
     <View style={[styles.container, style]}>
-      {/* Header with title */}
-      <View style={styles.headerRow}>
-        <MaterialIcons name="attach-money" size={14} color="#4CAF50" />
-        <Text style={styles.title}>Price Range</Text>
-      </View>
+      {/* Only show title if not hidden */}
+      {!hideTitle && (
+        <View style={styles.headerRow}>
+          <MaterialIcons name="attach-money" size={16} color="#4CAF50" />
+          <Text style={styles.title}>Price Range</Text>
+        </View>
+      )}
       
       {/* Min/Max inputs */}
       <View style={styles.inputsRow}>
@@ -148,7 +151,7 @@ const PriceRange = ({
         </View>
       </View>
       
-      {/* Two sliders with small thumbs but maintaining drag functionality */}
+      {/* Price range sliders */}
       <View style={styles.slidersContainer}>
         {/* Min Price Slider */}
         <View style={styles.sliderContainer}>
@@ -163,13 +166,13 @@ const PriceRange = ({
             style={styles.slider}
             step={5}
             // These props will be used if platform supports them
-            thumbSize={8}
+            thumbSize={10}
             thumbStyle={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
             }}
-            trackHeight={3}
+            trackHeight={4}
           />
         </View>
         
@@ -186,93 +189,106 @@ const PriceRange = ({
             style={styles.slider}
             step={5}
             // These props will be used if platform supports them
-            thumbSize={8}
+            thumbSize={10}
             thumbStyle={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
             }}
-            trackHeight={3}
+            trackHeight={4}
           />
         </View>
       </View>
+      
+      {/* Display current range */}
+      <Text style={styles.currentRange}>
+        Current range: ${minPrice} - ${maxPrice}
+      </Text>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: 200, // Fixed width to match web version
+    width: '100%', 
     backgroundColor: '#fff',
-    padding: 8,
-    alignSelf: 'center', // Center in parent
+    padding: 14,
+    alignSelf: 'center',
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
+    marginBottom: 14,
   },
   title: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: '600',
     color: '#4CAF50',
-    marginLeft: 4,
+    marginLeft: 6,
   },
   inputsRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 14,
   },
   inputColumn: {
-    width: 60, // Width of text inputs on web
+    width: 80,
     alignItems: 'center',
   },
   inputLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
+    fontSize: 14,
+    color: '#555',
+    marginBottom: 6,
     textAlign: 'center',
+    fontWeight: '500',
   },
   input: {
     width: '100%',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 3,
-    fontSize: 12,
-    padding: 4,
-    height: 28,
+    borderColor: '#ddd',
+    borderRadius: 4,
+    fontSize: 14,
+    padding: 8,
+    height: 36,
     backgroundColor: '#f9f9f9',
     textAlign: 'center',
   },
   separator: {
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: 'bold',
     color: '#666',
-    marginHorizontal: 8,
+    marginHorizontal: 12,
   },
   slidersContainer: {
-    marginBottom: 4,
+    marginBottom: 12,
   },
   sliderContainer: {
-    height: 8, // Even more compact height
+    height: 20,
     justifyContent: 'center',
-    marginVertical: 2,
+    marginVertical: 4,
   },
   slider: {
     width: '100%',
-    height: 8, // Very compact slider
+    height: 20,
     // Platform-specific styles
     ...Platform.select({
       ios: {
-        transform: [{ scaleY: 0.7 }] // Make the slider smaller on iOS
+        transform: [{ scaleY: 0.8 }]
       },
       android: {
         // Android-specific adjustments if needed
       }
     })
   },
+  currentRange: {
+    textAlign: 'center',
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 6,
+  }
 });
 
 export default PriceRange;

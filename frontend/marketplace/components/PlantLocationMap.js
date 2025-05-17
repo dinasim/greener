@@ -1,12 +1,14 @@
+// components/PlantLocationMap.js
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import AzureMapView from './AzureMapView';
+import CrossPlatformAzureMapView from './CrossPlatformAzureMapView';
 
 const { width } = Dimensions.get('window');
 
 /**
  * Component for displaying plant location on a map in the detail screen
+ * Now using the cross-platform map component
  * 
  * @param {Object} props Component props
  * @param {Object} props.plant The plant object with location data
@@ -62,7 +64,7 @@ const PlantLocationMap = ({
       expanded ? styles.expandedContainer : { height: 200 }
     ]}>
       <View style={styles.mapContainer}>
-        <AzureMapView
+        <CrossPlatformAzureMapView
           products={mapProducts}
           initialRegion={{
             latitude: plant.location.latitude,

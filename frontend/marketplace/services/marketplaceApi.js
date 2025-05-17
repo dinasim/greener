@@ -411,71 +411,57 @@ export const markMessagesAsRead = async (conversationId, messageIds = []) => {
   }
 };
 
-/**
- * Fetch user profile with improved error handling and cross-database support
- * @param {string} userId User ID or email
- * @returns {Promise<Object>} User profile data
- */
+
+// User Profile methods
 export const fetchUserProfile = async (userId) => {
   try {
-    console.log(`Fetching user profile for: ${userId}`);
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}`, { headers });
+    const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+    const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Handle response with proper error checking
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`API Error (${response.status}): ${errorText}`);
-    }
+    const url = `${API_BASE_URL}/marketplace/users/${userId}`;
     
-    const data = await response.json();
-    
-    // If we got the user but no listings, fetch their listings
-    if (data.user && (!data.user.listings || data.user.listings.length === 0)) {
-      try {
-        const listingsResponse = await fetch(
-          `${API_BASE_URL}/marketplace/users/${userId}/listings`, 
-          { headers }
-        );
-        
-        if (listingsResponse.ok) {
-          const listingsData = await listingsResponse.json();
-          
-          // Combine both active and sold listings
-          if (listingsData) {
-            const allListings = [
-              ...(listingsData.active || []),
-              ...(listingsData.sold || [])
-            ];
-            
-            data.user.listings = allListings;
-          }
-        }
-      } catch (listingsError) {
-        console.warn('Failed to fetch listings:', listingsError);
-        // Continue without listings
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Email': userEmail || userId
       }
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error fetching user profile: ${response.status}`);
     }
     
-    return data;
+    return await response.json();
   } catch (error) {
-    console.error('Error fetching user profile:', error);
+    console.error('Error in fetchUserProfile:', error);
     throw error;
   }
 };
 
-export const updateUserProfile = async (id, userData) => {
+export const updateUserProfile = async (userId, userData) => {
   try {
-    return await apiRequest(`marketplace/users/${encodeURIComponent(id)}`, 'PATCH', userData);
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    if (config.features.useMockOnError) {
-      return { 
-        success: true, 
-        user: { ...MOCK_USER, ...userData },
-        message: "Profile updated successfully (mock)"
-      };
+    const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    const url = `${API_BASE_URL}/marketplace/users/${userId}`;
+    
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Email': userEmail || userId
+      },
+      body: JSON.stringify(userData)
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Error updating user profile: ${response.status}`);
     }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error in updateUserProfile:', error);
     throw error;
   }
 };

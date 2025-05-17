@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+// screens/MarketplaceScreen.js
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
   FlatList,
@@ -14,8 +15,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Audio } from 'expo-av';
-import { uploadImage, speechToText } from '../services/marketplaceApi'; 
+
 // Import components
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
@@ -27,11 +27,32 @@ import AzureMapView from '../components/AzureMapView';
 // Import services
 import { getAll, getNearbyProducts, geocodeAddress } from '../services/marketplaceApi';
 import syncService from '../services/SyncService';
+import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener } from '../services/MarketplaceUpdates';
+
+
+/**
+ * Custom hook to listen for marketplace updates
+ * @param {Function} callback - Function to call when an update occurs
+ */
+const useMarketplaceUpdates = (callback) => {
+  useEffect(() => {
+    // Generate a unique ID for this listener
+    const listenerId = 'marketplace-screen-' + Date.now();
+    
+    // Add the event listener
+    addUpdateListener(listenerId, callback);
+    
+    // Clean up listener on unmount
+    return () => {
+      removeUpdateListener(listenerId);
+    };
+  }, [callback]);
+};
 
 /**
  * Enhanced MarketplaceScreen with map integration and improved filtering
  */
-const MarketplaceScreen = ({ navigation }) => {
+const MarketplaceScreen = ({ navigation, route }) => {
   // State
   const [plants, setPlants] = useState([]);
   const [filteredPlants, setFilteredPlants] = useState([]);
@@ -50,12 +71,208 @@ const MarketplaceScreen = ({ navigation }) => {
   const [userLocation, setUserLocation] = useState(null);
   const [activeFilters, setActiveFilters] = useState([]);
   const [isOnline, setIsOnline] = useState(true);
-  const [recording, setRecording] = useState(null);
+  const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+
+  // Refs to avoid circular dependencies
+  const plantsRef = useRef(plants);
+  const loadPlantsRef = useRef(null);
 
   // Handler for back button press - navigate to Home screen
   const handleBackPress = () => {
     navigation.navigate('Home');
   };
+
+  /**
+   * Handle navigation to Messages screen
+   * Safely navigates to Messages or shows a fallback
+   * @param {Object} params - Parameters for the Messages screen
+   */
+  const navigateToMessages = (params) => {
+    try {
+      // Check if we can navigate to MainTabs first
+      if (navigation.canNavigate('MainTabs')) {
+        // If MainTabs exists, try to navigate there and then to Messages
+        navigation.navigate('MainTabs', {
+          screen: 'Messages',
+          params: params
+        });
+      } else if (navigation.canNavigate('Messages')) {
+        // Direct navigation if Messages screen exists
+        navigation.navigate('Messages', params);
+      } else {
+        // Fallback if Messages screen doesn't exist
+        console.warn('Messages screen not found in navigation');
+        Alert.alert(
+          'Navigation Error',
+          'Messages screen is not available. Please check app configuration.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('Navigation error:', error);
+      Alert.alert(
+        'Error',
+        'Could not navigate to messages. Please try again later.',
+        [{ text: 'OK' }]
+      );
+    }
+  };
+
+  /**
+   * Ensure all plants have proper seller information
+   * @param {Array} plantsArray - Array of plant objects
+   * @returns {Array} - Array with normalized seller information
+   */
+  const normalizePlantSellerInfo = (plantsArray) => {
+    return plantsArray.map(plant => {
+      // If plant already has proper seller object, return it unchanged
+      if (plant.seller && plant.seller.name && plant.seller.name !== 'Unknown Seller') {
+        return plant;
+      }
+      
+      // Otherwise, create a seller object from available data
+      return {
+        ...plant,
+        seller: {
+          name: plant.sellerName || (plant.seller?.name && plant.seller.name !== 'Unknown Seller' ? plant.seller.name : 'Plant Enthusiast'),
+          _id: plant.sellerId || plant.seller?._id || 'unknown',
+          // Include any other seller properties that might be used
+          ...(plant.seller || {})
+        }
+      };
+    });
+  };
+/**
+ * Format location for display
+ * @param {Object} locationData - The location data
+ * @returns {string} - Formatted location string
+ */
+const formatLocation = (locationData) => {
+  if (!locationData) return 'Location unavailable';
+  
+  let formattedLocation = '';
+  
+  // Use city if available
+  if (locationData.city) {
+    formattedLocation = locationData.city;
+  }
+  
+  // Add state/region if available
+  if (locationData.region && locationData.region !== locationData.city) {
+    if (formattedLocation) {
+      formattedLocation += `, ${locationData.region}`;
+    } else {
+      formattedLocation = locationData.region;
+    }
+  }
+  
+  // Add country if available and not already included
+  if (locationData.country && !formattedLocation.includes(locationData.country) && 
+      locationData.country !== locationData.city && locationData.country !== locationData.region) {
+    if (formattedLocation) {
+      formattedLocation += `, ${locationData.country}`;
+    } else {
+      formattedLocation = locationData.country;
+    }
+  }
+  
+  // If formatted location is still empty, use coordinates as last resort
+  if (!formattedLocation && locationData.latitude && locationData.longitude) {
+    formattedLocation = `Near ${locationData.latitude.toFixed(2)}, ${locationData.longitude.toFixed(2)}`;
+  }
+  
+  return formattedLocation;
+};
+
+
+
+  /**
+   * Load plants from API
+   * @param {number} pageNum Page number to load
+   * @param {boolean} resetData Whether to reset existing data
+   */
+  const loadPlants = useCallback(async (pageNum = 1, resetData = false) => {
+    if (!hasMorePages && pageNum > 1 && !resetData) return;
+  
+    try {
+      setError(null);
+  
+      if (pageNum === 1) {
+        setIsLoading(true);
+      }
+  
+      // Check if we're online
+      if (!isOnline) {
+        // Try to get cached data from SyncService
+        const cachedData = await syncService.getCachedData('marketplace_plants');
+        
+        if (cachedData) {
+          const normalizedData = normalizePlantSellerInfo(cachedData);
+          
+          if (resetData) {
+            setPlants(normalizedData);
+          } else {
+            setPlants(prevPlants => [...prevPlants, ...normalizedData]);
+          }
+          
+          setIsLoading(false);
+          setIsRefreshing(false);
+          return;
+        } else {
+          setError('You are offline. Please check your connection and try again.');
+          setIsLoading(false);
+          setIsRefreshing(false);
+          return;
+        }
+      }
+  
+      // Get plants from API
+      const data = await getAll(
+        pageNum,
+        selectedCategory === 'All' ? null : selectedCategory,
+        searchQuery,
+        { 
+          minPrice: priceRange.min, 
+          maxPrice: priceRange.max,
+          sortBy: sortOption 
+        }
+      );
+  
+      // Update state with new data
+      if (data && data.products) {
+        const normalizedProducts = normalizePlantSellerInfo(data.products);
+        
+        if (resetData) {
+          setPlants(normalizedProducts);
+        } else {
+          setPlants(prevPlants => [...prevPlants, ...normalizedProducts]);
+        }
+  
+        setPage(pageNum);
+        setHasMorePages(data.pages > pageNum);
+        
+        // Cache data for offline access
+        await syncService.cacheData('marketplace_plants', normalizedProducts);
+      }
+  
+      setIsLoading(false);
+      setIsRefreshing(false);
+    } catch (err) {
+      console.error('Error loading plants:', err);
+      setError('Failed to load plants. Please try again.');
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  }, [hasMorePages, isOnline, searchQuery, selectedCategory, priceRange, sortOption]);
+
+  // Keep refs updated with latest values
+  useEffect(() => {
+    plantsRef.current = plants;
+  }, [plants]);
+
+  useEffect(() => {
+    loadPlantsRef.current = loadPlants;
+  }, [loadPlants]);
 
   // Subscribe to sync service for online status
   useEffect(() => {
@@ -88,7 +305,40 @@ const MarketplaceScreen = ({ navigation }) => {
           console.warn('Error loading cached location:', e);
         }
       })();
-    }, [])
+      
+      // Check for updates from AsyncStorage
+      const checkUpdates = async () => {
+        try {
+          // Check each update type
+          const updateTypes = Object.values(UPDATE_TYPES);
+          let needsRefresh = false;
+          
+          for (const updateType of updateTypes) {
+            const hasUpdate = await checkForUpdate(updateType, lastRefreshTime);
+            if (hasUpdate) {
+              needsRefresh = true;
+              // Clear the update flag
+              await clearUpdate(updateType);
+            }
+          }
+          
+          // Also check route params for refresh flag
+          if (needsRefresh || route.params?.refresh) {
+            loadPlants(1, true);
+            setLastRefreshTime(Date.now());
+            
+            // Clear route params
+            if (route.params?.refresh) {
+              navigation.setParams({ refresh: undefined });
+            }
+          }
+        } catch (error) {
+          console.error('Error checking for updates:', error);
+        }
+      };
+      
+      checkUpdates();
+    }, [lastRefreshTime, route.params?.refresh, navigation])
   );
 
   // Apply filters when any filter criteria changes
@@ -126,7 +376,6 @@ const MarketplaceScreen = ({ navigation }) => {
     })();
   }, []);
 
-
   useEffect(() => {
     // Check if wishlist was updated
     const checkWishlistUpdates = async () => {
@@ -146,105 +395,78 @@ const MarketplaceScreen = ({ navigation }) => {
     checkWishlistUpdates();
   }, []);
 
-useEffect(() => {
-  // Check if favorites were updated
-  const checkFavoritesUpdates = async () => {
-    try {
-      // Check both old and new keys for backward compatibility
-      const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
-                           || await AsyncStorage.getItem('WISHLIST_UPDATED');
-                           
-      if (favoritesUpdated) {
-        // Clear both flags
-        await AsyncStorage.removeItem('FAVORITES_UPDATED');
-        await AsyncStorage.removeItem('WISHLIST_UPDATED');
-        // Refresh data
-        loadPlants(1, true);
+  useEffect(() => {
+    // Check if favorites were updated
+    const checkFavoritesUpdates = async () => {
+      try {
+        // Check both old and new keys for backward compatibility
+        const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
+                            || await AsyncStorage.getItem('WISHLIST_UPDATED');
+                            
+        if (favoritesUpdated) {
+          // Clear both flags
+          await AsyncStorage.removeItem('FAVORITES_UPDATED');
+          await AsyncStorage.removeItem('WISHLIST_UPDATED');
+          // Refresh data
+          loadPlants(1, true);
+        }
+      } catch (error) {
+        console.warn('Error checking favorites updates:', error);
       }
-    } catch (error) {
-      console.warn('Error checking favorites updates:', error);
-    }
-  };
-  
-  checkFavoritesUpdates();
-}, []);
+    };
+    
+    checkFavoritesUpdates();
+  }, []);
 
-
-  /**
-   * Load plants from API
-   * @param {number} pageNum Page number to load
-   * @param {boolean} resetData Whether to reset existing data
-   */
-  const loadPlants = async (pageNum = 1, resetData = false) => {
-    if (!hasMorePages && pageNum > 1 && !resetData) return;
-  
-    try {
-      setError(null);
-  
-      if (pageNum === 1) {
-        setIsLoading(true);
-      }
-  
-      // Check if we're online
-      if (!isOnline) {
-        // Try to get cached data from SyncService
-        const cachedData = await syncService.getCachedData('marketplace_plants');
-        
-        if (cachedData) {
-          if (resetData) {
-            setPlants(cachedData);
-          } else {
-            setPlants(prevPlants => [...prevPlants, ...cachedData]);
+  // Handler for marketplace updates that avoids circular dependencies
+  const handleMarketplaceUpdate = useCallback((updateType, data) => {
+    console.log(`[MarketplaceScreen] Received update: ${updateType}`, data);
+    
+    // Use the current plants from the ref
+    const currentPlants = plantsRef.current;
+    const currentLoadPlants = loadPlantsRef.current;
+    
+    // Refresh data based on update type
+    if (updateType === UPDATE_TYPES.WISHLIST) {
+      // Update a specific item if we can identify it
+      if (data && data.plantId) {
+        setPlants(prevPlants => {
+          const updatedPlants = [...prevPlants];
+          const plantIndex = updatedPlants.findIndex(
+            p => p.id === data.plantId || p._id === data.plantId
+          );
+          
+          if (plantIndex >= 0) {
+            // Make sure we fully preserve the seller object
+            updatedPlants[plantIndex] = {
+              ...updatedPlants[plantIndex],
+              isFavorite: data.isFavorite,
+              isWished: data.isFavorite,
+              // Ensure seller info is preserved explicitly
+              seller: updatedPlants[plantIndex].seller || { 
+                name: updatedPlants[plantIndex].sellerName || 'Plant Enthusiast',
+                _id: updatedPlants[plantIndex].sellerId 
+              }
+            };
           }
           
-          setIsLoading(false);
-          setIsRefreshing(false);
-          return;
-        } else {
-          setError('You are offline. Please check your connection and try again.');
-          setIsLoading(false);
-          setIsRefreshing(false);
-          return;
-        }
+          return updatedPlants;
+        });
+      } else {
+        // If we can't identify the specific plant, reload all
+        if (currentLoadPlants) currentLoadPlants(1, true);
       }
-  
-      // Get plants from API
-      const data = await getAll(
-        pageNum,
-        selectedCategory === 'All' ? null : selectedCategory,
-        searchQuery,
-        { 
-          minPrice: priceRange.min, 
-          maxPrice: priceRange.max,
-          sortBy: sortOption 
-        }
-      );
-  
-      // Update state with new data
-      if (data && data.products) {
-        if (resetData) {
-          setPlants(data.products);
-        } else {
-          setPlants(prevPlants => [...prevPlants, ...data.products]);
-        }
-  
-        setPage(pageNum);
-        setHasMorePages(data.pages > pageNum);
-        
-        // Cache data for offline access
-        await syncService.cacheData('marketplace_plants', data.products);
-      }
-  
-      setIsLoading(false);
-      setIsRefreshing(false);
-    } catch (err) {
-      console.error('Error loading plants:', err);
-      setError('Failed to load plants. Please try again.');
-      setIsLoading(false);
-      setIsRefreshing(false);
+    } else if (updateType === UPDATE_TYPES.PRODUCT || updateType === UPDATE_TYPES.REVIEW) {
+      // Full reload for product or review updates
+      if (currentLoadPlants) currentLoadPlants(1, true);
     }
-  };
-  
+    
+    setLastRefreshTime(Date.now());
+  }, []);
+
+  // Use our custom hook to listen for updates
+  useMarketplaceUpdates(handleMarketplaceUpdate);
+
   /**
    * Load products with location data for map view
    */
@@ -263,7 +485,8 @@ useEffect(() => {
           );
           
           if (nearbyData && nearbyData.products && nearbyData.products.length > 0) {
-            setMapProducts(nearbyData.products);
+            const normalizedData = normalizePlantSellerInfo(nearbyData.products);
+            setMapProducts(normalizedData);
             setIsMapLoading(false);
             return;
           }
@@ -316,21 +539,26 @@ useEffect(() => {
               });
             } else if (isOnline) {
               // Geocode the city if online
+              // Try to geocode the city if online
               const locationData = await geocodeAddress(cityToGeocode);
-              
+                            
               if (locationData && locationData.latitude && locationData.longitude) {
                 // Cache the result
                 await AsyncStorage.setItem(cacheKey, JSON.stringify(locationData));
                 
-                productsWithLocation.push({
-                  ...plant,
-                  location: {
-                    ...plant.location,
-                    latitude: locationData.latitude,
-                    longitude: locationData.longitude,
-                    city: cityToGeocode
-                  }
-                });
+                // Format the location string for display
+              const locationData = JSON.parse(cachedLocation);
+              const formattedLocation = formatLocation(locationData);
+
+              productsWithLocation.push({
+                ...plant,
+                location: {
+                  ...plant.location,
+                  latitude: locationData.latitude,
+                  longitude: locationData.longitude,
+                  city: formattedLocation
+                }
+              });
               }
             }
           } catch (geocodeErr) {
@@ -361,7 +589,8 @@ useEffect(() => {
   const applyFilters = () => {
     if (!plants.length) return;
 
-    let results = [...plants];
+    // First normalize seller information to ensure consistency
+    let results = normalizePlantSellerInfo([...plants]);
 
     // Apply category filter if not "All"
     if (selectedCategory !== 'All') {
@@ -507,6 +736,8 @@ useEffect(() => {
     navigation.navigate('PlantDetail', { plantId: productId });
   };
 
+  
+
   /**
    * Handle removing a filter
    * @param {string} filterId Filter ID to remove
@@ -599,7 +830,7 @@ useEffect(() => {
           title="Plant Marketplace"
           showBackButton={true}
           onBackPress={handleBackPress}
-          onNotificationsPress={() => navigation.navigate('Messages')}
+          onNotificationsPress={() => navigateToMessages({})}
         />
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
@@ -617,7 +848,7 @@ useEffect(() => {
           title="Plant Marketplace"
           showBackButton={true}
           onBackPress={handleBackPress}
-          onNotificationsPress={() => navigation.navigate('Messages')}
+          onNotificationsPress={() => navigateToMessages({})}
         />
         <View style={styles.centerContainer}>
           <MaterialIcons name="error-outline" size={48} color="#f44336" />
@@ -640,7 +871,7 @@ useEffect(() => {
         title="Plant Marketplace"
         showBackButton={true}
         onBackPress={handleBackPress}
-        onNotificationsPress={() => navigation.navigate('Messages')}
+        onNotificationsPress={() => navigateToMessages({})}
       />
 
       {/* Search Bar */}
@@ -671,51 +902,52 @@ useEffect(() => {
       />
 
       {/* Conditional rendering based on view mode */}
-      {viewMode === 'map' ? (
-        // Map View
-        <View style={styles.mapContainer}>
-          {isMapLoading ? (
-            <View style={styles.centerContainer}>
-              <ActivityIndicator size="large" color="#4CAF50" />
-              <Text style={styles.loadingText}>Preparing map view...</Text>
-            </View>
-          ) : mapProducts.length > 0 ? (
-            <AzureMapView 
-              products={mapProducts}
-              onSelectProduct={handleMapProductSelect}
-              initialRegion={userLocation ? {
-                latitude: userLocation.latitude,
-                longitude: userLocation.longitude,
-                zoom: 10
-              } : undefined}
-            />
-          ) : (
-            <View style={styles.centerContainer}>
-              <MaterialIcons name="map" size={48} color="#aaa" />
-              <Text style={styles.noResultsText}>No plants with location data found</Text>
-              <TouchableOpacity
-                style={styles.resetButton}
-                onPress={handleResetFilters}
-              >
-                <Text style={styles.resetButtonText}>Reset Filters</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-      ) : (
+{viewMode === 'map' ? (
+  // Map View - Using Cross-Platform Azure Map View
+  <View style={styles.mapContainer}>
+    {isMapLoading ? (
+      <View style={styles.centerContainer}>
+        <ActivityIndicator size="large" color="#4CAF50" />
+        <Text style={styles.loadingText}>Preparing map view...</Text>
+      </View>
+    ) : mapProducts.length > 0 ? (
+          <AzureMapView
+      products={mapProducts}
+      onSelectProduct={handleMapProductSelect}
+      initialRegion={
+        userLocation
+          ? { latitude: userLocation.latitude, longitude: userLocation.longitude, zoom: 10 }
+          : undefined
+      }
+    />
+
+    ) : (
+      <View style={styles.centerContainer}>
+        <MaterialIcons name="map" size={48} color="#aaa" />
+        <Text style={styles.noResultsText}>No plants with location data found</Text>
+        <TouchableOpacity
+          style={styles.resetButton}
+          onPress={handleResetFilters}
+        >
+          <Text style={styles.resetButtonText}>Reset Filters</Text>
+        </TouchableOpacity>
+      </View>
+    )}
+  </View>
+) : (
         // List or Grid View
         <FlatList
-  data={filteredPlants}
-  renderItem={({ item }) => (
-    <PlantCard 
-      plant={item} 
-      showActions={true}
-      layout={viewMode}
-    />
-  )}
-  numColumns={viewMode === 'grid' ? (Platform.OS === 'web' ? 3 : 2) : 1}
-  key={`${viewMode}-${Platform.OS}`} // Forces remount when view mode or platform changes
-  keyExtractor={(item) => (item.id?.toString() || item._id?.toString())}
+          data={filteredPlants}
+          renderItem={({ item }) => (
+            <PlantCard 
+              plant={item} 
+              showActions={true}
+              layout={viewMode}
+            />
+          )}
+          numColumns={viewMode === 'grid' ? (Platform.OS === 'web' ? 3 : 2) : 1}
+          key={`${viewMode}-${Platform.OS}`} // Forces remount when view mode or platform changes
+          keyExtractor={(item) => (item.id?.toString() || item._id?.toString() || Math.random().toString())}
           contentContainerStyle={[
             styles.listContainer,
             filteredPlants.length === 0 && styles.emptyListContainer,

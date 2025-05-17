@@ -126,33 +126,36 @@ const ReviewsList = ({
   };
 
   /**
-   * Handle review deletion
+   * Handle review deletion and update average rating
    */
   const handleDeleteReview = (reviewId) => {
     console.log(`[REVIEWSLIST] Handling delete for review ${reviewId}`);
+    
+    // Find the review being deleted
+    const deletedReview = reviews.find(r => r.id === reviewId);
     
     // Remove the review from the local state
     const updatedReviews = reviews.filter(r => r.id !== reviewId);
     setReviews(updatedReviews);
     
     // Update count
-    setReviewCount(prevCount => Math.max(0, prevCount - 1));
+    const newCount = Math.max(0, reviewCount - 1);
+    setReviewCount(newCount);
     
     // Recalculate average rating
+    let newAverage = 0;
     if (updatedReviews.length > 0) {
       const totalRating = updatedReviews.reduce((sum, r) => sum + r.rating, 0);
-      setAverageRating(totalRating / updatedReviews.length);
-    } else {
-      setAverageRating(0);
-    }
+      newAverage = totalRating / updatedReviews.length;
+    } 
+    // If there are no more reviews, the average is 0
+    setAverageRating(newAverage);
     
     // Notify parent component of updated ratings
     if (onReviewsLoaded) {
       onReviewsLoaded({
-        averageRating: updatedReviews.length > 0 
-          ? updatedReviews.reduce((sum, r) => sum + r.rating, 0) / updatedReviews.length 
-          : 0,
-        count: updatedReviews.length
+        averageRating: newAverage,
+        count: newCount
       });
     }
   };

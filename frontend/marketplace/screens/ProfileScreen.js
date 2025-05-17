@@ -1,5 +1,4 @@
 // screens/ProfileScreen.js
-// screens/ProfileScreen.js
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, FlatList, 
@@ -12,6 +11,7 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import { fetchUserProfile } from '../services/marketplaceApi';
+import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener } from '../services/MarketplaceUpdates';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -21,19 +21,64 @@ const ProfileScreen = () => {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('myPlants');
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
+  const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
+
+  // Set up update listeners
+  useEffect(() => {
+    const listenerId = 'profile-screen';
+    
+    const handleUpdate = (updateType, data) => {
+      console.log(`[ProfileScreen] Received update: ${updateType}`, data);
+      
+      if ([UPDATE_TYPES.PROFILE, UPDATE_TYPES.WISHLIST, UPDATE_TYPES.PRODUCT, UPDATE_TYPES.REVIEW].includes(updateType)) {
+        loadUserProfile();
+      }
+    };
+    
+    // Add web event listener
+    addUpdateListener(listenerId, handleUpdate);
+    
+    // Clean up listener on unmount
+    return () => {
+      removeUpdateListener(listenerId);
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      // Load user profile whenever the screen comes into focus
+      // Load user profile
       loadUserProfile();
       
-      // Also listen for events from other screens
-      const unsubscribe = navigation.addListener('focus', () => {
-        // This will trigger every time the profile screen receives focus
-        loadUserProfile();
-      });
+      // Check for updates
+      const checkUpdates = async () => {
+        try {
+          // Check relevant update types
+          const updateTypes = [UPDATE_TYPES.PROFILE, UPDATE_TYPES.WISHLIST, UPDATE_TYPES.PRODUCT, UPDATE_TYPES.REVIEW];
+          let needsRefresh = false;
+          
+          for (const updateType of updateTypes) {
+            const hasUpdate = await checkForUpdate(updateType, lastUpdateTime);
+            if (hasUpdate) {
+              needsRefresh = true;
+              await clearUpdate(updateType);
+            }
+          }
+          
+          if (needsRefresh || route.params?.refresh) {
+            loadUserProfile();
+            setLastUpdateTime(Date.now());
+            
+            // Clear route params
+            if (route.params?.refresh) {
+              navigation.setParams({ refresh: undefined });
+            }
+          }
+        } catch (error) {
+          console.error('[ProfileScreen] Error checking updates:', error);
+        }
+      };
       
-      return unsubscribe;
+      checkUpdates();
     }, [])
   );
 

@@ -81,12 +81,19 @@ const FilterSection = ({
   const slideAnimation = {
     transform: [
       {
+        scale: modalAnimation.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0.9, 1],
+        }),
+      },
+      {
         translateY: modalAnimation.interpolate({
           inputRange: [0, 1],
-          outputRange: [300, 0],
+          outputRange: [20, 0],
         }),
       },
     ],
+    opacity: modalAnimation,
   };
 
   // Modal background opacity animation
@@ -186,54 +193,56 @@ const FilterSection = ({
       >
         <Animated.View 
           style={[styles.modalOverlay, backdropAnimation]}
-          onTouchEnd={hideFilterModal}
         >
-          <Pressable>
+          <Pressable style={styles.modalBackdrop} onPress={hideFilterModal}>
             <Animated.View 
               style={[styles.modalContent, slideAnimation]}
             >
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Filters</Text>
-                <TouchableOpacity 
-                  onPress={hideFilterModal}
-                  style={styles.closeButton}
-                >
-                  <MaterialIcons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView>
-                {/* Price Range in Modal */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Price Range</Text>
-                  <PriceRange
-                    onPriceChange={handlePriceRangeChange}
-                    initialMin={priceRange.min}
-                    initialMax={priceRange.max}
-                    style={styles.priceRange}
-                  />
+              <Pressable>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Filters</Text>
+                  <TouchableOpacity 
+                    onPress={hideFilterModal}
+                    style={styles.closeButton}
+                  >
+                    <MaterialIcons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
                 </View>
                 
-                {/* Action Buttons */}
-                <View style={styles.modalActions}>
-                  <TouchableOpacity 
-                    style={styles.resetButton}
-                    onPress={() => {
-                      if (onResetFilters) onResetFilters();
-                      hideFilterModal();
-                    }}
-                  >
-                    <Text style={styles.resetButtonText}>Reset All</Text>
-                  </TouchableOpacity>
+                <ScrollView>
+                  {/* Price Range in Modal */}
+                  <View style={styles.modalSection}>
+                    <Text style={styles.sectionTitle}>Price Range</Text>
+                    <PriceRange
+                      onPriceChange={handlePriceRangeChange}
+                      initialMin={priceRange.min}
+                      initialMax={priceRange.max}
+                      style={styles.priceRange}
+                      hideTitle={true} // Hide the component title since we have a section title
+                    />
+                  </View>
                   
-                  <TouchableOpacity 
-                    style={styles.applyButton}
-                    onPress={hideFilterModal}
-                  >
-                    <Text style={styles.applyButtonText}>Apply Filters</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
+                  {/* Action Buttons */}
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity 
+                      style={styles.resetButton}
+                      onPress={() => {
+                        if (onResetFilters) onResetFilters();
+                        hideFilterModal();
+                      }}
+                    >
+                      <Text style={styles.resetButtonText}>Reset All</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.applyButton}
+                      onPress={hideFilterModal}
+                    >
+                      <Text style={styles.applyButtonText}>Apply Filters</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </Pressable>
             </Animated.View>
           </Pressable>
         </Animated.View>
@@ -249,7 +258,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   activeFiltersContainer: {
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -260,29 +269,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f9f0',
     borderRadius: 16,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 7,
     marginRight: 8,
     flexDirection: 'row',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e0f0e0',
   },
   filterPillText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#4CAF50',
     marginRight: 6,
+    fontWeight: '500',
   },
   clearAllButton: {
-    paddingVertical: 6,
+    paddingVertical: 7,
     paddingHorizontal: 12,
   },
   clearAllText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#f44336',
     fontWeight: '600',
   },
   controlsRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     alignItems: 'center',
   },
   sortContainer: {
@@ -292,17 +304,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: '#e0e0e0',
     marginLeft: 8,
   },
   filterButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#333',
-    marginLeft: 4,
+    marginLeft: 6,
+    fontWeight: '500',
   },
   spacer: {
     flex: 1,
@@ -310,14 +323,30 @@ const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBackdrop: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   modalContent: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 30, // Extra padding for bottom safe area
+    borderRadius: 12,
+    paddingBottom: 24,
+    width: '90%',
+    maxWidth: 360,
     maxHeight: '80%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -333,48 +362,50 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   closeButton: {
-    padding: 4,
+    padding: 6,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
   },
   modalSection: {
-    padding: 16,
+    padding: 20,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
   sectionTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: '600',
     marginBottom: 16,
     color: '#333',
+    textAlign: 'center',
   },
   priceRange: {
-    // Any specific styles for price range in modal
+    marginTop: 8,
   },
   modalActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
+    padding: 20,
   },
   resetButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: '#ddd',
   },
   resetButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#666',
+    fontWeight: '500',
   },
   applyButton: {
     backgroundColor: '#4CAF50',
-    paddingVertical: 10,
-    paddingHorizontal: 24,
+    paddingVertical: 12,
+    paddingHorizontal: 26,
     borderRadius: 8,
   },
   applyButtonText: {
-    fontSize: 14,
+    fontSize: 15,
     color: '#fff',
     fontWeight: '600',
   },
