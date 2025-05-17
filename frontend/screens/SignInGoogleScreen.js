@@ -67,9 +67,11 @@ export default function SignInGoogleScreen({ navigation }) {
                 name: userInfo.name,
                 googleId: userInfo.sub,
                 plantLocations: formData.plantLocations,
-                Intersted: formData.Intersted,
+                intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
+                expoPushToken: formData.expoPushToken,
+                location: formData.userLocation,
               });
             } else {
               setIsLoading(false);

@@ -11,10 +11,16 @@ import {
   Platform,
 } from "react-native";
 import * as Notifications from "expo-notifications";
+import { useForm } from "../context/FormContext";
 
 export default function SignupReminders({ navigation }) {
   const [granted, setGranted] = useState(null);
+  const { formData } = useForm();
   const scaleAnim = new Animated.Value(0.95);
+  useEffect(() => {
+    console.log("🧪 FINAL location in formData:", formData.userLocation);
+    console.log("📦 Final location from formData:", formData.userLocation);
+  }, []);
 
   useEffect(() => {
     Animated.spring(scaleAnim, {
@@ -34,6 +40,37 @@ export default function SignupReminders({ navigation }) {
       setGranted(false);
       Alert.alert("Permission Denied", "You can still continue, but we won't send reminders.");
     }
+  };
+
+  const saveUserToBackend = async () => {
+    try {
+      const payload = {
+        email: formData.email,
+        expoPushToken: formData.expoPushToken || null,
+        location: formData.userLocation || null,
+        name: formData.name || null,
+        kids: formData.kids || null,
+        animals: formData.animals || null,
+        intersted: formData.intersted || null
+      };
+
+      console.log("📦 Final user payload:", payload);
+
+      await fetch("https://<YOUR_BACKEND_URL>/api/saveUser", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      console.log("✅ Final user data saved to backend");
+    } catch (error) {
+      console.error("❌ Failed to save user at final step:", error);
+    }
+  };
+
+  const handleContinue = async () => {
+    await saveUserToBackend();
+    navigation.navigate("SignInGoogleScreen");
   };
 
   return (
@@ -56,10 +93,7 @@ export default function SignupReminders({ navigation }) {
 
           <TouchableOpacity
             style={[styles.permissionButton, { backgroundColor: "#4caf50", marginTop: 20 }]}
-            onPress={() => {
-              console.log("Continue button pressed");
-              navigation.navigate("SignInGoogleScreen"); // ✅ changed to enter full app
-            }}
+            onPress={handleContinue}
           >
             <Text style={styles.buttonText}>Continue</Text>
           </TouchableOpacity>

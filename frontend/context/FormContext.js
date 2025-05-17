@@ -14,9 +14,11 @@ export const FormProvider = ({ children }) => {
   const [formData, setFormData] = useState({
     email: '',
     plantLocations: [],
-    Intersted: '',
+    intersted: '',
     animals: '',
     kids: '',
+    expoPushToken: '',
+    userLocation: null // can be a city string or a GPS object
   });
 
   // Function to update form data
