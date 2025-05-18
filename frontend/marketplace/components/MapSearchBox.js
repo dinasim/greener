@@ -8,9 +8,10 @@ import {
   TouchableOpacity,
   Animated,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import { geocodeAddress } from '../services/marketplaceApi';
+import { geocodeAddress } from '../services/azureMapsService';
 
 /**
  * MapSearchBox component for searching locations on the map
@@ -65,7 +66,7 @@ const MapSearchBox = ({ onLocationSelect, style }) => {
 
     try {
       // Combine city and street for geocoding
-      const address = street ? `${street}, ${city}` : city;
+      const address = street ? `${street}, ${city}, Israel` : `${city}, Israel`;
       
       const result = await geocodeAddress(address);
       
@@ -139,9 +140,9 @@ const MapSearchBox = ({ onLocationSelect, style }) => {
               accessibilityLabel="Search location"
             >
               {isLoading ? (
-                <Text style={styles.searchButtonText}>Searching...</Text>
+                <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text style={styles.searchButtonText}>Confirm</Text>
+                <Text style={styles.searchButtonText}>Search</Text>
               )}
             </TouchableOpacity>
           </View>

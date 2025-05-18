@@ -1,6 +1,8 @@
 // components/PlantLocationMap.js
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import {
+  View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator
+} from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import CrossPlatformAzureMapView from './CrossPlatformAzureMapView';
 import { getAzureMapsKey } from '../services/azureMapsService';
@@ -9,7 +11,7 @@ const { width } = Dimensions.get('window');
 
 /**
  * Component for displaying plant location on a map in the detail screen
- * Now using the cross-platform map component
+ * Using Azure Maps for cross-platform mapping
  * 
  * @param {Object} props Component props
  * @param {Object} props.plant The plant object with location data
@@ -83,9 +85,9 @@ const PlantLocationMap = ({
   // If still loading the API key
   if (isKeyLoading) {
     return (
-      <View style={[styles.container, { height: expanded ? 'auto' : 200 }]}>
+      <View style={[styles.container, { height: expanded ? '100%' : 200 }]}>
         <View style={styles.noLocationContainer}>
-          <MaterialIcons name="hourglass-empty" size={24} color="#4CAF50" />
+          <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading map...</Text>
         </View>
       </View>
@@ -95,7 +97,7 @@ const PlantLocationMap = ({
   // If there was an error loading the API key
   if (error) {
     return (
-      <View style={[styles.container, { height: expanded ? 'auto' : 200 }]}>
+      <View style={[styles.container, { height: expanded ? '100%' : 200 }]}>
         <View style={styles.noLocationContainer}>
           <MaterialIcons name="error-outline" size={24} color="#f44336" />
           <Text style={styles.errorText}>{error}</Text>
@@ -138,7 +140,7 @@ const PlantLocationMap = ({
         </View>
         
         {/* Coordinates overlay (only in expanded view) */}
-        {expanded && isMapReady && (
+        {expanded && isMapReady && hasLocation && (
           <View style={styles.coordsOverlay}>
             <Text style={styles.coordsText}>
               Lat: {formatCoord(plant.location.latitude)}, 
@@ -148,7 +150,7 @@ const PlantLocationMap = ({
         )}
         
         {/* Get directions button */}
-        {isMapReady && (
+        {isMapReady && hasLocation && (
           <TouchableOpacity 
             style={styles.directionsButton}
             onPress={onGetDirections}

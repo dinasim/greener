@@ -115,7 +115,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
       
       // If we have coordinates but no city, format them nicely
       if (plant.location.latitude && plant.location.longitude) {
-        return `Near ${plant.location.latitude.toFixed(2)}, ${plant.location.longitude.toFixed(2)}`;
+        return `Location: ${plant.location.latitude.toFixed(2)}, ${plant.location.longitude.toFixed(2)}`;
       }
       
       return 'Local pickup';

@@ -1,4 +1,4 @@
-// components/CrossPlatformAzureMapView.js
+// Fix for CrossPlatformAzureMapView.js - Adding custom markers and fixing map issues
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -6,11 +6,9 @@ import {
   Text,
   ActivityIndicator,
   Platform,
-  Dimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import MapSearchBox from './MapSearchBox';
-import RadiusControl from './RadiusControl';
+import { getAzureMapsKey } from '../services/azureMapsService';
 
 // WebView is mobile-only (Expo / RN)
 let WebView;
@@ -21,6 +19,7 @@ if (Platform.OS !== 'web') {
 /**
  * Cross-platform Azure Map component
  * Works on both web and mobile platforms
+ * Fixed to correctly register marker images
  */
 const CrossPlatformAzureMapView = ({
   products = [],
@@ -29,7 +28,9 @@ const CrossPlatformAzureMapView = ({
   showControls = true,
   mapStyle = 'road',
   onMapReady,
-  azureMapsKey, // Azure Maps subscription key directly passed as prop
+  searchRadius,
+  onMapPress,
+  azureMapsKey: providedKey = null, // Allow direct key prop but fall back to service
 }) => {
   const webViewRef = useRef(null);
   const mapDivRef = useRef(null);
@@ -39,19 +40,76 @@ const CrossPlatformAzureMapView = ({
   const [errorMessage, setErrorMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [mapReady, setMapReady] = useState(false);
-  const [selectedLocation, setSelectedLocation] = useState(null);
-  const [searchRadius, setSearchRadius] = useState(10);
-  const [showRadiusControl, setShowRadiusControl] = useState(false);
-  const [nearbyProducts, setNearbyProducts] = useState([]);
-  const [sortOrder, setSortOrder] = useState('nearest'); // 'nearest' or 'farthest'
+  const [azureMapsKey, setAzureMapsKey] = useState(providedKey);
+  const [isKeyLoading, setIsKeyLoading] = useState(!providedKey);
 
-  // Use the Azure Maps key directly from props
-  const AZURE_MAPS_KEY = azureMapsKey;
+  // Load Azure Maps key if not provided as prop
+  useEffect(() => {
+    if (providedKey) {
+      setAzureMapsKey(providedKey);
+      setIsKeyLoading(false);
+      return;
+    }
+    
+    const loadKey = async () => {
+      try {
+        setIsKeyLoading(true);
+        const key = await getAzureMapsKey();
+        console.log(`Azure Maps key loaded (masked): ${key.substring(0, 5)}...${key.substring(key.length - 5)}`);
+        setAzureMapsKey(key);
+        setIsKeyLoading(false);
+      } catch (err) {
+        console.error('Error loading Azure Maps key:', err);
+        setIsError(true);
+        setErrorMessage('Failed to load map configuration. Please try again later.');
+        setIsKeyLoading(false);
+      }
+    };
+    
+    loadKey();
+  }, [providedKey]);
 
-  /* ------------------------------------------------------------------ */
-  /* HTML/JS template injected into WebView or <iframe> (web)           */
-  /* ------------------------------------------------------------------ */
-  const generateMapHtml = () => {
+  // Effect to draw search radius when it changes
+  useEffect(() => {
+    if (!mapReady || !searchRadius) return;
+    
+    const drawRadius = () => {
+      if (!initialRegion?.latitude || !initialRegion?.longitude) return;
+      
+      const msg = { 
+        type: 'DRAW_RADIUS', 
+        latitude: initialRegion.latitude, 
+        longitude: initialRegion.longitude,
+        radius: searchRadius
+      };
+      
+      if (Platform.OS === 'web') {
+        const iframe = document.getElementById('azureMapsIframe');
+        iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
+      } else if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
+        );
+      }
+    };
+    
+    drawRadius();
+  }, [searchRadius, mapReady, initialRegion]);
+
+  // Generate the HTML template for the map view
+  const generateMapHtml = useCallback(() => {
+    if (!azureMapsKey) {
+      return `
+        <!DOCTYPE html>
+        <html>
+        <body style="font-family: Arial; padding: 20px; text-align: center; color: #f44336;">
+          <h2>Error: Azure Maps Key Missing</h2>
+          <p>The Azure Maps key was not provided to the component.</p>
+        </body>
+        </html>
+      `;
+    }
+    
     return `
 <!DOCTYPE html>
 <html lang="en">
@@ -71,177 +129,274 @@ const CrossPlatformAzureMapView = ({
     .popup-content{padding:8px;max-width:220px;font-family:Arial,Helvetica,sans-serif}
     button{background:#4caf50;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer}
     button:hover{opacity:.9}
+    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;}
   </style>
   <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
   <script src="https://atlas.microsoft.com/sdk/javascript/service/2/atlas-service.min.js"></script>
 </head>
 <body>
   <div id="mapContainer"></div>
+  <div id="debug" class="debug-info"></div>
   <script>
-    // Initialize the map
-    const map = new atlas.Map('mapContainer',{
-      center:[${initialRegion.longitude},${initialRegion.latitude}],
-      zoom:${initialRegion.zoom},
-      view:'Auto',
-      style:'${mapStyle}',
-      showLogo:false,
-      authOptions:{authType:'subscriptionKey',subscriptionKey:'${AZURE_MAPS_KEY}'}
-    });
+    // Function to update debug info
+    function updateDebug(message) {
+      const debugDiv = document.getElementById('debug');
+      debugDiv.innerHTML += "<div>" + message + "</div>";
+    }
+
+    // Print some initial debug info
+    updateDebug("Azure Maps initialization starting...");
+    updateDebug("Center: [${initialRegion.longitude}, ${initialRegion.latitude}]");
+    updateDebug("Key present: " + ${!!azureMapsKey});
+    updateDebug("Key valid format: " + ${typeof azureMapsKey === 'string' && azureMapsKey.length > 10});
 
     // Variables to store map objects
+    let map = null;
     let src = null;
     let clusterSrc = null;
     let popup = null;
     let radiusCircle = null;
     let searchCircle = null;
+    
+    // Custom marker images
+    const markerSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 0C9.373 0 4 5.373 4 12c0 5.303 4.438 9.8 10.35 11.607 1.066 0.335 1.926 1.07 1.926 1.07C17.56 25.57 16 29 16 29s-1.34-4.031-1.91-5.226C13.37 23.043 4 19.396 4 12 4 5.373 9.373 0 16 0zm0 17c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="#4CAF50"/></svg>';
+    
+    // Create a DOM element to hold the SVG
+    const img = document.createElement('img');
+    img.src = 'data:image/svg+xml;base64,' + btoa(markerSvg);
 
-    // Map ready event
-    map.events.add('ready', () => {
-      // Create data sources
-      src = new atlas.source.DataSource();
-      clusterSrc = new atlas.source.DataSource(null, {
-        cluster: true,
-        clusterRadius: 45,
-        clusterMaxZoom: 15
-      });
-      map.sources.add([src, clusterSrc]);
-
-      // Add a layer for individual markers
-      map.layers.add(new atlas.layer.SymbolLayer(src, null, {
-        iconOptions: {
-          image: 'marker-green',
-          anchor: 'bottom',
-          allowOverlap: true,
-          size: 1.0
+    try {
+      // Initialize the map
+      updateDebug("Creating map object...");
+      map = new atlas.Map('mapContainer', {
+        center: [${initialRegion.longitude}, ${initialRegion.latitude}],
+        zoom: ${initialRegion.zoom},
+        view: 'Auto',
+        style: '${mapStyle}',
+        showLogo: false,
+        authOptions: {
+          authType: 'subscriptionKey',
+          subscriptionKey: '${azureMapsKey}'
         }
-      }));
-
-      // Add a bubble layer for clusters
-      map.layers.add(new atlas.layer.BubbleLayer(clusterSrc, null, {
-        radius: 12,
-        color: '#4CAF50',
-        strokeColor: 'white',
-        strokeWidth: 2,
-        filter: ['has', 'point_count']
-      }));
-
-      // Add a symbol layer for cluster labels
-      map.layers.add(new atlas.layer.SymbolLayer(clusterSrc, null, {
-        iconOptions: { image: 'none' },
-        textOptions: {
-          textField: ['get', 'point_count_abbreviated'],
-          color: 'white',
-          size: 12,
-          font: ['SegoeUi-Bold']
-        },
-        filter: ['has', 'point_count']
-      }));
-
-      // Create a popup
-      popup = new atlas.Popup({
-        pixelOffset: [0, -30],
-        closeButton: false
       });
 
-      // Create a search radius data source and layer
-      radiusCircle = new atlas.source.DataSource();
-      map.sources.add(radiusCircle);
-      
-      // Add a circle layer for search radius
-      map.layers.add(new atlas.layer.PolygonLayer(radiusCircle, null, {
-        fillColor: 'rgba(255, 0, 0, 0.2)',
-        fillOpacity: 0.5
-      }));
-      
-      // Add a line layer for search radius border
-      map.layers.add(new atlas.layer.LineLayer(radiusCircle, null, {
-        strokeColor: 'red',
-        strokeWidth: 2,
-        strokeOpacity: 0.8
-      }));
+      // Map ready event
+      map.events.add('ready', () => {
+        updateDebug("Map is ready! Creating data sources...");
+        
+        // Add custom marker images
+        map.imageSprite.add('marker-green', img).then(() => {
+          updateDebug("Added custom marker-green successfully");
+        }).catch(err => {
+          updateDebug("Error adding custom marker: " + err.toString());
+        });
+        
+        // Create data sources
+        src = new atlas.source.DataSource();
+        clusterSrc = new atlas.source.DataSource(null, {
+          cluster: true,
+          clusterRadius: 45,
+          clusterMaxZoom: 15
+        });
+        map.sources.add([src, clusterSrc]);
 
-      // Function to create popup content
-      function makePopupContent(props, pos) {
-        const div = document.createElement('div');
-        div.className = 'popup-content';
-        div.innerHTML = \`
-          <strong>\${props.title}</strong><br>
-          <span style="color:#4caf50;font-weight:bold;">$\${(+props.price).toFixed(2)}</span><br>
-          <small>\${props.location || ''}</small>
-          \${props.distance ? '<br><small>Distance: ' + props.distance.toFixed(2) + ' km</small>' : ''}<br>
-        \`;
-        const btn = document.createElement('button');
-        btn.textContent = 'View';
-        btn.onclick = () => selectProduct(props.id);
-        div.appendChild(btn);
-        popup.setOptions({ content: div, position: pos });
-        popup.open(map);
-      }
+        // Add a layer for individual markers
+        map.layers.add(new atlas.layer.SymbolLayer(src, null, {
+          iconOptions: {
+            image: 'pin-round-blue',  // Use built-in pin instead of marker-green
+            anchor: 'bottom',
+            allowOverlap: true,
+            size: 1.0
+          }
+        }));
 
-      // Function to handle product selection
-      function selectProduct(id) {
-        if (window.ReactNativeWebView) {
-          window.ReactNativeWebView.postMessage(JSON.stringify({
-            type: 'PIN_CLICKED',
-            productId: id
-          }));
-        } else {
-          window.parent?.postMessage(JSON.stringify({
-            type: 'PIN_CLICKED',
-            productId: id
-          }), '*');
-          document.dispatchEvent(new CustomEvent('pinclicked', {
-            detail: { productId: id }
-          }));
-        }
-      }
+        // Add a bubble layer for clusters
+        map.layers.add(new atlas.layer.BubbleLayer(clusterSrc, null, {
+          radius: 12,
+          color: '#4CAF50',
+          strokeColor: 'white',
+          strokeWidth: 2,
+          filter: ['has', 'point_count']
+        }));
 
-      // Click event for markers
-      map.events.add('click', src, (e) => {
-        const s = e.shapes?.[0];
-        if (!s) return;
-        makePopupContent(s.getProperties(), s.getCoordinates());
-      });
+        // Add a symbol layer for cluster labels
+        map.layers.add(new atlas.layer.SymbolLayer(clusterSrc, null, {
+          iconOptions: { image: 'none' },
+          textOptions: {
+            textField: ['get', 'point_count_abbreviated'],
+            color: 'white',
+            size: 12,
+            font: ['SegoeUi-Bold']
+          },
+          filter: ['has', 'point_count']
+        }));
 
-      // Click event for clusters
-      map.events.add('click', clusterSrc, (e) => {
-        const shape = e.shapes?.[0];
-        if (!shape) return;
-        const props = shape.getProperties();
-        if (!props.cluster) return;
-        const ptCount = props.point_count;
-        if (ptCount < 100) {
-          map.setCamera({
-            center: e.position,
-            zoom: map.getCamera().zoom + 1
-          });
-        } else {
-          popup.setOptions({
-            content: \`<div style="text-align:center"><strong>\${ptCount} plants</strong><br><button onclick="map.setCamera({center:[\${e.position[0]},\${e.position[1]}],zoom:map.getCamera().zoom+2})">Zoom In</button></div>\`,
-            position: e.position
-          });
+        // Create a popup
+        popup = new atlas.Popup({
+          pixelOffset: [0, -30],
+          closeButton: false
+        });
+
+        // Create a search radius data source and layer
+        radiusCircle = new atlas.source.DataSource();
+        map.sources.add(radiusCircle);
+        
+        // Add a circle layer for search radius
+        map.layers.add(new atlas.layer.PolygonLayer(radiusCircle, null, {
+          fillColor: 'rgba(255, 0, 0, 0.2)',
+          fillOpacity: 0.5
+        }));
+        
+        // Add a line layer for search radius border
+        map.layers.add(new atlas.layer.LineLayer(radiusCircle, null, {
+          strokeColor: 'red',
+          strokeWidth: 2,
+          strokeOpacity: 0.8
+        }));
+
+        // Function to create popup content
+        function makePopupContent(props, pos) {
+          const div = document.createElement('div');
+          div.className = 'popup-content';
+          div.innerHTML = \`
+            <strong>\${props.title || 'Plant'}</strong><br>
+            <span style="color:#4caf50;font-weight:bold;">$\${parseFloat(props.price || 0).toFixed(2)}</span><br>
+            <small>\${props.location || ''}</small>
+            \${props.distance ? '<br><small>Distance: ' + props.distance.toFixed(2) + ' km</small>' : ''}<br>
+          \`;
+          const btn = document.createElement('button');
+          btn.textContent = 'View';
+          btn.onclick = () => selectProduct(props.id);
+          div.appendChild(btn);
+          popup.setOptions({ content: div, position: pos });
           popup.open(map);
         }
+
+        // Function to handle product selection
+        function selectProduct(id) {
+          if (window.ReactNativeWebView) {
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'PIN_CLICKED',
+              productId: id
+            }));
+          } else {
+            window.parent?.postMessage(JSON.stringify({
+              type: 'PIN_CLICKED',
+              productId: id
+            }), '*');
+            document.dispatchEvent(new CustomEvent('pinclicked', {
+              detail: { productId: id }
+            }));
+          }
+        }
+
+        // Click event for markers
+        map.events.add('click', src, (e) => {
+          const s = e.shapes?.[0];
+          if (!s) return;
+          makePopupContent(s.getProperties(), s.getCoordinates());
+        });
+
+        // Click event for clusters
+        map.events.add('click', clusterSrc, (e) => {
+          const shape = e.shapes?.[0];
+          if (!shape) return;
+          const props = shape.getProperties();
+          if (!props.cluster) return;
+          const ptCount = props.point_count;
+          if (ptCount < 100) {
+            map.setCamera({
+              center: e.position,
+              zoom: map.getCamera().zoom + 1
+            });
+          } else {
+            popup.setOptions({
+              content: \`<div style="text-align:center"><strong>\${ptCount} plants</strong><br><button onclick="map.setCamera({center:[\${e.position[0]},\${e.position[1]}],zoom:map.getCamera().zoom+2})">Zoom In</button></div>\`,
+              position: e.position
+            });
+            popup.open(map);
+          }
+        });
+        
+        // Add map click event handler for coordinate selection
+        map.events.add('click', (e) => {
+          // Close any open popups
+          popup.close();
+          
+          // Only forward click events that aren't on markers
+          if (!e.shapes || e.shapes.length === 0) {
+            const coords = e.position;
+            sendMsg({
+              type: 'MAP_CLICKED',
+              coordinates: {
+                latitude: coords[1],
+                longitude: coords[0]
+              }
+            });
+          }
+        });
+
+        // Signal that map is ready
+        sendMsg({ type: 'MAP_READY' });
+        
+        // If we have products already, add them to the map
+        if (${JSON.stringify(products).length} > 2) {
+          updateDebug("Initial products available, adding to map...");
+          updateMarkers(${JSON.stringify(products)});
+        }
+        
+        // Add handler for missing images to prevent errors
+        map.events.add('styleimagemissing', (e) => {
+          if (e.id === 'marker-green') {
+            updateDebug("Handling missing marker-green image");
+            map.imageSprite.add('marker-green', img).then(() => {
+              updateDebug("Added missing marker-green on demand");
+            });
+          }
+        });
       });
 
-      // Signal that map is ready
-      sendMsg({ type: 'MAP_READY' });
-    });
+      // Map error event
+      map.events.add('error', (e) => {
+        updateDebug("Map error: " + JSON.stringify(e.error));
+        sendMsg({ 
+          type: 'MAP_ERROR', 
+          error: e.error.toString(),
+          source: e.source 
+        });
+      });
+    } catch (e) {
+      updateDebug("Initialization error: " + e.toString());
+      sendMsg({ 
+        type: 'ERROR', 
+        message: e.toString() 
+      });
+    }
 
     // Function to update markers
     function updateMarkers(list) {
-      if (!src || !clusterSrc) return;
+      if (!src || !clusterSrc) {
+        updateDebug("Cannot update markers: sources not initialized");
+        return;
+      }
       
       src.clear();
       clusterSrc.clear();
       
-      if (!Array.isArray(list) || !list.length) return;
+      if (!Array.isArray(list) || !list.length) {
+        updateDebug("No products to display on map");
+        return;
+      }
 
+      updateDebug("Adding " + list.length + " products to map");
       const points = list.reduce((arr, p) => {
         const lat = p.location?.latitude;
         const lon = p.location?.longitude;
         
-        if (lat == null || lon == null) return arr;
+        if (lat == null || lon == null) {
+          updateDebug("Product missing coords: " + (p.id || p._id || 'unknown'));
+          return arr;
+        }
         
         const common = {
           id: p.id || p._id || Math.random().toString(36).slice(2),
@@ -259,30 +414,43 @@ const CrossPlatformAzureMapView = ({
         return arr;
       }, []);
 
-      src.add(points);
-      clusterSrc.add(points);
+      if (points.length > 0) {
+        updateDebug("Added " + points.length + " points to map");
+        src.add(points);
+        clusterSrc.add(points);
 
-      if (points.length === 1) {
-        map.setCamera({
-          center: points[0].geometry.coordinates,
-          zoom: 13
-        });
-      } else if (points.length > 1) {
-        const bounds = atlas.data.BoundingBox.fromData(points);
-        map.setCamera({
-          bounds,
-          padding: 50
-        });
+        if (points.length === 1) {
+          map.setCamera({
+            center: points[0].geometry.coordinates,
+            zoom: 13
+          });
+        } else if (points.length > 1) {
+          const bounds = atlas.data.BoundingBox.fromData(points);
+          map.setCamera({
+            bounds,
+            padding: 50
+          });
+        }
+      } else {
+        updateDebug("No points with valid coordinates found");
       }
     }
 
     // Function to draw a radius circle
     function drawRadiusCircle(center, radiusKm) {
-      if (!radiusCircle) return;
+      if (!radiusCircle) {
+        updateDebug("Cannot draw radius: circle source not initialized");
+        return;
+      }
       
       radiusCircle.clear();
       
-      if (!center || !radiusKm) return;
+      if (!center || !radiusKm) {
+        updateDebug("Invalid center or radius");
+        return;
+      }
+      
+      updateDebug("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
       
       // Create a circle polygon
       const circle = atlas.math.getRegularPolygonPath(
@@ -327,6 +495,7 @@ const CrossPlatformAzureMapView = ({
     window.handleMessage = (raw) => {
       try {
         const msg = JSON.parse(raw);
+        updateDebug("Received message: " + msg.type);
         
         if (msg.type === 'UPDATE_PRODUCTS') {
           updateMarkers(msg.products);
@@ -366,19 +535,22 @@ const CrossPlatformAzureMapView = ({
         }
         
       } catch (e) {
-        console.error('Error handling message:', e);
+        updateDebug("Error handling message: " + e.toString());
       }
     };
     
-    // Handle clicks outside of markers to close popup
-    map.events.add('click', () => {
-      popup.close();
-    });
+    // Remove debug info after some time
+    setTimeout(() => {
+      const debugDiv = document.getElementById('debug');
+      if (debugDiv) {
+        debugDiv.style.display = 'none';
+      }
+    }, 10000); // Hide after 10 seconds
   </script>
 </body>
 </html>
 `;
-  };
+  }, [azureMapsKey, initialRegion, mapStyle, products]);
 
   /* ------------------------------------------------------------------ */
   /* WEB: initialise Azure Maps inside <iframe> once container ready    */
@@ -405,9 +577,13 @@ const CrossPlatformAzureMapView = ({
           case 'PIN_CLICKED':
             onSelectProduct?.(data.productId);
             break;
+          case 'MAP_CLICKED':
+            onMapPress?.(data.coordinates);
+            break;
+          case 'MAP_ERROR':
           case 'ERROR':
             setIsError(true);
-            setErrorMessage(data.message || 'Unknown error');
+            setErrorMessage(data.message || data.error || 'Unknown error');
             break;
           default:
         }
@@ -417,7 +593,7 @@ const CrossPlatformAzureMapView = ({
     window.addEventListener('message', handleMsg);
 
     return () => window.removeEventListener('message', handleMsg);
-  }, [products, onMapReady, onSelectProduct]);
+  }, [products, onMapReady, onSelectProduct, onMapPress]);
 
   useEffect(initWebMap, [initWebMap]);
 
@@ -436,9 +612,13 @@ const CrossPlatformAzureMapView = ({
         case 'PIN_CLICKED':
           onSelectProduct?.(data.productId);
           break;
+        case 'MAP_CLICKED':
+          onMapPress?.(data.coordinates);
+          break;
+        case 'MAP_ERROR':
         case 'ERROR':
           setIsError(true);
-          setErrorMessage(data.message || 'Unknown error');
+          setErrorMessage(data.message || data.error || 'Unknown error');
           break;
         default:
       }
@@ -461,127 +641,6 @@ const CrossPlatformAzureMapView = ({
       );
     }
   }, [products, mapReady]);
-
-  /* ------------------------------------------------------------------ */
-  /* Handle location selection and radius drawing                       */
-  /* ------------------------------------------------------------------ */
-  const handleLocationSelect = (location) => {
-    setSelectedLocation(location);
-    setShowRadiusControl(true);
-    
-    const msg = { 
-      type: 'SET_REGION',
-      latitude: location.latitude,
-      longitude: location.longitude,
-      zoom: 12
-    };
-    
-    if (Platform.OS === 'web') {
-      const iframe = document.getElementById('azureMapsIframe');
-      iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
-    } else if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(
-        `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
-      );
-    }
-    
-    // Draw initial radius circle
-    drawRadiusCircle(location, searchRadius);
-  };
-
-  const handleRadiusChange = (radius) => {
-    setSearchRadius(radius);
-    
-    // Draw updated radius circle
-    if (selectedLocation) {
-      drawRadiusCircle(selectedLocation, radius);
-    }
-  };
-
-  const drawRadiusCircle = (location, radius) => {
-    const msg = { 
-      type: 'DRAW_RADIUS',
-      latitude: location.latitude,
-      longitude: location.longitude,
-      radius: radius
-    };
-    
-    if (Platform.OS === 'web') {
-      const iframe = document.getElementById('azureMapsIframe');
-      iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
-    } else if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(
-        `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
-      );
-    }
-    
-    // Filter products by radius
-    if (products && products.length > 0) {
-      const filtered = filterProductsByRadius(products, location, radius);
-      
-      // Sort by distance
-      const sorted = sortProductsByDistance(filtered, sortOrder === 'nearest');
-      
-      setNearbyProducts(sorted);
-    }
-  };
-  
-  // Function to calculate distance between two points
-  const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const toRad = (value) => (value * Math.PI) / 180;
-    const R = 6371; // Earth's radius in km
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  };
-  
-  // Filter products by radius
-  const filterProductsByRadius = (productList, center, radiusKm) => {
-    return productList.filter(product => {
-      // Skip products without location
-      if (!product.location || !product.location.latitude || !product.location.longitude) {
-        return false;
-      }
-      
-      // Calculate distance
-      const distance = calculateDistance(
-        center.latitude,
-        center.longitude,
-        product.location.latitude,
-        product.location.longitude
-      );
-      
-      // Add distance to product
-      product.distance = distance;
-      
-      // Include if within radius
-      return distance <= radiusKm;
-    });
-  };
-  
-  // Sort products by distance
-  const sortProductsByDistance = (productList, ascending = true) => {
-    return [...productList].sort((a, b) => {
-      const distA = a.distance || 0;
-      const distB = b.distance || 0;
-      return ascending ? distA - distB : distB - distA;
-    });
-  };
-  
-  // Toggle sort order
-  const toggleSortOrder = () => {
-    const newOrder = sortOrder === 'nearest' ? 'farthest' : 'nearest';
-    setSortOrder(newOrder);
-    
-    // Re-sort products
-    const sorted = sortProductsByDistance(nearbyProducts, newOrder === 'nearest');
-    setNearbyProducts(sorted);
-  };
 
   /* ------------------------------------------------------------------ */
   /* Render helpers                                                     */
@@ -622,64 +681,6 @@ const CrossPlatformAzureMapView = ({
         srcDoc={generateMapHtml()}
         style={{ width: '100%', height: '100%', border: 'none' }}
       />
-      
-      {/* Location Search */}
-      <MapSearchBox onLocationSelect={handleLocationSelect} />
-      
-      {/* Radius Control */}
-      {showRadiusControl && selectedLocation && (
-        <View style={styles.radiusControlContainer}>
-          <RadiusControl 
-            radius={searchRadius}
-            onRadiusChange={handleRadiusChange}
-          />
-          
-          {/* Sorting Toggle */}
-          {nearbyProducts.length > 0 && (
-            <View style={styles.sortingContainer}>
-              <Text style={styles.resultsText}>
-                {nearbyProducts.length} plants found
-              </Text>
-              <TouchableOpacity 
-                style={styles.sortButton}
-                onPress={toggleSortOrder}
-              >
-                <MaterialIcons 
-                  name={sortOrder === 'nearest' ? 'arrow-upward' : 'arrow-downward'} 
-                  size={16} 
-                  color="#fff" 
-                />
-                <Text style={styles.sortButtonText}>
-                  {sortOrder === 'nearest' ? 'Nearest First' : 'Farthest First'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {/* Nearby Products List */}
-          {nearbyProducts.length > 0 && (
-            <View style={styles.resultsContainer}>
-              {nearbyProducts.map(product => (
-                <TouchableOpacity 
-                  key={product.id || product._id}
-                  style={styles.resultItem}
-                  onPress={() => onSelectProduct?.(product.id || product._id)}
-                >
-                  <View style={styles.resultContent}>
-                    <Text style={styles.resultTitle}>{product.title || product.name}</Text>
-                    <Text style={styles.resultPrice}>${parseFloat(product.price).toFixed(2)}</Text>
-                    <Text style={styles.resultDistance}>
-                      {product.distance ? `${product.distance.toFixed(2)} km away` : 'Distance unknown'}
-                    </Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={24} color="#4CAF50" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-      
       {isLoading && renderLoading()}
     </View>
   );
@@ -693,75 +694,20 @@ const CrossPlatformAzureMapView = ({
         ref={webViewRef}
         source={{ html: generateMapHtml() }}
         onMessage={handleWebViewMessage}
-        onLoadEnd={() => setIsLoading(false)}
+        onLoadEnd={() => {
+          console.log('WebView loaded');
+        }}
         onError={(e) => {
+          console.error('WebView error:', e.nativeEvent);
           setIsLoading(false);
           setIsError(true);
-          setErrorMessage(e.nativeEvent.description);
+          setErrorMessage(e.nativeEvent.description || 'WebView error');
         }}
         javaScriptEnabled
         domStorageEnabled
         originWhitelist={['*']}
         style={styles.map}
       />
-      
-      {/* Location Search */}
-      <MapSearchBox onLocationSelect={handleLocationSelect} />
-      
-      {/* Radius Control */}
-      {showRadiusControl && selectedLocation && (
-        <View style={styles.radiusControlContainer}>
-          <RadiusControl 
-            radius={searchRadius}
-            onRadiusChange={handleRadiusChange}
-          />
-          
-          {/* Sorting Toggle */}
-          {nearbyProducts.length > 0 && (
-            <View style={styles.sortingContainer}>
-              <Text style={styles.resultsText}>
-                {nearbyProducts.length} plants found
-              </Text>
-              <TouchableOpacity 
-                style={styles.sortButton}
-                onPress={toggleSortOrder}
-              >
-                <MaterialIcons 
-                  name={sortOrder === 'nearest' ? 'arrow-upward' : 'arrow-downward'} 
-                  size={16} 
-                  color="#fff" 
-                />
-                <Text style={styles.sortButtonText}>
-                  {sortOrder === 'nearest' ? 'Nearest First' : 'Farthest First'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          )}
-          
-          {/* Nearby Products List */}
-          {nearbyProducts.length > 0 && (
-            <View style={styles.resultsContainer}>
-              {nearbyProducts.map(product => (
-                <TouchableOpacity 
-                  key={product.id || product._id}
-                  style={styles.resultItem}
-                  onPress={() => onSelectProduct?.(product.id || product._id)}
-                >
-                  <View style={styles.resultContent}>
-                    <Text style={styles.resultTitle}>{product.title || product.name}</Text>
-                    <Text style={styles.resultPrice}>${parseFloat(product.price).toFixed(2)}</Text>
-                    <Text style={styles.resultDistance}>
-                      {product.distance ? `${product.distance.toFixed(2)} km away` : 'Distance unknown'}
-                    </Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={24} color="#4CAF50" />
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-      
       {isLoading && renderLoading()}
     </View>
   );
@@ -769,7 +715,7 @@ const CrossPlatformAzureMapView = ({
   /* ------------------------------------------------------------------ */
   /* Main return                                                         */
   /* ------------------------------------------------------------------ */
-  if (!AZURE_MAPS_KEY) {
+  if (!azureMapsKey) {
     return (
       <View style={styles.errorContainer}>
         <MaterialIcons name="error-outline" size={48} color="#f44336" />
@@ -782,16 +728,6 @@ const CrossPlatformAzureMapView = ({
   }
   
   if (isError) return renderError();
-
-  // Empty state for no products
-  if (!products?.length) {
-    return (
-      <View style={styles.container}>
-        {Platform.OS === 'web' ? <WebMap /> : <NativeMap />}
-        {renderEmpty()}
-      </View>
-    );
-  }
 
   return Platform.OS === 'web' ? <WebMap /> : <NativeMap />;
 };
@@ -849,90 +785,6 @@ const styles = StyleSheet.create({
     fontSize: 16, 
     color: '#666', 
     marginTop: 12 
-  },
-  
-  /* Radius control */
-  radiusControlContainer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'white',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 8,
-    paddingBottom: 16,
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    maxHeight: '60%', // Maximum height
-  },
-  
-  /* Results */
-  sortingContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    marginVertical: 8,
-  },
-  resultsText: {
-    fontSize: 14,
-    color: '#666',
-  },
-  sortButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-  },
-  sortButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    marginLeft: 4,
-  },
-  resultsContainer: {
-    paddingHorizontal: 16,
-    paddingBottom: 16, 
-    maxHeight: 400,
-    overflow: 'scroll',
-  },
-  resultItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 1,
-  },
-  resultContent: {
-    flex: 1,
-  },
-  resultTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  resultPrice: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#4CAF50',
-    marginBottom: 2,
-  },
-  resultDistance: {
-    fontSize: 12,
-    color: '#666',
   },
 });
 

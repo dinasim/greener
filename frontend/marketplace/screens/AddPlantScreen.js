@@ -1,8 +1,20 @@
 // screens/AddPlantScreen.js
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, TextInput, StyleSheet, ScrollView, TouchableOpacity, Image, Alert,
-  ActivityIndicator, KeyboardAvoidingView, Platform, SafeAreaView, Modal, FlatList,
+  View, 
+  Text, 
+  TextInput, 
+  StyleSheet, 
+  ScrollView, 
+  TouchableOpacity, 
+  Image, 
+  Alert,
+  ActivityIndicator, 
+  KeyboardAvoidingView, 
+  Platform, 
+  SafeAreaView, 
+  Modal, 
+  FlatList,
 } from 'react-native';
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -15,6 +27,7 @@ import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import { createPlant } from '../services/marketplaceApi';
 import { getAddPlantCategories } from '../services/categories';
+import { geocodeAddress, reverseGeocode } from '../services/azureMapsService';
 
 const SCIENTIFIC_NAMES = [
   { id: '1', name: 'Monstera Deliciosa', common: 'Swiss Cheese Plant' },
@@ -35,10 +48,22 @@ const AddPlantScreen = () => {
   const [images, setImages] = useState([]);
   const [listingType, setListingType] = useState('plant');
   const [formData, setFormData] = useState({
-    title: '', price: '', category: 'Indoor Plants', description: '', careInstructions: '', city: '', scientificName: '', 
+    title: '', 
+    price: '', 
+    category: 'Indoor Plants', 
+    description: '', 
+    careInstructions: '', 
+    city: '', 
+    street: '',
+    houseNumber: '',
+    scientificName: '', 
   });
   const [formErrors, setFormErrors] = useState({
-    title: '', price: '', description: '', city: '', images: '',
+    title: '', 
+    price: '', 
+    description: '', 
+    city: '', 
+    images: '',
   });
   const [showScientificNameModal, setShowScientificNameModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,7 +83,9 @@ const AddPlantScreen = () => {
           if (profile.location) {
             setFormData(prevData => ({
               ...prevData,
-              city: profile.location
+              city: profile.city || '',
+              street: profile.street || '',
+              houseNumber: profile.houseNumber || ''
             }));
           }
         }
@@ -279,70 +306,86 @@ const AddPlantScreen = () => {
         setIsLoadingLocation(false);
         return;
       }
+      
       const position = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
         timeout: 15000
       });
+      
       const { latitude, longitude } = position.coords;
+      
       try {
-        const locationData = await marketplaceApi.geocodeAddress(`${latitude},${longitude}`);
-        if (locationData && locationData.city) {
-          const formattedLocation = locationData.city + 
-            (locationData.country ? `, ${locationData.country}` : '');
-          setFormData({
-            ...formData,
-            city: formattedLocation
+        // Use our Azure Maps reverse geocode function
+        const locationData = await reverseGeocode(latitude, longitude);
+        
+        if (locationData) {
+          setCurrentLocation({
+            latitude: locationData.latitude,
+            longitude: locationData.longitude,
+            city: locationData.city || '',
+            country: locationData.country || '',
+            street: locationData.street || '',
+            houseNumber: locationData.houseNumber || '',
+            formattedAddress: locationData.formattedAddress || ''
           });
-          setIsLoadingLocation(false);
-          return;
-        }
-      } catch (apiError) {
-        console.warn('API geocoding failed, falling back to Expo geocoder:', apiError);
-      }
-      const addresses = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude
-      });
-      if (addresses && addresses.length > 0) {
-        const address = addresses[0];
-        let formattedLocation = '';
-        if (address.city) {
-          formattedLocation += address.city;
-        } else if (address.region) {
-          formattedLocation += address.region;
-        }
-        if (address.country) {
-          if (formattedLocation) {
-            formattedLocation += `, ${address.country}`;
+          
+          // Only update forms if we're in Israel
+          if (locationData.country === 'Israel') {
+            setFormData(prev => ({
+              ...prev,
+              city: locationData.city || '',
+              street: locationData.street || '',
+              houseNumber: locationData.houseNumber || ''
+            }));
           } else {
-            formattedLocation = address.country;
+            Alert.alert('Location Notice', 'We only support locations in Israel. Please enter an Israeli address manually.', [{ text: 'OK' }]);
           }
         }
-        if (!formattedLocation) {
-          formattedLocation = 'Unknown location';
+      } catch (apiError) {
+        console.warn('Reverse geocoding failed:', apiError);
+        
+        // Fallback to Expo's geocoder
+        try {
+          const addresses = await Location.reverseGeocodeAsync({
+            latitude,
+            longitude
+          });
+          
+          if (addresses && addresses.length > 0) {
+            const address = addresses[0];
+            const isIsrael = address.country === 'Israel';
+            
+            setCurrentLocation({
+              latitude,
+              longitude,
+              city: address.city || '',
+              country: address.country || '',
+              street: address.street || '',
+              houseNumber: address.name || '',
+              formattedAddress: `${address.street || ''} ${address.name || ''}, ${address.city || ''}, ${address.country || ''}`
+            });
+            
+            if (isIsrael) {
+              setFormData(prev => ({
+                ...prev,
+                city: address.city || '',
+                street: address.street || '',
+                houseNumber: address.name || ''
+              }));
+            } else {
+              Alert.alert('Location Notice', 'We only support locations in Israel. Please enter an Israeli address manually.', [{ text: 'OK' }]);
+            }
+          }
+        } catch (error) {
+          console.error('Expo geocoding error:', error);
+          Alert.alert('Location Error', 'Could not determine your address. Please enter it manually.', [{ text: 'OK' }]);
         }
-        setFormData({
-          ...formData,
-          city: formattedLocation
-        });
-      } else {
-        setFormData({
-          ...formData,
-          city: `Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)}`
-        });
       }
+      
       setIsLoadingLocation(false);
     } catch (error) {
       console.error('Error getting location:', error);
-      let errorMessage = 'Could not get your current location. Please enter it manually.';
-      if (error.code === 'E_LOCATION_SETTINGS_UNSATISFIED') {
-        errorMessage = 'Please enable location services in your device settings.';
-      } else if (error.code === 'E_LOCATION_GEOCODING_FAILED') {
-        errorMessage = 'Could not determine your address. Please enter it manually.';
-      } else if (error.code === 'E_LOCATION_ACTIVITY_MISSING') {
-        errorMessage = 'Location provider is unavailable. Please enter your location manually.';
-      }
-      Alert.alert('Location Error', errorMessage, [{ text: 'OK' }]);
+      Alert.alert('Location Error', 'Could not get your current location. Please enter it manually.', [{ text: 'OK' }]);
       setIsLoadingLocation(false);
     }
   };
@@ -372,7 +415,7 @@ const AddPlantScreen = () => {
       isValid = false;
     }
     if (!formData.city.trim()) {
-      errors.city = 'Location is required';
+      errors.city = 'City is required';
       isValid = false;
     }
     if (images.length === 0) {
@@ -406,6 +449,36 @@ const handleSubmit = async () => {
       throw new Error('User is not authenticated');
     }
     const imageData = await prepareImageData();
+    
+    // Prepare location data structure with focus on city, street, and house number
+    const locationData = {
+      city: formData.city,
+      street: formData.street,
+      houseNumber: formData.houseNumber
+    };
+    
+    // If we have coordinates from currentLocation, include them
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      locationData.latitude = currentLocation.latitude;
+      locationData.longitude = currentLocation.longitude;
+    } else {
+      // If we don't have coordinates from current location, try to geocode the address
+      try {
+        const addressString = `${formData.street} ${formData.houseNumber}, ${formData.city}, Israel`;
+        console.log('Geocoding address:', addressString);
+        
+        const geocodedLocation = await geocodeAddress(addressString);
+        if (geocodedLocation?.latitude && geocodedLocation?.longitude) {
+          locationData.latitude = geocodedLocation.latitude;
+          locationData.longitude = geocodedLocation.longitude;
+          console.log('Successfully geocoded address:', geocodedLocation);
+        }
+      } catch (geocodeError) {
+        console.warn('Failed to geocode address:', geocodeError);
+        // Continue without coordinates - this is not a blocking error
+      }
+    }
+    
     const plantData = {
       title: formData.title,
       price: parseFloat(formData.price),
@@ -418,8 +491,12 @@ const handleSubmit = async () => {
       images: imageData.slice(1),
       sellerId: userEmail,
       productType: listingType,
+      location: locationData,  // Include the full location object
     };
+    
+    console.log('Submitting plant with location data:', JSON.stringify(locationData));
     const result = await createPlant(plantData);
+    
     if (result?.productId) {
       setNewPlantId(result.productId);
       await triggerUpdate(UPDATE_TYPES.PRODUCT, {
@@ -471,7 +548,7 @@ const handleSubmit = async () => {
                 placeholder="Search by common or scientific name"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
-                autoFocus={true}
+                autoFocus={Platform.OS !== 'web'}
               />
               {searchQuery ? (
                 <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
@@ -538,7 +615,7 @@ const handleSubmit = async () => {
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.listingTypeButton, listingType === 'accessory' && styles.selectedListingType]}
                   onPress={() => setListingType('accessory')}>
-                  <MaterialIcons name="pot-mix-outline" size={24} color={listingType === 'accessory' ? '#fff' : '#4CAF50'} />
+                  <MaterialIcons name="shopping-bag" size={24} color={listingType === 'accessory' ? '#fff' : '#4CAF50'} />
                   <Text style={[styles.listingTypeText, listingType === 'accessory' && styles.selectedListingTypeText]}>Accessory</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.listingTypeButton, listingType === 'tool' && styles.selectedListingType]}
@@ -644,23 +721,60 @@ const handleSubmit = async () => {
                   ))
                 }
               </ScrollView>
-              <Text style={styles.label}>Location <Text style={styles.requiredField}>*</Text></Text>
-              <View style={styles.locationContainer}>
-                <TextInput
-                  style={[styles.input, styles.locationInput, formErrors.city && styles.inputError]}
-                  value={formData.city}
-                  onChangeText={(text) => handleChange('city', text)}
-                  placeholder="Where can buyers pick up the item?"
-                />
-                <TouchableOpacity style={styles.locationButton} onPress={useCurrentLocation} disabled={isLoadingLocation}>
+              
+              {/* Location section - Israel only */}
+              <Text style={styles.label}>City <Text style={styles.requiredField}>*</Text></Text>
+              <TextInput
+                style={[styles.input, formErrors.city && styles.inputError]}
+                value={formData.city}
+                onChangeText={(text) => handleChange('city', text)}
+                placeholder="City (Israel only)"
+              />
+              {formErrors.city ? <Text style={styles.errorText}>{formErrors.city}</Text> : null}
+              
+              <Text style={styles.label}>Street</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.street}
+                onChangeText={(text) => handleChange('street', text)}
+                placeholder="Street name"
+              />
+              
+              <Text style={styles.label}>House Number (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                value={formData.houseNumber}
+                onChangeText={(text) => handleChange('houseNumber', text)}
+                placeholder="House number"
+                keyboardType="numeric"
+              />
+              
+              <View style={styles.locationActionContainer}>
+                <TouchableOpacity 
+                  style={styles.currentLocationButton} 
+                  onPress={useCurrentLocation}
+                  disabled={isLoadingLocation}
+                >
                   {isLoadingLocation ? (
                     <ActivityIndicator size="small" color="#fff" />
                   ) : (
-                    <MaterialIcons name="my-location" size={20} color="#fff" />
+                    <>
+                      <MaterialIcons name="my-location" size={16} color="#fff" />
+                      <Text style={styles.currentLocationText}>Use Current Location</Text>
+                    </>
                   )}
                 </TouchableOpacity>
+                <Text style={styles.locationHelperText}>Israel addresses only</Text>
               </View>
-              {formErrors.city ? <Text style={styles.errorText}>{formErrors.city}</Text> : null}
+              
+              {/* Show coordinates if available */}
+              {currentLocation && currentLocation.latitude && currentLocation.longitude && (
+                <View style={styles.coordsContainer}>
+                  <Text style={styles.coordsText}>
+                    Coordinates: {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
+                  </Text>
+                </View>
+              )}
             </View>
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Description <Text style={styles.requiredField}>*</Text></Text>
@@ -751,10 +865,31 @@ const styles = StyleSheet.create({
   errorText: { color: '#D32F2F', fontSize: 13, marginTop: -8, marginBottom: 8 },
   helperText: { color: '#757575', fontSize: 12, marginTop: 4 },
   textArea: { height: 100, textAlignVertical: 'top' },
-  locationContainer: { flexDirection: 'row', alignItems: 'center' },
-  locationInput: { flex: 1, marginBottom: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 },
-  locationButton: { backgroundColor: '#4CAF50', width: 50, height: 50, justifyContent: 'center',
-    alignItems: 'center', borderTopRightRadius: 10, borderBottomRightRadius: 10 },
+  locationActionContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    justifyContent: 'space-between',
+    marginBottom: 15
+  },
+  currentLocationButton: { 
+    backgroundColor: '#4CAF50', 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8
+  },
+  currentLocationText: { 
+    color: '#fff', 
+    fontSize: 14, 
+    marginLeft: 6,
+    fontWeight: '500'
+  },
+  locationHelperText: {
+    color: '#757575',
+    fontSize: 12,
+    fontStyle: 'italic'
+  },
   categoryScroller: { marginVertical: 10 },
   categoryButton: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20,
     backgroundColor: '#E8F5E9', marginRight: 8, marginBottom: 6 },
@@ -789,6 +924,18 @@ const styles = StyleSheet.create({
     width: '80%', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
   successTitle: { fontSize: 22, fontWeight: '700', color: '#2E7D32', marginTop: 16, marginBottom: 8 },
   successText: { fontSize: 16, color: '#666', textAlign: 'center' },
+  coordsContainer: {
+    backgroundColor: '#f0f9f0',
+    padding: 8,
+    borderRadius: 6,
+    marginTop: 4,
+    marginBottom: 12
+  },
+  coordsText: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
+  }
 });
 
 export default AddPlantScreen;
