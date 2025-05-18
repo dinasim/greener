@@ -1,17 +1,11 @@
 import React, { useState, useEffect } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Alert,
-  SafeAreaView,
-  ScrollView,
-  Animated,
-  Platform,
+  View, Text, StyleSheet, TouchableOpacity, Alert,
+  SafeAreaView, ScrollView, Animated, Platform
 } from "react-native";
-import * as Notifications from "expo-notifications";
 import { useForm } from "../context/FormContext";
+
+// You need to have the Service Worker (sw.js) set up in your public/ directory!
 
 export default function SignupReminders({ navigation }) {
   const [granted, setGranted] = useState(null);
@@ -27,58 +21,85 @@ export default function SignupReminders({ navigation }) {
     }).start();
   }, []);
 
-  const requestNotifications = async () => {
-    const { status } = await Notifications.requestPermissionsAsync();
-    if (status === "granted") {
+  // Request browser push permission and register Service Worker
+  const requestWebPush = async () => {
+    if (Platform.OS !== "web") {
+      Alert.alert("Web Push Only", "Push notifications via Azure only work on web browsers.");
+      return;
+    }
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      Alert.alert("Not supported", "Web Push API not supported in this browser.");
+      return;
+    }
+    try {
+      // Request notification permission
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        setGranted(false);
+        Alert.alert("Permission Denied", "You can still continue, but we won't send reminders.");
+        return;
+      }
       setGranted(true);
 
-      const tokenData = await Notifications.getExpoPushTokenAsync();
-      const expoPushToken = tokenData.data;
-      console.log("📱 Expo Push Token:", expoPushToken);
+      // Register the service worker
+      const swReg = await navigator.serviceWorker.register("/sw.js");
+      // (You must generate and use your VAPID public key from Azure Notification Hubs setup!)
+      const vapidPublicKey = "<YOUR_VAPID_PUBLIC_KEY>"; // Base64 string from Azure setup
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-      updateFormData("expoPushToken", expoPushToken);
+      // Subscribe to push
+      const subscription = await swReg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey,
+      });
 
-      await saveUserToBackend(expoPushToken);
+      // Save to backend
+      await saveSubscriptionToBackend(subscription);
+
       Alert.alert("Notifications Enabled ✅");
-    } else {
-      setGranted(false);
-      Alert.alert("Permission Denied", "You can still continue, but we won't send reminders.");
+
+    } catch (err) {
+      console.error("Push subscription error:", err);
+      Alert.alert("Error", "Failed to subscribe for notifications.");
     }
   };
 
-  const saveUserToBackend = async (tokenOverride) => {
+  // Utility to convert base64 key
+  function urlBase64ToUint8Array(base64String) {
+    // code for converting (as in Azure docs)
+    const padding = "=".repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  }
+
+  // Send subscription to backend
+  const saveSubscriptionToBackend = async (subscription) => {
     try {
       const payload = {
         email: formData.email,
-        expoPushToken: tokenOverride || formData.expoPushToken || null,
-        location: formData.userLocation || null,
-        name: formData.name || null,
-        kids: formData.kids || null,
-        animals: formData.animals || null,
-        intersted: formData.intersted || null
+        subscription, // send the whole subscription object
+        // ...other form fields as needed
       };
 
-      console.log("📦 Final user payload:", payload);
-
-      await fetch("https://<YOUR_BACKEND_URL>/api/saveUser", {
+      await fetch("https://<YOUR_BACKEND_URL>/api/registerWebPush", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
-      console.log("✅ Final user data saved to backend");
+      console.log("Web Push subscription sent to backend.");
     } catch (error) {
-      console.error("❌ Failed to save user at final step:", error);
+      console.error("❌ Failed to save subscription:", error);
     }
   };
 
-  const handleContinue = async () => {
-    if (!formData.expoPushToken) {
-      console.warn("⚠️ No push token yet, not saving again.");
-    } else {
-      await saveUserToBackend();
-    }
-
+  const handleContinue = () => {
     navigation.navigate("SignInGoogleScreen");
   };
 
@@ -87,19 +108,17 @@ export default function SignupReminders({ navigation }) {
       <ScrollView style={styles.scrollView} contentContainerStyle={{ flexGrow: 1 }}>
         <Animated.View style={[styles.container, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.header}>
-            <Text style={styles.title}>Enable Notifications</Text>
+            <Text style={styles.title}>Enable Browser Notifications</Text>
             <Text style={styles.subtitle}>
-              Get friendly reminders to water and care for your plants 🌱
+              Get reminders to water and care for your plants 🌱
             </Text>
           </View>
-
           <TouchableOpacity
             style={styles.permissionButton}
-            onPress={requestNotifications}
+            onPress={requestWebPush}
           >
-            <Text style={styles.buttonText}>Enable Notifications</Text>
+            <Text style={styles.buttonText}>Enable Browser Notifications</Text>
           </TouchableOpacity>
-
           <TouchableOpacity
             style={[styles.permissionButton, { backgroundColor: "#4caf50", marginTop: 20 }]}
             onPress={handleContinue}
