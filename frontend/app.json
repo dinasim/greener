@@ -2,6 +2,7 @@
   "expo": {
     "name": "Greener",
     "slug": "greener",
+    "owner": "dinasim",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -35,8 +36,8 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "expoClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com",
-      "webClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com"
+      "expoClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
+      "webClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com"
     },
     "plugins": [
       "expo-asset"

@@ -29,8 +29,8 @@ export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-
+  const fadeAnim = useRef(new Animated.Value(0)).current; 
+  console.log('REDIRECT URI:', AuthSession.makeRedirectUri({ useProxy: true }));
   const [request, response, promptAsync] = Google.useAuthRequest({
     clientId: Constants.expoConfig.extra.expoClientId,
     webClientId: Constants.expoConfig.extra.webClientId,
