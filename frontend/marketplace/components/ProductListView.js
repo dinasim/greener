@@ -11,10 +11,10 @@ import {
   RefreshControl,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-// No need for PlantCard import since we're rendering custom list items
+import { useNavigation } from '@react-navigation/native';
 
 /**
- * Component for displaying products in a list view on the map screen
+ * Enhanced component for displaying products in a list view on the map screen
  * 
  * @param {Object} props Component props
  * @param {Array} props.products List of products to display
@@ -35,6 +35,7 @@ const ProductListView = ({
   onSortChange,
 }) => {
   const [refreshing, setRefreshing] = useState(false);
+  const navigation = useNavigation();
 
   // Handle refresh
   const handleRefresh = async () => {
@@ -105,45 +106,82 @@ const ProductListView = ({
   );
 
   // Render product list item
-  const renderItem = ({ item }) => (
-    <TouchableOpacity
-      style={styles.itemContainer}
-      onPress={() => onProductSelect(item.id || item._id)}
-      activeOpacity={0.8}
-    >
-      <Image
-        source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150?text=Plant' }}
-        style={styles.itemImage}
-        resizeMode="cover"
-      />
-      <View style={styles.itemDetails}>
-        <Text style={styles.itemTitle} numberOfLines={1}>{item.title || item.name}</Text>
-        <Text style={styles.itemPrice}>${parseFloat(item.price).toFixed(2)}</Text>
-        
-        <View style={styles.locationContainer}>
-          <MaterialIcons name="place" size={14} color="#666" />
-          <Text style={styles.locationText} numberOfLines={1}>
-            {item.location?.city || item.city || 'Unknown location'}
+  const renderItem = ({ item }) => {
+    // Handle missing rating with default text
+    const renderRating = () => {
+      if (!item.rating || item.rating === 0) {
+        return <Text style={styles.newProductText}>New Product</Text>;
+      }
+      
+      return (
+        <View style={styles.ratingContainer}>
+          <MaterialIcons name="star" size={14} color="#FFD700" />
+          <Text style={styles.ratingText}>
+            {typeof item.rating === 'number' ? item.rating.toFixed(1) : item.rating}
           </Text>
         </View>
-        
-        <View style={styles.distanceContainer}>
-          <MaterialIcons name="directions" size={14} color="#4CAF50" />
-          <Text style={styles.distanceText}>
-            {item.distance ? `${item.distance.toFixed(1)} km away` : 'Distance unknown'}
+      );
+    };
+    
+    // Handle missing seller rating
+    const renderSellerRating = () => {
+      if (!item.seller?.rating || item.seller.rating === 0) {
+        return <Text style={styles.newSellerText}>New Seller</Text>;
+      }
+      
+      return (
+        <View style={styles.sellerRatingContainer}>
+          <MaterialIcons name="person" size={12} color="#666" />
+          <Text style={styles.sellerRatingText}>
+            {typeof item.seller.rating === 'number' ? item.seller.rating.toFixed(1) : item.seller.rating}
           </Text>
         </View>
-        
-        <View style={styles.sellerContainer}>
-          <MaterialIcons name="person" size={14} color="#666" />
-          <Text style={styles.sellerText} numberOfLines={1}>
-            {item.seller?.name || item.sellerName || 'Unknown seller'}
-          </Text>
+      );
+    };
+    
+    return (
+      <TouchableOpacity
+        style={styles.itemContainer}
+        onPress={() => onProductSelect(item.id || item._id)}
+        activeOpacity={0.8}
+      >
+        <Image
+          source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150?text=Plant' }}
+          style={styles.itemImage}
+          resizeMode="cover"
+        />
+        <View style={styles.itemDetails}>
+          <Text style={styles.itemTitle} numberOfLines={1}>{item.title || item.name}</Text>
+          <Text style={styles.itemPrice}>${parseFloat(item.price).toFixed(2)}</Text>
+          
+          {/* Product Rating */}
+          {renderRating()}
+          
+          <View style={styles.locationContainer}>
+            <MaterialIcons name="place" size={14} color="#666" />
+            <Text style={styles.locationText} numberOfLines={1}>
+              {item.location?.city || item.city || 'Unknown location'}
+            </Text>
+          </View>
+          
+          <View style={styles.distanceContainer}>
+            <MaterialIcons name="directions" size={14} color="#4CAF50" />
+            <Text style={styles.distanceText}>
+              {item.distance ? `${item.distance.toFixed(1)} km away` : 'Distance unknown'}
+            </Text>
+          </View>
+          
+          <View style={styles.sellerContainer}>
+            <Text style={styles.sellerText} numberOfLines={1}>
+              {item.seller?.name || item.sellerName || 'Unknown seller'}
+            </Text>
+            {renderSellerRating()}
+          </View>
         </View>
-      </View>
-      <MaterialIcons name="chevron-right" size={24} color="#ddd" />
-    </TouchableOpacity>
-  );
+        <MaterialIcons name="chevron-right" size={24} color="#ddd" />
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <View style={styles.container}>
@@ -271,7 +309,23 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#4CAF50',
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  ratingText: {
+    fontSize: 13,
+    color: '#666',
+    marginLeft: 4,
+  },
+  newProductText: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
+    marginBottom: 4,
   },
   locationContainer: {
     flexDirection: 'row',
@@ -297,11 +351,25 @@ const styles = StyleSheet.create({
   sellerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
   },
   sellerText: {
     fontSize: 12,
     color: '#888',
-    marginLeft: 4,
+  },
+  sellerRatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  sellerRatingText: {
+    fontSize: 12,
+    color: '#888',
+    marginLeft: 2,
+  },
+  newSellerText: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
   },
   separator: {
     height: 1,

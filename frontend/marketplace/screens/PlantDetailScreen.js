@@ -1,6 +1,7 @@
+// screens/PlantDetailScreen.js
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator, Alert,
+  View, Text, Image, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator,
   Dimensions, Share, Platform, SafeAreaView, Modal, Linking,
 } from 'react-native';
 import { MaterialIcons, FontAwesome, Ionicons } from '@expo/vector-icons';
@@ -11,6 +12,7 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import { getSpecific, wishProduct } from '../services/marketplaceApi';
 import PlantLocationMap from '../components/PlantLocationMap';
 import ReviewForm from '../components/ReviewForm';
+import ToastMessage from '../components/ToastMessage'; // Import the ToastMessage component
 
 const { width } = Dimensions.get('window');
 
@@ -25,6 +27,13 @@ const PlantDetailScreen = () => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mapModalVisible, setMapModalVisible] = useState(false);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  
+  // Toast message state
+  const [toast, setToast] = useState({
+    visible: false,
+    message: '',
+    type: 'info'
+  });
 
   useEffect(() => {
     loadPlantDetail();
@@ -48,32 +57,47 @@ const PlantDetailScreen = () => {
     }
   };
 
-  // screens/PlantDetailScreen.js - getSellerAvatarUrl function fix
+  // Show toast message
+  const showToast = (message, type = 'info') => {
+    setToast({
+      visible: true,
+      message,
+      type
+    });
+  };
+  
+  // Hide toast message
+  const hideToast = () => {
+    setToast(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
 
-const getSellerAvatarUrl = () => {
-  // Try to get a valid avatar URL from the seller object
-  if (plant.seller && plant.seller.avatar && typeof plant.seller.avatar === 'string' && plant.seller.avatar.startsWith('http')) {
-    return plant.seller.avatar;
-  }
-  
-  // Fall back to other possible avatar locations
-  if (plant.avatar && typeof plant.avatar === 'string' && plant.avatar.startsWith('http')) {
-    return plant.avatar;
-  }
-  
-  if (plant.sellerAvatar && typeof plant.sellerAvatar === 'string' && plant.sellerAvatar.startsWith('http')) {
-    return plant.sellerAvatar;
-  }
-  
-  // Get seller name for placeholder
-  const sellerName = 
-    (plant.seller && plant.seller.name) ? 
-    plant.seller.name : 
-    (plant.sellerName || 'Unknown');
-  
-  // If no avatar, use a name-based placeholder
-  return `https://ui-avatars.com/api/?name=${encodeURIComponent(sellerName.substring(0, 1))}&background=4CAF50&color=fff&size=256`;
-};
+  const getSellerAvatarUrl = () => {
+    // Try to get a valid avatar URL from the seller object
+    if (plant.seller && plant.seller.avatar && typeof plant.seller.avatar === 'string' && plant.seller.avatar.startsWith('http')) {
+      return plant.seller.avatar;
+    }
+    
+    // Fall back to other possible avatar locations
+    if (plant.avatar && typeof plant.avatar === 'string' && plant.avatar.startsWith('http')) {
+      return plant.avatar;
+    }
+    
+    if (plant.sellerAvatar && typeof plant.sellerAvatar === 'string' && plant.sellerAvatar.startsWith('http')) {
+      return plant.sellerAvatar;
+    }
+    
+    // Get seller name for placeholder
+    const sellerName = 
+      (plant.seller && plant.seller.name) ? 
+      plant.seller.name : 
+      (plant.sellerName || 'Unknown');
+    
+    // If no avatar, use a name-based placeholder
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(sellerName.substring(0, 1))}&background=4CAF50&color=fff&size=256`;
+  };
 
   const toggleFavorite = async () => {
     try {
@@ -81,19 +105,26 @@ const getSellerAvatarUrl = () => {
       const result = await wishProduct(plantId);
       if (result && 'isWished' in result) {
         setIsFavorite(result.isWished);
+        // Show toast message for favorite action
+        showToast(
+          result.isWished ? "Added to your favorites" : "Removed from favorites", 
+          "success"
+        );
       }
       AsyncStorage.setItem('FAVORITES_UPDATED', Date.now().toString())
         .catch(err => console.warn('Failed to set favorites update flag:', err));
     } catch (err) {
       setIsFavorite(isFavorite);
-      Alert.alert('Error', 'Failed to update favorites. Please try again.');
+      // Show error toast
+      showToast('Failed to update favorites. Please try again.', 'error');
       console.error('Error toggling favorite:', err);
     }
   };
 
   const handleContactSeller = () => {
     if (!plant.sellerId && !plant.seller?._id) {
-      Alert.alert('Error', 'Seller information is not available.');
+      // Show error toast
+      showToast('Seller information is not available.', 'error');
       return;
     }
     
@@ -117,9 +148,12 @@ const getSellerAvatarUrl = () => {
 
       // Next try direct navigation
       navigation.navigate('Messages', params);
+      // Show success toast
+      showToast("Starting conversation with seller", "info");
     } catch (err) {
       console.error('Error navigating to messages:', err);
-      Alert.alert('Navigation Error', 'Could not open messages. Please try again.');
+      // Show error toast
+      showToast('Could not open messages. Please try again.', 'error');
     }
   };
 
@@ -138,7 +172,8 @@ const getSellerAvatarUrl = () => {
     try {
       if (!plant.location || typeof plant.location !== 'object' || 
           !plant.location.latitude || !plant.location.longitude) {
-        Alert.alert('Error', 'Location coordinates not available');
+        // Show error toast
+        showToast('Location coordinates not available', 'error');
         return;
       }
       const { latitude, longitude } = plant.location;
@@ -157,10 +192,13 @@ const getSellerAvatarUrl = () => {
             `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`
           );
         }
+        // Show success toast
+        showToast("Opening map directions", "info");
       });
     } catch (error) {
       console.error('Error opening directions:', error);
-      Alert.alert('Error', 'Could not open directions. Please try again later.');
+      // Show error toast
+      showToast('Could not open directions. Please try again later.', 'error');
     }
   };
 
@@ -208,11 +246,14 @@ const getSellerAvatarUrl = () => {
         }
       );
       if (result.action === Share.sharedAction) {
+        // Show success toast
+        showToast('Plant shared successfully', 'success');
         console.log('Plant shared successfully');
       }
     } catch (error) {
       console.error('Error sharing plant:', error);
-      Alert.alert('Error', 'Could not share this listing');
+      // Show error toast
+      showToast('Could not share this listing', 'error');
     }
   };
 
@@ -229,11 +270,32 @@ const getSellerAvatarUrl = () => {
   };
 
   const handleReviewButtonPress = () => {
-    setShowReviewForm(true);
+    // Check if user is trying to review their own plant
+    AsyncStorage.getItem('userEmail')
+      .then(userEmail => {
+        if (userEmail === plant.sellerId || userEmail === plant.seller?._id) {
+          // Show toast message
+          showToast("You cannot review your own listing", "error");
+          return;
+        }
+        
+        // Open review form
+        setShowReviewForm(true);
+      })
+      .catch(err => {
+        console.error('Error checking user email:', err);
+        // If we can't check, show a warning but still allow review
+        showToast("User verification failed, proceeding anyway", "warning");
+        setShowReviewForm(true);
+      });
   };
 
   const handleReviewSubmitted = () => {
     setShowReviewForm(false);
+    
+    // Show success toast
+    showToast("Your review has been submitted successfully!", "success");
+    
     // Refresh the plant details to show updated reviews
     loadPlantDetail();
   };
@@ -340,6 +402,16 @@ const getSellerAvatarUrl = () => {
         onBackPress={() => navigation.goBack()}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
+      
+      {/* Toast Message Component */}
+      <ToastMessage
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={3000}
+      />
+      
       <ScrollView>
         <View style={styles.imageContainer}>
           <ScrollView
@@ -456,14 +528,26 @@ const getSellerAvatarUrl = () => {
               />
               <Text style={styles.actionButtonText}>{isFavorite ? 'Favorited' : 'Favorite'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.contactButton} onPress={handleContactSeller}>
+            <TouchableOpacity 
+              style={styles.contactButton} 
+              onPress={handleContactSeller}
+              accessible={true}
+              accessibilityLabel="Message Seller"
+              accessibilityRole="button"
+            >
               <MaterialIcons name="chat" size={24} color="#fff" />
               <Text style={styles.contactButtonText}>Message Seller</Text>
             </TouchableOpacity>
           </View>
           
           {/* Review button section */}
-          <TouchableOpacity style={styles.reviewButton} onPress={handleReviewButtonPress}>
+          <TouchableOpacity 
+            style={styles.reviewButton} 
+            onPress={handleReviewButtonPress}
+            accessible={true}
+            accessibilityLabel="Write a Review"
+            accessibilityRole="button"
+          >
             <MaterialIcons name="rate-review" size={24} color="#4CAF50" />
             <Text style={styles.reviewButtonText}>Write a Review</Text>
           </TouchableOpacity>
@@ -492,49 +576,247 @@ const getSellerAvatarUrl = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#4CAF50' },
-  errorText: { marginTop: 10, fontSize: 16, color: '#f44336', textAlign: 'center', marginBottom: 10 },
-  retryButton: { marginTop: 10, padding: 10, backgroundColor: '#4CAF50', borderRadius: 5 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  imageContainer: { position: 'relative', height: 250 },
-  image: { width, height: 250, backgroundColor: '#f0f0f0' },
-  section: { marginVertical: 16 },
-  pagination: { position: 'absolute', bottom: 10, flexDirection: 'row', alignSelf: 'center' },
-  paginationDot: { width: 8, height: 8, margin: 4, backgroundColor: 'rgba(255,255,255,0.6)', borderRadius: 4 },
-  paginationDotActive: { backgroundColor: '#4CAF50' },
-  favoriteButton: { position: 'absolute', top: 20, right: 20, backgroundColor: 'rgba(0, 0, 0, 0.5)', borderRadius: 50, padding: 10 },
-  shareButton: { position: 'absolute', top: 20, right: 70, backgroundColor: 'rgba(0, 0, 0, 0.5)', borderRadius: 50, padding: 10 },
-  infoContainer: { padding: 16 },
-  name: { fontSize: 24, fontWeight: 'bold', color: '#333' },
-  category: { fontSize: 16, color: '#777' },
-  price: { fontSize: 20, color: '#4CAF50', marginVertical: 10, fontWeight: 'bold' },
-  statusContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  statusPill: { paddingVertical: 4, paddingHorizontal: 8, backgroundColor: '#a5d6a7', borderRadius: 10 },
-  statusText: { fontSize: 14, color: '#fff', fontWeight: '500' },
-  listedDate: { fontSize: 14, color: '#999' },
-  locationContainer: { marginBottom: 16, padding: 12, backgroundColor: '#f9f9f9', borderRadius: 8 },
-  locationHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 4 },
-  locationTitle: { fontSize: 16, marginLeft: 8, fontWeight: '600', color: '#333' },
-  locationText: { fontSize: 14, color: '#555', marginLeft: 32 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginVertical: 12, color: '#333' },
-  description: { fontSize: 14, color: '#333', lineHeight: 20, marginBottom: 16 },
-  careInfoContainer: { flexDirection: 'row', justifyContent: 'space-between', flexWrap: 'wrap', marginBottom: 16 },
-  careItem: { alignItems: 'center', width: '30%', backgroundColor: '#f9f9f9', borderRadius: 8, padding: 12 },
-  careLabel: { fontSize: 14, marginTop: 8, color: '#333', fontWeight: '600' },
-  careValue: { fontSize: 12, color: '#777', marginTop: 4, textAlign: 'center' },
-  sellerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 12, padding: 16, backgroundColor: '#f9f9f9', borderRadius: 10 },
-  sellerAvatar: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#e0e0e0' },
-  sellerInfo: { marginLeft: 10, flex: 1 },
-  sellerName: { fontSize: 16, fontWeight: 'bold' },
-  sellerRatingContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  sellerRating: { fontSize: 14, marginLeft: 5, color: '#666' },
-  actionsContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
-  favoriteActionButton: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderWidth: 1, borderColor: '#4CAF50', borderRadius: 8 },
-  actionButtonText: { fontSize: 16, color: '#4CAF50', marginLeft: 8, fontWeight: '600' },
-  contactButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4CAF50', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 16 },
-  contactButtonText: { color: '#fff', marginLeft: 8, fontWeight: '600', fontSize: 16 },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#fff' 
+  },
+  centerContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 20 
+  },
+  loadingText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: '#4CAF50' 
+  },
+  errorText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: '#f44336', 
+    textAlign: 'center', 
+    marginBottom: 10 
+  },
+  retryButton: { 
+    marginTop: 10, 
+    padding: 10, 
+    backgroundColor: '#4CAF50', 
+    borderRadius: 5 
+  },
+  retryText: { 
+    color: '#fff', 
+    fontWeight: '600' 
+  },
+  imageContainer: { 
+    position: 'relative', 
+    height: 250 
+  },
+  image: { 
+    width, 
+    height: 250, 
+    backgroundColor: '#f0f0f0' 
+  },
+  section: { 
+    marginVertical: 16 
+  },
+  pagination: { 
+    position: 'absolute', 
+    bottom: 10, 
+    flexDirection: 'row', 
+    alignSelf: 'center' 
+  },
+  paginationDot: { 
+    width: 8, 
+    height: 8, 
+    margin: 4, 
+    backgroundColor: 'rgba(255,255,255,0.6)', 
+    borderRadius: 4 
+  },
+  paginationDotActive: { 
+    backgroundColor: '#4CAF50' 
+  },
+  favoriteButton: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 20, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    borderRadius: 50, 
+    padding: 10 
+  },
+  shareButton: { 
+    position: 'absolute', 
+    top: 20, 
+    right: 70, 
+    backgroundColor: 'rgba(0, 0, 0, 0.5)', 
+    borderRadius: 50, 
+    padding: 10 
+  },
+  infoContainer: { 
+    padding: 16 
+  },
+  name: { 
+    fontSize: 24, 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  category: { 
+    fontSize: 16, 
+    color: '#777' 
+  },
+  price: { 
+    fontSize: 20, 
+    color: '#4CAF50', 
+    marginVertical: 10, 
+    fontWeight: 'bold' 
+  },
+  statusContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    marginBottom: 16 
+  },
+  statusPill: { 
+    paddingVertical: 4, 
+    paddingHorizontal: 8, 
+    backgroundColor: '#a5d6a7', 
+    borderRadius: 10 
+  },
+  statusText: { 
+    fontSize: 14, 
+    color: '#fff', 
+    fontWeight: '500' 
+  },
+  listedDate: { 
+    fontSize: 14, 
+    color: '#999' 
+  },
+  locationContainer: { 
+    marginBottom: 16, 
+    padding: 12, 
+    backgroundColor: '#f9f9f9', 
+    borderRadius: 8 
+  },
+  locationHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginBottom: 4 
+  },
+  locationTitle: { 
+    fontSize: 16, 
+    marginLeft: 8, 
+    fontWeight: '600', 
+    color: '#333' 
+  },
+  locationText: { 
+    fontSize: 14, 
+    color: '#555', 
+    marginLeft: 32 
+  },
+  sectionTitle: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    marginVertical: 12, 
+    color: '#333' 
+  },
+  description: { 
+    fontSize: 14, 
+    color: '#333', 
+    lineHeight: 20, 
+    marginBottom: 16 
+  },
+  careInfoContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    flexWrap: 'wrap', 
+    marginBottom: 16 
+  },
+  careItem: { 
+    alignItems: 'center', 
+    width: '30%', 
+    backgroundColor: '#f9f9f9', 
+    borderRadius: 8, 
+    padding: 12 
+  },
+  careLabel: { 
+    fontSize: 14, 
+    marginTop: 8, 
+    color: '#333', 
+    fontWeight: '600' 
+  },
+  careValue: { 
+    fontSize: 12, 
+    color: '#777', 
+    marginTop: 4, 
+    textAlign: 'center' 
+  },
+  sellerContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginVertical: 12, 
+    padding: 16, 
+    backgroundColor: '#f9f9f9', 
+    borderRadius: 10 
+  },
+  sellerAvatar: { 
+    width: 50, 
+    height: 50, 
+    borderRadius: 25, 
+    backgroundColor: '#e0e0e0' 
+  },
+  sellerInfo: { 
+    marginLeft: 10, 
+    flex: 1 
+  },
+  sellerName: { 
+    fontSize: 16, 
+    fontWeight: 'bold' 
+  },
+  sellerRatingContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginTop: 4 
+  },
+  sellerRating: { 
+    fontSize: 14, 
+    marginLeft: 5, 
+    color: '#666' 
+  },
+  actionsContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    marginTop: 20, 
+    marginBottom: 16 
+  },
+  favoriteActionButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingVertical: 12, 
+    paddingHorizontal: 16, 
+    borderWidth: 1, 
+    borderColor: '#4CAF50', 
+    borderRadius: 8 
+  },
+  actionButtonText: { 
+    fontSize: 16, 
+    color: '#4CAF50', 
+    marginLeft: 8, 
+    fontWeight: '600' 
+  },
+  contactButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#4CAF50', 
+    borderRadius: 8, 
+    paddingVertical: 12, 
+    paddingHorizontal: 16 
+  },
+  contactButtonText: { 
+    color: '#fff', 
+    marginLeft: 8, 
+    fontWeight: '600', 
+    fontSize: 16 
+  },
   reviewButton: { 
     flexDirection: 'row', 
     alignItems: 'center',
@@ -553,13 +835,44 @@ const styles = StyleSheet.create({
     marginLeft: 8, 
     fontWeight: '600' 
   },
-  safetyContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f9f0', padding: 12, borderRadius: 8, marginBottom: 40 },
-  safetyText: { fontSize: 14, marginLeft: 8, color: '#555', flex: 1 },
-  safetyBold: { fontWeight: 'bold', color: '#333' },
-  modalContainer: { flex: 1, backgroundColor: '#000' },
-  modalHeader: { height: 60, backgroundColor: '#4CAF50', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16 },
-  closeButton: { padding: 8 },
-  modalTitle: { color: '#fff', fontSize: 18, fontWeight: 'bold', flex: 1, marginLeft: 16 },
+  safetyContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#f0f9f0', 
+    padding: 12, 
+    borderRadius: 8, 
+    marginBottom: 40 
+  },
+  safetyText: { 
+    fontSize: 14, 
+    marginLeft: 8, 
+    color: '#555', 
+    flex: 1 
+  },
+  safetyBold: { 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  modalContainer: { 
+    flex: 1, 
+    backgroundColor: '#000' 
+  },
+  modalHeader: { 
+    height: 60, 
+    backgroundColor: '#4CAF50', 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    paddingHorizontal: 16 
+  },
+  closeButton: { 
+    padding: 8 
+  },
+  modalTitle: { 
+    color: '#fff', 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    flex: 1, 
+    marginLeft: 16 
+  },
 });
-
 export default PlantDetailScreen;

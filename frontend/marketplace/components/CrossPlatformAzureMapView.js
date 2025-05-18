@@ -1,3 +1,4 @@
+// components/CrossPlatformAzureMapView.js
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -30,6 +31,9 @@ const CrossPlatformAzureMapView = ({
   searchRadius,
   onMapPress,
   azureMapsKey: providedKey = null, // Allow direct key prop but fall back to service
+  useCustomPin = false,
+  showMyLocation = false,
+  myLocation = null
 }) => {
   const webViewRef = useRef(null);
   const mapDivRef = useRef(null);
@@ -95,6 +99,30 @@ const CrossPlatformAzureMapView = ({
     drawRadius();
   }, [searchRadius, mapReady, initialRegion]);
 
+  // Effect to show user's current location
+  useEffect(() => {
+    if (!mapReady || !showMyLocation || !myLocation?.latitude || !myLocation?.longitude) return;
+    
+    const showUserLocation = () => {
+      const msg = { 
+        type: 'SHOW_MY_LOCATION', 
+        latitude: myLocation.latitude, 
+        longitude: myLocation.longitude
+      };
+      
+      if (Platform.OS === 'web') {
+        const iframe = document.getElementById('azureMapsIframe');
+        iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
+      } else if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
+        );
+      }
+    };
+    
+    showUserLocation();
+  }, [myLocation, showMyLocation, mapReady]);
+
   // Generate the HTML template for the map view
   const generateMapHtml = useCallback(() => {
     if (!azureMapsKey) {
@@ -136,6 +164,26 @@ const CrossPlatformAzureMapView = ({
     .pin-label{background:white;border:2px solid #4caf50;color:#333;font-weight:bold;padding:3px 8px;border-radius:12px;}
     .plant-pin{width:28px;height:36px;}
     .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;display:none;}
+    .my-location-pulse {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #4285f4;
+      border: 2px solid white;
+      box-shadow: 0 0 0 rgba(66, 133, 244, 0.4);
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse {
+      0% {
+        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4);
+      }
+      70% {
+        box-shadow: 0 0 0 10px rgba(66, 133, 244, 0);
+      }
+      100% {
+        box-shadow: 0 0 0 0 rgba(66, 133, 244, 0);
+      }
+    }
   </style>
   <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
   <script src="https://atlas.microsoft.com/sdk/javascript/service/2/atlas-service.min.js"></script>
@@ -157,6 +205,8 @@ const CrossPlatformAzureMapView = ({
     let popup = null;
     let radiusCircle = null;
     let searchCircle = null;
+    let myLocationPin = null;
+    let userLocationDataSource = null;
     
     // Custom plant pin SVG - much nicer visualization
     const plantPinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><g fill="none"><path fill="#4CAF50" d="M14 0C6.268 0 0 6.268 0 14c0 5.025 2.65 9.428 6.625 11.9L14 36l7.375-10.1C25.35 23.428 28 19.025 28 14 28 6.268 21.732 0 14 0z"/><circle cx="14" cy="14" r="8" fill="#fff"/><path fill="#4CAF50" d="M17.8 10.3c-.316.3-3.9 3.8-3.9 6.5 0 1.545 1.355 2.8 2.9 2.8.5 0 .8-.4.8-.8 0-.4-.3-.8-.8-.8-.7 0-1.3-.6-1.3-1.3 0-1.8 2.684-4.5 2.9-4.7.3-.3.3-.9 0-1.2-.3-.4-.9-.4-1.2 0-.1.1-.2.2-.4.5m-5.6-1.6c-.3-.3-.8-.3-1.1 0-.3.3-.3.8 0 1.1.1.1 2.7 2.7 2.7 5.3 0 .7-.5 1.2-1.2 1.2-.4 0-.8.3-.8.8 0 .4.3.8.8.8 1.5 0 2.8-1.3 2.8-2.8-.1-3.2-3-5.8-3.2-6.4z"/></g></svg>';
@@ -164,6 +214,11 @@ const CrossPlatformAzureMapView = ({
     // Create DOM elements for custom markers
     const plantPinImage = document.createElement('img');
     plantPinImage.src = 'data:image/svg+xml;base64,' + btoa(plantPinSvg);
+
+    // My location arrow svg
+    const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#4285f4" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="white"/></svg>';
+    const myLocationImage = document.createElement('img');
+    myLocationImage.src = 'data:image/svg+xml;base64,' + btoa(myLocationSvg);
 
     try {
       // Initialize the map
@@ -191,6 +246,13 @@ const CrossPlatformAzureMapView = ({
           updateDebug("Error adding custom plant-pin: " + err.toString());
         });
         
+        // Add my location marker image
+        map.imageSprite.add('my-location', myLocationImage).then(() => {
+          updateDebug("Added my-location icon successfully");
+        }).catch(err => {
+          updateDebug("Error adding my-location icon: " + err.toString());
+        });
+        
         // Create data sources
         src = new atlas.source.DataSource();
         clusterSrc = new atlas.source.DataSource(null, {
@@ -198,7 +260,11 @@ const CrossPlatformAzureMapView = ({
           clusterRadius: 45,
           clusterMaxZoom: 15
         });
-        map.sources.add([src, clusterSrc]);
+        
+        // Create a separate data source for user's current location
+        userLocationDataSource = new atlas.source.DataSource();
+        
+        map.sources.add([src, clusterSrc, userLocationDataSource]);
 
         // Add a layer for individual markers
         map.layers.add(new atlas.layer.SymbolLayer(src, null, {
@@ -229,6 +295,16 @@ const CrossPlatformAzureMapView = ({
             font: ['SegoeUi-Bold']
           },
           filter: ['has', 'point_count']
+        }));
+
+        // Add user location symbol layer
+        map.layers.add(new atlas.layer.SymbolLayer(userLocationDataSource, null, {
+          iconOptions: {
+            image: 'my-location',
+            anchor: 'center',
+            allowOverlap: true,
+            size: 1.0
+          }
         }));
 
         // Create a popup with enhanced styling
@@ -362,6 +438,11 @@ const CrossPlatformAzureMapView = ({
             map.imageSprite.add('plant-pin', plantPinImage).then(() => {
               updateDebug("Added missing plant-pin on demand");
             });
+          } else if (e.id === 'my-location') {
+            updateDebug("Handling missing my-location image");
+            map.imageSprite.add('my-location', myLocationImage).then(() => {
+              updateDebug("Added missing my-location on demand");
+            });
           }
         });
       });
@@ -413,7 +494,10 @@ const CrossPlatformAzureMapView = ({
           title: p.title || p.name || 'Plant',
           price: p.price || 0,
           location: p.city || p.location?.city || '',
-          distance: p.distance || 0
+          distance: p.distance || 0,
+          rating: p.rating || 0,
+          sellerName: p.seller?.name || p.sellerName || 'Unknown Seller',
+          sellerRating: p.seller?.rating || 0
         };
         
         arr.push(new atlas.data.Feature(
@@ -491,6 +575,35 @@ const CrossPlatformAzureMapView = ({
       });
     }
 
+    // Function to show user's current location
+    function showUserLocation(latitude, longitude) {
+      if (!userLocationDataSource) {
+        updateDebug("Cannot show user location: data source not initialized");
+        return;
+      }
+      
+      userLocationDataSource.clear();
+      
+      if (latitude === undefined || longitude === undefined) {
+        updateDebug("Invalid user location coordinates");
+        return;
+      }
+      
+      updateDebug("Showing user location at: " + latitude + ", " + longitude);
+      
+      // Add a point for the user location with custom properties
+      userLocationDataSource.add(new atlas.data.Feature(
+        new atlas.data.Point([longitude, latitude]),
+        { type: 'userLocation' }
+      ));
+      
+      // Center the map on the user's location
+      map.setCamera({
+        center: [longitude, latitude],
+        zoom: 15
+      });
+    }
+
     // Messaging bridge
     function sendMsg(obj) {
       const str = JSON.stringify(obj);
@@ -542,6 +655,10 @@ const CrossPlatformAzureMapView = ({
         
         if (msg.type === 'CLEAR_RADIUS') {
           radiusCircle.clear();
+        }
+        
+        if (msg.type === 'SHOW_MY_LOCATION') {
+          showUserLocation(msg.latitude, msg.longitude);
         }
         
       } catch (e) {

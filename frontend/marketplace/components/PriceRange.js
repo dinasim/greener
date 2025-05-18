@@ -11,8 +11,8 @@ const PriceRange = ({
   hideTitle = false,
   max = 1000
 }) => {
-  const [minValue, setMinValue] = useState(initialMin !== undefined ? initialMin : 0);
-  const [maxValue, setMaxValue] = useState(initialMax !== undefined ? initialMax : max);
+  const [minValue, setMinValue] = useState(initialMin !== undefined && !isNaN(initialMin) ? Number(initialMin) : 0);
+  const [maxValue, setMaxValue] = useState(initialMax !== undefined && !isNaN(initialMax) ? Number(initialMax) : max);
   
   // Update local state when props change - with safety checks
   useEffect(() => {
@@ -72,10 +72,18 @@ const PriceRange = ({
       return;
     }
     
-    const [min, max] = values.map(Math.round);
+    const [min, max] = values;
     
-    setMinValue(min);
-    setMaxValue(max);
+    // Ensure values are valid numbers
+    if (typeof min !== 'number' || typeof max !== 'number') {
+      return;
+    }
+    
+    const roundedMin = Math.round(min);
+    const roundedMax = Math.round(max);
+    
+    setMinValue(roundedMin);
+    setMaxValue(roundedMax);
   };
   
   const handleSliderComplete = () => {
@@ -87,21 +95,6 @@ const PriceRange = ({
   return (
     <View style={[styles.container, style]}>
       {!hideTitle && <Text style={styles.title}>Price Range</Text>}
-      
-      <View style={styles.sliderContainer}>
-        <Slider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={max}
-          step={1}
-          minimumTrackTintColor="#4CAF50"
-          maximumTrackTintColor="#E0E0E0"
-          thumbTintColor="#4CAF50"
-          value={[minValue, maxValue]}
-          onValueChange={handleSliderChange}
-          onSlidingComplete={handleSliderComplete}
-        />
-      </View>
       
       <View style={styles.inputsContainer}>
         <View style={styles.inputWrapper}>
@@ -134,6 +127,33 @@ const PriceRange = ({
           </View>
         </View>
       </View>
+      
+      <View style={styles.sliderContainer}>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={max}
+          step={10}
+          minimumTrackTintColor="#4CAF50"
+          maximumTrackTintColor="#E0E0E0"
+          thumbTintColor="#4CAF50"
+          value={minValue}
+          onValueChange={(val) => handleSliderChange([val, maxValue])}
+          onSlidingComplete={handleSliderComplete}
+        />
+        <Slider
+          style={[styles.slider, styles.secondSlider]}
+          minimumValue={0}
+          maximumValue={max}
+          step={10}
+          minimumTrackTintColor="#E0E0E0"
+          maximumTrackTintColor="#E0E0E0"
+          thumbTintColor="#4CAF50"
+          value={maxValue}
+          onValueChange={(val) => handleSliderChange([minValue, val])}
+          onSlidingComplete={handleSliderComplete}
+        />
+      </View>
     </View>
   );
 };
@@ -151,11 +171,17 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   sliderContainer: {
-    marginBottom: 20,
+    marginTop: 20,
+    height: 40,
+    position: 'relative', 
   },
   slider: {
     width: '100%',
     height: 40,
+    position: 'absolute',
+  },
+  secondSlider: {
+    zIndex: 1,
   },
   inputsContainer: {
     flexDirection: 'row',

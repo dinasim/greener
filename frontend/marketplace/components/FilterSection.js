@@ -31,7 +31,10 @@ const FilterSection = ({
   // State
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [modalAnimation] = useState(new Animated.Value(0));
-  const [localPriceRange, setLocalPriceRange] = useState(priceRange);
+  const [localPriceRange, setLocalPriceRange] = useState({
+    min: typeof priceRange.min === 'number' ? priceRange.min : 0,
+    max: typeof priceRange.max === 'number' ? priceRange.max : 1000
+  });
   
   // Ensure price range values are valid numbers
   const safeMinPrice = priceRange && typeof priceRange.min === 'number' ? priceRange.min : 0;
@@ -40,17 +43,19 @@ const FilterSection = ({
   
   // Update local price range when props change
   useEffect(() => {
-    setLocalPriceRange(safePriceRange);
-  }, [priceRange]);
+    setLocalPriceRange({
+      min: safePriceRange.min,
+      max: safePriceRange.max
+    });
+  }, [safePriceRange.min, safePriceRange.max]);
   
   // Handle price range change
   const handlePriceRangeChange = (range) => {
     if (Array.isArray(range) && range.length === 2) {
-      const updatedRange = { 
+      setLocalPriceRange({ 
         min: typeof range[0] === 'number' ? range[0] : 0, 
         max: typeof range[1] === 'number' ? range[1] : 1000 
-      };
-      setLocalPriceRange(updatedRange);
+      });
     }
   };
 
@@ -157,7 +162,7 @@ const FilterSection = ({
               onPress={onResetFilters}
             >
               <Text style={styles.clearAllText}>Clear All</Text>
-            </TouchableOpacity>
+              </TouchableOpacity>
           )}
         </ScrollView>
       )}
@@ -194,70 +199,70 @@ const FilterSection = ({
       </View>
       
       {/* Filter Modal */}
-      <Modal
-        visible={filterModalVisible}
-        transparent={true}
-        animationType="none"
-        onRequestClose={hideFilterModal}
-      >
-        <Animated.View 
-          style={[styles.modalOverlay, backdropAnimation]}
+      {filterModalVisible && (
+        <Modal
+          visible={filterModalVisible}
+          transparent={true}
+          animationType="none"
+          onRequestClose={hideFilterModal}
         >
-          <Pressable style={styles.modalBackdrop} onPress={hideFilterModal}>
-            <Animated.View 
-              style={[styles.modalContent, slideAnimation]}
-              onStartShouldSetResponder={() => true}
-              onResponderRelease={() => {}}
-            >
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Filters</Text>
-                <TouchableOpacity 
-                  onPress={hideFilterModal}
-                  style={styles.closeButton}
-                >
-                  <MaterialIcons name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              </View>
-              
-              <ScrollView>
-                {/* Price Range in Modal */}
-                <View style={styles.modalSection}>
-                  <Text style={styles.sectionTitle}>Price Range</Text>
-                  <PriceRange
-                    onPriceChange={handlePriceRangeChange}
-                    initialMin={localPriceRange.min}
-                    initialMax={localPriceRange.max}
-                    style={styles.priceRange}
-                    hideTitle={true} // Hide the component title since we have a section title
-                    max={1000} // Set maximum price limit
-                  />
+          <Animated.View 
+            style={[styles.modalOverlay, backdropAnimation]}
+          >
+            <Pressable style={styles.modalBackdrop} onPress={hideFilterModal}>
+              <Animated.View 
+                style={[styles.modalContent, slideAnimation]}
+              >
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Filters</Text>
+                  <TouchableOpacity 
+                    onPress={hideFilterModal}
+                    style={styles.closeButton}
+                  >
+                    <MaterialIcons name="close" size={24} color="#333" />
+                  </TouchableOpacity>
                 </View>
                 
-                {/* Action Buttons */}
-                <View style={styles.modalActions}>
-                  <TouchableOpacity 
-                    style={styles.resetButton}
-                    onPress={() => {
-                      setLocalPriceRange({ min: 0, max: 1000 });
-                      if (onResetFilters) onResetFilters();
-                      hideFilterModal();
-                    }}
-                  >
-                    <Text style={styles.resetButtonText}>Reset All</Text>
-                  </TouchableOpacity>
+                <ScrollView>
+                  {/* Price Range in Modal */}
+                  <View style={styles.modalSection}>
+                    <Text style={styles.sectionTitle}>Price Range</Text>
+                    <PriceRange
+                      onPriceChange={handlePriceRangeChange}
+                      initialMin={localPriceRange.min}
+                      initialMax={localPriceRange.max}
+                      style={styles.priceRange}
+                      hideTitle={true} // Hide the component title since we have a section title
+                      max={1000} // Set maximum price limit
+                    />
+                  </View>
                   
-                  <TouchableOpacity 
-                    style={styles.applyButton}
-                    onPress={applyFilters}
-                  >
-                    <Text style={styles.applyButtonText}>Apply Filters</Text>
-                  </TouchableOpacity>
-                </View>
-              </ScrollView>
-            </Animated.View>
-          </Pressable>
-        </Animated.View>
-      </Modal>
+                  {/* Action Buttons */}
+                  <View style={styles.modalActions}>
+                    <TouchableOpacity 
+                      style={styles.resetButton}
+                      onPress={() => {
+                        setLocalPriceRange({ min: 0, max: 1000 });
+                        if (onResetFilters) onResetFilters();
+                        hideFilterModal();
+                      }}
+                    >
+                      <Text style={styles.resetButtonText}>Reset All</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity 
+                      style={styles.applyButton}
+                      onPress={applyFilters}
+                    >
+                      <Text style={styles.applyButtonText}>Apply Filters</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+              </Animated.View>
+            </Pressable>
+          </Animated.View>
+        </Modal>
+      )}
     </View>
   );
 };
