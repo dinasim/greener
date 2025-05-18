@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
   Animated,
+  Platform,
 } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -30,16 +31,39 @@ export default function SignInGoogleScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current; 
-  console.log('REDIRECT URI:', AuthSession.makeRedirectUri({ useProxy: true }));
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    expoClientId: Constants.expoConfig.extra.expoClientId,
-    webClientId: Constants.expoConfig.extra.expoClientId,
-    iosClientId: Constants.expoConfig.extra.iosClientId,
-    androidClientId: Constants.expoConfig.extra.androidClientId,
-    redirectUri: AuthSession.makeRedirectUri({ useProxy: true }),
-    scopes: ['openid', 'profile', 'email'],
-  },    { useProxy: true }
-);
+
+  // Pick correct client IDs from app.json/extraconfig
+  const webClientId = Constants.expoConfig.extra.expoClientId;
+  const androidClientId = Constants.expoConfig.extra.androidClientId;
+  const iosClientId = Constants.expoConfig.extra.iosClientId;
+
+  // Figure out environment and set redirect URI and client ID
+  const isWeb = Platform.OS === 'web';
+  const isStandalone = Constants.appOwnership === 'standalone';
+
+  const redirectUri = AuthSession.makeRedirectUri({
+    // useProxy: true for Expo Go/dev/web, false for standalone build
+    useProxy: !isStandalone,
+    native: 'greener://',
+  });
+
+  const clientId = isWeb
+    ? webClientId
+    : Platform.OS === 'android'
+      ? androidClientId
+      : iosClientId;
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    {
+      clientId,
+      webClientId,
+      iosClientId,
+      androidClientId,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+    },
+    { useProxy: !isStandalone }
+  );
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -120,7 +144,6 @@ export default function SignInGoogleScreen({ navigation }) {
       });
 
       if (!res.ok) throw new Error('Failed to fetch user info');
-
       return await res.json();
     } catch (error) {
       console.error(error);

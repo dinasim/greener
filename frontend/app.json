@@ -36,6 +36,15 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.yourname.greener",
+      "intentFilters": [
+    {
+      "action": "VIEW",
+      "data": {
+        "scheme": "greener",
+        "host": "",
+        "pathPrefix": "/"
+      },
+      "category": ["BROWSABLE", "DEFAULT"]}],
       "permissions": [
         "RECORD_AUDIO"
       ]
