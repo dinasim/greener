@@ -15,9 +15,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { submitReview } from '../services/marketplaceApi';
-import { colors, spacing, typography, borderRadius } from '../services/theme';
 import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
-
 
 /**
  * Enhanced ReviewForm component with better error handling and user feedback
