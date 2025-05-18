@@ -48,11 +48,32 @@ const PlantDetailScreen = () => {
     }
   };
 
-  const getSellerAvatarUrl = () => {
-    const avatarUrl = plant.seller?.avatar || plant.avatar || plant.sellerAvatar ||
-      `https://ui-avatars.com/api/?name=${encodeURIComponent(plant.seller?.name?.[0] || 'S')}&background=4CAF50&color=fff`;
-    return avatarUrl;
-  };
+  // screens/PlantDetailScreen.js - getSellerAvatarUrl function fix
+
+const getSellerAvatarUrl = () => {
+  // Try to get a valid avatar URL from the seller object
+  if (plant.seller && plant.seller.avatar && typeof plant.seller.avatar === 'string' && plant.seller.avatar.startsWith('http')) {
+    return plant.seller.avatar;
+  }
+  
+  // Fall back to other possible avatar locations
+  if (plant.avatar && typeof plant.avatar === 'string' && plant.avatar.startsWith('http')) {
+    return plant.avatar;
+  }
+  
+  if (plant.sellerAvatar && typeof plant.sellerAvatar === 'string' && plant.sellerAvatar.startsWith('http')) {
+    return plant.sellerAvatar;
+  }
+  
+  // Get seller name for placeholder
+  const sellerName = 
+    (plant.seller && plant.seller.name) ? 
+    plant.seller.name : 
+    (plant.sellerName || 'Unknown');
+  
+  // If no avatar, use a name-based placeholder
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(sellerName.substring(0, 1))}&background=4CAF50&color=fff&size=256`;
+};
 
   const toggleFavorite = async () => {
     try {

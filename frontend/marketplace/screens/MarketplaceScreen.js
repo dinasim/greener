@@ -200,6 +200,48 @@ const MarketplaceScreen = ({ navigation, route }) => {
   useFocusEffect(
     useCallback(() => {
       loadPlants(1, true);
+      
+      // Check if we should refresh additional data
+      const checkUpdates = async () => {
+        try {
+          // Check various update flags
+          const wishlistUpdated = await AsyncStorage.getItem('WISHLIST_UPDATED');
+          const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED');
+          const profileUpdated = await AsyncStorage.getItem('PROFILE_UPDATED');
+          const reviewUpdated = await AsyncStorage.getItem('REVIEW_UPDATED');
+          const productUpdated = await AsyncStorage.getItem('PRODUCT_UPDATED');
+          
+          const needsRefresh = wishlistUpdated || favoritesUpdated || 
+                               profileUpdated || reviewUpdated || 
+                               productUpdated || route.params?.refresh;
+          
+          if (needsRefresh) {
+            // Clear all update flags
+            await Promise.all([
+              AsyncStorage.removeItem('WISHLIST_UPDATED'),
+              AsyncStorage.removeItem('FAVORITES_UPDATED'),
+              AsyncStorage.removeItem('PROFILE_UPDATED'),
+              AsyncStorage.removeItem('REVIEW_UPDATED'),
+              AsyncStorage.removeItem('PRODUCT_UPDATED')
+            ]);
+            
+            // Reload plants
+            loadPlants(1, true);
+            setLastRefreshTime(Date.now());
+            
+            // Clear refresh param if present
+            if (route.params?.refresh) {
+              navigation.setParams({ refresh: undefined });
+            }
+          }
+        } catch (error) {
+          console.error('[MarketplaceScreen] Error checking for updates:', error);
+        }
+      };
+      
+      checkUpdates();
+      
+      // Get location if available
       (async () => {
         try {
           const cachedLocation = await AsyncStorage.getItem('@UserLocation');
@@ -210,32 +252,14 @@ const MarketplaceScreen = ({ navigation, route }) => {
           console.warn('Error loading cached location:', e);
         }
       })();
-      const checkUpdates = async () => {
-        try {
-          const updateTypes = Object.values(UPDATE_TYPES);
-          let needsRefresh = false;
-          for (const updateType of updateTypes) {
-            const hasUpdate = await checkForUpdate(updateType, lastRefreshTime);
-            if (hasUpdate) {
-              needsRefresh = true;
-              await clearUpdate(updateType);
-            }
-          }
-          if (needsRefresh || route.params?.refresh) {
-            loadPlants(1, true);
-            setLastRefreshTime(Date.now());
-            if (route.params?.refresh) {
-              navigation.setParams({ refresh: undefined });
-            }
-          }
-        } catch (error) {
-          console.error('Error checking for updates:', error);
-        }
+      
+      // Return cleanup function
+      return () => {
+        // Any cleanup needed
       };
-      checkUpdates();
-    }, [lastRefreshTime, route.params?.refresh, navigation])
+    }, [navigation, route.params?.refresh])
   );
-
+  
   useEffect(() => {
     applyFilters();
   }, [searchQuery, selectedCategory, priceRange, plants, sortOption]);

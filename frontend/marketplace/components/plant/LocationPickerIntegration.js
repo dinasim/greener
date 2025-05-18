@@ -1,4 +1,5 @@
-// components/plant/LocationPickerIntegration.js
+// components/plant/LocationPickerIntegration.js - Enhanced GPS functionality
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -25,6 +26,7 @@ import { reverseGeocode } from '../../services/azureMapsService';
 const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [locationData, setLocationData] = useState(value || {});
+  const [locationFetchError, setLocationFetchError] = useState(null);
   
   // Update internal state when value changes
   useEffect(() => {
@@ -35,6 +37,7 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
   
   // Handle location confirmation from LocationPicker
   const handleLocationChange = (location) => {
+    console.log("Location changed:", location);
     setLocationData(location);
     onChange(location);
   };
@@ -43,6 +46,7 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
   const useCurrentLocation = async () => {
     try {
       setIsLoadingLocation(true);
+      setLocationFetchError(null);
       
       // Request location permission
       const { status } = await Location.requestForegroundPermissionsAsync();
@@ -57,17 +61,19 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
         return;
       }
       
-      // Get current position
+      // Get current position with higher accuracy
       const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
+        accuracy: Location.Accuracy.High,
         timeout: 15000
       });
       
       const { latitude, longitude } = position.coords;
+      console.log("GPS location obtained:", latitude, longitude);
       
       try {
         // Use Azure Maps reverse geocode to get address details
         const locationInfo = await reverseGeocode(latitude, longitude);
+        console.log("Reverse geocode result:", locationInfo);
         
         if (locationInfo) {
           // Create complete location object with all required fields
@@ -95,6 +101,7 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
         }
       } catch (apiError) {
         console.warn('Reverse geocoding failed:', apiError);
+        setLocationFetchError('Could not determine your address. Please enter it manually.');
         
         // Fallback to Expo's geocoder
         try {
@@ -118,8 +125,10 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
             };
             
             if (isIsrael) {
+              console.log("Setting location from Expo geocoder:", location);
               setLocationData(location);
               onChange(location);
+              setLocationFetchError(null);
             } else {
               Alert.alert(
                 'Location Notice', 
@@ -130,15 +139,12 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
           }
         } catch (error) {
           console.error('Expo geocoding error:', error);
-          Alert.alert(
-            'Location Error', 
-            'Could not determine your address. Please enter it manually.', 
-            [{ text: 'OK' }]
-          );
+          setLocationFetchError('Could not determine your address. Please enter it manually.');
         }
       }
     } catch (error) {
       console.error('Error getting location:', error);
+      setLocationFetchError('Could not get your current location. Please try again later.');
       Alert.alert(
         'Location Error', 
         'Could not get your current location. Please try again later.', 
@@ -173,6 +179,10 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
         
         <Text style={styles.locationNoteText}>Israel locations only</Text>
       </View>
+      
+      {locationFetchError && (
+        <Text style={styles.errorText}>{locationFetchError}</Text>
+      )}
       
       <LocationPicker
         value={locationData}
@@ -247,7 +257,7 @@ const styles = StyleSheet.create({
     color: '#D32F2F',
     fontSize: 13,
     marginTop: 4,
-    marginBottom: 4,
+    marginBottom: 8,
   },
   coordsContainer: {
     backgroundColor: '#f0f9f0',

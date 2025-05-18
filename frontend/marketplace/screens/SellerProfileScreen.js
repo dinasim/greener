@@ -1,3 +1,5 @@
+// Complete SellerProfileScreen.js with review button fix
+
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, FlatList,
@@ -98,20 +100,30 @@ const SellerProfileScreen = () => {
     }
   };
 
+  // Fixed review button handler
   const handleAddReview = () => {
     const checkSelfReview = async () => {
       try {
         const userEmail = await AsyncStorage.getItem('userEmail');
+        console.log('Current user email:', userEmail);
+        console.log('Seller ID:', sellerId);
+        
         if (userEmail === sellerId) {
           Alert.alert("Cannot Review Yourself", "You cannot leave a review for your own profile.");
           return;
         }
+        
+        // Explicitly set the review form visibility to true
+        console.log('Setting review form to visible');
         setShowReviewForm(true);
       } catch (err) {
         console.error("Error checking user email:", err);
+        // If we can't check, still allow adding a review
         setShowReviewForm(true);
       }
     };
+    
+    // Make sure to actually call the function
     checkSelfReview();
   };
 
@@ -125,10 +137,16 @@ const SellerProfileScreen = () => {
   };
 
   const handleReviewSubmitted = () => {
+    // Set active tab to reviews so the user can see their new review
     if (activeTab !== 'reviews') {
       setActiveTab('reviews');
     }
+    
+    // Refresh the reviews list
     setRefreshKey(Date.now());
+    
+    // Notify user that review was submitted
+    Alert.alert("Success", "Your review has been submitted successfully!");
   };
 
   const getAvatarUrl = (name, email) => {
@@ -262,7 +280,10 @@ const SellerProfileScreen = () => {
             Joined {new Date(user.joinDate || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
           </Text>
           {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
-          <TouchableOpacity style={styles.reviewButton} onPress={handleAddReview}>
+          <TouchableOpacity 
+            style={styles.reviewButton} 
+            onPress={handleAddReview}
+          >
             <MaterialIcons name="rate-review" size={16} color="#4CAF50" />
             <Text style={styles.reviewButtonText}>Write a Review</Text>
           </TouchableOpacity>
@@ -306,6 +327,8 @@ const SellerProfileScreen = () => {
         </View>
         <View style={styles.tabContent}>{renderTabContent()}</View>
       </ScrollView>
+      
+      {/* Review Form Modal - Make sure this is included */}
       <ReviewForm
         targetId={sellerId}
         targetType="seller"

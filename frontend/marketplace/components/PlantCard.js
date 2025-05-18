@@ -1,6 +1,4 @@
-// components/PlantCard.js (updated version with map navigation)
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -19,13 +17,25 @@ import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = false }) => {
   const navigation = useNavigation();
+  const cardRef = useRef(null);
   const [isFavorite, setIsFavorite] = useState(plant.isFavorite || plant.isWished || false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Update favorite state when plant prop changes
   useEffect(() => {
     setIsFavorite(plant.isFavorite || plant.isWished || false);
   }, [plant.isFavorite, plant.isWished]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        typeof document !== 'undefined' &&
+        document.activeElement &&
+        cardRef.current?.contains(document.activeElement)
+      ) {
+        document.activeElement.blur();
+      }
+    };
+  }, []);
 
   const handlePress = () => {
     navigation.navigate('PlantDetail', { plantId: plant.id || plant._id });
@@ -45,22 +55,16 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
     try {
       setIsSubmitting(true);
-      // Optimistically update UI
       const newFavoriteState = !isFavorite;
       setIsFavorite(newFavoriteState);
 
-      // Call API
       const result = await wishProduct(plant.id || plant._id);
-      
-      // If API returns specific wishlist state, use it
       if (result && 'isWished' in result) {
         setIsFavorite(result.isWished);
       }
-      
-      // Store update notification for other components
+
       AsyncStorage.setItem('WISHLIST_UPDATED', Date.now().toString())
         .then(() => {
-          // Trigger global update with associated data
           triggerUpdate(UPDATE_TYPES.WISHLIST, {
             plantId: plant.id || plant._id,
             isFavorite: newFavoriteState,
@@ -69,7 +73,6 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
         })
         .catch(err => console.warn('Failed to set wishlist update flag:', err));
     } catch (err) {
-      // Revert on error
       setIsFavorite(isFavorite);
       console.error('Error updating favorites:', err);
     } finally {
@@ -79,23 +82,21 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
   const handleShare = (e) => {
     e.stopPropagation();
-    // Implement sharing functionality
   };
 
   const handleContact = (e) => {
     e.stopPropagation();
-    const sellerName = plant.seller?.name || 'Plant Seller'; 
+    const sellerName = plant.seller?.name || 'Plant Seller';
     navigation.navigate('Messages', {
       sellerId: plant.seller?._id || plant.sellerId,
       plantId: plant.id || plant._id,
       plantName: plant.title || plant.name,
-      sellerName: sellerName // Add seller name to navigate with the correct title
+      sellerName
     });
   };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'Recently';
-    
     try {
       const date = new Date(dateString);
       return formatDistanceToNow(date, { addSuffix: true });
@@ -108,16 +109,10 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     if (typeof plant.location === 'string') {
       return plant.location;
     } else if (plant.location && typeof plant.location === 'object') {
-      // If we have a formatted city name, use it
-      if (plant.location.city) {
-        return plant.location.city;
-      }
-      
-      // If we have coordinates but no city, format them nicely
+      if (plant.location.city) return plant.location.city;
       if (plant.location.latitude && plant.location.longitude) {
         return `Location: ${plant.location.latitude.toFixed(2)}, ${plant.location.longitude.toFixed(2)}`;
       }
-      
       return 'Local pickup';
     } else if (plant.city) {
       return plant.city;
@@ -125,21 +120,18 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     return 'Local pickup';
   };
 
-  // Check if we have valid location coordinates for map navigation
   const hasLocationCoordinates = () => {
     return (
-      plant.location && 
-      typeof plant.location === 'object' && 
-      plant.location.latitude && 
+      plant.location &&
+      typeof plant.location === 'object' &&
+      plant.location.latitude &&
       plant.location.longitude
     );
   };
 
-  // Handle map navigation
   const handleOpenMap = (e) => {
     e.stopPropagation();
     if (!hasLocationCoordinates()) return;
-    
     navigation.navigate('MapView', {
       products: [plant],
       initialLocation: {
@@ -149,10 +141,27 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     });
   };
 
+  const renderRating = () => {
+    const rating = plant.rating || (plant.seller && plant.seller.rating);
+    const reviewCount = plant.reviewCount || (plant.seller && plant.seller.totalReviews) || 0;
+    if (!rating) return null;
+
+    return (
+      <View style={styles.ratingContainer}>
+        <FontAwesome name="star" size={12} color="#FFC107" />
+        <Text style={styles.ratingText}>
+          {typeof rating === 'number' ? rating.toFixed(1) : rating}
+          {reviewCount > 0 && ` (${reviewCount})`}
+        </Text>
+      </View>
+    );
+  };
+
   const isList = layout === 'list';
 
   return (
     <TouchableOpacity
+      ref={cardRef}
       style={[
         styles.card,
         isList && styles.listCard,
@@ -167,13 +176,11 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           style={isList ? styles.listImage : styles.image}
           resizeMode="contain"
         />
-        
         {isOffline && (
           <View style={styles.offlineIndicator}>
             <MaterialIcons name="cloud-off" size={12} color="#fff" />
           </View>
         )}
-        
         <TouchableOpacity style={styles.favoriteButton} onPress={toggleFavorite}>
           <MaterialIcons
             name={isFavorite ? 'favorite' : 'favorite-border'}
@@ -182,7 +189,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           />
         </TouchableOpacity>
       </View>
-      
+
       <View style={isList ? styles.listInfoContainer : styles.infoContainer}>
         <View style={styles.titleRow}>
           <Text style={[styles.name, isList && styles.listName]} numberOfLines={isList ? 2 : 1}>
@@ -190,54 +197,56 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           </Text>
           <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
         </View>
-        
-        {/* Location information with map button */}
+
+        {plant.rating && (
+          <View style={styles.productRatingContainer}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <FontAwesome
+                key={`rating-${star}`}
+                name={star <= Math.round(plant.rating) ? 'star' : 'star-o'}
+                size={14}
+                color="#FFD700"
+                style={{ marginRight: 2 }}
+              />
+            ))}
+            {plant.reviewCount > 0 && (
+              <Text style={styles.reviewCount}>({plant.reviewCount})</Text>
+            )}
+          </View>
+        )}
+
         <View style={styles.locationRow}>
           <MaterialIcons name="location-on" size={12} color="#666" />
           <Text style={styles.locationText} numberOfLines={1}>{getLocationText()}</Text>
           {hasLocationCoordinates() && (
-            <TouchableOpacity 
-              style={styles.mapButton}
-              onPress={handleOpenMap}
-            >
-              <MaterialIcons name="map" size={12} color="#fff" />
+            <TouchableOpacity style={styles.mapButton} onPress={handleOpenMap}>
+              <MaterialIcons name="map" size={16} color="#fff" />
             </TouchableOpacity>
           )}
         </View>
-        
+
         {!isList && <Text style={styles.category} numberOfLines={1}>{plant.category}</Text>}
-        
+
         <View style={styles.sellerRow}>
-          <TouchableOpacity onPress={handleSellerPress}>
+          <TouchableOpacity onPress={handleSellerPress} style={styles.sellerInfoContainer}>
             <Text style={styles.sellerName} numberOfLines={1}>
               {plant.seller?.name || plant.sellerName || 'Unknown Seller'}
             </Text>
+            {renderRating()}
           </TouchableOpacity>
-          
-          {plant.rating && (
-            <View style={styles.ratingContainer}>
-              <FontAwesome name="star" size={12} color="#FFC107" />
-              <Text style={styles.ratingText}>{plant.rating}</Text>
-            </View>
-          )}
         </View>
-        
+
         <View style={styles.footer}>
           <Text style={styles.date}>
             {formatDate(plant.addedAt || plant.listedDate)}
           </Text>
-          
           {showActions && (
             <View style={styles.actionButtons}>
               <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
                 <MaterialIcons name="share" size={14} color="#4CAF50" />
                 <Text style={styles.actionText}>Share</Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity
-                style={styles.actionButton}
-                onPress={handleContact}
-              >
+              <TouchableOpacity style={styles.actionButton} onPress={handleContact}>
                 <MaterialIcons name="chat" size={14} color="#4CAF50" />
                 <Text style={[styles.actionText, isSubmitting && styles.disabledText]}>
                   Contact
@@ -259,20 +268,19 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     flex: 1,
     maxWidth: Platform.OS === 'web' ? '31%' : '47%',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-      web: {
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-      },
-    }),
+    ...(Platform.OS === 'web'
+      ? { boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }
+      : Platform.select({
+          ios: {
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.1,
+            shadowRadius: 4,
+          },
+          android: {
+            elevation: 2,
+          },
+        })),
   },
   listCard: {
     flexDirection: 'row',
@@ -281,14 +289,7 @@ const styles = StyleSheet.create({
   },
   offlineCard: {
     opacity: 0.9,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#999',
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
+    ...(Platform.OS === 'android' ? { elevation: 1 } : {}),
   },
   imageContainer: {
     position: 'relative',
@@ -353,7 +354,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4CAF50',
   },
-  // Location row with map button
+  productRatingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  reviewCount: {
+    fontSize: 12,
+    color: '#888',
+    marginLeft: 4,
+  },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -366,10 +376,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mapButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 4,
-    padding: 4,
-    marginLeft: 4,
+    backgroundColor: '#388E3C',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginLeft: 8,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   category: {
     fontSize: 14,
@@ -382,11 +401,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
+  sellerInfoContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   sellerName: {
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
-    flex: 1,
+    marginRight: 6,
   },
   ratingContainer: {
     flexDirection: 'row',
@@ -428,5 +453,6 @@ const styles = StyleSheet.create({
     color: '#aaa',
   },
 });
+
 
 export default PlantCard;

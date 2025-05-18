@@ -15,6 +15,7 @@ const MessagesScreen = () => {
   const sellerId = route.params?.sellerId;
   const plantId = route.params?.plantId;
   const plantName = route.params?.plantName;
+  const sellerName = route.params?.sellerName;
   const [activeTab, setActiveTab] = useState(sellerId ? 'chat' : 'conversations');
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -37,10 +38,11 @@ const MessagesScreen = () => {
   }, [selectedConversation]);
 
   useEffect(() => {
+    // If we have sellerId and plantId from route params, initialize a new conversation
     if (sellerId && plantId && !selectedConversation) {
       findExistingConversation();
     }
-  }, [sellerId, plantId]);
+  }, [sellerId, plantId, conversations]);
   
   const loadConversations = async () => {
     try {
@@ -71,13 +73,20 @@ const MessagesScreen = () => {
       if (conversations.length === 0) {
         await loadConversations();
       }
+      
+      // Look for an existing conversation with this seller for this plant
       const existingConversation = conversations.find(
-        conv => conv.sellerId === sellerId && conv.plantId === plantId
+        conv => (conv.sellerId === sellerId || conv.otherUserEmail === sellerId) && 
+               (conv.plantId === plantId || conv.productId === plantId)
       );
+      
       if (existingConversation) {
+        console.log('Found existing conversation:', existingConversation);
         setSelectedConversation(existingConversation);
         setActiveTab('chat');
       } else {
+        // If no existing conversation found, we'll create one when the user sends a message
+        console.log('No existing conversation found. Ready for new message.');
         setActiveTab('chat');
       }
     } catch (error) {
@@ -141,11 +150,14 @@ const MessagesScreen = () => {
       if (selectedConversation) {
         await sendMessage(selectedConversation.id, messageText, userEmail);
       } else if (sellerId && plantId) {
+        // Create new conversation
+        console.log('Starting new conversation with:', sellerId, 'about plant:', plantId);
         const result = await startConversation(sellerId, plantId, messageText, userEmail);
-        if (result?.messageId) {
+        if (result?.messageId || result?.conversationId) {
+          // Use the returned conversation/message ID, or create a new conversation object
           setSelectedConversation({
-            id: result.messageId,
-            otherUserName: result.sellerName || 'Seller',
+            id: result.conversationId || result.messageId,
+            otherUserName: sellerName || result.sellerName || 'Seller',
             plantName: plantName || 'Plant',
             plantId: plantId,
             sellerId: sellerId
@@ -215,6 +227,19 @@ const MessagesScreen = () => {
       return '';
     }
   };
+
+  // Get avatar URL with fallback to ui-avatars service
+  const getAvatarUrl = (user) => {
+    // If the user has a valid avatar URL, use it
+    if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('http')) {
+      return user.avatar;
+    }
+    
+    // Create avatar URL from user's name with better fallback
+    const name = user.otherUserName || user.name || 'User';
+    const initial = name.charAt(0).toUpperCase();
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&background=4CAF50&color=fff&size=100`;
+  };
   
   const renderConversationsList = () => {
     if (isLoading && conversations.length === 0) {
@@ -254,7 +279,7 @@ const MessagesScreen = () => {
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.conversationItem} onPress={() => handleSelectConversation(item)}>
             <Image 
-              source={{ uri: item.otherUserAvatar || 'https://via.placeholder.com/50?text=User' }} 
+              source={{ uri: getAvatarUrl(item) }} 
               style={styles.avatar}
               onError={(e) => {
                 console.log('Error loading avatar:', e.nativeEvent.error);
@@ -288,12 +313,24 @@ const MessagesScreen = () => {
   const renderChatScreen = () => {
     const isNewConversation = !selectedConversation && sellerId && plantId;
     const renderMessageItem = ({ item }) => {
-      const isOwnMessage = item.senderId === 'currentUser';
+      // Determine if message is from current user
+      const userEmail = AsyncStorage.getItem('userEmail');
+      const isOwnMessage = item.senderId === userEmail || 
+                          item.senderId === 'currentUser' || 
+                          item.isFromCurrentUser;
+      
       return (
         <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer]}>
           {!isOwnMessage && (
-            <Image source={{ uri: selectedConversation?.otherUserAvatar || 'https://via.placeholder.com/40' }}
+            <Image 
+              source={{ 
+                uri: selectedConversation?.otherUserAvatar || 
+                      getAvatarUrl({otherUserName: selectedConversation?.otherUserName || sellerName}) 
+              }}
               style={styles.messageAvatar}
+              onError={(e) => {
+                console.log('Error loading message avatar:', e.nativeEvent.error);
+              }}
             />
           )}
           <View style={[styles.messageBubble, isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
@@ -319,7 +356,7 @@ const MessagesScreen = () => {
             </TouchableOpacity>
             <View style={styles.chatHeaderInfo}>
               <Text style={styles.chatHeaderName} numberOfLines={1}>
-                {selectedConversation?.otherUserName || 'New Message'}
+                {selectedConversation?.otherUserName || sellerName || 'New Message'}
               </Text>
               <Text style={styles.chatHeaderPlant} numberOfLines={1}>
                 {selectedConversation?.plantName || plantName || 'Plant Discussion'}
@@ -465,6 +502,7 @@ const styles = StyleSheet.create({
   emptyChatContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, height: 300 },
   emptyChatText: { marginTop: 10, fontSize: 18, fontWeight: '700', color: '#333', textAlign: 'center' },
   emptyChatSubtext: { marginTop: 8, fontSize: 14, color: '#777', textAlign: 'center', paddingHorizontal: 32 },
+  emptyList: { flex: 1, justifyContent: 'center' },
 });
 
 export default MessagesScreen;
