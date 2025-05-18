@@ -44,7 +44,7 @@ export default function SignupReminders({ navigation }) {
       // 2. Register the service worker (must exist at this path!)
       const swReg = await navigator.serviceWorker.register("/service-worker.js");
       // 3. VAPID public key from Azure Notification Hub (base64)
-      const vapidPublicKey = "<YOUR_VAPID_PUBLIC_KEY>"; // <-- PUT YOUR VAPID PUBLIC KEY HERE
+      const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_KEY; // <-- PUT YOUR VAPID PUBLIC KEY HERE
       const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
       // 4. Subscribe to push
@@ -94,7 +94,7 @@ export default function SignupReminders({ navigation }) {
       };
 
       // Send to your backend (endpoint to register with Notification Hub)
-      await fetch("https://<YOUR_BACKEND_URL>/api/registerWebPush", {
+      await fetch("https://usersfunctions.azurewebsites.net/api/registerWebPush", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
