@@ -139,6 +139,12 @@ const ProductListView = ({
       );
     };
     
+    // Get image with placeholder fallback
+    const getImageSource = () => {
+      const imageUrl = item.image || item.imageUrl || (item.images && item.images.length > 0 ? item.images[0] : null);
+      return { uri: imageUrl || 'https://via.placeholder.com/150?text=Plant' };
+    };
+    
     return (
       <TouchableOpacity
         style={styles.itemContainer}
@@ -146,7 +152,7 @@ const ProductListView = ({
         activeOpacity={0.8}
       >
         <Image
-          source={{ uri: item.image || item.imageUrl || 'https://via.placeholder.com/150?text=Plant' }}
+          source={getImageSource()}
           style={styles.itemImage}
           resizeMode="cover"
         />
@@ -213,7 +219,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: 80, // Make space for buttons at bottom
   },
   centerContainer: {
     flex: 1,

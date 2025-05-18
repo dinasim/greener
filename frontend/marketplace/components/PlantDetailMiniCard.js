@@ -15,6 +15,8 @@ import { MaterialIcons } from '@expo/vector-icons';
  * when a plant pin is clicked, without navigating away
  */
 const PlantDetailMiniCard = ({ plant, onClose, onViewDetails }) => {
+  if (!plant) return null;
+
   // Format price as currency
   const formatPrice = (price) => {
     if (typeof price === 'number') {
@@ -62,12 +64,17 @@ const PlantDetailMiniCard = ({ plant, onClose, onViewDetails }) => {
       <TouchableOpacity 
         style={styles.closeButton}
         onPress={onClose}
+        hitSlop={{ top: 20, right: 20, bottom: 20, left: 20 }}
       >
         <MaterialIcons name="close" size={20} color="#666" />
       </TouchableOpacity>
       
       <View style={styles.contentContainer}>
-        <Image source={getImageSource()} style={styles.image} />
+        <Image 
+          source={getImageSource()} 
+          style={styles.image}
+          defaultSource={require('../../assets/plant-placeholder.png')}
+        />
         
         <View style={styles.detailsContainer}>
           <Text style={styles.title} numberOfLines={1}>
@@ -109,35 +116,36 @@ const PlantDetailMiniCard = ({ plant, onClose, onViewDetails }) => {
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderRadius: 8,
-    padding: 12,
+    borderRadius: 12,
+    padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
     position: 'relative',
+    margin: 8,
   },
   closeButton: {
     position: 'absolute',
     top: 8,
     right: 8,
     zIndex: 10,
-    padding: 4,
+    padding: 8,
   },
   contentContainer: {
     flexDirection: 'row',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   image: {
     width: 80,
     height: 80,
-    borderRadius: 6,
+    borderRadius: 8,
     backgroundColor: '#f0f0f0',
   },
   detailsContainer: {
     flex: 1,
-    marginLeft: 12,
+    marginLeft: 16,
     justifyContent: 'center',
   },
   title: {
@@ -194,15 +202,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f9f0',
     borderWidth: 1,
     borderColor: '#4CAF50',
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
   },
   detailsButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#4CAF50',
-    marginRight: 6,
+    marginRight: 8,
   },
 });
 
