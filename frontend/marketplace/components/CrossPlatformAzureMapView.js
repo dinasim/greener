@@ -45,6 +45,7 @@ const CrossPlatformAzureMapView = ({
   const [mapReady, setMapReady] = useState(false);
   const [azureMapsKey, setAzureMapsKey] = useState(providedKey);
   const [isKeyLoading, setIsKeyLoading] = useState(!providedKey);
+  const [selectedProduct, setSelectedProduct] = useState(null);
 
   // Load Azure Maps key if not provided as prop
   useEffect(() => {
@@ -58,7 +59,7 @@ const CrossPlatformAzureMapView = ({
       try {
         setIsKeyLoading(true);
         const key = await getAzureMapsKey();
-        console.log(`Azure Maps key loaded (masked): ${key.substring(0, 5)}...${key.substring(key.length - 5)}`);
+        console.log(`Azure Maps key loaded successfully`);
         setAzureMapsKey(key);
         setIsKeyLoading(false);
       } catch (err) {
@@ -79,6 +80,8 @@ const CrossPlatformAzureMapView = ({
     const drawRadius = () => {
       if (!initialRegion?.latitude || !initialRegion?.longitude) return;
       
+      console.log(`Drawing radius circle: ${searchRadius}km at [${initialRegion.latitude}, ${initialRegion.longitude}]`);
+      
       const msg = { 
         type: 'DRAW_RADIUS', 
         latitude: initialRegion.latitude, 
@@ -88,7 +91,11 @@ const CrossPlatformAzureMapView = ({
       
       if (Platform.OS === 'web') {
         const iframe = document.getElementById('azureMapsIframe');
-        iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
+        if (iframe?.contentWindow?.handleMessage) {
+          iframe.contentWindow.handleMessage(JSON.stringify(msg));
+        } else {
+          console.warn('Iframe or handleMessage not available');
+        }
       } else if (webViewRef.current) {
         webViewRef.current.injectJavaScript(
           `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
@@ -96,7 +103,8 @@ const CrossPlatformAzureMapView = ({
       }
     };
     
-    drawRadius();
+    // Small delay to ensure the map is fully initialized
+    setTimeout(drawRadius, 500);
   }, [searchRadius, mapReady, initialRegion]);
 
   // Effect to show user's current location
@@ -104,6 +112,8 @@ const CrossPlatformAzureMapView = ({
     if (!mapReady || !showMyLocation || !myLocation?.latitude || !myLocation?.longitude) return;
     
     const showUserLocation = () => {
+      console.log(`Showing user location at: ${myLocation.latitude}, ${myLocation.longitude}`);
+      
       const msg = { 
         type: 'SHOW_MY_LOCATION', 
         latitude: myLocation.latitude, 
@@ -112,7 +122,9 @@ const CrossPlatformAzureMapView = ({
       
       if (Platform.OS === 'web') {
         const iframe = document.getElementById('azureMapsIframe');
-        iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
+        if (iframe?.contentWindow?.handleMessage) {
+          iframe.contentWindow.handleMessage(JSON.stringify(msg));
+        }
       } else if (webViewRef.current) {
         webViewRef.current.injectJavaScript(
           `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
@@ -120,7 +132,7 @@ const CrossPlatformAzureMapView = ({
       }
     };
     
-    showUserLocation();
+    setTimeout(showUserLocation, 500);
   }, [myLocation, showMyLocation, mapReady]);
 
   // Generate the HTML template for the map view
@@ -163,7 +175,7 @@ const CrossPlatformAzureMapView = ({
     .search-radius{stroke:rgba(76,175,80,0.8);stroke-width:2;stroke-dasharray:5,5;fill:rgba(76,175,80,0.1)}
     .pin-label{background:white;border:2px solid #4caf50;color:#333;font-weight:bold;padding:3px 8px;border-radius:12px;}
     .plant-pin{width:28px;height:36px;}
-    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;display:none;}
+    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;}
     .my-location-pulse {
       width: 18px;
       height: 18px;
@@ -195,8 +207,13 @@ const CrossPlatformAzureMapView = ({
     // Function to update debug info
     function updateDebug(message) {
       const debugDiv = document.getElementById('debug');
-      debugDiv.innerHTML += "<div>" + message + "</div>";
+      if (debugDiv) {
+        debugDiv.innerHTML += "<div>" + message + "</div>";
+      }
     }
+
+    // Set debug visibility
+    document.getElementById('debug').style.display = ${Platform.OS === 'web' ? "'none'" : "'none'"};
 
     // Variables to store map objects
     let map = null;
@@ -351,31 +368,58 @@ const CrossPlatformAzureMapView = ({
           div.appendChild(btn);
           popup.setOptions({ content: div, position: pos });
           popup.open(map);
+
+          // Also notify parent immediately
+          selectProduct(props.id);
         }
 
-        // Function to handle product selection
+        // Function to handle product selection - FIXED TO PROPERLY NOTIFY PARENT
         function selectProduct(id) {
+          updateDebug("Product selected: " + id);
+          
+          // Notify React Native WebView on mobile
           if (window.ReactNativeWebView) {
             window.ReactNativeWebView.postMessage(JSON.stringify({
               type: 'PIN_CLICKED',
               productId: id
             }));
-          } else {
-            window.parent?.postMessage(JSON.stringify({
-              type: 'PIN_CLICKED',
-              productId: id
-            }), '*');
-            document.dispatchEvent(new CustomEvent('pinclicked', {
-              detail: { productId: id }
-            }));
+          } 
+          // Notify parent on web via multiple methods
+          else {
+            try {
+              // Try postMessage to parent
+              window.parent.postMessage(JSON.stringify({
+                type: 'PIN_CLICKED',
+                productId: id
+              }), '*');
+              
+              // Also dispatch custom event
+              document.dispatchEvent(new CustomEvent('pinclicked', {
+                detail: { productId: id }
+              }));
+              
+              updateDebug("Sent pin click notification to parent");
+            } catch (e) {
+              updateDebug("Error sending pin click to parent: " + e.toString());
+            }
           }
         }
 
         // Click event for markers
         map.events.add('click', src, (e) => {
+          updateDebug("Marker clicked");
           const s = e.shapes?.[0];
           if (!s) return;
-          makePopupContent(s.getProperties(), s.getCoordinates());
+          
+          // Close any open popup first
+          popup.close();
+          
+          // Get the properties and coordinates
+          const props = s.getProperties();
+          const coords = s.getCoordinates();
+          
+          // Make the popup content
+          makePopupContent(props, coords);
         });
 
         // Click event for clusters
@@ -406,11 +450,11 @@ const CrossPlatformAzureMapView = ({
         
         // Add map click event handler for coordinate selection
         map.events.add('click', (e) => {
-          // Close any open popups
-          popup.close();
-          
           // Only forward click events that aren't on markers
           if (!e.shapes || e.shapes.length === 0) {
+            // Close any open popups
+            popup.close();
+            
             const coords = e.position;
             sendMsg({
               type: 'MAP_CLICKED',
@@ -519,18 +563,27 @@ const CrossPlatformAzureMapView = ({
             zoom: 13
           });
         } else if (points.length > 1) {
-          const bounds = atlas.data.BoundingBox.fromData(points);
-          map.setCamera({
-            bounds,
-            padding: 50
-          });
+          try {
+            const bounds = atlas.data.BoundingBox.fromData(points);
+            map.setCamera({
+              bounds,
+              padding: 50
+            });
+          } catch (e) {
+            updateDebug("Error setting camera bounds: " + e.toString());
+            // Just center on first point as fallback
+            map.setCamera({
+              center: points[0].geometry.coordinates,
+              zoom: 10
+            });
+          }
         }
       } else {
         updateDebug("No points with valid coordinates found");
       }
     }
 
-    // Function to draw a radius circle with enhanced visualization
+    // IMPROVED: Function to draw a radius circle with enhanced visualization
     function drawRadiusCircle(center, radiusKm) {
       if (!radiusCircle) {
         updateDebug("Cannot draw radius: circle source not initialized");
@@ -546,33 +599,39 @@ const CrossPlatformAzureMapView = ({
       
       updateDebug("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
       
-      // Create a circle polygon with higher precision for smoother appearance
-      const circle = atlas.math.getRegularPolygonPath(
-        center,
-        radiusKm * 1000, // Convert km to meters
-        96, // Number of vertices (smooth circle)
-        0, // Start angle
-        'meters' // Units
-      );
-      
-      radiusCircle.add(new atlas.data.Feature(
-        new atlas.data.Polygon([circle]),
-        { radius: radiusKm }
-      ));
-      
-      // Fit map to circle
-      const buffer = radiusKm * 0.2; // 20% buffer
-      const bounds = new atlas.data.BoundingBox(
-        center[0] - buffer,
-        center[1] - buffer,
-        center[0] + buffer,
-        center[1] + buffer
-      );
-      
-      map.setCamera({
-        bounds,
-        padding: 50
-      });
+      try {
+        // Create a circle polygon with higher precision for smoother appearance
+        const circle = atlas.math.getRegularPolygonPath(
+          center,
+          radiusKm * 1000, // Convert km to meters
+          96, // Number of vertices (smooth circle)
+          0, // Start angle
+          'meters' // Units
+        );
+        
+        radiusCircle.add(new atlas.data.Feature(
+          new atlas.data.Polygon([circle]),
+          { radius: radiusKm }
+        ));
+        
+        // Fit map to circle
+        const buffer = radiusKm * 0.2; // 20% buffer
+        const bounds = new atlas.data.BoundingBox(
+          center[0] - buffer,
+          center[1] - buffer,
+          center[0] + buffer,
+          center[1] + buffer
+        );
+        
+        map.setCamera({
+          bounds,
+          padding: 50
+        });
+        
+        updateDebug("Radius circle drawn successfully");
+      } catch (e) {
+        updateDebug("Error drawing radius circle: " + e.toString());
+      }
     }
 
     // Function to show user's current location
@@ -614,57 +673,92 @@ const CrossPlatformAzureMapView = ({
       }
     }
 
-    // Handle incoming messages
+    // Handle incoming messages - IMPROVED ERROR HANDLING
     window.handleMessage = (raw) => {
       try {
-        const msg = JSON.parse(raw);
+        const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
         updateDebug("Received message: " + msg.type);
         
         if (msg.type === 'UPDATE_PRODUCTS') {
-          updateMarkers(msg.products);
+          try {
+            updateMarkers(msg.products);
+          } catch (e) {
+            updateDebug("Error updating products: " + e.toString());
+          }
         }
         
         if (msg.type === 'SET_REGION') {
-          map.setCamera({
-            center: [msg.longitude, msg.latitude],
-            zoom: msg.zoom || map.getCamera().zoom
-          });
+          try {
+            map.setCamera({
+              center: [msg.longitude, msg.latitude],
+              zoom: msg.zoom || map.getCamera().zoom
+            });
+          } catch (e) {
+            updateDebug("Error setting region: " + e.toString());
+          }
         }
         
         if (msg.type === 'SELECT_PRODUCT') {
-          const feats = src.getShapes();
-          for (const f of feats) {
-            if (f.getProperties().id === msg.productId) {
-              const pos = f.getCoordinates();
-              makePopupContent(f.getProperties(), pos);
-              map.setCamera({
-                center: pos,
-                zoom: 15
-              });
-              break;
+          try {
+            const feats = src.getShapes();
+            for (const f of feats) {
+              if (f.getProperties().id === msg.productId) {
+                const pos = f.getCoordinates();
+                makePopupContent(f.getProperties(), pos);
+                map.setCamera({
+                  center: pos,
+                  zoom: 15
+                });
+                break;
+              }
             }
+          } catch (e) {
+            updateDebug("Error selecting product: " + e.toString());
           }
         }
         
         if (msg.type === 'DRAW_RADIUS') {
-          drawRadiusCircle(
-            [msg.longitude, msg.latitude],
-            msg.radius
-          );
+          try {
+            drawRadiusCircle(
+              [msg.longitude, msg.latitude],
+              msg.radius
+            );
+          } catch (e) {
+            updateDebug("Error drawing radius: " + e.toString());
+          }
         }
         
         if (msg.type === 'CLEAR_RADIUS') {
-          radiusCircle.clear();
+          try {
+            radiusCircle.clear();
+          } catch (e) {
+            updateDebug("Error clearing radius: " + e.toString());
+          }
         }
         
         if (msg.type === 'SHOW_MY_LOCATION') {
-          showUserLocation(msg.latitude, msg.longitude);
+          try {
+            showUserLocation(msg.latitude, msg.longitude);
+          } catch (e) {
+            updateDebug("Error showing location: " + e.toString());
+          }
         }
         
       } catch (e) {
         updateDebug("Error handling message: " + e.toString());
       }
     };
+
+    // Set up event listener on document for web integration
+    document.addEventListener('message', function(e) {
+      try {
+        if (e.data) {
+          window.handleMessage(e.data);
+        }
+      } catch (err) {
+        updateDebug("Error in document message handler: " + err.toString());
+      }
+    });
   </script>
 </body>
 </html>
@@ -680,7 +774,10 @@ const CrossPlatformAzureMapView = ({
     const handleMsg = (event) => {
       if (!event.data) return;
       try {
-        const data = JSON.parse(event.data);
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        
+        console.log('Map message received:', data.type);
+        
         switch (data.type) {
           case 'MAP_READY':
             setIsLoading(false);
@@ -694,6 +791,8 @@ const CrossPlatformAzureMapView = ({
             }
             break;
           case 'PIN_CLICKED':
+            console.log('Pin clicked:', data.productId);
+            setSelectedProduct(data.productId);
             onSelectProduct?.(data.productId);
             break;
           case 'MAP_CLICKED':
@@ -701,17 +800,35 @@ const CrossPlatformAzureMapView = ({
             break;
           case 'MAP_ERROR':
           case 'ERROR':
+            console.error('Map error:', data.message || data.error);
             setIsError(true);
             setErrorMessage(data.message || data.error || 'Unknown error');
             break;
           default:
+            // Ignore other messages
         }
-      } catch (_) {}
+      } catch (err) {
+        console.error('Error handling map message:', err);
+      }
     };
 
     window.addEventListener('message', handleMsg);
+    
+    // Also listen for the custom event
+    const pinClickedHandler = (e) => {
+      if (e.detail && e.detail.productId) {
+        console.log('Pin clicked (custom event):', e.detail.productId);
+        setSelectedProduct(e.detail.productId);
+        onSelectProduct?.(e.detail.productId);
+      }
+    };
+    
+    document.addEventListener('pinclicked', pinClickedHandler);
 
-    return () => window.removeEventListener('message', handleMsg);
+    return () => {
+      window.removeEventListener('message', handleMsg);
+      document.removeEventListener('pinclicked', pinClickedHandler);
+    };
   }, [products, onMapReady, onSelectProduct, onMapPress]);
 
   useEffect(initWebMap, [initWebMap]);
@@ -722,6 +839,8 @@ const CrossPlatformAzureMapView = ({
   const handleWebViewMessage = (e) => {
     try {
       const data = JSON.parse(e.nativeEvent.data);
+      console.log('Mobile WebView message:', data.type);
+      
       switch (data.type) {
         case 'MAP_READY':
           setIsLoading(false);
@@ -729,6 +848,8 @@ const CrossPlatformAzureMapView = ({
           onMapReady?.();
           break;
         case 'PIN_CLICKED':
+          console.log('Pin clicked:', data.productId);
+          setSelectedProduct(data.productId);
           onSelectProduct?.(data.productId);
           break;
         case 'MAP_CLICKED':
@@ -736,12 +857,16 @@ const CrossPlatformAzureMapView = ({
           break;
         case 'MAP_ERROR':
         case 'ERROR':
+          console.error('Map error:', data.message || data.error);
           setIsError(true);
           setErrorMessage(data.message || data.error || 'Unknown error');
           break;
         default:
+          // Ignore other messages
       }
-    } catch (_) {}
+    } catch (err) {
+      console.error('Error parsing WebView message:', err);
+    }
   };
 
   /* ------------------------------------------------------------------ */
@@ -750,10 +875,16 @@ const CrossPlatformAzureMapView = ({
   useEffect(() => {
     if (!mapReady || !products?.length) return;
 
+    console.log('Sending products to map:', products.length);
     const msg = { type: 'UPDATE_PRODUCTS', products };
+    
     if (Platform.OS === 'web') {
       const iframe = document.getElementById('azureMapsIframe');
-      iframe?.contentWindow?.handleMessage?.(JSON.stringify(msg));
+      if (iframe?.contentWindow?.handleMessage) {
+        iframe.contentWindow.handleMessage(JSON.stringify(msg));
+      } else {
+        console.warn('Iframe or handleMessage not available');
+      }
     } else if (webViewRef.current) {
       webViewRef.current.injectJavaScript(
         `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`

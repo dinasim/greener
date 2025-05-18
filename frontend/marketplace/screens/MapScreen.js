@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Alert,
   Platform,
+  BackHandler,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -19,14 +20,15 @@ import CrossPlatformAzureMapView from '../components/CrossPlatformAzureMapView';
 import MapSearchBox from '../components/MapSearchBox';
 import RadiusControl from '../components/RadiusControl';
 import ProductListView from '../components/ProductListView';
+import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
 import { getNearbyProducts, getAzureMapsKey, reverseGeocode } from '../services/marketplaceApi';
 
 /**
- * Fixed MapScreen component with:
- * 1. Radius controls remaining visible when using "My Location"
- * 2. Integrated product list in the radius control
- * 3. Better error handling and state management
- * 4. Fixed GPS current location functionality
+ * Enhanced MapScreen component with:
+ * 1. Fixed navigation between map and list views
+ * 2. Proper display of radius control
+ * 3. Plant detail mini cards when clicking pins
+ * 4. Improved error handling and state management
  */
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -50,10 +52,29 @@ const MapScreen = () => {
   const [radiusVisible, setRadiusVisible] = useState(true);
   const [myLocation, setMyLocation] = useState(null);
   const [showMyLocation, setShowMyLocation] = useState(false);
+  const [showDetailCard, setShowDetailCard] = useState(false);
+  const [selectedProductData, setSelectedProductData] = useState(null);
   
   // Refs
   const mapRef = useRef(null);
   const listRef = useRef(null);
+
+  // Handle Android back button
+  useFocusEffect(
+    useCallback(() => {
+      const onBackPress = () => {
+        if (viewMode === 'list') {
+          // If in list view, switch back to map view instead of going back
+          setViewMode('map');
+          return true; // Prevent default back behavior
+        }
+        return false; // Let default back behavior happen
+      };
+
+      BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => BackHandler.removeEventListener('hardwareBackPress', onBackPress);
+    }, [viewMode])
+  );
 
   // Load Azure Maps key when component mounts
   useEffect(() => {
@@ -137,6 +158,9 @@ const MapScreen = () => {
       setError(null);
       setSearchingLocation(true);
       
+      // Hide detail card if showing
+      setShowDetailCard(false);
+      
       // IMPORTANT: Make sure radius control stays visible during search
       setRadiusVisible(true);
 
@@ -173,17 +197,33 @@ const MapScreen = () => {
     }
   };
 
-  // Handle product selection
+  // Handle product selection from map
   const handleProductSelect = (productId) => {
     // Find selected product
     const product = mapProducts.find(p => p.id === productId || p._id === productId);
     
     if (product) {
+      console.log("Product selected:", product.title || product.name);
+      
       // Set selected product for highlighting
       setSelectedProduct(product);
-      
-      // Navigate to plant detail
-      navigation.navigate('PlantDetail', { plantId: productId });
+      setSelectedProductData(product);
+      setShowDetailCard(true);
+    }
+  };
+  
+  // Handle closing the detail card
+  const handleCloseDetailCard = () => {
+    setShowDetailCard(false);
+  };
+  
+  // Handle view details button on mini card
+  const handleViewProductDetails = () => {
+    if (selectedProductData) {
+      // Navigate to plant detail screen
+      navigation.navigate('PlantDetail', { 
+        plantId: selectedProductData.id || selectedProductData._id 
+      });
     }
   };
 
@@ -192,6 +232,9 @@ const MapScreen = () => {
     try {
       setIsLoading(true);
       setSearchingLocation(true);
+      
+      // Hide detail card if showing
+      setShowDetailCard(false);
       
       // IMPORTANT: Make sure radius control stays visible
       setRadiusVisible(true);
@@ -206,7 +249,7 @@ const MapScreen = () => {
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Highest,
-        maximumAge: 0,  // Get fresh coordinates
+        maximumAge: 10000,  // Get relatively fresh coordinates (10 seconds)
         timeout: 15000  // 15 seconds timeout
       });
 
@@ -265,6 +308,11 @@ const MapScreen = () => {
 
   // Toggle view mode between map and list
   const toggleViewMode = () => {
+    // If showing detail card, hide it when switching views
+    if (showDetailCard) {
+      setShowDetailCard(false);
+    }
+    
     setViewMode(viewMode === 'map' ? 'list' : 'map');
   };
 
@@ -279,6 +327,12 @@ const MapScreen = () => {
 
   // Handle map click
   const handleMapPress = (coordinates) => {
+    // Hide detail card if showing
+    if (showDetailCard) {
+      setShowDetailCard(false);
+      return;
+    }
+    
     if (coordinates?.latitude && coordinates?.longitude) {
       setSelectedLocation({
         latitude: coordinates.latitude,
@@ -301,6 +355,17 @@ const MapScreen = () => {
       loadNearbyProducts(selectedLocation, searchRadius);
     }
   };
+  
+  // FIXED: Custom back handler for proper navigation
+  const handleBackPress = () => {
+    // If in list view, switch back to map view
+    if (viewMode === 'list') {
+      setViewMode('map');
+    } else {
+      // Otherwise, go back to previous screen
+      navigation.goBack();
+    }
+  };
 
   // Render loading state
   if (isKeyLoading) {
@@ -320,12 +385,17 @@ const MapScreen = () => {
     );
   }
 
+  // Prepare header title
+  const headerTitle = viewMode === 'list' 
+    ? `Plants near ${selectedLocation?.city || 'you'}`
+    : (selectedLocation?.city ? `Plants near ${selectedLocation.city}` : "Map View");
+
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader
-        title={selectedLocation?.city ? `Plants near ${selectedLocation.city}` : "Map View"}
+        title={headerTitle}
         showBackButton={true}
-        onBackPress={() => navigation.goBack()}
+        onBackPress={handleBackPress}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
 
@@ -372,20 +442,42 @@ const MapScreen = () => {
               myLocation={myLocation}
               useCustomPin={true}
             />
+            
+            {/* Plant Detail Mini Card */}
+            {showDetailCard && selectedProductData && (
+              <View style={styles.detailCardContainer}>
+                <PlantDetailMiniCard
+                  plant={selectedProductData}
+                  onClose={handleCloseDetailCard}
+                  onViewDetails={handleViewProductDetails}
+                />
+              </View>
+            )}
           </>
         )}
 
-        {/* List View */}
+        {/* List View with toggle button */}
         {viewMode === 'list' && (
-          <ProductListView
-            products={nearbyProducts}
-            isLoading={isLoading}
-            error={error}
-            onRetry={handleRetry}
-            onProductSelect={handleProductSelect}
-            sortOrder={sortOrder}
-            onSortChange={toggleSortOrder}
-          />
+          <View style={styles.listContainer}>
+            <ProductListView
+              products={nearbyProducts}
+              isLoading={isLoading}
+              error={error}
+              onRetry={handleRetry}
+              onProductSelect={(productId) => navigation.navigate('PlantDetail', { plantId: productId })}
+              sortOrder={sortOrder}
+              onSortChange={toggleSortOrder}
+            />
+            
+            {/* Down button to go back to map */}
+            <TouchableOpacity
+              style={styles.backToMapButton}
+              onPress={toggleViewMode}
+            >
+              <MaterialIcons name="map" size={24} color="#fff" />
+              <Text style={styles.backToMapText}>Map View</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Search Box */}
@@ -406,6 +498,17 @@ const MapScreen = () => {
             <MaterialIcons name="my-location" size={24} color="#fff" />
           )}
         </TouchableOpacity>
+
+        {/* Toggle View Button (only shown in map view) */}
+        {viewMode === 'map' && mapProducts.length > 0 && (
+          <TouchableOpacity
+            style={styles.viewToggleButton}
+            onPress={toggleViewMode}
+          >
+            <MaterialIcons name="view-list" size={22} color="#fff" />
+            <Text style={styles.viewToggleText}>List</Text>
+          </TouchableOpacity>
+        )}
 
         {/* Enhanced Radius Control with Integrated Product List */}
         {selectedLocation && viewMode === 'map' && radiusVisible && (
@@ -431,6 +534,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   mapContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  listContainer: {
     flex: 1,
     position: 'relative',
   },
@@ -507,6 +614,56 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+  },
+  viewToggleButton: {
+    position: 'absolute',
+    right: 70, // Position to the left of the current location button
+    bottom: Platform.OS === 'ios' ? 450 : 420,
+    backgroundColor: '#2196F3',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 25,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  viewToggleText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 6,
+  },
+  backToMapButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 25,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  backToMapText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 8,
+  },
+  detailCardContainer: {
+    position: 'absolute',
+    bottom: 400, // Position above the radius control
+    left: 16,
+    right: 16,
+    zIndex: 20,
   },
 });
 

@@ -19,7 +19,6 @@ const { width } = Dimensions.get('window');
 
 /**
  * Enhanced RadiusControl component with integrated product list
- * Removed internal circle visualization (now handled by map)
  * 
  * @param {Object} props Component props
  * @param {number} props.radius Current radius in km
@@ -54,6 +53,7 @@ const RadiusControl = ({
   
   // Update input when radius prop changes
   useEffect(() => {
+    // Update both input and slider when radius changes externally
     setInputValue(radius?.toString() || '10');
     setSliderValue(radius || 10);
   }, [radius]);
@@ -199,7 +199,11 @@ const RadiusControl = ({
           <Text style={styles.radiusValue}>{radius} km</Text>
         </View>
         
-        <TouchableOpacity style={styles.toggleButton} onPress={toggleExpanded}>
+        <TouchableOpacity 
+          style={styles.toggleButton} 
+          onPress={toggleExpanded}
+          hitSlop={{ top: 20, right: 20, bottom: 20, left: 20 }}
+        >
           <Animated.View style={arrowRotateStyle}>
             <MaterialIcons name="keyboard-arrow-up" size={24} color="#666" />
           </Animated.View>
@@ -253,8 +257,6 @@ const RadiusControl = ({
         {validationError ? (
           <Text style={styles.errorText}>{validationError}</Text>
         ) : null}
-
-        {/* Removed the internal radius visualization circle */}
       </View>
       
       {/* Products list section - only shown when expanded */}
@@ -339,6 +341,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     overflow: 'hidden',
+    zIndex: 10,
   },
   header: {
     flexDirection: 'row',
@@ -451,6 +454,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#333',
+    flex: 1,
   },
   viewToggleButton: {
     flexDirection: 'row',
