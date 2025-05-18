@@ -1,5 +1,0 @@
-{
-  "extensions":[
-    { "name": "SignalR", "typeName":"Microsoft.Azure.WebJobs.Extensions.SignalRService.SignalRWebJobsStartup, Microsoft.Azure.WebJobs.Extensions.SignalRService, Version=2.0.1.0, Culture=neutral, PublicKeyToken=92742159e12e44c8"}
-  ]
-}

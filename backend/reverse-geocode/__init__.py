@@ -47,7 +47,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         params = {
             "api-version": "1.0",
             "subscription-key": azure_maps_key,
-            "query": f"{lat},{lon}"
+            "query": f"{lat},{lon}",
+            "language": "en-US"
         }
         
         response = requests.get(url, params=params)
@@ -64,17 +65,29 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         # Extract the first result
         address = data['addresses'][0]
         
-        # Format the response
+        # Format the response - ensure all fields are present with fallbacks
         formatted_result = {
             "latitude": lat,
             "longitude": lon,
             "formattedAddress": address.get('address', {}).get('freeformAddress', f"{lat}, {lon}"),
             "city": address.get('address', {}).get('municipality', ''),
             "country": address.get('address', {}).get('country', ''),
+            "countryCode": address.get('address', {}).get('countryCode', ''),
             "postalCode": address.get('address', {}).get('postalCode', ''),
             "street": address.get('address', {}).get('streetName', ''),
             "houseNumber": address.get('address', {}).get('streetNumber', '')
         }
+        
+        # Add specific fields for Israel addresses
+        if formatted_result['country'] == 'Israel' or formatted_result['countryCode'] == 'IL':
+            # Add Hebrew names if available
+            if 'extendedAddress' in address:
+                extended = address.get('extendedAddress', {})
+                formatted_result.update({
+                    "cityHe": extended.get('localityName', ''),
+                    "streetHe": extended.get('streetName', ''),
+                    "regionHe": extended.get('countrySubdivision', '')
+                })
         
         # Log what we found
         logging.info(f"Reverse geocoded '{lat}, {lon}' to {formatted_result['formattedAddress']}")
