@@ -231,7 +231,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "bold", color: "#2e7d32", marginBottom: 10 },
   subtitle: { fontSize: 16, color: "#388e3c", marginBottom: 30, textAlign: "center" },
   googleButton: {
-    backgroundColor: "#4285F4",
+    backgroundColor: "#228b22",
     paddingVertical: 14,
     borderRadius: 10,
     width: "100%",

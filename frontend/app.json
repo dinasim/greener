@@ -2,11 +2,7 @@
   "expo": {
     "name": "Greener",
     "slug": "greener",
-    "platforms": [
-      "ios",
-      "android",
-      "web"
-    ],
+    "platforms": ["ios", "android", "web"],
     "originalFullName": "@dinasim/greener",
     "owner": "dina2",
     "version": "1.0.0",
@@ -19,9 +15,7 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.dinasim.greener",
@@ -37,17 +31,17 @@
       },
       "package": "com.yourname.greener",
       "intentFilters": [
-    {
-      "action": "VIEW",
-      "data": {
-        "scheme": "greener",
-        "host": "",
-        "pathPrefix": "/"
-      },
-      "category": ["BROWSABLE", "DEFAULT"]}],
-      "permissions": [
-        "RECORD_AUDIO"
-      ]
+        {
+          "action": "VIEW",
+          "data": {
+            "scheme": "greener",
+            "host": "",
+            "pathPrefix": "/"
+          },
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -61,8 +55,6 @@
         "projectId": "6915a87a-3492-4315-b77e-ca7cfbf609fc"
       }
     },
-    "plugins": [
-      "expo-asset"
-    ]
+    "plugins": ["expo-asset"]
   }
 }
