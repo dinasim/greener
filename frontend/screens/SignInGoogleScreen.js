@@ -33,8 +33,9 @@ export default function SignInGoogleScreen({ navigation }) {
   console.log('REDIRECT URI:', AuthSession.makeRedirectUri({ useProxy: true }));
   const [request, response, promptAsync] = Google.useAuthRequest({
     expoClientId: Constants.expoConfig.extra.expoClientId,
-    iosClientId: "will set this up eventually",
-    androidClientId: "will set this up eventually",
+    webClientId: Constants.expoConfig.extra.expoClientId,
+    iosClientId: Constants.expoConfig.extra.iosClientId,
+    androidClientId: Constants.expoConfig.extra.androidClientId,
     redirectUri: AuthSession.makeRedirectUri({ useProxy: true }),
     scopes: ['openid', 'profile', 'email'],
   },    { useProxy: true }
