@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+// frontend/components/FilterSection.js
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -14,22 +15,6 @@ import MapToggle from './MapToggle';
 import PriceRange from './PriceRange';
 import SortOptions from './SortOptions';
 
-/**
- * Enhanced FilterSection component with improved UI and functionality
- * 
- * @param {Object} props Component props
- * @param {string} props.sortOption Current sort option
- * @param {Function} props.onSortChange Callback when sort option changes
- * @param {Object} props.priceRange Current price range {min, max}
- * @param {Function} props.onPriceChange Callback when price range changes
- * @param {string} props.viewMode Current view mode ('grid', 'list', or 'map')
- * @param {Function} props.onViewModeChange Callback when view mode changes
- * @param {string} props.category Current selected category
- * @param {Function} props.onCategoryChange Callback when category changes
- * @param {Array} props.activeFilters Array of active filter objects
- * @param {Function} props.onRemoveFilter Callback to remove a filter
- * @param {Function} props.onResetFilters Callback to reset all filters
- */
 const FilterSection = ({
   sortOption = 'recent',
   onSortChange,
@@ -46,12 +31,35 @@ const FilterSection = ({
   // State
   const [filterModalVisible, setFilterModalVisible] = useState(false);
   const [modalAnimation] = useState(new Animated.Value(0));
+  const [localPriceRange, setLocalPriceRange] = useState(priceRange);
+  
+  // Ensure price range values are valid numbers
+  const safeMinPrice = priceRange && typeof priceRange.min === 'number' ? priceRange.min : 0;
+  const safeMaxPrice = priceRange && typeof priceRange.max === 'number' ? priceRange.max : 1000;
+  const safePriceRange = { min: safeMinPrice, max: safeMaxPrice };
+  
+  // Update local price range when props change
+  useEffect(() => {
+    setLocalPriceRange(safePriceRange);
+  }, [priceRange]);
   
   // Handle price range change
   const handlePriceRangeChange = (range) => {
-    if (onPriceChange) {
-      onPriceChange({ min: range[0], max: range[1] });
+    if (Array.isArray(range) && range.length === 2) {
+      const updatedRange = { 
+        min: typeof range[0] === 'number' ? range[0] : 0, 
+        max: typeof range[1] === 'number' ? range[1] : 1000 
+      };
+      setLocalPriceRange(updatedRange);
     }
+  };
+
+  // Apply price range when modal is closed
+  const applyFilters = () => {
+    if (onPriceChange) {
+      onPriceChange(localPriceRange);
+    }
+    hideFilterModal();
   };
 
   // Handle filter modal animation
@@ -75,7 +83,8 @@ const FilterSection = ({
   };
 
   // Count active filters
-  const activeFilterCount = activeFilters.length + (priceRange.min > 0 || priceRange.max < 1000 ? 1 : 0);
+  const activeFilterCount = activeFilters.length + 
+    ((safePriceRange.min > 0 || safePriceRange.max < 1000) ? 1 : 0);
 
   // Modal slide-in animation
   const slideAnimation = {
@@ -112,13 +121,13 @@ const FilterSection = ({
           contentContainerStyle={styles.activeFiltersContent}
         >
           {/* Price Range Filter Pill (if active) */}
-          {(priceRange.min > 0 || priceRange.max < 1000) && (
+          {(safePriceRange.min > 0 || safePriceRange.max < 1000) && (
             <View style={styles.filterPill}>
               <Text style={styles.filterPillText}>
-                ${priceRange.min} - ${priceRange.max}
+                ${safePriceRange.min} - ${safePriceRange.max}
               </Text>
               <TouchableOpacity 
-                onPress={() => onPriceChange({ min: 0, max: 1000 })}
+                onPress={() => onPriceChange && onPriceChange({ min: 0, max: 1000 })}
                 hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
               >
                 <MaterialIcons name="close" size={16} color="#777" />
@@ -128,7 +137,7 @@ const FilterSection = ({
           
           {/* Custom Active Filters */}
           {activeFilters.map((filter, index) => (
-            <View key={index} style={styles.filterPill}>
+            <View key={`filter-${index}-${filter.id || 'unknown'}`} style={styles.filterPill}>
               <Text style={styles.filterPillText}>
                 {filter.label}
               </Text>
@@ -197,53 +206,54 @@ const FilterSection = ({
           <Pressable style={styles.modalBackdrop} onPress={hideFilterModal}>
             <Animated.View 
               style={[styles.modalContent, slideAnimation]}
+              onStartShouldSetResponder={() => true}
+              onResponderRelease={() => {}}
             >
-              <Pressable>
-                <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Filters</Text>
-                  <TouchableOpacity 
-                    onPress={hideFilterModal}
-                    style={styles.closeButton}
-                  >
-                    <MaterialIcons name="close" size={24} color="#333" />
-                  </TouchableOpacity>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Filters</Text>
+                <TouchableOpacity 
+                  onPress={hideFilterModal}
+                  style={styles.closeButton}
+                >
+                  <MaterialIcons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              
+              <ScrollView>
+                {/* Price Range in Modal */}
+                <View style={styles.modalSection}>
+                  <Text style={styles.sectionTitle}>Price Range</Text>
+                  <PriceRange
+                    onPriceChange={handlePriceRangeChange}
+                    initialMin={localPriceRange.min}
+                    initialMax={localPriceRange.max}
+                    style={styles.priceRange}
+                    hideTitle={true} // Hide the component title since we have a section title
+                    max={1000} // Set maximum price limit
+                  />
                 </View>
                 
-                <ScrollView>
-                  {/* Price Range in Modal */}
-                  <View style={styles.modalSection}>
-  <Text style={styles.sectionTitle}>Price Range</Text>
-  <PriceRange
-    onPriceChange={handlePriceRangeChange}
-    initialMin={priceRange.min}
-    initialMax={priceRange.max}
-    style={styles.priceRange}
-    hideTitle={true} // Hide the component title since we have a section title
-    max={1000} // Set maximum price limit
-  />
-</View>
+                {/* Action Buttons */}
+                <View style={styles.modalActions}>
+                  <TouchableOpacity 
+                    style={styles.resetButton}
+                    onPress={() => {
+                      setLocalPriceRange({ min: 0, max: 1000 });
+                      if (onResetFilters) onResetFilters();
+                      hideFilterModal();
+                    }}
+                  >
+                    <Text style={styles.resetButtonText}>Reset All</Text>
+                  </TouchableOpacity>
                   
-                  {/* Action Buttons */}
-                  <View style={styles.modalActions}>
-                    <TouchableOpacity 
-                      style={styles.resetButton}
-                      onPress={() => {
-                        if (onResetFilters) onResetFilters();
-                        hideFilterModal();
-                      }}
-                    >
-                      <Text style={styles.resetButtonText}>Reset All</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity 
-                      style={styles.applyButton}
-                      onPress={hideFilterModal}
-                    >
-                      <Text style={styles.applyButtonText}>Apply Filters</Text>
-                    </TouchableOpacity>
-                  </View>
-                </ScrollView>
-              </Pressable>
+                  <TouchableOpacity 
+                    style={styles.applyButton}
+                    onPress={applyFilters}
+                  >
+                    <Text style={styles.applyButtonText}>Apply Filters</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
             </Animated.View>
           </Pressable>
         </Animated.View>

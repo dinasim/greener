@@ -1,12 +1,8 @@
-// components/PriceRange.js (updated version)
-
+// frontend/components/PriceRange.js
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TextInput } from 'react-native';
 import Slider from '@react-native-community/slider';
 
-/**
- * PriceRange component for filtering products by price
- */
 const PriceRange = ({ 
   initialMin = 0, 
   initialMax = 1000, 
@@ -15,16 +11,17 @@ const PriceRange = ({
   hideTitle = false,
   max = 1000
 }) => {
-  const [minValue, setMinValue] = useState(initialMin);
-  const [maxValue, setMaxValue] = useState(initialMax);
-  const [sliderValue, setSliderValue] = useState([initialMin, initialMax]);
+  const [minValue, setMinValue] = useState(initialMin !== undefined ? initialMin : 0);
+  const [maxValue, setMaxValue] = useState(initialMax !== undefined ? initialMax : max);
   
-  // Update local state when props change
+  // Update local state when props change - with safety checks
   useEffect(() => {
-    setMinValue(initialMin);
-    setMaxValue(initialMax);
-    setSliderValue([initialMin, initialMax]);
-  }, [initialMin, initialMax]);
+    const safeMin = initialMin !== undefined && !isNaN(initialMin) ? Number(initialMin) : 0;
+    const safeMax = initialMax !== undefined && !isNaN(initialMax) ? Number(initialMax) : max;
+    
+    setMinValue(safeMin);
+    setMaxValue(safeMax);
+  }, [initialMin, initialMax, max]);
   
   // Handle min input change
   const handleMinChange = (text) => {
@@ -41,7 +38,6 @@ const PriceRange = ({
     value = Math.min(value, maxValue);
     
     setMinValue(value);
-    setSliderValue([value, maxValue]);
     
     if (onPriceChange) {
       onPriceChange([value, maxValue]);
@@ -64,7 +60,6 @@ const PriceRange = ({
     value = Math.min(value, max);
     
     setMaxValue(value);
-    setSliderValue([minValue, value]);
     
     if (onPriceChange) {
       onPriceChange([minValue, value]);
@@ -73,13 +68,19 @@ const PriceRange = ({
   
   // Handle slider change
   const handleSliderChange = (values) => {
-    const [min, max] = values;
+    if (!Array.isArray(values) || values.length !== 2) {
+      return;
+    }
+    
+    const [min, max] = values.map(Math.round);
     
     setMinValue(min);
     setMaxValue(max);
-    
+  };
+  
+  const handleSliderComplete = () => {
     if (onPriceChange) {
-      onPriceChange([min, max]);
+      onPriceChange([minValue, maxValue]);
     }
   };
   
@@ -92,12 +93,13 @@ const PriceRange = ({
           style={styles.slider}
           minimumValue={0}
           maximumValue={max}
+          step={1}
           minimumTrackTintColor="#4CAF50"
           maximumTrackTintColor="#E0E0E0"
           thumbTintColor="#4CAF50"
-          value={sliderValue}
-          onValueChange={setSliderValue}
-          onSlidingComplete={handleSliderChange}
+          value={[minValue, maxValue]}
+          onValueChange={handleSliderChange}
+          onSlidingComplete={handleSliderComplete}
         />
       </View>
       
@@ -108,7 +110,7 @@ const PriceRange = ({
             <Text style={styles.currencySymbol}>$</Text>
             <TextInput
               style={styles.input}
-              value={minValue.toString()}
+              value={String(minValue)}
               onChangeText={handleMinChange}
               keyboardType="numeric"
               maxLength={5}
@@ -124,7 +126,7 @@ const PriceRange = ({
             <Text style={styles.currencySymbol}>$</Text>
             <TextInput
               style={styles.input}
-              value={maxValue.toString()}
+              value={String(maxValue)}
               onChangeText={handleMaxChange}
               keyboardType="numeric"
               maxLength={5}
