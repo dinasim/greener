@@ -9,6 +9,8 @@ import {
   TextInput,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { Platform } from 'react-native';
+
 
 /**
  * Component for selecting scientific plant names
