@@ -1,4 +1,4 @@
-
+// components/RadiusControl.js
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -14,12 +14,12 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import Slider from '@react-native-community/slider';
-import PlantCard from './PlantCard';
 
 const { width } = Dimensions.get('window');
 
 /**
  * Enhanced RadiusControl component with integrated product list
+ * Removed internal circle visualization (now handled by map)
  * 
  * @param {Object} props Component props
  * @param {number} props.radius Current radius in km
@@ -51,52 +51,12 @@ const RadiusControl = ({
   // Animation values
   const containerHeight = useRef(new Animated.Value(expanded ? 400 : 130)).current;
   const arrowRotation = useRef(new Animated.Value(expanded ? 0 : 1)).current;
-  const circleSize = useRef(new Animated.Value(50)).current;
-  const circleOpacity = useRef(new Animated.Value(0.7)).current;
   
   // Update input when radius prop changes
   useEffect(() => {
     setInputValue(radius?.toString() || '10');
     setSliderValue(radius || 10);
-    
-    // Animate circle size based on radius
-    const size = Math.min(160, 50 + radius * 2);
-    Animated.timing(circleSize, {
-      toValue: size,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
-    
-    // Briefly increase opacity when radius changes
-    Animated.sequence([
-      Animated.timing(circleOpacity, {
-        toValue: 0.9,
-        duration: 150,
-        useNativeDriver: false,
-      }),
-      Animated.timing(circleOpacity, {
-        toValue: 0.7,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  }, [radius, circleSize, circleOpacity]);
-
-  // Animate pulse effect on apply
-  const animatePulse = () => {
-    Animated.sequence([
-      Animated.timing(circleOpacity, {
-        toValue: 0.9,
-        duration: 150,
-        useNativeDriver: false
-      }),
-      Animated.timing(circleOpacity, {
-        toValue: 0.7,
-        duration: 150,
-        useNativeDriver: false
-      })
-    ]).start();
-  };
+  }, [radius]);
 
   // Handle apply button
   const handleApply = () => {
@@ -113,9 +73,6 @@ const RadiusControl = ({
     }
     
     setValidationError('');
-    
-    // Animate circle
-    animatePulse();
     
     // Call callback
     onRadiusChange(value);
@@ -227,7 +184,13 @@ const RadiusControl = ({
   };
 
   return (
-    <Animated.View style={[styles.container, { height: containerHeight }, style]}>
+    <Animated.View
+      style={[
+        styles.container,
+        { height: containerHeight },
+        style,
+      ]}
+    >
       {/* Header with toggle */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
@@ -291,23 +254,7 @@ const RadiusControl = ({
           <Text style={styles.errorText}>{validationError}</Text>
         ) : null}
 
-        <View style={styles.radiusVisual}>
-          <View style={styles.centerDot} />
-          <Animated.View 
-            style={[
-              styles.radiusCircle,
-              {
-                width: circleSize,
-                height: circleSize,
-                borderRadius: circleSize.interpolate({
-                  inputRange: [0, 200],
-                  outputRange: [0, 100],
-                }),
-                opacity: circleOpacity,
-              }
-            ]}
-          />
-        </View>
+        {/* Removed the internal radius visualization circle */}
       </View>
       
       {/* Products list section - only shown when expanded */}
@@ -488,26 +435,6 @@ const styles = StyleSheet.create({
     color: '#f44336',
     fontSize: 12,
     marginBottom: 8,
-  },
-  radiusVisual: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    height: 50,
-    marginBottom: 8,
-  },
-  centerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-    zIndex: 2,
-    position: 'absolute',
-  },
-  radiusCircle: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    borderWidth: 1,
-    borderColor: 'rgba(76, 175, 80, 0.3)',
-    position: 'absolute',
   },
   productsHeader: {
     flexDirection: 'row',

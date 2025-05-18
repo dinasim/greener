@@ -141,16 +141,54 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     });
   };
 
+  // Render rating - now with "New Product" for zero ratings
   const renderRating = () => {
-    const rating = plant.rating || (plant.seller && plant.seller.rating);
-    const reviewCount = plant.reviewCount || (plant.seller && plant.seller.totalReviews) || 0;
-    if (!rating) return null;
+    const rating = plant.rating;
+    
+    // Show "New Product" text for no ratings
+    if (!rating || rating === 0) {
+      return (
+        <Text style={styles.newProductText}>New Product</Text>
+      );
+    }
 
+    // Show star rating
     return (
-      <View style={styles.ratingContainer}>
+      <View style={styles.productRatingContainer}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <FontAwesome
+            key={`rating-${star}`}
+            name={star <= Math.round(rating) ? 'star' : 'star-o'}
+            size={14}
+            color="#FFD700"
+            style={{ marginRight: 2 }}
+          />
+        ))}
+        {plant.reviewCount > 0 && (
+          <Text style={styles.reviewCount}>({plant.reviewCount})</Text>
+        )}
+      </View>
+    );
+  };
+
+  // Render seller rating with "New Seller" for zero ratings
+  const renderSellerRating = () => {
+    const sellerRating = plant.seller?.rating;
+    const reviewCount = plant.seller?.totalReviews || 0;
+
+    // Show "New Seller" for no ratings
+    if (!sellerRating || sellerRating === 0) {
+      return (
+        <Text style={styles.newSellerText}>New Seller</Text>
+      );
+    }
+
+    // Show star rating
+    return (
+      <View style={styles.sellerRatingContainer}>
         <FontAwesome name="star" size={12} color="#FFC107" />
-        <Text style={styles.ratingText}>
-          {typeof rating === 'number' ? rating.toFixed(1) : rating}
+        <Text style={styles.sellerRatingText}>
+          {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
           {reviewCount > 0 && ` (${reviewCount})`}
         </Text>
       </View>
@@ -198,22 +236,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
         </View>
 
-        {plant.rating && (
-          <View style={styles.productRatingContainer}>
-            {[1, 2, 3, 4, 5].map((star) => (
-              <FontAwesome
-                key={`rating-${star}`}
-                name={star <= Math.round(plant.rating) ? 'star' : 'star-o'}
-                size={14}
-                color="#FFD700"
-                style={{ marginRight: 2 }}
-              />
-            ))}
-            {plant.reviewCount > 0 && (
-              <Text style={styles.reviewCount}>({plant.reviewCount})</Text>
-            )}
-          </View>
-        )}
+        {renderRating()}
 
         <View style={styles.locationRow}>
           <MaterialIcons name="location-on" size={12} color="#666" />
@@ -232,7 +255,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
             <Text style={styles.sellerName} numberOfLines={1}>
               {plant.seller?.name || plant.sellerName || 'Unknown Seller'}
             </Text>
-            {renderRating()}
+            {renderSellerRating()}
           </TouchableOpacity>
         </View>
 
@@ -364,6 +387,12 @@ const styles = StyleSheet.create({
     color: '#888',
     marginLeft: 4,
   },
+  newProductText: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
+    marginBottom: 6,
+  },
   locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -406,21 +435,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
   },
   sellerName: {
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
-    marginRight: 6,
   },
-  ratingContainer: {
+  sellerRatingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  ratingText: {
+  sellerRatingText: {
     marginLeft: 4,
     fontSize: 12,
     color: '#888',
+  },
+  newSellerText: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
   },
   footer: {
     flexDirection: 'row',
@@ -453,6 +487,5 @@ const styles = StyleSheet.create({
     color: '#aaa',
   },
 });
-
 
 export default PlantCard;

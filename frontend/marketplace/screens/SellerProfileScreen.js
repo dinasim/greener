@@ -1,9 +1,8 @@
-// Complete SellerProfileScreen.js with review button fix
-
+// screens/SellerProfileScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, FlatList,
-  ScrollView, SafeAreaView, Alert, Platform,
+  ScrollView, SafeAreaView, Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -12,6 +11,7 @@ import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import ReviewForm from '../components/ReviewForm';
+import ToastMessage from '../components/ToastMessage';
 import { fetchUserProfile } from '../services/marketplaceApi';
 
 const SellerProfileScreen = () => {
@@ -26,6 +26,13 @@ const SellerProfileScreen = () => {
   const [sellerRating, setSellerRating] = useState({ average: 0, count: 0 });
   const [avatarError, setAvatarError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(Date.now());
+  
+  // Toast message state
+  const [toast, setToast] = useState({
+    visible: false,
+    message: '',
+    type: 'info'
+  });
 
   useEffect(() => { 
     loadSellerProfile();
@@ -100,53 +107,69 @@ const SellerProfileScreen = () => {
     }
   };
 
-  // Fixed review button handler
+  // Show a toast message
+  const showToast = (message, type = 'info') => {
+    setToast({
+      visible: true,
+      message,
+      type
+    });
+  };
+
+  // Hide the toast message
+  const hideToast = () => {
+    setToast(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
+
+  // Fixed review button handler with toast messages
   const handleAddReview = () => {
-    const checkSelfReview = async () => {
-      try {
-        const userEmail = await AsyncStorage.getItem('userEmail');
+    AsyncStorage.getItem('userEmail')
+      .then(userEmail => {
         console.log('Current user email:', userEmail);
         console.log('Seller ID:', sellerId);
         
         if (userEmail === sellerId) {
-          Alert.alert("Cannot Review Yourself", "You cannot leave a review for your own profile.");
+          // Show toast message instead of Alert
+          showToast("You cannot leave a review for your own profile", "error");
           return;
         }
         
         // Explicitly set the review form visibility to true
         console.log('Setting review form to visible');
         setShowReviewForm(true);
-      } catch (err) {
+      })
+      .catch(err => {
         console.error("Error checking user email:", err);
-        // If we can't check, still allow adding a review
+        // If we can't check, show a warning but still allow adding a review
+        showToast("User verification failed, proceeding anyway", "warning");
         setShowReviewForm(true);
-      }
-    };
-    
-    // Make sure to actually call the function
-    checkSelfReview();
+      });
   };
 
-  const handleReviewsLoaded = (ratingsData) => {
-    if (ratingsData && typeof ratingsData.averageRating === 'number') {
+  const handleReviewsLoaded = (data) => {
+    if (data && typeof data === 'object') {
       setSellerRating({
-        average: ratingsData.averageRating || 0,
-        count: ratingsData.count || 0
+        average: data.averageRating || 0,
+        count: data.count || 0
       });
     }
   };
 
   const handleReviewSubmitted = () => {
     // Set active tab to reviews so the user can see their new review
-    if (activeTab !== 'reviews') {
-      setActiveTab('reviews');
-    }
+    setActiveTab('reviews');
     
     // Refresh the reviews list
     setRefreshKey(Date.now());
     
-    // Notify user that review was submitted
-    Alert.alert("Success", "Your review has been submitted successfully!");
+    // Show toast notification for successful submission
+    showToast("Your review has been submitted successfully!", "success");
+    
+    // Close the review form
+    setShowReviewForm(false);
   };
 
   const getAvatarUrl = (name, email) => {
@@ -168,6 +191,7 @@ const SellerProfileScreen = () => {
         />
       );
     }
+    
     const listings = user?.listings || [];
     const filtered = listings.filter(p => {
       if (activeTab === 'myPlants') {
@@ -177,6 +201,7 @@ const SellerProfileScreen = () => {
       }
       return false;
     });
+    
     filtered.forEach(listing => {
       if (!listing.seller || !listing.seller.name || listing.seller.name === 'Unknown Seller') {
         listing.seller = {
@@ -197,6 +222,7 @@ const SellerProfileScreen = () => {
         </View>
       );
     }
+    
     return (
       <FlatList
         data={filtered}
@@ -263,6 +289,16 @@ const SellerProfileScreen = () => {
         onBackPress={() => navigation.goBack()}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
+      
+      {/* Toast Message Component */}
+      <ToastMessage 
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={3000}
+      />
+      
       <ScrollView>
         <View style={styles.profileCard}>
           <Image 
@@ -283,6 +319,9 @@ const SellerProfileScreen = () => {
           <TouchableOpacity 
             style={styles.reviewButton} 
             onPress={handleAddReview}
+            accessible={true}
+            accessibilityLabel="Write a review"
+            accessibilityRole="button"
           >
             <MaterialIcons name="rate-review" size={16} color="#4CAF50" />
             <Text style={styles.reviewButtonText}>Write a Review</Text>
@@ -328,7 +367,7 @@ const SellerProfileScreen = () => {
         <View style={styles.tabContent}>{renderTabContent()}</View>
       </ScrollView>
       
-      {/* Review Form Modal - Make sure this is included */}
+      {/* Review Form Modal */}
       <ReviewForm
         targetId={sellerId}
         targetType="seller"
@@ -349,43 +388,135 @@ const styles = StyleSheet.create({
   retryButton: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#4CAF50', borderRadius: 6 },
   retryText: { color: '#fff', fontWeight: '600' },
   profileCard: {
-    backgroundColor: '#f0f9f3', margin: 16, padding: 20, borderRadius: 16, alignItems: 'center',
-    shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, 
-    shadowRadius: 6, elevation: 4,
+    backgroundColor: '#f0f9f3', 
+    margin: 16, 
+    padding: 20, 
+    borderRadius: 16, 
+    alignItems: 'center',
+    shadowColor: '#000', 
+    shadowOpacity: 0.1, 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowRadius: 6, 
+    elevation: 4,
   },
-  avatar: { width: 90, height: 90, borderRadius: 45, marginBottom: 12, backgroundColor: '#4CAF50' },
-  userName: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  userEmail: { fontSize: 14, color: '#666', marginTop: 2 },
-  joinDate: { fontSize: 12, color: '#999', marginTop: 2 },
-  bio: { marginTop: 10, fontSize: 14, color: '#555', textAlign: 'center' },
+  avatar: { 
+    width: 90, 
+    height: 90, 
+    borderRadius: 45, 
+    marginBottom: 12,
+    backgroundColor: '#4CAF50',
+  },
+  userName: { 
+    fontSize: 20, 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  userEmail: { 
+    fontSize: 14, 
+    color: '#666', 
+    marginTop: 2 
+  },
+  joinDate: { 
+    fontSize: 12, 
+    color: '#999', 
+    marginTop: 2 
+  },
+  bio: { 
+    marginTop: 10, 
+    fontSize: 14, 
+    color: '#555', 
+    textAlign: 'center' 
+  },
   reviewButton: {
-    flexDirection: 'row', alignItems: 'center', marginTop: 12,
-    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, 
-    borderColor: '#4CAF50', borderWidth: 1,
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    marginTop: 12,
+    paddingHorizontal: 12, 
+    paddingVertical: 6, 
+    borderRadius: 20, 
+    borderColor: '#4CAF50', 
+    borderWidth: 1,
   },
-  reviewButtonText: { color: '#4CAF50', marginLeft: 6, fontWeight: '500' },
+  reviewButtonText: { 
+    color: '#4CAF50', 
+    marginLeft: 6, 
+    fontWeight: '500' 
+  },
   statsRow: {
-    flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: 16, 
-    marginTop: 8, marginBottom: 12, backgroundColor: '#fff', paddingVertical: 12, 
-    borderRadius: 12, shadowColor: '#000', shadowOpacity: 0.05, 
-    shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2,
+    flexDirection: 'row', 
+    justifyContent: 'space-around', 
+    marginHorizontal: 16, 
+    marginTop: 8, 
+    marginBottom: 12, 
+    backgroundColor: '#fff', 
+    paddingVertical: 12, 
+    borderRadius: 12, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.05, 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowRadius: 3, 
+    elevation: 2,
   },
-  statBox: { alignItems: 'center', flex: 1 },
-  statValue: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-  statLabel: { fontSize: 12, color: '#888', marginTop: 2 },
+  statBox: { 
+    alignItems: 'center', 
+    flex: 1 
+  },
+  statValue: { 
+    fontSize: 18, 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  statLabel: { 
+    fontSize: 12, 
+    color: '#888', 
+    marginTop: 2 
+  },
   tabsContainer: {
-    flexDirection: 'row', backgroundColor: '#fff', elevation: 2,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.05, shadowRadius: 2,
+    flexDirection: 'row', 
+    backgroundColor: '#fff', 
+    elevation: 2,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 1 }, 
+    shadowOpacity: 0.05, 
+    shadowRadius: 2,
   },
-  tabButton: { flex: 1, alignItems: 'center', paddingVertical: 12 },
-  activeTabButton: { borderBottomWidth: 2, borderBottomColor: '#4CAF50' },
-  tabText: { fontSize: 14, color: '#666', marginTop: 4 },
-  activeTabText: { color: '#4CAF50', fontWeight: 'bold' },
-  tabContent: { flex: 1, padding: 8 },
-  emptyStateContainer: { alignItems: 'center', justifyContent: 'center', padding: 32 },
-  emptyStateText: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 8 },
-  plantGrid: { paddingBottom: 80 },
+  tabButton: { 
+    flex: 1, 
+    alignItems: 'center', 
+    paddingVertical: 12 
+  },
+  activeTabButton: { 
+    borderBottomWidth: 2, 
+    borderBottomColor: '#4CAF50' 
+  },
+  tabText: { 
+    fontSize: 14, 
+    color: '#666', 
+    marginTop: 4 
+  },
+  activeTabText: { 
+    color: '#4CAF50', 
+    fontWeight: 'bold' 
+  },
+  tabContent: { 
+    flex: 1, 
+    padding: 8,
+    minHeight: 300,
+  },
+  emptyStateContainer: { 
+    alignItems: 'center', 
+    justifyContent: 'center', 
+    padding: 32 
+  },
+  emptyStateText: { 
+    fontSize: 16, 
+    color: '#888', 
+    textAlign: 'center', 
+    marginTop: 8 
+  },
+  plantGrid: { 
+    paddingBottom: 80 
+  },
 });
 
 export default SellerProfileScreen;

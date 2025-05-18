@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+// components/MapSearchBox.js
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -29,7 +30,8 @@ const MapSearchBox = ({ onLocationSelect, style, azureMapsKey }) => {
   const [error, setError] = useState('');
 
   // Animation value for expanding/collapsing
-  const [animation] = useState(new Animated.Value(0));
+  const animation = useRef(new Animated.Value(0)).current;
+  const inputRef = useRef(null);
 
   // Fetch address suggestions
   useEffect(() => {
@@ -85,19 +87,23 @@ const MapSearchBox = ({ onLocationSelect, style, azureMapsKey }) => {
   // Toggle expanded state with animation
   const toggleExpanded = () => {
     const toValue = expanded ? 0 : 1;
+    setExpanded(!expanded);
+    
     Animated.timing(animation, {
       toValue,
       duration: 200,
       useNativeDriver: false,
-    }).start();
-    setExpanded(!expanded);
-    
-    // Reset fields when collapsing
-    if (expanded) {
-      setQuery('');
-      setSuggestions([]);
-      setError('');
-    }
+    }).start(() => {
+      if (!expanded) {
+        // Focus input when expanding
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      } else {
+        // Clear text when collapsing
+        setQuery('');
+      }
+    });
   };
 
   // Calculate animated width for the search box
@@ -193,6 +199,7 @@ const MapSearchBox = ({ onLocationSelect, style, azureMapsKey }) => {
           <View style={styles.searchInputContainer}>
             <MaterialIcons name="search" size={20} color="#4CAF50" style={styles.searchIcon} />
             <TextInput
+              ref={inputRef}
               style={styles.searchInput}
               value={query}
               onChangeText={setQuery}
@@ -251,8 +258,7 @@ const MapSearchBox = ({ onLocationSelect, style, azureMapsKey }) => {
           <TouchableOpacity
             style={[
               styles.searchButton,
-              !query.trim() && styles.disabledButton,
-              isLoading && styles.disabledButton
+              (!query.trim() || isLoading) && styles.disabledButton
             ]}
             onPress={handleSearch}
             disabled={!query.trim() || isLoading}

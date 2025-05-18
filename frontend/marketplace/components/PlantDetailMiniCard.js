@@ -40,6 +40,23 @@ const PlantDetailMiniCard = ({ plant, onClose, onViewDetails }) => {
     return { uri: imageUrl || 'https://via.placeholder.com/100?text=Plant' };
   };
 
+  // Render rating - based on availability
+  const renderRating = () => {
+    if (!plant.rating || plant.rating === 0) {
+      return <Text style={styles.newProductText}>New Product</Text>;
+    }
+    
+    return (
+      <View style={styles.ratingContainer}>
+        <MaterialIcons name="star" size={14} color="#FFD700" />
+        <Text style={styles.ratingText}>
+          {typeof plant.rating === 'number' ? plant.rating.toFixed(1) : plant.rating}
+          {plant.reviewCount ? ` (${plant.reviewCount})` : ''}
+        </Text>
+      </View>
+    );
+  };
+
   return (
     <View style={styles.container}>
       <TouchableOpacity 
@@ -58,6 +75,8 @@ const PlantDetailMiniCard = ({ plant, onClose, onViewDetails }) => {
           </Text>
           
           <Text style={styles.price}>${formatPrice(plant.price)}</Text>
+          
+          {renderRating()}
           
           <View style={styles.locationContainer}>
             <MaterialIcons name="place" size={14} color="#666" />
@@ -131,6 +150,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#4CAF50',
+    marginBottom: 4,
+  },
+  ratingContainer: {
+    flexDirection: 'row', 
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  ratingText: {
+    marginLeft: 4,
+    fontSize: 12,
+    color: '#666',
+  },
+  newProductText: {
+    fontSize: 12,
+    color: '#888',
+    fontStyle: 'italic',
     marginBottom: 4,
   },
   locationContainer: {

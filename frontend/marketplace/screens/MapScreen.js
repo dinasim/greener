@@ -18,6 +18,7 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import CrossPlatformAzureMapView from '../components/CrossPlatformAzureMapView';
 import MapSearchBox from '../components/MapSearchBox';
 import RadiusControl from '../components/RadiusControl';
+import ProductListView from '../components/ProductListView';
 import { getNearbyProducts, getAzureMapsKey, reverseGeocode } from '../services/marketplaceApi';
 
 /**
@@ -25,6 +26,7 @@ import { getNearbyProducts, getAzureMapsKey, reverseGeocode } from '../services/
  * 1. Radius controls remaining visible when using "My Location"
  * 2. Integrated product list in the radius control
  * 3. Better error handling and state management
+ * 4. Fixed GPS current location functionality
  */
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -46,6 +48,8 @@ const MapScreen = () => {
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [radiusVisible, setRadiusVisible] = useState(true);
+  const [myLocation, setMyLocation] = useState(null);
+  const [showMyLocation, setShowMyLocation] = useState(false);
   
   // Refs
   const mapRef = useRef(null);
@@ -183,7 +187,7 @@ const MapScreen = () => {
     }
   };
 
-  // FIXED: Get current location - Now properly preserves radius control visibility
+  // FIXED: Get current location - Now properly gets device GPS and preserves radius control
   const handleGetCurrentLocation = async () => {
     try {
       setIsLoading(true);
@@ -201,10 +205,16 @@ const MapScreen = () => {
       }
 
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced
+        accuracy: Location.Accuracy.Highest,
+        maximumAge: 0,  // Get fresh coordinates
+        timeout: 15000  // 15 seconds timeout
       });
 
       const { latitude, longitude } = location.coords;
+      
+      // Save my location state for the map marker
+      setMyLocation({ latitude, longitude });
+      setShowMyLocation(true);
 
       try {
         // Reverse geocode to get address details
@@ -285,6 +295,13 @@ const MapScreen = () => {
     }
   };
 
+  // Retry loading products
+  const handleRetry = () => {
+    if (selectedLocation?.latitude && selectedLocation?.longitude) {
+      loadNearbyProducts(selectedLocation, searchRadius);
+    }
+  };
+
   // Render loading state
   if (isKeyLoading) {
     return (
@@ -327,7 +344,7 @@ const MapScreen = () => {
                 <Text style={styles.errorText}>{error}</Text>
                 <TouchableOpacity 
                   style={styles.retryButton}
-                  onPress={() => selectedLocation && loadNearbyProducts(selectedLocation, searchRadius)}
+                  onPress={handleRetry}
                 >
                   <Text style={styles.retryButtonText}>Retry</Text>
                 </TouchableOpacity>
@@ -351,8 +368,24 @@ const MapScreen = () => {
               azureMapsKey={azureMapsKey}
               searchRadius={searchRadius}
               onMapPress={handleMapPress}
+              showMyLocation={showMyLocation}
+              myLocation={myLocation}
+              useCustomPin={true}
             />
           </>
+        )}
+
+        {/* List View */}
+        {viewMode === 'list' && (
+          <ProductListView
+            products={nearbyProducts}
+            isLoading={isLoading}
+            error={error}
+            onRetry={handleRetry}
+            onProductSelect={handleProductSelect}
+            sortOrder={sortOrder}
+            onSortChange={toggleSortOrder}
+          />
         )}
 
         {/* Search Box */}

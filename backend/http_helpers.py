@@ -1,5 +1,6 @@
-import json
+# http_helpers.py
 import azure.functions as func
+import json
 
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -11,36 +12,39 @@ def handle_options_request():
     response = func.HttpResponse(status_code=200)
     return add_cors_headers(response)
 
-def create_error_response(error_message, status_code=400):
+def create_success_response(data, status_code=200):
     response = func.HttpResponse(
-        body=json.dumps({"error": str(error_message)}),
-        mimetype="application/json",
-        status_code=status_code
+        body=json.dumps(data),
+        status_code=status_code,
+        mimetype="application/json"
     )
     return add_cors_headers(response)
 
-def create_success_response(data, status_code=200):
+def create_error_response(message, status_code=400):
     response = func.HttpResponse(
-        body=json.dumps(data, default=str),
-        mimetype="application/json",
-        status_code=status_code
+        body=json.dumps({"error": message}),
+        status_code=status_code,
+        mimetype="application/json"
     )
     return add_cors_headers(response)
 
 def extract_user_id(req):
-    # Multiple ways to extract user ID
-    user_id = (
-        req.params.get('userId') or 
-        req.params.get('email') or 
-        req.headers.get('X-User-Email')
-    )
+    # Check Authorization header first (for token-based auth)
+    # auth_header = req.headers.get('Authorization')
+    # if auth_header and auth_header.startswith('Bearer '):
+    #     # Parse token and extract user ID
+    #     # This is a simplified example - in a real app, you'd verify the token
+    #     pass
     
-    # Try to get from JSON body if not found in params/headers
-    if not user_id:
-        try:
-            body = req.get_json()
-            user_id = body.get('userId') or body.get('email')
-        except:
-            pass
+    # Check custom headers (for simple API key or email-based auth)
+    user_email = req.headers.get('X-User-Email')
+    if user_email:
+        return user_email
     
-    return user_id
+    # Check query parameters as fallback
+    user_id = req.params.get('userId')
+    if user_id:
+        return user_id
+    
+    # If all methods fail, return None
+    return None

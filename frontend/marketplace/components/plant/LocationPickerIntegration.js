@@ -1,5 +1,4 @@
-// components/plant/LocationPickerIntegration.js - Enhanced GPS functionality
-
+// components/plant/LocationPickerIntegration.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
