@@ -10,9 +10,7 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-
-// Replace with your actual Azure Maps key
-const AZURE_MAPS_KEY = 'YOUR_AZURE_MAPS_KEY_HERE';
+import { getAzureMapsKey, geocodeAddress } from '../services/azureMapsService';
 
 export default function LocationPicker({ value, onChange, style }) {
   const [query, setQuery] = useState('');
@@ -20,28 +18,52 @@ export default function LocationPicker({ value, onChange, style }) {
   const [selectedLocation, setSelectedLocation] = useState(value || null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [azureMapsKey, setAzureMapsKey] = useState(null);
+  const [isKeyLoading, setIsKeyLoading] = useState(true);
 
+  // Load Azure Maps key from backend
+  useEffect(() => {
+    async function loadMapsKey() {
+      try {
+        setIsKeyLoading(true);
+        const key = await getAzureMapsKey();
+        setAzureMapsKey(key);
+        setIsKeyLoading(false);
+      } catch (err) {
+        console.error('Error fetching Azure Maps key:', err);
+        setError('Failed to load map configuration');
+        setIsKeyLoading(false);
+      }
+    }
+    
+    loadMapsKey();
+  }, []);
+
+  // Fetch address suggestions from Azure Maps
   useEffect(() => {
     const fetchSuggestions = async () => {
-      if (!query || query.length < 3) {
+      if (!query || query.length < 3 || !azureMapsKey) {
         setSuggestions([]);
         return;
       }
 
       try {
-        const res = await fetch(`https://atlas.microsoft.com/search/address/json?api-version=1.0&typeahead=true&countrySet=IL&language=en-US&subscription-key=${AZURE_MAPS_KEY}&query=${encodeURIComponent(query)}`);
+        setLoading(true);
+        const res = await fetch(`https://atlas.microsoft.com/search/address/json?api-version=1.0&typeahead=true&countrySet=IL&language=en-US&subscription-key=${azureMapsKey}&query=${encodeURIComponent(query)}`);
         const data = await res.json();
         const validResults = data.results?.filter(r => r.address?.country === 'Israel') || [];
         setSuggestions(validResults);
       } catch (err) {
         console.error('Azure Maps error:', err);
         setSuggestions([]);
+      } finally {
+        setLoading(false);
       }
     };
 
     const timeout = setTimeout(fetchSuggestions, 300); // debounce
     return () => clearTimeout(timeout);
-  }, [query]);
+  }, [query, azureMapsKey]);
 
   const handleSelect = (item) => {
     const addr = item.address || {};
@@ -68,6 +90,18 @@ export default function LocationPicker({ value, onChange, style }) {
     onChange(selectedLocation);
   };
 
+  if (isKeyLoading) {
+    return (
+      <View style={[styles.container, style]}>
+        <Text style={styles.label}>Address in Israel</Text>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color="#4CAF50" />
+          <Text style={styles.loadingText}>Loading map service...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={[styles.container, style]}>
       <Text style={styles.label}>Address in Israel</Text>
@@ -84,6 +118,7 @@ export default function LocationPicker({ value, onChange, style }) {
           }}
           placeholderTextColor="#999"
         />
+        {loading && <ActivityIndicator size="small" color="#4CAF50" style={styles.loadingIcon} />}
       </View>
 
       {suggestions.length > 0 && (
@@ -143,6 +178,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginLeft: 8,
     color: '#333',
+  },
+  loadingIcon: {
+    marginLeft: 8,
+  },
+  loadingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+  },
+  loadingText: {
+    marginLeft: 8,
+    color: '#666',
+    fontSize: 14,
   },
   suggestionsList: {
     backgroundColor: '#fff',
