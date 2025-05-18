@@ -2,33 +2,37 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, 
-  Text, 
-  TextInput, 
   StyleSheet, 
   ScrollView, 
   TouchableOpacity, 
-  Image, 
-  Alert,
-  ActivityIndicator, 
+  Text,
   KeyboardAvoidingView, 
   Platform, 
   SafeAreaView, 
-  Modal, 
-  FlatList,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
-import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { uploadImage } from '../services/marketplaceApi'; 
-import * as Location from 'expo-location';
-import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
-import MarketplaceHeader from '../components/MarketplaceHeader';
-import { createPlant } from '../services/marketplaceApi';
-import { getAddPlantCategories } from '../services/categories';
-import { geocodeAddress, reverseGeocode } from '../services/azureMapsService';
+import { useNavigation } from '@react-navigation/native';
 
+// Import services
+import { createPlant, uploadImage } from '../services/marketplaceApi'; 
+import { getAddPlantCategories } from '../services/categories';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
+
+// Import components
+import MarketplaceHeader from '../components/MarketplaceHeader';
+import PlantTypeSelector from '../components/plant/PlantTypeSelector';
+import PlantImagePicker from '../components/plant/PlantImagePicker';
+import BasicInfoForm from '../components/plant/BasicInfoForm';
+import LocationPickerIntegration from '../components/plant/LocationPickerIntegration';
+import DescriptionForm from '../components/plant/DescriptionForm';
+import ScientificNameSelector from '../components/plant/ScientificNameSelector';
+import SuccessOverlay from '../components/plant/SuccessOverlay';
+
+// Scientific plant names data
 const SCIENTIFIC_NAMES = [
   { id: '1', name: 'Monstera Deliciosa', common: 'Swiss Cheese Plant' },
   { id: '2', name: 'Ficus Lyrata', common: 'Fiddle Leaf Fig' },
@@ -44,7 +48,10 @@ const SCIENTIFIC_NAMES = [
 
 const AddPlantScreen = () => {
   const navigation = useNavigation();
+  
+  // State variables
   const [isLoading, setIsLoading] = useState(false);
+  const [isImageLoading, setIsImageLoading] = useState(false);
   const [images, setImages] = useState([]);
   const [listingType, setListingType] = useState('plant');
   const [formData, setFormData] = useState({
@@ -53,10 +60,14 @@ const AddPlantScreen = () => {
     category: 'Indoor Plants', 
     description: '', 
     careInstructions: '', 
-    city: '', 
-    street: '',
-    houseNumber: '',
     scientificName: '', 
+    location: {
+      city: '',
+      street: '',
+      houseNumber: '',
+      latitude: null,
+      longitude: null,
+    },
   });
   const [formErrors, setFormErrors] = useState({
     title: '', 
@@ -66,14 +77,13 @@ const AddPlantScreen = () => {
     images: '',
   });
   const [showScientificNameModal, setShowScientificNameModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filteredScientificNames, setFilteredScientificNames] = useState(SCIENTIFIC_NAMES);
-  const [currentLocation, setCurrentLocation] = useState(null);
-  const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [newPlantId, setNewPlantId] = useState(null);
+  
+  // Get categories from service
   const categories = getAddPlantCategories();
   
+  // Load user location from AsyncStorage
   useEffect(() => {
     const loadUserLocation = async () => {
       try {
@@ -83,9 +93,12 @@ const AddPlantScreen = () => {
           if (profile.location) {
             setFormData(prevData => ({
               ...prevData,
-              city: profile.city || '',
-              street: profile.street || '',
-              houseNumber: profile.houseNumber || ''
+              location: {
+                ...prevData.location,
+                city: profile.city || '',
+                street: profile.street || '',
+                houseNumber: profile.houseNumber || ''
+              }
             }));
           }
         }
@@ -96,20 +109,7 @@ const AddPlantScreen = () => {
     loadUserLocation();
   }, []);
   
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredScientificNames(SCIENTIFIC_NAMES);
-    } else {
-      const lowercaseQuery = searchQuery.toLowerCase();
-      const filtered = SCIENTIFIC_NAMES.filter(
-        plant => 
-          plant.name.toLowerCase().includes(lowercaseQuery) ||
-          plant.common.toLowerCase().includes(lowercaseQuery)
-      );
-      setFilteredScientificNames(filtered);
-    }
-  }, [searchQuery]);
-
+  // Handle listing type change
   useEffect(() => {
     if (listingType === 'accessory') {
       setFormData(prev => ({
@@ -130,21 +130,65 @@ const AddPlantScreen = () => {
       }
     }
   }, [listingType]);
-
+  
+  // Form field change handler
   const handleChange = (key, value) => {
-    setFormData({ ...formData, [key]: value });
+    if (key.includes('.')) {
+      // Handle nested objects like location.city
+      const [parent, child] = key.split('.');
+      setFormData({ 
+        ...formData, 
+        [parent]: { 
+          ...formData[parent], 
+          [child]: value 
+        } 
+      });
+    } else {
+      setFormData({ ...formData, [key]: value });
+    }
+    
+    // Clear error when field is changed
     if (formErrors[key]) {
       setFormErrors({ ...formErrors, [key]: '' });
     }
   };
-
+  
+  // Location change handler
+  const handleLocationChange = (location) => {
+    setFormData({
+      ...formData,
+      location: location
+    });
+    
+    if (formErrors.city && location.city) {
+      setFormErrors({
+        ...formErrors,
+        city: ''
+      });
+    }
+  };
+  
+  // Scientific name selection handler
+  const handleSelectScientificName = (item) => {
+    setFormData({
+      ...formData,
+      scientificName: item.name,
+      title: formData.title || item.common
+    });
+    setShowScientificNameModal(false);
+  };
+  
+  // Camera handler
   const takePhoto = async () => {
     try {
+      setIsImageLoading(true);
+      
       // Special handling for web platform
       if (Platform.OS === 'web') {
         // Check if the browser supports the MediaDevices API
         if (!navigator?.mediaDevices?.getUserMedia) {
           Alert.alert('Not Supported', 'Your browser does not support camera access. Please use the gallery option instead.', [{ text: 'OK' }]);
+          setIsImageLoading(false);
           return;
         }
         
@@ -160,7 +204,10 @@ const AddPlantScreen = () => {
             quality: 0.8,
           });
           
-          if (result.canceled) return;
+          if (result.canceled) {
+            setIsImageLoading(false);
+            return;
+          }
           
           const selectedAsset = result.assets?.[0] || { uri: result.uri };
           if (selectedAsset?.uri) {
@@ -173,6 +220,7 @@ const AddPlantScreen = () => {
           console.error('Camera access error:', err);
           Alert.alert('Camera Access Error', 'Could not access your camera. Please check your browser permissions or use the gallery option instead.', [{ text: 'OK' }]);
         }
+        setIsImageLoading(false);
         return;
       }
       
@@ -180,11 +228,13 @@ const AddPlantScreen = () => {
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult.granted) {
         Alert.alert('Permission Required', 'We need camera permission to take photos', [{ text: 'OK' }]);
+        setIsImageLoading(false);
         return;
       }
       
       if (images.length >= 5) {
         Alert.alert('Too Many Images', 'You can only upload up to 5 images', [{ text: 'OK' }]);
+        setIsImageLoading(false);
         return;
       }
       
@@ -194,7 +244,10 @@ const AddPlantScreen = () => {
         quality: 0.8,
       });
       
-      if (result.canceled) return;
+      if (result.canceled) {
+        setIsImageLoading(false);
+        return;
+      }
       
       const selectedAsset = result.assets?.[0] || { uri: result.uri };
       if (selectedAsset?.uri) {
@@ -220,20 +273,29 @@ const AddPlantScreen = () => {
     } catch (error) {
       console.error('Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo. Please try again later.', [{ text: 'OK' }]);
+    } finally {
+      setIsImageLoading(false);
     }
   };
-
+  
+  // Gallery image picker handler
   const pickImage = async () => {
     try {
+      setIsImageLoading(true);
+      
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permissionResult.granted) {
         Alert.alert('Permission Required', 'We need permission to access your photos', [{ text: 'OK' }]);
+        setIsImageLoading(false);
         return;
       }
+      
       if (images.length >= 5) {
         Alert.alert('Too Many Images', 'You can only upload up to 5 images', [{ text: 'OK' }]);
+        setIsImageLoading(false);
         return;
       }
+      
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
@@ -242,9 +304,12 @@ const AddPlantScreen = () => {
         allowsMultipleSelection: Platform.OS === 'ios' || Platform.OS === 'android',
         selectionLimit: images.length < 4 ? 5 - images.length : 1,
       });
+      
       if (result.canceled) {
+        setIsImageLoading(false);
         return;
       }
+      
       const selectedAssets = result.assets || (result.uri ? [{ uri: result.uri }] : []);
       if (selectedAssets.length > 0) {
         if (images.length + selectedAssets.length > 5) {
@@ -252,6 +317,7 @@ const AddPlantScreen = () => {
             [{ text: 'OK' }]);
           selectedAssets.length = 5 - images.length;
         }
+        
         const newImages = [...images];
         for (const asset of selectedAssets) {
           const imageUri = asset.uri;
@@ -268,6 +334,7 @@ const AddPlantScreen = () => {
           }
           newImages.push(imageUri);
         }
+        
         setImages(newImages);
         if (formErrors.images) {
           setFormErrors({ ...formErrors, images: '' });
@@ -277,129 +344,31 @@ const AddPlantScreen = () => {
       console.error('Error picking image:', error);
       Alert.alert('Error', 'Failed to pick image. Please try again or use a different image.',
         [{ text: 'OK' }]);
+    } finally {
+      setIsImageLoading(false);
     }
   };
-
+  
+  // Image removal handler
   const removeImage = (index) => {
     const newImages = [...images];
     newImages.splice(index, 1);
     setImages(newImages);
   };
-
-  const selectScientificName = (item) => {
-    setFormData({
-      ...formData,
-      scientificName: item.name,
-      title: formData.title || item.common
-    });
-    setShowScientificNameModal(false);
-  };
-
-  const useCurrentLocation = async () => {
-    setIsLoadingLocation(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied',
-          'We need location access to use your current location. You can still enter your location manually.',
-          [{ text: 'OK' }]);
-        setIsLoadingLocation(false);
-        return;
-      }
-      
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-        timeout: 15000
-      });
-      
-      const { latitude, longitude } = position.coords;
-      
-      try {
-        // Use our Azure Maps reverse geocode function
-        const locationData = await reverseGeocode(latitude, longitude);
-        
-        if (locationData) {
-          setCurrentLocation({
-            latitude: locationData.latitude,
-            longitude: locationData.longitude,
-            city: locationData.city || '',
-            country: locationData.country || '',
-            street: locationData.street || '',
-            houseNumber: locationData.houseNumber || '',
-            formattedAddress: locationData.formattedAddress || ''
-          });
-          
-          // Only update forms if we're in Israel
-          if (locationData.country === 'Israel') {
-            setFormData(prev => ({
-              ...prev,
-              city: locationData.city || '',
-              street: locationData.street || '',
-              houseNumber: locationData.houseNumber || ''
-            }));
-          } else {
-            Alert.alert('Location Notice', 'We only support locations in Israel. Please enter an Israeli address manually.', [{ text: 'OK' }]);
-          }
-        }
-      } catch (apiError) {
-        console.warn('Reverse geocoding failed:', apiError);
-        
-        // Fallback to Expo's geocoder
-        try {
-          const addresses = await Location.reverseGeocodeAsync({
-            latitude,
-            longitude
-          });
-          
-          if (addresses && addresses.length > 0) {
-            const address = addresses[0];
-            const isIsrael = address.country === 'Israel';
-            
-            setCurrentLocation({
-              latitude,
-              longitude,
-              city: address.city || '',
-              country: address.country || '',
-              street: address.street || '',
-              houseNumber: address.name || '',
-              formattedAddress: `${address.street || ''} ${address.name || ''}, ${address.city || ''}, ${address.country || ''}`
-            });
-            
-            if (isIsrael) {
-              setFormData(prev => ({
-                ...prev,
-                city: address.city || '',
-                street: address.street || '',
-                houseNumber: address.name || ''
-              }));
-            } else {
-              Alert.alert('Location Notice', 'We only support locations in Israel. Please enter an Israeli address manually.', [{ text: 'OK' }]);
-            }
-          }
-        } catch (error) {
-          console.error('Expo geocoding error:', error);
-          Alert.alert('Location Error', 'Could not determine your address. Please enter it manually.', [{ text: 'OK' }]);
-        }
-      }
-      
-      setIsLoadingLocation(false);
-    } catch (error) {
-      console.error('Error getting location:', error);
-      Alert.alert('Location Error', 'Could not get your current location. Please enter it manually.', [{ text: 'OK' }]);
-      setIsLoadingLocation(false);
-    }
-  };
-
+  
+  // Form validation
   const validateForm = () => {
     const errors = {};
     let isValid = true;
+    
     if (!formData.title.trim()) {
-      errors.title = 'Plant name is required';
+      errors.title = 'Name is required';
       isValid = false;
     } else if (formData.title.length < 3 || formData.title.length > 50) {
       errors.title = 'Name should be between 3 and 50 characters';
       isValid = false;
     }
+    
     if (!formData.price) {
       errors.price = 'Price is required';
       isValid = false;
@@ -407,6 +376,7 @@ const AddPlantScreen = () => {
       errors.price = 'Please enter a valid price';
       isValid = false;
     }
+    
     if (!formData.description.trim()) {
       errors.description = 'Description is required';
       isValid = false;
@@ -414,18 +384,22 @@ const AddPlantScreen = () => {
       errors.description = 'Description must be at least 10 characters';
       isValid = false;
     }
-    if (!formData.city.trim()) {
+    
+    if (!formData.location?.city?.trim()) {
       errors.city = 'City is required';
       isValid = false;
     }
+    
     if (images.length === 0) {
       errors.images = 'Please add at least one image';
       isValid = false;
     }
+    
     setFormErrors(errors);
     return isValid;
   };
-
+  
+  // Upload images to server
   const prepareImageData = async () => {
     try {
       const uploaded = [];
@@ -439,161 +413,82 @@ const AddPlantScreen = () => {
       throw new Error('Image upload failed. Please try again.');
     }
   };
-
-const handleSubmit = async () => {
-  if (!validateForm()) return;
-  setIsLoading(true);
-  try {
-    const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
-    if (!userEmail) {
-      throw new Error('User is not authenticated');
-    }
-    const imageData = await prepareImageData();
+  
+  // Submit form handler
+  const handleSubmit = async () => {
+    if (!validateForm()) return;
     
-    // Prepare location data structure with focus on city, street, and house number
-    const locationData = {
-      city: formData.city,
-      street: formData.street,
-      houseNumber: formData.houseNumber
-    };
+    setIsLoading(true);
     
-    // If we have coordinates from currentLocation, include them
-    if (currentLocation?.latitude && currentLocation?.longitude) {
-      locationData.latitude = currentLocation.latitude;
-      locationData.longitude = currentLocation.longitude;
-    } else {
-      // If we don't have coordinates from current location, try to geocode the address
-      try {
-        const addressString = `${formData.street} ${formData.houseNumber}, ${formData.city}, Israel`;
-        console.log('Geocoding address:', addressString);
-        
-        const geocodedLocation = await geocodeAddress(addressString);
-        if (geocodedLocation?.latitude && geocodedLocation?.longitude) {
-          locationData.latitude = geocodedLocation.latitude;
-          locationData.longitude = geocodedLocation.longitude;
-          console.log('Successfully geocoded address:', geocodedLocation);
-        }
-      } catch (geocodeError) {
-        console.warn('Failed to geocode address:', geocodeError);
-        // Continue without coordinates - this is not a blocking error
+    try {
+      const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+      if (!userEmail) {
+        throw new Error('User is not authenticated');
       }
-    }
-    
-    const plantData = {
-      title: formData.title,
-      price: parseFloat(formData.price),
-      category: formData.category,
-      description: formData.description,
-      city: formData.city,
-      careInstructions: formData.careInstructions,
-      scientificName: formData.scientificName,
-      image: imageData[0],
-      images: imageData.slice(1),
-      sellerId: userEmail,
-      productType: listingType,
-      location: locationData,  // Include the full location object
-    };
-    
-    console.log('Submitting plant with location data:', JSON.stringify(locationData));
-    const result = await createPlant(plantData);
-    
-    if (result?.productId) {
-      setNewPlantId(result.productId);
-      await triggerUpdate(UPDATE_TYPES.PRODUCT, {
-        productId: result.productId,
-        action: 'create',
+      
+      const imageData = await prepareImageData();
+      
+      // Prepare location data structure for backend
+      const locationData = {
+        city: formData.location.city,
+        street: formData.location.street,
+        houseNumber: formData.location.houseNumber
+      };
+      
+      // If we have coordinates, include them
+      if (formData.location?.latitude && formData.location?.longitude) {
+        locationData.latitude = formData.location.latitude;
+        locationData.longitude = formData.location.longitude;
+      }
+      
+      const plantData = {
+        title: formData.title,
+        price: parseFloat(formData.price),
         category: formData.category,
-        seller: userEmail,
-        timestamp: Date.now()
-      });
-      setShowSuccess(true);
-      setTimeout(() => {
-        setShowSuccess(false);
-        navigation.navigate('MarketplaceHome', { refresh: true });
+        description: formData.description,
+        careInstructions: formData.careInstructions,
+        scientificName: formData.scientificName,
+        image: imageData[0],
+        images: imageData.slice(1),
+        sellerId: userEmail,
+        productType: listingType,
+        location: locationData,
+      };
+      
+      const result = await createPlant(plantData);
+      
+      if (result?.productId) {
+        setNewPlantId(result.productId);
+        
+        // Trigger update to refresh other screens
+        await triggerUpdate(UPDATE_TYPES.PRODUCT, {
+          productId: result.productId,
+          action: 'create',
+          category: formData.category,
+          seller: userEmail,
+          timestamp: Date.now()
+        });
+        
+        // Show success message and navigate back
+        setShowSuccess(true);
         setTimeout(() => {
-          navigation.navigate('Profile', { refresh: true });
-        }, 300);
-      }, 1500);
-    } else {
-      throw new Error('Failed to create listing');
+          setShowSuccess(false);
+          navigation.navigate('MarketplaceHome', { refresh: true });
+          setTimeout(() => {
+            navigation.navigate('Profile', { refresh: true });
+          }, 300);
+        }, 1500);
+      } else {
+        throw new Error('Failed to create listing');
+      }
+    } catch (error) {
+      console.error('Error creating plant:', error);
+      Alert.alert('Error', 'Failed to create listing. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error) {
-    console.error('Error creating plant:', error);
-    Alert.alert('Error', 'Failed to create listing. Please try again.');
-  } finally {
-    setIsLoading(false);
-  }
-};
-
-  const renderScientificNameModal = () => {
-    return (
-      <Modal
-        visible={showScientificNameModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowScientificNameModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select a Plant Type</Text>
-              <TouchableOpacity onPress={() => setShowScientificNameModal(false)} style={styles.closeButton}>
-                <MaterialIcons name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.searchContainer}>
-              <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search by common or scientific name"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus={Platform.OS !== 'web'}
-              />
-              {searchQuery ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-                  <MaterialIcons name="clear" size={20} color="#999" />
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            <FlatList
-              data={filteredScientificNames}
-              keyExtractor={(item) => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity style={styles.nameItem} onPress={() => selectScientificName(item)}>
-                  <View>
-                    <Text style={styles.commonName}>{item.common}</Text>
-                    <Text style={styles.scientificName}>{item.name}</Text>
-                  </View>
-                  <MaterialIcons name="chevron-right" size={24} color="#999" />
-                </TouchableOpacity>
-              )}
-              ListEmptyComponent={
-                <View style={styles.emptyList}>
-                  <Text style={styles.emptyText}>No plants found matching your search</Text>
-                </View>
-              }
-            />
-          </View>
-        </View>
-      </Modal>
-    );
   };
-
-  const renderSuccessOverlay = () => {
-    return (
-      <Modal visible={showSuccess} transparent={true} animationType="fade">
-        <View style={styles.successOverlay}>
-          <View style={styles.successContent}>
-            <MaterialIcons name="check-circle" size={60} color="#4CAF50" />
-            <Text style={styles.successTitle}>Successfully Listed!</Text>
-            <Text style={styles.successText}>Your item has been added to the marketplace</Text>
-          </View>
-        </View>
-      </Modal>
-    );
-  };
-
+  
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader
@@ -602,214 +497,68 @@ const handleSubmit = async () => {
         onBackPress={() => navigation.goBack()}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoidingView}>
+      
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
+        style={styles.keyboardAvoidingView}
+      >
         <ScrollView style={styles.scrollView}>
           <View style={styles.content}>
-            <View style={styles.listingTypeContainer}>
-              <Text style={styles.listingTypeTitle}>What are you listing?</Text>
-              <View style={styles.listingTypeButtons}>
-                <TouchableOpacity style={[styles.listingTypeButton, listingType === 'plant' && styles.selectedListingType]}
-                  onPress={() => setListingType('plant')}>
-                  <MaterialIcons name="eco" size={24} color={listingType === 'plant' ? '#fff' : '#4CAF50'} />
-                  <Text style={[styles.listingTypeText, listingType === 'plant' && styles.selectedListingTypeText]}>Plant</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.listingTypeButton, listingType === 'accessory' && styles.selectedListingType]}
-                  onPress={() => setListingType('accessory')}>
-                  <MaterialIcons name="shopping-bag" size={24} color={listingType === 'accessory' ? '#fff' : '#4CAF50'} />
-                  <Text style={[styles.listingTypeText, listingType === 'accessory' && styles.selectedListingTypeText]}>Accessory</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.listingTypeButton, listingType === 'tool' && styles.selectedListingType]}
-                  onPress={() => setListingType('tool')}>
-                  <MaterialCommunityIcons name="tools" size={24} color={listingType === 'tool' ? '#fff' : '#4CAF50'} />
-                  <Text style={[styles.listingTypeText, listingType === 'tool' && styles.selectedListingTypeText]}>Tool</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+            {/* Listing Type Selector */}
+            <PlantTypeSelector 
+              listingType={listingType} 
+              onTypeChange={setListingType} 
+            />
+            
             <Text style={styles.title}>
               Add New {listingType === 'plant' ? 'Plant' : listingType === 'accessory' ? 'Accessory' : 'Tool'}
             </Text>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Images <Text style={styles.requiredField}>*</Text></Text>
-              <ScrollView horizontal style={styles.imageScroller}>
-                {images.map((uri, index) => (
-                  <View key={index} style={styles.imageContainer}>
-                    <Image source={{ uri }} style={styles.plantImage} />
-                    <TouchableOpacity style={styles.removeImageButton} onPress={() => removeImage(index)}>
-                      <MaterialIcons name="close" size={20} color="white" />
-                    </TouchableOpacity>
-                  </View>
-                ))}
-                {images.length < 5 && (
-                  <View style={styles.imageActionButtons}>
-                    <TouchableOpacity style={styles.addImageButton} onPress={pickImage}>
-                      <MaterialIcons name="add-photo-alternate" size={30} color="#4CAF50" />
-                      <Text style={styles.addImageText}>Gallery</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.addImageButton} onPress={takePhoto}>
-                      <MaterialIcons name="camera-alt" size={30} color="#4CAF50" />
-                      <Text style={styles.addImageText}>Camera</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </ScrollView>
-              {formErrors.images ? (
-                <Text style={styles.errorText}>{formErrors.images}</Text>
-              ) : (
-                <Text style={styles.helperText}>Add up to 5 images. First image will be the main image.</Text>
-              )}
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Basic Information</Text>
-              <Text style={styles.label}>
-                {listingType === 'plant' ? 'Plant Name' : listingType === 'accessory' ? 'Accessory Name' : 'Tool Name'} 
-                <Text style={styles.requiredField}>*</Text>
-              </Text>
-              <TextInput
-                style={[styles.input, formErrors.title && styles.inputError]}
-                value={formData.title}
-                onChangeText={(text) => handleChange('title', text)}
-                placeholder={
-                  listingType === 'plant' ? "What kind of plant is it?" : 
-                  listingType === 'accessory' ? "What is the accessory?" : "What kind of tool is it?"
-                }
-              />
-              {formErrors.title ? <Text style={styles.errorText}>{formErrors.title}</Text> : null}
-              {listingType === 'plant' && (
-                <>
-                  <Text style={styles.label}>Scientific Name (Optional)</Text>
-                  <TouchableOpacity 
-                    style={[styles.input, styles.pickerButton, formData.scientificName ? styles.filledInput : null]}
-                    onPress={() => setShowScientificNameModal(true)}>
-                    <Text style={[styles.pickerButtonText, formData.scientificName ? styles.filledInputText : null]}>
-                      {formData.scientificName || "Select plant type to auto-fill care info"}
-                    </Text>
-                    <MaterialIcons name="arrow-drop-down" size={24} color="#666" />
-                  </TouchableOpacity>
-                </>
-              )}
-              <Text style={styles.label}>Price <Text style={styles.requiredField}>*</Text></Text>
-              <TextInput
-                style={[styles.input, formErrors.price && styles.inputError]}
-                value={formData.price}
-                onChangeText={(text) => handleChange('price', text)}
-                placeholder="How much are you selling it for?"
-                keyboardType="numeric"
-              />
-              {formErrors.price ? <Text style={styles.errorText}>{formErrors.price}</Text> : null}
-              <Text style={styles.label}>Category</Text>
-              <ScrollView horizontal style={styles.categoryScroller}>
-                {categories
-                  .filter(category => {
-                    if (listingType === 'plant') {
-                      return category !== 'Accessories' && category !== 'Tools';
-                    } else if (listingType === 'accessory') {
-                      return category === 'Accessories';
-                    } else if (listingType === 'tool') {
-                      return category === 'Tools';
-                    }
-                    return true;
-                  })
-                  .map((category) => (
-                    <TouchableOpacity
-                      key={category}
-                      style={[styles.categoryButton, formData.category === category && styles.selectedCategoryButton]}
-                      onPress={() => handleChange('category', category)}>
-                      <Text style={[styles.categoryText, formData.category === category && styles.selectedCategoryText]}>
-                        {category}
-                      </Text>
-                    </TouchableOpacity>
-                  ))
-                }
-              </ScrollView>
-              
-              {/* Location section - Israel only */}
-              <Text style={styles.label}>City <Text style={styles.requiredField}>*</Text></Text>
-              <TextInput
-                style={[styles.input, formErrors.city && styles.inputError]}
-                value={formData.city}
-                onChangeText={(text) => handleChange('city', text)}
-                placeholder="City (Israel only)"
-              />
-              {formErrors.city ? <Text style={styles.errorText}>{formErrors.city}</Text> : null}
-              
-              <Text style={styles.label}>Street</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.street}
-                onChangeText={(text) => handleChange('street', text)}
-                placeholder="Street name"
-              />
-              
-              <Text style={styles.label}>House Number (Optional)</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.houseNumber}
-                onChangeText={(text) => handleChange('houseNumber', text)}
-                placeholder="House number"
-                keyboardType="numeric"
-              />
-              
-              <View style={styles.locationActionContainer}>
-                <TouchableOpacity 
-                  style={styles.currentLocationButton} 
-                  onPress={useCurrentLocation}
-                  disabled={isLoadingLocation}
-                >
-                  {isLoadingLocation ? (
-                    <ActivityIndicator size="small" color="#fff" />
-                  ) : (
-                    <>
-                      <MaterialIcons name="my-location" size={16} color="#fff" />
-                      <Text style={styles.currentLocationText}>Use Current Location</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-                <Text style={styles.locationHelperText}>Israel addresses only</Text>
-              </View>
-              
-              {/* Show coordinates if available */}
-              {currentLocation && currentLocation.latitude && currentLocation.longitude && (
-                <View style={styles.coordsContainer}>
-                  <Text style={styles.coordsText}>
-                    Coordinates: {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
-                  </Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Description <Text style={styles.requiredField}>*</Text></Text>
-              <TextInput
-                style={[styles.input, styles.textArea, formErrors.description && styles.inputError]}
-                value={formData.description}
-                onChangeText={(text) => handleChange('description', text)}
-                placeholder={
-                  listingType === 'plant' ? "Describe your plant (size, age, condition, etc.)" : 
-                  listingType === 'accessory' ? "Describe the accessory (size, material, condition, etc.)" : 
-                  "Describe the tool (brand, condition, age, etc.)"
-                }
-                multiline
-              />
-              {formErrors.description ? (<Text style={styles.errorText}>{formErrors.description}</Text>) : null}
-            </View>
-            {listingType === 'plant' && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Care Instructions (Optional)</Text>
-                <TextInput
-                  style={[styles.input, styles.textArea]}
-                  value={formData.careInstructions}
-                  onChangeText={(text) => handleChange('careInstructions', text)}
-                  placeholder="Share how to care for this plant"
-                  multiline
-                />
-                <Text style={styles.helperText}>
-                  Providing care instructions can help increase interest in your plant.
-                  {formData.scientificName ? " Care info will be auto-filled from our database." : ""}
-                </Text>
-              </View>
-            )}
-            <Text style={styles.requiredNote}><Text style={styles.requiredField}>*</Text> Required fields</Text>
-            <TouchableOpacity style={[styles.submitButton, isLoading && styles.disabledButton]}
-              onPress={handleSubmit} disabled={isLoading}>
+            
+            {/* Image Picker */}
+            <PlantImagePicker
+              images={images}
+              onTakePhoto={takePhoto}
+              onPickImage={pickImage}
+              onRemoveImage={removeImage}
+              isLoading={isImageLoading}
+              error={formErrors.images}
+            />
+            
+            {/* Basic Information Form */}
+            <BasicInfoForm
+              formData={formData}
+              formErrors={formErrors}
+              onChange={handleChange}
+              listingType={listingType}
+              categories={categories}
+              onScientificNamePress={() => setShowScientificNameModal(true)}
+            />
+            
+            {/* Location Picker */}
+            <LocationPickerIntegration
+              value={formData.location}
+              onChange={handleLocationChange}
+              formErrors={formErrors}
+            />
+            
+            {/* Description Form */}
+            <DescriptionForm
+              formData={formData}
+              formErrors={formErrors}
+              onChange={handleChange}
+              listingType={listingType}
+            />
+            
+            <Text style={styles.requiredNote}>
+              <Text style={styles.requiredField}>*</Text> Required fields
+            </Text>
+            
+            {/* Submit Button */}
+            <TouchableOpacity 
+              style={[styles.submitButton, isLoading && styles.disabledButton]}
+              onPress={handleSubmit} 
+              disabled={isLoading}
+            >
               {isLoading ? (
                 <ActivityIndicator size="small" color="#fff" />
               ) : (
@@ -821,121 +570,68 @@ const handleSubmit = async () => {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
-      {renderScientificNameModal()}
-      {renderSuccessOverlay()}
+      
+      {/* Scientific Name Selector Modal */}
+      <ScientificNameSelector
+        visible={showScientificNameModal}
+        onClose={() => setShowScientificNameModal(false)}
+        onSelect={handleSelectScientificName}
+        scientificNames={SCIENTIFIC_NAMES}
+      />
+      
+      {/* Success Overlay */}
+      <SuccessOverlay visible={showSuccess} />
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FAFAFA' },
-  keyboardAvoidingView: { flex: 1 },
-  scrollView: { flex: 1 },
-  content: { padding: 20, paddingBottom: 50 },
-  listingTypeContainer: { marginBottom: 24, backgroundColor: '#ffffff', padding: 16, borderRadius: 12,
-    shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 6, elevation: 3 },
-  listingTypeTitle: { fontSize: 18, fontWeight: '600', color: '#2E7D32', marginBottom: 12, textAlign: 'center' },
-  listingTypeButtons: { flexDirection: 'row', justifyContent: 'space-around' },
-  listingTypeButton: { borderWidth: 1, borderColor: '#4CAF50', borderRadius: 10, padding: 12,
-    alignItems: 'center', minWidth: 100, backgroundColor: '#F1F8E9' },
-  selectedListingType: { backgroundColor: '#4CAF50' },
-  listingTypeText: { marginTop: 4, color: '#4CAF50', fontWeight: '600' },
-  selectedListingTypeText: { color: '#fff' },
-  title: { fontSize: 26, fontWeight: '700', marginBottom: 20, color: '#1B5E20', textAlign: 'center' },
-  section: { marginBottom: 28, padding: 16, backgroundColor: '#FFFFFF', borderRadius: 12,
-    shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6, elevation: 2 },
-  sectionTitle: { fontSize: 18, fontWeight: '600', marginBottom: 14, color: '#2E7D32' },
-  imageScroller: { flexDirection: 'row', marginBottom: 10, minHeight: 110 },
-  imageContainer: { position: 'relative', marginRight: 12 },
-  plantImage: { width: 100, height: 100, borderRadius: 12, backgroundColor: '#e0e0e0' },
-  removeImageButton: { position: 'absolute', top: 5, right: 5, backgroundColor: '#D32F2F',
-    borderRadius: 12, width: 24, height: 24, justifyContent: 'center', alignItems: 'center' },
-  imageActionButtons: { flexDirection: 'row', alignItems: 'center' },
-  addImageButton: { width: 100, height: 100, borderRadius: 12, borderWidth: 1, borderColor: '#BDBDBD',
-    borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center', backgroundColor: '#F5F5F5', marginRight: 10 },
-  addImageText: { marginTop: 4, color: '#388E3C', fontSize: 13, fontWeight: '500' },
-  label: { fontSize: 16, marginBottom: 6, color: '#333' },
-  input: { borderWidth: 1, borderColor: '#ddd', borderRadius: 10, padding: 12, fontSize: 16,
-    backgroundColor: '#F1FDF4', marginBottom: 14 },
-  pickerButton: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12 },
-  pickerButtonText: { color: '#2E7D32', fontSize: 16 },
-  filledInput: { borderColor: '#AED581', backgroundColor: '#F1FDF4' },
-  filledInputText: { color: '#2E7D32' },
-  inputError: { borderColor: '#f44336' },
-  errorText: { color: '#D32F2F', fontSize: 13, marginTop: -8, marginBottom: 8 },
-  helperText: { color: '#757575', fontSize: 12, marginTop: 4 },
-  textArea: { height: 100, textAlignVertical: 'top' },
-  locationActionContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'space-between',
-    marginBottom: 15
+  container: { 
+    flex: 1, 
+    backgroundColor: '#FAFAFA' 
   },
-  currentLocationButton: { 
-    backgroundColor: '#4CAF50', 
-    flexDirection: 'row', 
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8
+  keyboardAvoidingView: { 
+    flex: 1 
   },
-  currentLocationText: { 
+  scrollView: { 
+    flex: 1 
+  },
+  content: { 
+    padding: 20, 
+    paddingBottom: 50 
+  },
+  title: { 
+    fontSize: 26, 
+    fontWeight: '700', 
+    marginBottom: 20, 
+    color: '#1B5E20', 
+    textAlign: 'center' 
+  },
+  requiredField: { 
+    color: '#D32F2F', 
+    fontWeight: 'bold' 
+  },
+  requiredNote: { 
+    fontSize: 12, 
+    color: '#777', 
+    marginBottom: 16, 
+    marginTop: -8, 
+    fontStyle: 'italic' 
+  },
+  submitButton: { 
+    backgroundColor: '#388E3C', 
+    paddingVertical: 14, 
+    borderRadius: 10, 
+    alignItems: 'center' 
+  },
+  disabledButton: { 
+    opacity: 0.6 
+  },
+  submitText: { 
     color: '#fff', 
-    fontSize: 14, 
-    marginLeft: 6,
-    fontWeight: '500'
+    fontSize: 17, 
+    fontWeight: '600' 
   },
-  locationHelperText: {
-    color: '#757575',
-    fontSize: 12,
-    fontStyle: 'italic'
-  },
-  categoryScroller: { marginVertical: 10 },
-  categoryButton: { paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20,
-    backgroundColor: '#E8F5E9', marginRight: 8, marginBottom: 6 },
-  selectedCategoryButton: { backgroundColor: '#81C784' },
-  categoryText: { color: '#2E7D32' },
-  selectedCategoryText: { color: '#fff', fontWeight: '600' },
-  requiredField: { color: '#D32F2F', fontWeight: 'bold' },
-  requiredNote: { fontSize: 12, color: '#777', marginBottom: 16, marginTop: -8, fontStyle: 'italic' },
-  submitButton: { backgroundColor: '#388E3C', paddingVertical: 14, borderRadius: 10, alignItems: 'center' },
-  disabledButton: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 17, fontWeight: '600' },
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
-  modalContent: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, height: '80%',
-    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
-  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#2E7D32' },
-  closeButton: { padding: 4 },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', padding: 10,
-    backgroundColor: '#f5f5f5', margin: 10, borderRadius: 8 },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, fontSize: 16, color: '#333' },
-  clearButton: { padding: 4 },
-  nameItem: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    padding: 16, borderBottomWidth: 1, borderBottomColor: '#eee' },
-  commonName: { fontSize: 16, fontWeight: '600', color: '#333' },
-  scientificName: { fontSize: 14, color: '#666', fontStyle: 'italic' },
-  emptyList: { padding: 20, alignItems: 'center' },
-  emptyText: { fontSize: 16, color: '#999', textAlign: 'center' },
-  successOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  successContent: { backgroundColor: '#fff', padding: 30, borderRadius: 14, alignItems: 'center',
-    width: '80%', shadowColor: '#000', shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  successTitle: { fontSize: 22, fontWeight: '700', color: '#2E7D32', marginTop: 16, marginBottom: 8 },
-  successText: { fontSize: 16, color: '#666', textAlign: 'center' },
-  coordsContainer: {
-    backgroundColor: '#f0f9f0',
-    padding: 8,
-    borderRadius: 6,
-    marginTop: 4,
-    marginBottom: 12
-  },
-  coordsText: {
-    fontSize: 12,
-    color: '#666',
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace'
-  }
 });
 
 export default AddPlantScreen;

@@ -1,7 +1,11 @@
-// components/PlantLocationMap.js
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  Dimensions,
+  ActivityIndicator
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import CrossPlatformAzureMapView from './CrossPlatformAzureMapView';
@@ -10,7 +14,8 @@ import { getAzureMapsKey } from '../services/azureMapsService';
 const { width } = Dimensions.get('window');
 
 /**
- * Component for displaying plant location on a map in the detail screen
+ * Enhanced PlantLocationMap component
+ * Shows plant location on a map in the detail screen
  * Using Azure Maps for cross-platform mapping
  * 
  * @param {Object} props Component props
@@ -67,8 +72,24 @@ const PlantLocationMap = ({
     return parseFloat(coord).toFixed(6);
   };
 
-  // Create a single-item array for the map
-  const mapProducts = hasLocation ? [plant] : [];
+  // Enhance plant data with custom pin properties for better visualization
+  const enhancePlantData = (plant) => {
+    if (!plant) return null;
+    
+    return {
+      ...plant,
+      id: plant.id || plant._id || Math.random().toString(),
+      pinColor: '#4CAF50',  // Custom pin color
+      pinSize: 1.2,         // Slightly larger pin
+      pinType: 'custom',    // Signal to map that this should use custom rendering
+      title: plant.title || plant.name || 'Plant',
+      // Add pre-formatted price to avoid formatting issues
+      priceFormatted: `$${parseFloat(plant.price || 0).toFixed(2)}`,
+    };
+  };
+
+  // Create a single-item array for the map with enhanced data
+  const mapProducts = hasLocation ? [enhancePlantData(plant)] : [];
 
   // Empty state if no location data
   if (!hasLocation && !plant.city) {
@@ -122,12 +143,13 @@ const PlantLocationMap = ({
           showControls={expanded}
           onMapReady={() => setIsMapReady(true)}
           azureMapsKey={azureMapsKey}
+          useCustomPin={true}
         />
         
         {/* Location overlay */}
         <View style={styles.locationOverlay}>
           <MaterialIcons name="place" size={16} color="#4CAF50" />
-          <Text style={styles.locationText}>{locationText}</Text>
+          <Text style={styles.locationText} numberOfLines={1}>{locationText}</Text>
           
           {!expanded && (
             <TouchableOpacity 
