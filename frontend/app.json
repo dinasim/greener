@@ -2,7 +2,13 @@
   "expo": {
     "name": "Greener",
     "slug": "greener",
-    "owner": "dinasim",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "originalFullName": "@dinasim/greener",
+    "owner": "dina2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -18,8 +24,10 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.dinasim.greener",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search."
+        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -37,7 +45,11 @@
     },
     "extra": {
       "expoClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
-      "webClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com"
+      "webClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
+      "iosClientId": "241318918547-cmj5p79839ci9kdrgjmbuskpfu6j4e6h.apps.googleusercontent.com",
+      "eas": {
+        "projectId": "6915a87a-3492-4315-b77e-ca7cfbf609fc"
+      }
     },
     "plugins": [
       "expo-asset"

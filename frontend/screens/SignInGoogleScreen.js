@@ -32,11 +32,13 @@ export default function SignInGoogleScreen({ navigation }) {
   const fadeAnim = useRef(new Animated.Value(0)).current; 
   console.log('REDIRECT URI:', AuthSession.makeRedirectUri({ useProxy: true }));
   const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: Constants.expoConfig.extra.expoClientId,
-    webClientId: Constants.expoConfig.extra.webClientId,
+    expoClientId: Constants.expoConfig.extra.expoClientId,
+    iosClientId: "will set this up eventually",
+    androidClientId: "will set this up eventually",
     redirectUri: AuthSession.makeRedirectUri({ useProxy: true }),
     scopes: ['openid', 'profile', 'email'],
-  });
+  },    { useProxy: true }
+);
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
