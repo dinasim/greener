@@ -1,332 +1,327 @@
 // services/marketplaceApi.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
+import config from './config';
 
-const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+// Base URL for API requests
+const API_BASE_URL = config.API_BASE_URL || 'https://usersfunctions.azurewebsites.net/api';
 
 /**
- * Get all marketplace products with optional filters
- * @param {number} page Page number
- * @param {string} category Category filter
- * @param {string} search Search term
- * @param {Object} options Additional options (minPrice, maxPrice, sortBy)
- * @returns {Promise<Object>} API response
+ * Helper function to handle API requests with proper error handling
+ * @param {string} endpoint - API endpoint to call
+ * @param {Object} options - Fetch options
+ * @returns {Promise<Object>} - Response data
+ */
+const apiRequest = async (endpoint, options = {}) => {
+  try {
+    // Get authentication token and user email
+    const token = await AsyncStorage.getItem('googleAuthToken');
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    
+    // Default headers with authentication
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+    
+    // Add authentication headers if available
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+    
+    // Full URL with endpoint
+    const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
+    
+    // Make the request
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+    
+    // Parse response
+    let data;
+    try {
+      data = await response.json();
+    } catch (e) {
+      console.warn('Error parsing JSON response:', e);
+      data = { error: 'Invalid response format' };
+    }
+    
+    // Check for errors
+    if (!response.ok) {
+      throw new Error(data.error || data.message || `Request failed with status ${response.status}`);
+    }
+    
+    return data;
+  } catch (error) {
+    console.error(`API request failed (${endpoint}):`, error);
+    throw error;
+  }
+};
+
+/**
+ * Get all marketplace products with filtering and pagination
+ * @param {number} page - Page number
+ * @param {string} category - Category filter
+ * @param {string} search - Search query
+ * @param {Object} options - Additional options (minPrice, maxPrice, sortBy)
+ * @returns {Promise<Object>} - Response with products array and pagination info
  */
 export const getAll = async (page = 1, category = null, search = null, options = {}) => {
-  try {
-    // Build query string with filters
-    let queryParams = `page=${page}&pageSize=20`;
-    
-    if (category) {
-      queryParams += `&category=${encodeURIComponent(category)}`;
-    }
-    
-    if (search) {
-      queryParams += `&search=${encodeURIComponent(search)}`;
-    }
-    
-    if (options.minPrice !== undefined) {
-      queryParams += `&minPrice=${options.minPrice}`;
-    }
-    
-    if (options.maxPrice !== undefined) {
-      queryParams += `&maxPrice=${options.maxPrice}`;
-    }
-    
-    if (options.sortBy) {
-      queryParams += `&sortBy=${options.sortBy}`;
-    }
-    
-    // Set up headers
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (userEmail) {
-      headers['X-User-Email'] = userEmail;
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/products?${queryParams}`, {
-      method: 'GET',
-      headers: headers,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching products:', error);
-    throw error;
+  const queryParams = new URLSearchParams();
+  
+  // Add pagination
+  queryParams.append('page', page);
+  
+  // Add category filter if provided
+  if (category) {
+    queryParams.append('category', category);
   }
+  
+  // Add search query if provided
+  if (search) {
+    queryParams.append('search', search);
+  }
+  
+  // Add price range filters if provided
+  if (options.minPrice !== undefined) {
+    queryParams.append('minPrice', options.minPrice);
+  }
+  if (options.maxPrice !== undefined) {
+    queryParams.append('maxPrice', options.maxPrice);
+  }
+  
+  // Add sort option if provided
+  if (options.sortBy) {
+    queryParams.append('sortBy', options.sortBy);
+  }
+  
+  // Build endpoint with query params
+  const endpoint = `marketplace/products?${queryParams.toString()}`;
+  
+  return apiRequest(endpoint);
 };
 
 /**
- * Get a specific marketplace product by ID
- * @param {string} id Product ID
- * @returns {Promise<Object>} API response
+ * Get specific product details by ID
+ * @param {string} id - Product ID
+ * @returns {Promise<Object>} - Product details
  */
 export const getSpecific = async (id) => {
-  try {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-    
-    // Set up headers
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (userEmail) {
-      headers['X-User-Email'] = userEmail;
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/products/specific/${id}`, {
-      method: 'GET',
-      headers: headers,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching product:', error);
-    throw error;
+  if (!id) {
+    throw new Error('Product ID is required');
   }
+  
+  const endpoint = `marketplace/products/specific/${id}`;
+  
+  return apiRequest(endpoint);
 };
 
 /**
- * Add or remove a product from the wishlist
- * @param {string} id Product ID
- * @returns {Promise<Object>} API response
+ * Add or remove product from wishlist
+ * @param {string} productId - Product ID to toggle
+ * @returns {Promise<Object>} - Response with updated wishlist status
  */
-export const wishProduct = async (id) => {
-  try {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (!userEmail) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/products/wish/${id}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating wishlist:', error);
-    throw error;
+export const wishProduct = async (productId) => {
+  if (!productId) {
+    throw new Error('Product ID is required');
   }
+  
+  const endpoint = `marketplace/products/wish/${productId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+  });
 };
 
 /**
- * Upload an image for a marketplace product
- * @param {string|Blob} imageData Image data (base64 string or blob)
- * @param {string} type Type of image ('plant', 'user', etc.)
- * @returns {Promise<Object>} API response
+ * Create new product listing
+ * @param {Object} productData - Product data to create
+ * @returns {Promise<Object>} - Response with created product info
  */
-export const uploadImage = async (imageData, type = 'plant') => {
-  try {
-    if (!imageData) {
-      throw new Error('Image data is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    
-    let body;
-    let headers;
-    
-    if (typeof imageData === 'string' && imageData.startsWith('data:')) {
-      // Base64 data URL
-      headers = {
-        'Content-Type': 'application/json',
-      };
-      
-      if (userEmail) {
-        headers['X-User-Email'] = userEmail;
-      }
-      
-      body = JSON.stringify({
-        image: imageData,
-        type: type,
-      });
-    } else {
-      // File object or blob
-      const formData = new FormData();
-      
-      if (typeof imageData === 'string') {
-        // Assume it's a local URI
-        const filename = imageData.split('/').pop();
-        const match = /\.(\w+)$/.exec(filename);
-        const fileType = match ? `image/${match[1]}` : 'image/jpeg';
-        
-        formData.append('image', {
-          uri: imageData,
-          name: filename,
-          type: fileType,
-        });
-      } else {
-        // It's already a file object
-        formData.append('image', imageData);
-      }
-      
-      formData.append('type', type);
-      
-      headers = {
-        'Content-Type': 'multipart/form-data',
-      };
-      
-      if (userEmail) {
-        headers['X-User-Email'] = userEmail;
-      }
-      
-      body = formData;
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
-      method: 'POST',
-      headers: headers,
-      body: body,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error uploading image:', error);
-    throw error;
-  }
+export const createProduct = async (productData) => {
+  const endpoint = 'marketplace/products/create';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(productData),
+  });
 };
 
 /**
- * Create a new marketplace product
- * @param {Object} productData Product data
- * @returns {Promise<Object>} API response
+ * Update existing product
+ * @param {string} productId - Product ID to update
+ * @param {Object} productData - Updated product data
+ * @returns {Promise<Object>} - Response with updated product
  */
-export const createPlant = async (productData) => {
-  try {
-    if (!productData) {
-      throw new Error('Product data is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (!userEmail) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/products/create`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
-      },
-      body: JSON.stringify({
-        ...productData,
-        sellerId: userEmail,
-      }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error creating product:', error);
-    throw error;
-  }
+export const updateProduct = async (productId, productData) => {
+  const endpoint = `marketplace/products/${productId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'PATCH',
+    body: JSON.stringify(productData),
+  });
 };
 
 /**
- * Fetch user profile from the API
- * @param {string} userId User ID or email
- * @returns {Promise<Object>} API response
+ * Delete product
+ * @param {string} productId - Product ID to delete
+ * @returns {Promise<Object>} - Response with deletion status
+ */
+export const deleteProduct = async (productId) => {
+  const endpoint = `marketplace/products/${productId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'DELETE',
+  });
+};
+
+/**
+ * Mark product as sold
+ * @param {string} productId - Product ID to mark as sold
+ * @param {Object} data - Optional data with buyer info
+ * @returns {Promise<Object>} - Response with updated status
+ */
+export const markAsSold = async (productId, data = {}) => {
+  const endpoint = `marketplace/products/${productId}/sold`;
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+};
+
+/**
+ * Get user profile by ID
+ * @param {string} userId - User ID to fetch
+ * @returns {Promise<Object>} - User profile data
  */
 export const fetchUserProfile = async (userId) => {
-  try {
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching user profile:', error);
-    throw error;
+  if (!userId) {
+    throw new Error('User ID is required');
   }
+  
+  const endpoint = `marketplace/users/${userId}`;
+  
+  return apiRequest(endpoint);
 };
 
 /**
- * Get nearby products based on location
- * @param {number} latitude Latitude
- * @param {number} longitude Longitude
- * @param {number} radius Radius in kilometers
- * @param {string} category Optional category filter
- * @returns {Promise<Object>} API response with nearby products
+ * Update user profile
+ * @param {string} userId - User ID to update
+ * @param {Object} profileData - Updated profile data
+ * @returns {Promise<Object>} - Response with updated profile
  */
+export const updateUserProfile = async (userId, profileData) => {
+  const endpoint = `marketplace/users/${userId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'PATCH',
+    body: JSON.stringify(profileData),
+  });
+};
+
+/**
+ * Get user's listings
+ * @param {string} userId - User ID
+ * @param {string} status - Filter by status (active, sold, all)
+ * @returns {Promise<Object>} - Response with user's listings
+ */
+export const getUserListings = async (userId, status = 'all') => {
+  const endpoint = `marketplace/users/${userId}/listings?status=${status}`;
+  
+  return apiRequest(endpoint);
+};
+
+/**
+ * Get user's wishlist
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Response with user's wishlist
+ */
+export const getUserWishlist = async (userId) => {
+  const endpoint = `marketplace/users/${userId}/wishlist`;
+  
+  return apiRequest(endpoint);
+};
+
+/**
+ * Upload an image and get URL
+ * @param {string|Blob} imageData - Image data (URI or Blob)
+ * @param {string} type - Image type (plant, user, etc.)
+ * @returns {Promise<Object>} - Response with image URL
+ */
+export const uploadImage = async (imageData, type = 'plant') => {
+  if (!imageData) {
+    throw new Error('Image data is required');
+  }
+  
+  const endpoint = 'marketplace/uploadImage';
+  
+  // Handle different image formats based on platform
+  if (Platform.OS === 'web') {
+    if (imageData instanceof Blob) {
+      // For web with Blob/File
+      const formData = new FormData();
+      formData.append('file', imageData);
+      formData.append('type', type);
+      
+      return apiRequest(endpoint, {
+        method: 'POST',
+        body: formData,
+        headers: {}, // Let browser set content-type with boundary
+      });
+    } else if (imageData.startsWith('data:')) {
+      // For web with data URI
+      return apiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ image: imageData, type }),
+      });
+    }
+  }
+  
+  // For React Native with local URI
+  // Create form data for file upload
+  const formData = new FormData();
+  formData.append('file', {
+    uri: imageData,
+    type: 'image/jpeg',
+    name: 'upload.jpg',
+  });
+  formData.append('type', type);
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+};
+
 export const getNearbyProducts = async (latitude, longitude, radius = 10, category = null) => {
   try {
-    // Validate inputs
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
       throw new Error('Valid coordinates required');
     }
     
-    // Build query string
     let queryParams = `lat=${latitude}&lon=${longitude}&radius=${radius}`;
     if (category && category !== 'All') {
       queryParams += `&category=${encodeURIComponent(category)}`;
     }
     
-    // Set up headers
     const headers = {
       'Content-Type': 'application/json',
     };
     
-    // Get user email for authenticated requests
     const userEmail = await AsyncStorage.getItem('userEmail');
     if (userEmail) {
       headers['X-User-Email'] = userEmail;
     }
     
-    // Make the API request
     const response = await fetch(`${API_BASE_URL}/marketplace/nearbyProducts?${queryParams}`, {
       method: 'GET',
       headers: headers,
@@ -343,18 +338,12 @@ export const getNearbyProducts = async (latitude, longitude, radius = 10, catego
   }
 };
 
-/**
- * Geocode an address to coordinates
- * @param {string} address Address to geocode
- * @returns {Promise<Object>} API response with coordinates
- */
 export const geocodeAddress = async (address) => {
   try {
     if (!address) {
       throw new Error('Address is required');
     }
     
-    // Make the API request
     const response = await fetch(`${API_BASE_URL}/marketplace/geocode?address=${encodeURIComponent(address)}`, {
       method: 'GET',
       headers: {
@@ -373,19 +362,12 @@ export const geocodeAddress = async (address) => {
   }
 };
 
-/**
- * Reverse geocode coordinates to an address
- * @param {number} latitude Latitude
- * @param {number} longitude Longitude
- * @returns {Promise<Object>} API response with address details
- */
 export const reverseGeocode = async (latitude, longitude) => {
   try {
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
       throw new Error('Valid coordinates required');
     }
     
-    // Make the API request
     const response = await fetch(`${API_BASE_URL}/marketplace/reverseGeocode?lat=${latitude}&lon=${longitude}`, {
       method: 'GET',
       headers: {
@@ -404,16 +386,39 @@ export const reverseGeocode = async (latitude, longitude) => {
   }
 };
 
-/**
- * Get Azure Maps API key from the server
- * @returns {Promise<string>} Azure Maps API key
- */
+export const speechToText = async (audioUrl, language = 'en-US') => {
+  if (!audioUrl) {
+    throw new Error('Audio URL is required');
+  }
+
+  const endpoint = 'marketplace/speechToText';
+
+  try {
+    const response = await apiRequest(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ audioUrl, language }),
+    });
+
+    const text = response.text;
+
+    // Clean up the transcription text
+    const cleanupTranscriptionText = (text) => {
+      return typeof text === 'string'
+        ? text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim()
+        : '';
+    };
+
+    return cleanupTranscriptionText(text);
+  } catch (error) {
+    console.error('Error in speechToText:', error);
+    throw error;
+  }
+};
+
 export const getAzureMapsKey = async () => {
   try {
-    // Get user email for authenticated requests
     const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Set up headers
     const headers = {
       'Content-Type': 'application/json',
     };
@@ -422,7 +427,6 @@ export const getAzureMapsKey = async () => {
       headers['X-User-Email'] = userEmail;
     }
     
-    // Make the API request
     const response = await fetch(`${API_BASE_URL}/marketplace/maps-config`, {
       method: 'GET',
       headers: headers,
@@ -445,183 +449,244 @@ export const getAzureMapsKey = async () => {
   }
 };
 
-/**
- * Update an existing product
- * @param {string} id Product ID
- * @param {Object} data Update data
- * @returns {Promise<Object>} API response
- */
-export const updateProduct = async (id, data) => {
-  try {
-    if (!id) {
-      throw new Error('Product ID is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (!userEmail) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/products/${id}`, {
-      method: 'PATCH',  // Use PATCH for partial updates
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
-      },
-      body: JSON.stringify(data),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating product:', error);
-    throw error;
-  }
-};
+// ==========================================
+// MESSAGING FUNCTIONALITY
+// ==========================================
 
 /**
- * Get user listings
- * @param {string} userId User ID
- * @param {string} status Filter by status ('active', 'sold', 'all')
- * @returns {Promise<Object>} API response
- */
-export const getUserListings = async (userId, status = null) => {
-  try {
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    // Build query parameters
-    let queryParams = '';
-    if (status) {
-      queryParams = `?status=${status}`;
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}/listings${queryParams}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching user listings:', error);
-    throw error;
-  }
-};
-
-/**
- * Get user wishlist
- * @param {string} userId User ID
- * @returns {Promise<Object>} API response
- */
-export const getUserWishlist = async (userId) => {
-  try {
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}/wishlist`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail || userId,  // Use either the current user's email or the requested userId
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching user wishlist:', error);
-    throw error;
-  }
-};
-
-/**
- * Update user profile
- * @param {string} userId User ID
- * @param {Object} profileData Profile update data
- * @returns {Promise<Object>} API response
- */
-export const updateUserProfile = async (userId, profileData) => {
-  try {
-    if (!userId) {
-      throw new Error('User ID is required');
-    }
-    
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (!userEmail) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/users/${userId}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
-      },
-      body: JSON.stringify(profileData),
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error updating user profile:', error);
-    throw error;
-  }
-};
-
-/**
- * Get negotiate token for SignalR connection
- * @returns {Promise<Object>} API response
+ * Get SignalR negotiate token for real-time messaging
+ * @returns {Promise<Object>} - SignalR connection info
  */
 export const getNegotiateToken = async () => {
-  try {
-    // Get user email for authenticated requests
-    const userEmail = await AsyncStorage.getItem('userEmail');
-    if (!userEmail) {
-      throw new Error('User not authenticated');
-    }
-    
-    // Make the API request
-    const response = await fetch(`${API_BASE_URL}/marketplace/signalr-negotiate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Email': userEmail,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-    
-    return await response.json();
-  } catch (error) {
-    console.error('Error getting SignalR negotiate token:', error);
-    throw error;
+  const userEmail = await AsyncStorage.getItem('userEmail');
+  
+  if (!userEmail) {
+    throw new Error('User email is required for messaging');
   }
+  
+  const endpoint = 'marketplace/signalr-negotiate';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({ userId: userEmail }),
+  });
+};
+
+/**
+ * Get user conversations (chat rooms)
+ * @param {string} userId - User ID
+ * @returns {Promise<Array>} - List of conversations
+ */
+export const fetchConversations = async (userId) => {
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+  
+  const endpoint = 'marketplace/messages/getUserConversations';
+  
+  return apiRequest(endpoint);
+};
+
+/**
+ * Get messages for a specific conversation
+ * @param {string} chatId - Conversation ID
+ * @param {string} userId - User ID
+ * @returns {Promise<Object>} - Response with messages
+ */
+export const fetchMessages = async (chatId, userId) => {
+  if (!chatId) {
+    throw new Error('Chat ID is required');
+  }
+  
+  const endpoint = `marketplace/messages/getMessages/${chatId}`;
+  
+  return apiRequest(endpoint);
+};
+
+/**
+ * Send a message in an existing conversation
+ * @param {string} chatId - Conversation ID
+ * @param {string} message - Message text
+ * @param {string} senderId - Sender ID
+ * @returns {Promise<Object>} - Response with sent message info
+ */
+export const sendMessage = async (chatId, message, senderId) => {
+  if (!chatId || !message) {
+    throw new Error('Chat ID and message are required');
+  }
+  
+  const endpoint = 'marketplace/messages/sendMessage';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({
+      chatId,
+      message,
+      senderId,
+    }),
+  });
+};
+
+/**
+ * Start a new conversation
+ * @param {string} sellerId - Seller ID
+ * @param {string} plantId - Plant ID
+ * @param {string} message - Initial message
+ * @param {string} sender - Sender ID (current user)
+ * @returns {Promise<Object>} - Response with new conversation info
+ */
+export const startConversation = async (sellerId, plantId, message, sender) => {
+  if (!sellerId || !message || !sender) {
+    throw new Error('Seller ID, message, and sender are required');
+  }
+  
+  const endpoint = 'marketplace/messages/createChatRoom';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({
+      receiver: sellerId,
+      plantId,
+      message,
+      sender,
+    }),
+  });
+};
+
+/**
+ * Mark messages as read
+ * @param {string} conversationId - Conversation ID
+ * @param {Array} messageIds - Optional specific message IDs to mark as read
+ * @returns {Promise<Object>} - Response with updated read status
+ */
+export const markMessagesAsRead = async (conversationId, messageIds = []) => {
+  if (!conversationId) {
+    throw new Error('Conversation ID is required');
+  }
+  
+  const endpoint = 'marketplace/messages/markAsRead';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({
+      conversationId,
+      messageIds,
+    }),
+  });
+};
+
+/**
+ * Send typing indicator to other user
+ * @param {string} conversationId - Conversation ID
+ * @param {boolean} isTyping - Whether user is typing
+ * @returns {Promise<Object>} - Response with status
+ */
+export const sendTypingIndicator = async (conversationId, isTyping) => {
+  if (!conversationId) {
+    throw new Error('Conversation ID is required');
+  }
+  
+  const endpoint = 'marketplace/messages/typing';
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({
+      conversationId,
+      isTyping,
+    }),
+  });
+};
+
+// ==========================================
+// REVIEWS FUNCTIONALITY
+// ==========================================
+
+/**
+ * Fetch reviews for a seller or product
+ * @param {string} targetType - Target type ('seller' or 'product')
+ * @param {string} targetId - Target ID
+ * @returns {Promise<Object>} - Response with reviews
+ */
+export const fetchReviews = async (targetType, targetId) => {
+  if (!targetType || !targetId) {
+    throw new Error('Target type and ID are required');
+  }
+  
+  const endpoint = `marketplace/reviews/${targetType}/${targetId}`;
+  
+  return apiRequest(endpoint);
+};
+
+/**
+ * Submit a review for a seller or product
+ * @param {string} targetId - Target ID
+ * @param {string} targetType - Target type ('seller' or 'product')
+ * @param {Object} reviewData - Review data {rating, text}
+ * @returns {Promise<Object>} - Response with submitted review
+ */
+export const submitReview = async (targetId, targetType, reviewData) => {
+  if (!targetId || !targetType || !reviewData) {
+    throw new Error('Target ID, type, and review data are required');
+  }
+  
+  if (!reviewData.rating || !reviewData.text) {
+    throw new Error('Rating and text are required for review');
+  }
+  
+  const endpoint = `submitreview/${targetType}/${targetId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(reviewData),
+  });
+};
+
+/**
+ * Delete a review
+ * @param {string} targetType - Target type ('seller' or 'product')
+ * @param {string} targetId - Target ID
+ * @param {string} reviewId - Review ID to delete
+ * @returns {Promise<Object>} - Response with deletion status
+ */
+export const deleteReview = async (targetType, targetId, reviewId) => {
+  if (!targetType || !targetId || !reviewId) {
+    throw new Error('Target type, target ID, and review ID are required');
+  }
+  
+  const endpoint = `marketplace/reviews/${targetType}/${targetId}/${reviewId}`;
+  
+  return apiRequest(endpoint, {
+    method: 'DELETE',
+  });
+};
+
+// Export all functions
+export default {
+  getAll,
+  getSpecific,
+  wishProduct,
+  createProduct,
+  updateProduct,
+  deleteProduct,
+  markAsSold,
+  fetchUserProfile,
+  updateUserProfile,
+  getUserListings,
+  getUserWishlist,
+  uploadImage,
+  getNearbyProducts,
+  geocodeAddress,
+  reverseGeocode,
+  speechToText,
+  getAzureMapsKey,
+  getNegotiateToken,
+  fetchConversations,
+  fetchMessages,
+  sendMessage,
+  startConversation,
+  markMessagesAsRead,
+  sendTypingIndicator,
+  fetchReviews,
+  submitReview,
+  deleteReview,
 };

@@ -43,6 +43,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const [activeFilters, setActiveFilters] = useState([]);
   const [isOnline, setIsOnline] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
+  const [showFilters, setShowFilters] = useState(false);
   const plantsRef = useRef(plants);
   const loadPlantsRef = useRef(null);
 
@@ -50,10 +51,16 @@ const MarketplaceScreen = ({ navigation, route }) => {
     navigation.navigate('Home');
   };
 
-  const navigateToMessages = (params) => {
+  const navigateToMessages = useCallback((params = {}) => {
     try {
+      // Find the appropriate navigation path
       if (navigation.canNavigate('MainTabs')) {
         navigation.navigate('MainTabs', {
+          screen: 'Messages',
+          params: params
+        });
+      } else if (navigation.canNavigate('MarketplaceTabs')) {
+        navigation.navigate('MarketplaceTabs', {
           screen: 'Messages',
           params: params
         });
@@ -69,7 +76,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
       Alert.alert('Error', 'Could not navigate to messages. Please try again later.',
         [{ text: 'OK' }]);
     }
-  };
+  }, [navigation]);
 
   const normalizePlantSellerInfo = (plantsArray) => {
     return plantsArray.map(plant => {
@@ -442,6 +449,10 @@ const MarketplaceScreen = ({ navigation, route }) => {
     loadPlants(1, true);
   };
 
+  const toggleFilters = () => {
+    setShowFilters(!showFilters);
+  };
+
   const renderEmptyList = () => {
     if (isLoading) {
       return (
@@ -593,26 +604,118 @@ const MarketplaceScreen = ({ navigation, route }) => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f5f5f5' },
-  searchBarContainer: { alignItems: 'center', paddingVertical: 12 },
-  listContainer: { paddingHorizontal: 8, paddingBottom: 80 },
-  emptyListContainer: { flexGrow: 1 },
-  listViewContainer: { paddingHorizontal: 16 },
-  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, minHeight: 300 },
-  loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
-  errorText: { marginTop: 10, fontSize: 16, color: '#f44336', textAlign: 'center', marginBottom: 16 },
-  noResultsText: { marginTop: 10, fontSize: 18, color: '#666', textAlign: 'center' },
-  subText: { marginTop: 8, fontSize: 14, color: '#999', textAlign: 'center' },
-  retryButton: { marginTop: 16, backgroundColor: '#4CAF50', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6 },
-  retryText: { color: '#fff', fontWeight: '600' },
-  resetButton: { marginTop: 16, backgroundColor: '#4CAF50', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 6 },
-  resetButtonText: { color: '#fff', fontWeight: '600' },
-  footerContainer: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', padding: 16 },
-  footerText: { marginLeft: 8, color: '#666' },
+  container: { 
+    flex: 1, 
+    backgroundColor: '#f5f5f5' 
+  },
+  searchBarContainer: { 
+    alignItems: 'center', 
+    paddingVertical: 12 
+  },
+  listContainer: { 
+    paddingHorizontal: 8, 
+    paddingBottom: 80 
+  },
+  emptyListContainer: { 
+    flexGrow: 1 
+  },
+  listViewContainer: { 
+    paddingHorizontal: 16 
+  },
+  centerContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 20, 
+    minHeight: 300 
+  },
+  loadingText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: '#666' 
+  },
+  errorText: { 
+    marginTop: 10, 
+    fontSize: 16, 
+    color: '#f44336', 
+    textAlign: 'center', 
+    marginBottom: 16 
+  },
+  noResultsText: { 
+    marginTop: 10, 
+    fontSize: 18, 
+    color: '#666', 
+    textAlign: 'center' 
+  },
+  subText: { 
+    marginTop: 8, 
+    fontSize: 14, 
+    color: '#999', 
+    textAlign: 'center' 
+  },
+  retryButton: { 
+    marginTop: 16, 
+    backgroundColor: '#4CAF50', 
+    paddingVertical: 8, 
+    paddingHorizontal: 16, 
+    borderRadius: 6 
+  },
+  retryText: { 
+    color: '#fff', 
+    fontWeight: '600' 
+  },
+  resetButton: { 
+    marginTop: 16, 
+    backgroundColor: '#4CAF50', 
+    paddingVertical: 8, 
+    paddingHorizontal: 16, 
+    borderRadius: 6 
+  },
+  resetButtonText: { 
+    color: '#fff', 
+    fontWeight: '600' 
+  },
+  footerContainer: { 
+    flexDirection: 'row', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 16 
+  },
+  footerText: { 
+    marginLeft: 8, 
+    color: '#666' 
+  },
   addButton: {
-    position: 'absolute', right: 20, bottom: 20, width: 60, height: 60, borderRadius: 30,
-    backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center', elevation: 4,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4,
+    position: 'absolute', 
+    right: 20, 
+    bottom: 20, 
+    width: 60, 
+    height: 60, 
+    borderRadius: 30,
+    backgroundColor: '#4CAF50', 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    elevation: 4,
+    shadowColor: '#000', 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.2, 
+    shadowRadius: 4,
+  },
+  filterButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 8,
+    alignSelf: 'flex-start',
+    marginLeft: 16,
+  },
+  filterButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

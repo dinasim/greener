@@ -17,13 +17,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         azure_maps_key = os.environ.get('AZURE_MAPS_MARKETPLACE_KEY')
         
         if not azure_maps_key:
-            logging.warning("Azure Maps key not found in environment variables")
-            return create_error_response("Azure Maps configuration is missing", 500)
+            logging.error("AZURE_MAPS_MARKETPLACE_KEY environment variable not found")
+            return create_error_response("Azure Maps key configuration is missing", 500)
         
-        # Return the key to the client
+        # Return the key in the response
         return create_success_response({
             "azureMapsKey": azure_maps_key
         })
+    
     except Exception as e:
         logging.error(f"Error retrieving Azure Maps key: {str(e)}")
-        return create_error_response(f"Internal server error: {str(e)}", 500)
+        return create_error_response(f"Error retrieving Azure Maps key: {str(e)}", 500)

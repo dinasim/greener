@@ -9,7 +9,8 @@ __pycache__/
 venv/
 env/
 *.egg-info/
-
+bin
+obj
 # Node.js
 node_modules/
 npm-debug.log

@@ -114,21 +114,30 @@ const MessagesScreen = () => {
   
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
+  
+    const messageText = newMessage; // Ensure it's available in both try and catch
     const tempId = 'temp-' + Date.now();
+  
     try {
       setIsSending(true);
       const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
       const tempMessage = {
-        id: tempId, senderId: userEmail, text: newMessage, timestamp: new Date().toISOString(), pending: true
+        id: tempId,
+        senderId: userEmail,
+        text: messageText,
+        timestamp: new Date().toISOString(),
+        pending: true
       };
-      const messageText = newMessage;
+  
       setMessages(prevMessages => [...prevMessages, tempMessage]);
       setNewMessage('');
+  
       setTimeout(() => {
         if (flatListRef.current) {
           flatListRef.current.scrollToEnd({ animated: true });
         }
       }, 100);
+  
       if (selectedConversation) {
         await sendMessage(selectedConversation.id, messageText, userEmail);
       } else if (sellerId && plantId) {
@@ -148,22 +157,25 @@ const MessagesScreen = () => {
       } else {
         throw new Error('Missing required information to send message');
       }
-      setMessages(prevMessages => 
-        prevMessages.map(msg => 
+  
+      setMessages(prevMessages =>
+        prevMessages.map(msg =>
           msg.id === tempId ? { ...msg, pending: false } : msg
         )
       );
+  
       setIsSending(false);
     } catch (err) {
       console.error('Error sending message:', err);
       setIsSending(false);
-      setNewMessage(messageText);
-      setMessages(prevMessages => 
+      setNewMessage(messageText); // Restore message text
+      setMessages(prevMessages =>
         prevMessages.filter(m => m.id !== tempId)
       );
       Alert.alert('Error', 'Failed to send message. Please try again.', [{ text: 'OK' }]);
     }
   };
+  
   
   const handleRefresh = () => {
     setRefreshing(true);

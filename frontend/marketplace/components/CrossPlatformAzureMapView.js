@@ -1,4 +1,3 @@
-// Fix for CrossPlatformAzureMapView.js - Adding custom markers and fixing map issues
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import {
   View,
@@ -17,9 +16,9 @@ if (Platform.OS !== 'web') {
 }
 
 /**
- * Cross-platform Azure Map component
+ * Enhanced Cross-platform Azure Map component
  * Works on both web and mobile platforms
- * Fixed to correctly register marker images
+ * Improved pin visualization and circle radius display
  */
 const CrossPlatformAzureMapView = ({
   products = [],
@@ -126,10 +125,17 @@ const CrossPlatformAzureMapView = ({
   />
   <style>
     html,body,#mapContainer{margin:0;padding:0;width:100%;height:100%;}
-    .popup-content{padding:8px;max-width:220px;font-family:Arial,Helvetica,sans-serif}
-    button{background:#4caf50;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer}
-    button:hover{opacity:.9}
-    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;}
+    .popup-content{padding:12px;max-width:250px;font-family:Arial,Helvetica,sans-serif}
+    .popup-content strong{font-size:16px;color:#333}
+    .popup-price{font-size:15px;color:#4caf50;font-weight:bold;margin:5px 0}
+    .popup-location{font-size:13px;color:#666;margin-bottom:5px}
+    .popup-distance{font-size:12px;color:#888;margin-bottom:8px}
+    .popup-button{background:#4caf50;color:#fff;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold}
+    .popup-button:hover{opacity:.9}
+    .search-radius{stroke:rgba(76,175,80,0.8);stroke-width:2;stroke-dasharray:5,5;fill:rgba(76,175,80,0.1)}
+    .pin-label{background:white;border:2px solid #4caf50;color:#333;font-weight:bold;padding:3px 8px;border-radius:12px;}
+    .plant-pin{width:28px;height:36px;}
+    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;display:none;}
   </style>
   <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
   <script src="https://atlas.microsoft.com/sdk/javascript/service/2/atlas-service.min.js"></script>
@@ -144,12 +150,6 @@ const CrossPlatformAzureMapView = ({
       debugDiv.innerHTML += "<div>" + message + "</div>";
     }
 
-    // Print some initial debug info
-    updateDebug("Azure Maps initialization starting...");
-    updateDebug("Center: [${initialRegion.longitude}, ${initialRegion.latitude}]");
-    updateDebug("Key present: " + ${!!azureMapsKey});
-    updateDebug("Key valid format: " + ${typeof azureMapsKey === 'string' && azureMapsKey.length > 10});
-
     // Variables to store map objects
     let map = null;
     let src = null;
@@ -158,12 +158,12 @@ const CrossPlatformAzureMapView = ({
     let radiusCircle = null;
     let searchCircle = null;
     
-    // Custom marker images
-    const markerSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path d="M16 0C9.373 0 4 5.373 4 12c0 5.303 4.438 9.8 10.35 11.607 1.066 0.335 1.926 1.07 1.926 1.07C17.56 25.57 16 29 16 29s-1.34-4.031-1.91-5.226C13.37 23.043 4 19.396 4 12 4 5.373 9.373 0 16 0zm0 17c2.761 0 5-2.239 5-5s-2.239-5-5-5-5 2.239-5 5 2.239 5 5 5z" fill="#4CAF50"/></svg>';
+    // Custom plant pin SVG - much nicer visualization
+    const plantPinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><g fill="none"><path fill="#4CAF50" d="M14 0C6.268 0 0 6.268 0 14c0 5.025 2.65 9.428 6.625 11.9L14 36l7.375-10.1C25.35 23.428 28 19.025 28 14 28 6.268 21.732 0 14 0z"/><circle cx="14" cy="14" r="8" fill="#fff"/><path fill="#4CAF50" d="M17.8 10.3c-.316.3-3.9 3.8-3.9 6.5 0 1.545 1.355 2.8 2.9 2.8.5 0 .8-.4.8-.8 0-.4-.3-.8-.8-.8-.7 0-1.3-.6-1.3-1.3 0-1.8 2.684-4.5 2.9-4.7.3-.3.3-.9 0-1.2-.3-.4-.9-.4-1.2 0-.1.1-.2.2-.4.5m-5.6-1.6c-.3-.3-.8-.3-1.1 0-.3.3-.3.8 0 1.1.1.1 2.7 2.7 2.7 5.3 0 .7-.5 1.2-1.2 1.2-.4 0-.8.3-.8.8 0 .4.3.8.8.8 1.5 0 2.8-1.3 2.8-2.8-.1-3.2-3-5.8-3.2-6.4z"/></g></svg>';
     
-    // Create a DOM element to hold the SVG
-    const img = document.createElement('img');
-    img.src = 'data:image/svg+xml;base64,' + btoa(markerSvg);
+    // Create DOM elements for custom markers
+    const plantPinImage = document.createElement('img');
+    plantPinImage.src = 'data:image/svg+xml;base64,' + btoa(plantPinSvg);
 
     try {
       // Initialize the map
@@ -185,10 +185,10 @@ const CrossPlatformAzureMapView = ({
         updateDebug("Map is ready! Creating data sources...");
         
         // Add custom marker images
-        map.imageSprite.add('marker-green', img).then(() => {
-          updateDebug("Added custom marker-green successfully");
+        map.imageSprite.add('plant-pin', plantPinImage).then(() => {
+          updateDebug("Added custom plant-pin successfully");
         }).catch(err => {
-          updateDebug("Error adding custom marker: " + err.toString());
+          updateDebug("Error adding custom plant-pin: " + err.toString());
         });
         
         // Create data sources
@@ -203,7 +203,7 @@ const CrossPlatformAzureMapView = ({
         // Add a layer for individual markers
         map.layers.add(new atlas.layer.SymbolLayer(src, null, {
           iconOptions: {
-            image: 'pin-round-blue',  // Use built-in pin instead of marker-green
+            image: 'plant-pin',  
             anchor: 'bottom',
             allowOverlap: true,
             size: 1.0
@@ -231,41 +231,46 @@ const CrossPlatformAzureMapView = ({
           filter: ['has', 'point_count']
         }));
 
-        // Create a popup
+        // Create a popup with enhanced styling
         popup = new atlas.Popup({
-          pixelOffset: [0, -30],
-          closeButton: false
+          pixelOffset: [0, -35],
+          closeButton: false,
+          fillColor: 'white',
+          shadowColor: 'rgba(0,0,0,0.2)',
+          shadowBlur: 8
         });
 
         // Create a search radius data source and layer
         radiusCircle = new atlas.source.DataSource();
         map.sources.add(radiusCircle);
         
-        // Add a circle layer for search radius
+        // Add a circle layer for search radius with improved styling
         map.layers.add(new atlas.layer.PolygonLayer(radiusCircle, null, {
-          fillColor: 'rgba(255, 0, 0, 0.2)',
-          fillOpacity: 0.5
+          fillColor: 'rgba(76, 175, 80, 0.15)',
+          fillOpacity: 0.6
         }));
         
-        // Add a line layer for search radius border
+        // Add a line layer for search radius border with improved styling
         map.layers.add(new atlas.layer.LineLayer(radiusCircle, null, {
-          strokeColor: 'red',
+          strokeColor: 'rgba(76, 175, 80, 0.8)',
           strokeWidth: 2,
+          strokeDashArray: [5, 5],
           strokeOpacity: 0.8
         }));
 
-        // Function to create popup content
+        // Function to create enhanced popup content
         function makePopupContent(props, pos) {
           const div = document.createElement('div');
           div.className = 'popup-content';
           div.innerHTML = \`
-            <strong>\${props.title || 'Plant'}</strong><br>
-            <span style="color:#4caf50;font-weight:bold;">$\${parseFloat(props.price || 0).toFixed(2)}</span><br>
-            <small>\${props.location || ''}</small>
-            \${props.distance ? '<br><small>Distance: ' + props.distance.toFixed(2) + ' km</small>' : ''}<br>
+            <strong>\${props.title || 'Plant'}</strong>
+            <div class="popup-price">$\${parseFloat(props.price || 0).toFixed(2)}</div>
+            <div class="popup-location">\${props.location || ''}</div>
+            \${props.distance ? '<div class="popup-distance">Distance: ' + props.distance.toFixed(2) + ' km</div>' : ''}
           \`;
           const btn = document.createElement('button');
-          btn.textContent = 'View';
+          btn.className = 'popup-button';
+          btn.textContent = 'View Details';
           btn.onclick = () => selectProduct(props.id);
           div.appendChild(btn);
           popup.setOptions({ content: div, position: pos });
@@ -311,7 +316,12 @@ const CrossPlatformAzureMapView = ({
             });
           } else {
             popup.setOptions({
-              content: \`<div style="text-align:center"><strong>\${ptCount} plants</strong><br><button onclick="map.setCamera({center:[\${e.position[0]},\${e.position[1]}],zoom:map.getCamera().zoom+2})">Zoom In</button></div>\`,
+              content: \`<div class="popup-content" style="text-align:center">
+                <strong>\${ptCount} plants found</strong><br>
+                <button class="popup-button" style="margin-top:10px" onclick="map.setCamera({center:[\${e.position[0]},\${e.position[1]}],zoom:map.getCamera().zoom+2})">
+                  Zoom In
+                </button>
+              </div>\`,
               position: e.position
             });
             popup.open(map);
@@ -347,10 +357,10 @@ const CrossPlatformAzureMapView = ({
         
         // Add handler for missing images to prevent errors
         map.events.add('styleimagemissing', (e) => {
-          if (e.id === 'marker-green') {
-            updateDebug("Handling missing marker-green image");
-            map.imageSprite.add('marker-green', img).then(() => {
-              updateDebug("Added missing marker-green on demand");
+          if (e.id === 'plant-pin') {
+            updateDebug("Handling missing plant-pin image");
+            map.imageSprite.add('plant-pin', plantPinImage).then(() => {
+              updateDebug("Added missing plant-pin on demand");
             });
           }
         });
@@ -373,7 +383,7 @@ const CrossPlatformAzureMapView = ({
       });
     }
 
-    // Function to update markers
+    // Function to update markers with better visualization
     function updateMarkers(list) {
       if (!src || !clusterSrc) {
         updateDebug("Cannot update markers: sources not initialized");
@@ -436,7 +446,7 @@ const CrossPlatformAzureMapView = ({
       }
     }
 
-    // Function to draw a radius circle
+    // Function to draw a radius circle with enhanced visualization
     function drawRadiusCircle(center, radiusKm) {
       if (!radiusCircle) {
         updateDebug("Cannot draw radius: circle source not initialized");
@@ -452,11 +462,11 @@ const CrossPlatformAzureMapView = ({
       
       updateDebug("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
       
-      // Create a circle polygon
+      // Create a circle polygon with higher precision for smoother appearance
       const circle = atlas.math.getRegularPolygonPath(
         center,
         radiusKm * 1000, // Convert km to meters
-        64, // Number of vertices (smooth circle)
+        96, // Number of vertices (smooth circle)
         0, // Start angle
         'meters' // Units
       );
@@ -538,14 +548,6 @@ const CrossPlatformAzureMapView = ({
         updateDebug("Error handling message: " + e.toString());
       }
     };
-    
-    // Remove debug info after some time
-    setTimeout(() => {
-      const debugDiv = document.getElementById('debug');
-      if (debugDiv) {
-        debugDiv.style.display = 'none';
-      }
-    }, 10000); // Hide after 10 seconds
   </script>
 </body>
 </html>
@@ -553,7 +555,7 @@ const CrossPlatformAzureMapView = ({
   }, [azureMapsKey, initialRegion, mapStyle, products]);
 
   /* ------------------------------------------------------------------ */
-  /* WEB: initialise Azure Maps inside <iframe> once container ready    */
+  /* WEB: initialize Azure Maps inside <iframe> once container ready    */
   /* ------------------------------------------------------------------ */
   const initWebMap = useCallback(() => {
     if (Platform.OS !== 'web' || !mapDivRef.current) return;

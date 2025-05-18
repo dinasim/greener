@@ -10,6 +10,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import { getSpecific, wishProduct } from '../services/marketplaceApi';
 import PlantLocationMap from '../components/PlantLocationMap';
+import ReviewForm from '../components/ReviewForm';
 
 const { width } = Dimensions.get('window');
 
@@ -23,6 +24,7 @@ const PlantDetailScreen = () => {
   const [isFavorite, setIsFavorite] = useState(false);
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [mapModalVisible, setMapModalVisible] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
 
   useEffect(() => {
     loadPlantDetail();
@@ -48,7 +50,7 @@ const PlantDetailScreen = () => {
 
   const getSellerAvatarUrl = () => {
     const avatarUrl = plant.seller?.avatar || plant.avatar || plant.sellerAvatar ||
-      `https://via.placeholder.com/50?text=${encodeURIComponent(plant.seller?.name?.[0] || 'S')}`;
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(plant.seller?.name?.[0] || 'S')}&background=4CAF50&color=fff`;
     return avatarUrl;
   };
 
@@ -73,11 +75,31 @@ const PlantDetailScreen = () => {
       Alert.alert('Error', 'Seller information is not available.');
       return;
     }
-    navigation.navigate('Messages', { 
-      sellerId: plant.sellerId || plant.seller?._id, 
-      plantId: plant._id || plant.id,
-      plantName: plant.title || plant.name
-    });
+    
+    // Try different navigation approaches to handle various navigation structures
+    try {
+      const params = { 
+        sellerId: plant.sellerId || plant.seller?._id, 
+        plantId: plant._id || plant.id,
+        plantName: plant.title || plant.name,
+        sellerName: plant.seller?.name || 'Plant Seller'
+      };
+
+      // Try navigating with MarketplaceTabs first
+      if (navigation.getParent()) {
+        const parent = navigation.getParent();
+        if (parent.navigate) {
+          parent.navigate('Messages', params);
+          return;
+        }
+      }
+
+      // Next try direct navigation
+      navigation.navigate('Messages', params);
+    } catch (err) {
+      console.error('Error navigating to messages:', err);
+      Alert.alert('Navigation Error', 'Could not open messages. Please try again.');
+    }
   };
 
   const getLocationText = () => {
@@ -183,6 +205,16 @@ const PlantDetailScreen = () => {
     } catch (e) {
       return 'Recently listed';
     }
+  };
+
+  const handleReviewButtonPress = () => {
+    setShowReviewForm(true);
+  };
+
+  const handleReviewSubmitted = () => {
+    setShowReviewForm(false);
+    // Refresh the plant details to show updated reviews
+    loadPlantDetail();
   };
 
   const renderLocationSection = () => {
@@ -408,6 +440,13 @@ const PlantDetailScreen = () => {
               <Text style={styles.contactButtonText}>Message Seller</Text>
             </TouchableOpacity>
           </View>
+          
+          {/* Review button section */}
+          <TouchableOpacity style={styles.reviewButton} onPress={handleReviewButtonPress}>
+            <MaterialIcons name="rate-review" size={24} color="#4CAF50" />
+            <Text style={styles.reviewButtonText}>Write a Review</Text>
+          </TouchableOpacity>
+          
           <View style={styles.safetyContainer}>
             <MaterialIcons name="shield" size={20} color="#4CAF50" />
             <Text style={styles.safetyText}>
@@ -418,6 +457,15 @@ const PlantDetailScreen = () => {
         </View>
       </ScrollView>
       {renderMapModal()}
+      
+      {/* Review Form Modal */}
+      <ReviewForm
+        targetId={plant.id || plant._id}
+        targetType="product"
+        isVisible={showReviewForm}
+        onClose={() => setShowReviewForm(false)}
+        onReviewSubmitted={handleReviewSubmitted}
+      />
     </SafeAreaView>
   );
 };
@@ -466,6 +514,24 @@ const styles = StyleSheet.create({
   actionButtonText: { fontSize: 16, color: '#4CAF50', marginLeft: 8, fontWeight: '600' },
   contactButton: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#4CAF50', borderRadius: 8, paddingVertical: 12, paddingHorizontal: 16 },
   contactButtonText: { color: '#fff', marginLeft: 8, fontWeight: '600', fontSize: 16 },
+  reviewButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#f0f9f0',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginBottom: 16 
+  },
+  reviewButtonText: { 
+    color: '#4CAF50', 
+    fontSize: 16,
+    marginLeft: 8, 
+    fontWeight: '600' 
+  },
   safetyContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f9f0', padding: 12, borderRadius: 8, marginBottom: 40 },
   safetyText: { fontSize: 14, marginLeft: 8, color: '#555', flex: 1 },
   safetyBold: { fontWeight: 'bold', color: '#333' },
