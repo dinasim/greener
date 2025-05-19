@@ -79,6 +79,8 @@ const CrossPlatformAzureMapView = ({
     const drawRadius = () => {
       if (!initialRegion?.latitude || !initialRegion?.longitude) return;
       
+      console.log(`Drawing radius circle: ${searchRadius}km at [${initialRegion.latitude}, ${initialRegion.longitude}]`);
+      
       const msg = { 
         type: 'DRAW_RADIUS', 
         latitude: initialRegion.latitude, 
@@ -90,11 +92,13 @@ const CrossPlatformAzureMapView = ({
         if (Platform.OS === 'web') {
           const iframe = document.getElementById('azureMapsIframe');
           if (iframe?.contentWindow?.handleMessage) {
-            iframe.contentWindow.handleMessage(msg);
+            iframe.contentWindow.handleMessage(JSON.stringify(msg));
+          } else {
+            console.warn('Iframe or handleMessage not available');
           }
         } else if (webViewRef.current) {
           webViewRef.current.injectJavaScript(
-            `window.handleMessage(${JSON.stringify(msg)}); true;`
+            `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
           );
         }
       } catch (err) {
@@ -102,7 +106,8 @@ const CrossPlatformAzureMapView = ({
       }
     };
     
-    drawRadius();
+    // Small delay to ensure the map is fully initialized
+    setTimeout(drawRadius, 1000);
   }, [searchRadius, mapReady, initialRegion]);
 
   // Effect to show user's current location
@@ -110,6 +115,8 @@ const CrossPlatformAzureMapView = ({
     if (!mapReady || !showMyLocation || !myLocation?.latitude || !myLocation?.longitude) return;
     
     const showUserLocation = () => {
+      console.log(`Showing user location at: ${myLocation.latitude}, ${myLocation.longitude}`);
+      
       const msg = { 
         type: 'SHOW_MY_LOCATION', 
         latitude: myLocation.latitude, 
@@ -120,11 +127,11 @@ const CrossPlatformAzureMapView = ({
         if (Platform.OS === 'web') {
           const iframe = document.getElementById('azureMapsIframe');
           if (iframe?.contentWindow?.handleMessage) {
-            iframe.contentWindow.handleMessage(msg);
+            iframe.contentWindow.handleMessage(JSON.stringify(msg));
           }
         } else if (webViewRef.current) {
           webViewRef.current.injectJavaScript(
-            `window.handleMessage(${JSON.stringify(msg)}); true;`
+            `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
           );
         }
       } catch (err) {
@@ -132,7 +139,8 @@ const CrossPlatformAzureMapView = ({
       }
     };
     
-    showUserLocation();
+    // Small delay to ensure map is ready
+    setTimeout(showUserLocation, 1000);
   }, [myLocation, showMyLocation, mapReady]);
 
   // Generate the HTML template for the map view
@@ -214,8 +222,8 @@ const CrossPlatformAzureMapView = ({
     const plantPinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><g fill="none"><path fill="#4CAF50" d="M14 0C6.268 0 0 6.268 0 14c0 5.025 2.65 9.428 6.625 11.9L14 36l7.375-10.1C25.35 23.428 28 19.025 28 14 28 6.268 21.732 0 14 0z"/><circle cx="14" cy="14" r="8" fill="#fff"/><path fill="#4CAF50" d="M17.8 10.3c-.316.3-3.9 3.8-3.9 6.5 0 1.545 1.355 2.8 2.9 2.8.5 0 .8-.4.8-.8 0-.4-.3-.8-.8-.8-.7 0-1.3-.6-1.3-1.3 0-1.8 2.684-4.5 2.9-4.7.3-.3.3-.9 0-1.2-.3-.4-.9-.4-1.2 0-.1.1-.2.2-.4.5m-5.6-1.6c-.3-.3-.8-.3-1.1 0-.3.3-.3.8 0 1.1.1.1 2.7 2.7 2.7 5.3 0 .7-.5 1.2-1.2 1.2-.4 0-.8.3-.8.8 0 .4.3.8.8.8 1.5 0 2.8-1.3 2.8-2.8-.1-3.2-3-5.8-3.2-6.4z"/></g></svg>';
     
     // My location arrow svg
-    const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#4285f4" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="white"/></svg>';
-
+// My location arrow svg
+const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L3 20h18L12 2z" fill="#007bff" stroke="white" stroke-width="1"/></svg>';
     // Create canvas elements for custom markers
     const plantPinCanvas = document.createElement('canvas');
     const plantPinCtx = plantPinCanvas.getContext('2d');
@@ -301,13 +309,13 @@ const CrossPlatformAzureMapView = ({
             strokeOpacity: 0.8
           }));
 
-          // Add user location layer
+          // Add user location layer with improved styling for better visibility
           map.layers.add(new atlas.layer.SymbolLayer(userLocationDataSource, null, {
             iconOptions: {
               image: 'my-location',
               anchor: 'center',
               allowOverlap: true,
-              size: 1
+              size: 1.0
             }
           }));
 
@@ -352,6 +360,12 @@ const CrossPlatformAzureMapView = ({
                 position: e.shapes[0].getCoordinates()
               });
               popup.open(map);
+              
+              // Also send PIN_CLICKED message directly to show mini card
+              sendMessage({
+                type: 'PIN_CLICKED',
+                productId: properties.id
+              });
             } else {
               // Click on map
               popup.close();
@@ -444,7 +458,7 @@ const CrossPlatformAzureMapView = ({
       }
     }
 
-    // Draw radius circle
+    // Draw radius circle with improved implementation for better visualization
     function drawRadiusCircle(center, radiusKm) {
       if (!radiusCircleDataSource || !map) {
         log("Cannot draw radius: datasource not initialized");
@@ -458,11 +472,17 @@ const CrossPlatformAzureMapView = ({
         return;
       }
       
-      log("Drawing radius circle: " + radiusKm + "km");
+      log("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
       
-      // Create circle
-      const radius = radiusKm * 1000; // Convert to meters
-      const circle = atlas.math.getRegularPolygonPath(center, radius, 64);
+      // Create circle with higher precision for smoother appearance
+      // Note: Using getRegularPolygonPath with many points creates a smoother circle
+      const circle = atlas.math.getRegularPolygonPath(
+        center,
+        radiusKm * 1000, // Convert km to meters
+        96, // Number of vertices (smooth circle)
+        0, // Start angle
+        'meters' // Units
+      );
       
       // Add to datasource
       radiusCircleDataSource.add(new atlas.data.Feature(
@@ -470,7 +490,7 @@ const CrossPlatformAzureMapView = ({
       ));
     }
 
-    // Show user location
+    // Show user location with improved handling
     function showUserLocation(latitude, longitude) {
       if (!userLocationDataSource || !map) {
         log("Cannot show user location: datasource not initialized");
@@ -486,19 +506,21 @@ const CrossPlatformAzureMapView = ({
       
       log("Showing user location at: " + latitude + ", " + longitude);
       
-      // Add user location point
+      // Add user location point with properties
       userLocationDataSource.add(new atlas.data.Feature(
-        new atlas.data.Point([longitude, latitude])
+        new atlas.data.Point([longitude, latitude]),
+        { type: 'userLocation' }
       ));
       
-      // Center map on location
+      // Center map on location with animation
       map.setCamera({
         center: [longitude, latitude],
-        zoom: 15
+        zoom: 15,
+        type: "fly"  // smoother animation
       });
     }
 
-    // Message handling
+    // Message handling with improved JSON parsing
     window.handleMessage = function(data) {
       try {
         // Make sure data is an object
