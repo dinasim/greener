@@ -45,7 +45,6 @@ const CrossPlatformAzureMapView = ({
   const [mapReady, setMapReady] = useState(false);
   const [azureMapsKey, setAzureMapsKey] = useState(providedKey);
   const [isKeyLoading, setIsKeyLoading] = useState(!providedKey);
-  const [selectedProduct, setSelectedProduct] = useState(null);
 
   // Load Azure Maps key if not provided as prop
   useEffect(() => {
@@ -89,22 +88,26 @@ const CrossPlatformAzureMapView = ({
         radius: searchRadius
       };
       
-      if (Platform.OS === 'web') {
-        const iframe = document.getElementById('azureMapsIframe');
-        if (iframe?.contentWindow?.handleMessage) {
-          iframe.contentWindow.handleMessage(JSON.stringify(msg));
-        } else {
-          console.warn('Iframe or handleMessage not available');
+      try {
+        if (Platform.OS === 'web') {
+          const iframe = document.getElementById('azureMapsIframe');
+          if (iframe?.contentWindow?.handleMessage) {
+            iframe.contentWindow.handleMessage(JSON.stringify(msg));
+          } else {
+            console.warn('Iframe or handleMessage not available');
+          }
+        } else if (webViewRef.current) {
+          webViewRef.current.injectJavaScript(
+            `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
+          );
         }
-      } else if (webViewRef.current) {
-        webViewRef.current.injectJavaScript(
-          `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
-        );
+      } catch (err) {
+        console.error('Error sending radius message:', err);
       }
     };
     
     // Small delay to ensure the map is fully initialized
-    setTimeout(drawRadius, 500);
+    setTimeout(drawRadius, 1000);
   }, [searchRadius, mapReady, initialRegion]);
 
   // Effect to show user's current location
@@ -120,19 +123,24 @@ const CrossPlatformAzureMapView = ({
         longitude: myLocation.longitude
       };
       
-      if (Platform.OS === 'web') {
-        const iframe = document.getElementById('azureMapsIframe');
-        if (iframe?.contentWindow?.handleMessage) {
-          iframe.contentWindow.handleMessage(JSON.stringify(msg));
+      try {
+        if (Platform.OS === 'web') {
+          const iframe = document.getElementById('azureMapsIframe');
+          if (iframe?.contentWindow?.handleMessage) {
+            iframe.contentWindow.handleMessage(JSON.stringify(msg));
+          }
+        } else if (webViewRef.current) {
+          webViewRef.current.injectJavaScript(
+            `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
+          );
         }
-      } else if (webViewRef.current) {
-        webViewRef.current.injectJavaScript(
-          `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
-        );
+      } catch (err) {
+        console.error('Error sending location message:', err);
       }
     };
     
-    setTimeout(showUserLocation, 500);
+    // Small delay to ensure map is ready
+    setTimeout(showUserLocation, 1000);
   }, [myLocation, showMyLocation, mapReady]);
 
   // Generate the HTML template for the map view
@@ -175,7 +183,7 @@ const CrossPlatformAzureMapView = ({
     .search-radius{stroke:rgba(76,175,80,0.8);stroke-width:2;stroke-dasharray:5,5;fill:rgba(76,175,80,0.1)}
     .pin-label{background:white;border:2px solid #4caf50;color:#333;font-weight:bold;padding:3px 8px;border-radius:12px;}
     .plant-pin{width:28px;height:36px;}
-    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;}
+    .debug-info{position:absolute;bottom:10px;left:10px;background:rgba(255,255,255,0.8);padding:10px;border-radius:5px;font-family:monospace;z-index:1000;max-width:80%;overflow:auto;display:none;}
     .my-location-pulse {
       width: 18px;
       height: 18px;
@@ -197,569 +205,379 @@ const CrossPlatformAzureMapView = ({
       }
     }
   </style>
-  <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
-  <script src="https://atlas.microsoft.com/sdk/javascript/service/2/atlas-service.min.js"></script>
 </head>
 <body>
   <div id="mapContainer"></div>
   <div id="debug" class="debug-info"></div>
+  <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
   <script>
-    // Function to update debug info
-    function updateDebug(message) {
-      const debugDiv = document.getElementById('debug');
-      if (debugDiv) {
-        debugDiv.innerHTML += "<div>" + message + "</div>";
-      }
-    }
-
-    // Set debug visibility
-    document.getElementById('debug').style.display = ${Platform.OS === 'web' ? "'none'" : "'none'"};
-
     // Variables to store map objects
     let map = null;
-    let src = null;
-    let clusterSrc = null;
-    let popup = null;
-    let radiusCircle = null;
-    let searchCircle = null;
-    let myLocationPin = null;
+    let datasource = null;
     let userLocationDataSource = null;
+    let radiusCircleDataSource = null;
+    let popup = null;
     
     // Custom plant pin SVG - much nicer visualization
     const plantPinSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="28" height="36" viewBox="0 0 28 36"><g fill="none"><path fill="#4CAF50" d="M14 0C6.268 0 0 6.268 0 14c0 5.025 2.65 9.428 6.625 11.9L14 36l7.375-10.1C25.35 23.428 28 19.025 28 14 28 6.268 21.732 0 14 0z"/><circle cx="14" cy="14" r="8" fill="#fff"/><path fill="#4CAF50" d="M17.8 10.3c-.316.3-3.9 3.8-3.9 6.5 0 1.545 1.355 2.8 2.9 2.8.5 0 .8-.4.8-.8 0-.4-.3-.8-.8-.8-.7 0-1.3-.6-1.3-1.3 0-1.8 2.684-4.5 2.9-4.7.3-.3.3-.9 0-1.2-.3-.4-.9-.4-1.2 0-.1.1-.2.2-.4.5m-5.6-1.6c-.3-.3-.8-.3-1.1 0-.3.3-.3.8 0 1.1.1.1 2.7 2.7 2.7 5.3 0 .7-.5 1.2-1.2 1.2-.4 0-.8.3-.8.8 0 .4.3.8.8.8 1.5 0 2.8-1.3 2.8-2.8-.1-3.2-3-5.8-3.2-6.4z"/></g></svg>';
     
-    // Create DOM elements for custom markers
-    const plantPinImage = document.createElement('img');
-    plantPinImage.src = 'data:image/svg+xml;base64,' + btoa(plantPinSvg);
-
     // My location arrow svg
-    const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="#4285f4" stroke="white" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="white"/></svg>';
-    const myLocationImage = document.createElement('img');
-    myLocationImage.src = 'data:image/svg+xml;base64,' + btoa(myLocationSvg);
+// My location arrow svg
+const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 2L3 20h18L12 2z" fill="#007bff" stroke="white" stroke-width="1"/></svg>';
+    // Create canvas elements for custom markers
+    const plantPinCanvas = document.createElement('canvas');
+    const plantPinCtx = plantPinCanvas.getContext('2d');
+    const plantPinImg = new Image();
+    plantPinImg.src = 'data:image/svg+xml;base64,' + btoa(plantPinSvg);
 
-    try {
-      // Initialize the map
-      updateDebug("Creating map object...");
-      map = new atlas.Map('mapContainer', {
-        center: [${initialRegion.longitude}, ${initialRegion.latitude}],
-        zoom: ${initialRegion.zoom},
-        view: 'Auto',
-        style: '${mapStyle}',
-        showLogo: false,
-        authOptions: {
-          authType: 'subscriptionKey',
-          subscriptionKey: '${azureMapsKey}'
-        }
-      });
+    const myLocationCanvas = document.createElement('canvas');
+    const myLocationCtx = myLocationCanvas.getContext('2d');
+    const myLocationImg = new Image();
+    myLocationImg.src = 'data:image/svg+xml;base64,' + btoa(myLocationSvg);
 
-      // Map ready event
-      map.events.add('ready', () => {
-        updateDebug("Map is ready! Creating data sources...");
-        
-        // Add custom marker images
-        map.imageSprite.add('plant-pin', plantPinImage).then(() => {
-          updateDebug("Added custom plant-pin successfully");
-        }).catch(err => {
-          updateDebug("Error adding custom plant-pin: " + err.toString());
-        });
-        
-        // Add my location marker image
-        map.imageSprite.add('my-location', myLocationImage).then(() => {
-          updateDebug("Added my-location icon successfully");
-        }).catch(err => {
-          updateDebug("Error adding my-location icon: " + err.toString());
-        });
-        
-        // Create data sources
-        src = new atlas.source.DataSource();
-        clusterSrc = new atlas.source.DataSource(null, {
-          cluster: true,
-          clusterRadius: 45,
-          clusterMaxZoom: 15
-        });
-        
-        // Create a separate data source for user's current location
-        userLocationDataSource = new atlas.source.DataSource();
-        
-        map.sources.add([src, clusterSrc, userLocationDataSource]);
-
-        // Add a layer for individual markers
-        map.layers.add(new atlas.layer.SymbolLayer(src, null, {
-          iconOptions: {
-            image: 'plant-pin',  
-            anchor: 'bottom',
-            allowOverlap: true,
-            size: 1.0
-          }
-        }));
-
-        // Add a bubble layer for clusters
-        map.layers.add(new atlas.layer.BubbleLayer(clusterSrc, null, {
-          radius: 12,
-          color: '#4CAF50',
-          strokeColor: 'white',
-          strokeWidth: 2,
-          filter: ['has', 'point_count']
-        }));
-
-        // Add a symbol layer for cluster labels
-        map.layers.add(new atlas.layer.SymbolLayer(clusterSrc, null, {
-          iconOptions: { image: 'none' },
-          textOptions: {
-            textField: ['get', 'point_count_abbreviated'],
-            color: 'white',
-            size: 12,
-            font: ['SegoeUi-Bold']
-          },
-          filter: ['has', 'point_count']
-        }));
-
-        // Add user location symbol layer
-        map.layers.add(new atlas.layer.SymbolLayer(userLocationDataSource, null, {
-          iconOptions: {
-            image: 'my-location',
-            anchor: 'center',
-            allowOverlap: true,
-            size: 1.0
-          }
-        }));
-
-        // Create a popup with enhanced styling
-        popup = new atlas.Popup({
-          pixelOffset: [0, -35],
-          closeButton: false,
-          fillColor: 'white',
-          shadowColor: 'rgba(0,0,0,0.2)',
-          shadowBlur: 8
-        });
-
-        // Create a search radius data source and layer
-        radiusCircle = new atlas.source.DataSource();
-        map.sources.add(radiusCircle);
-        
-        // Add a circle layer for search radius with improved styling
-        map.layers.add(new atlas.layer.PolygonLayer(radiusCircle, null, {
-          fillColor: 'rgba(76, 175, 80, 0.15)',
-          fillOpacity: 0.6
-        }));
-        
-        // Add a line layer for search radius border with improved styling
-        map.layers.add(new atlas.layer.LineLayer(radiusCircle, null, {
-          strokeColor: 'rgba(76, 175, 80, 0.8)',
-          strokeWidth: 2,
-          strokeDashArray: [5, 5],
-          strokeOpacity: 0.8
-        }));
-
-        // Function to create enhanced popup content
-        function makePopupContent(props, pos) {
-          const div = document.createElement('div');
-          div.className = 'popup-content';
-          div.innerHTML = \`
-            <strong>\${props.title || 'Plant'}</strong>
-            <div class="popup-price">$\${parseFloat(props.price || 0).toFixed(2)}</div>
-            <div class="popup-location">\${props.location || ''}</div>
-            \${props.distance ? '<div class="popup-distance">Distance: ' + props.distance.toFixed(2) + ' km</div>' : ''}
-          \`;
-          const btn = document.createElement('button');
-          btn.className = 'popup-button';
-          btn.textContent = 'View Details';
-          btn.onclick = () => selectProduct(props.id);
-          div.appendChild(btn);
-          popup.setOptions({ content: div, position: pos });
-          popup.open(map);
-
-          // Also notify parent immediately
-          selectProduct(props.id);
-        }
-
-        // Function to handle product selection - FIXED TO PROPERLY NOTIFY PARENT
-        function selectProduct(id) {
-          updateDebug("Product selected: " + id);
-          
-          // Notify React Native WebView on mobile
-          if (window.ReactNativeWebView) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              type: 'PIN_CLICKED',
-              productId: id
-            }));
-          } 
-          // Notify parent on web via multiple methods
-          else {
-            try {
-              // Try postMessage to parent
-              window.parent.postMessage(JSON.stringify({
-                type: 'PIN_CLICKED',
-                productId: id
-              }), '*');
-              
-              // Also dispatch custom event
-              document.dispatchEvent(new CustomEvent('pinclicked', {
-                detail: { productId: id }
-              }));
-              
-              updateDebug("Sent pin click notification to parent");
-            } catch (e) {
-              updateDebug("Error sending pin click to parent: " + e.toString());
-            }
-          }
-        }
-
-        // Click event for markers
-        map.events.add('click', src, (e) => {
-          updateDebug("Marker clicked");
-          const s = e.shapes?.[0];
-          if (!s) return;
-          
-          // Close any open popup first
-          popup.close();
-          
-          // Get the properties and coordinates
-          const props = s.getProperties();
-          const coords = s.getCoordinates();
-          
-          // Make the popup content
-          makePopupContent(props, coords);
-        });
-
-        // Click event for clusters
-        map.events.add('click', clusterSrc, (e) => {
-          const shape = e.shapes?.[0];
-          if (!shape) return;
-          const props = shape.getProperties();
-          if (!props.cluster) return;
-          const ptCount = props.point_count;
-          if (ptCount < 100) {
-            map.setCamera({
-              center: e.position,
-              zoom: map.getCamera().zoom + 1
-            });
-          } else {
-            popup.setOptions({
-              content: \`<div class="popup-content" style="text-align:center">
-                <strong>\${ptCount} plants found</strong><br>
-                <button class="popup-button" style="margin-top:10px" onclick="map.setCamera({center:[\${e.position[0]},\${e.position[1]}],zoom:map.getCamera().zoom+2})">
-                  Zoom In
-                </button>
-              </div>\`,
-              position: e.position
-            });
-            popup.open(map);
-          }
-        });
-        
-        // Add map click event handler for coordinate selection
-        map.events.add('click', (e) => {
-          // Only forward click events that aren't on markers
-          if (!e.shapes || e.shapes.length === 0) {
-            // Close any open popups
-            popup.close();
-            
-            const coords = e.position;
-            sendMsg({
-              type: 'MAP_CLICKED',
-              coordinates: {
-                latitude: coords[1],
-                longitude: coords[0]
-              }
-            });
-          }
-        });
-
-        // Signal that map is ready
-        sendMsg({ type: 'MAP_READY' });
-        
-        // If we have products already, add them to the map
-        if (${JSON.stringify(products).length} > 2) {
-          updateDebug("Initial products available, adding to map...");
-          updateMarkers(${JSON.stringify(products)});
-        }
-        
-        // Add handler for missing images to prevent errors
-        map.events.add('styleimagemissing', (e) => {
-          if (e.id === 'plant-pin') {
-            updateDebug("Handling missing plant-pin image");
-            map.imageSprite.add('plant-pin', plantPinImage).then(() => {
-              updateDebug("Added missing plant-pin on demand");
-            });
-          } else if (e.id === 'my-location') {
-            updateDebug("Handling missing my-location image");
-            map.imageSprite.add('my-location', myLocationImage).then(() => {
-              updateDebug("Added missing my-location on demand");
-            });
-          }
-        });
-      });
-
-      // Map error event
-      map.events.add('error', (e) => {
-        updateDebug("Map error: " + JSON.stringify(e.error));
-        sendMsg({ 
-          type: 'MAP_ERROR', 
-          error: e.error.toString(),
-          source: e.source 
-        });
-      });
-    } catch (e) {
-      updateDebug("Initialization error: " + e.toString());
-      sendMsg({ 
-        type: 'ERROR', 
-        message: e.toString() 
-      });
+    // Log function for debugging
+    function log(message) {
+      console.log("AZURE MAPS:", message);
     }
 
-    // Function to update markers with better visualization
+    // Initialize map when the page loads
+    window.onload = function() {
+      try {
+        // Initialize the map
+        log("Initializing Azure Maps");
+        
+        // Create map instance
+        map = new atlas.Map('mapContainer', {
+          center: [${initialRegion.longitude}, ${initialRegion.latitude}],
+          zoom: ${initialRegion.zoom},
+          style: '${mapStyle}',
+          showLogo: false,
+          authOptions: {
+            authType: 'subscriptionKey',
+            subscriptionKey: '${azureMapsKey}'
+          }
+        });
+
+        // Setup pin images
+        plantPinImg.onload = function() {
+          plantPinCanvas.width = plantPinImg.width;
+          plantPinCanvas.height = plantPinImg.height;
+          plantPinCtx.drawImage(plantPinImg, 0, 0);
+        };
+
+        myLocationImg.onload = function() {
+          myLocationCanvas.width = myLocationImg.width;
+          myLocationCanvas.height = myLocationImg.height;
+          myLocationCtx.drawImage(myLocationImg, 0, 0);
+        };
+
+        // Add event handlers
+        map.events.add('ready', function() {
+          log("Map is ready");
+          
+          // Create data sources
+          datasource = new atlas.source.DataSource();
+          userLocationDataSource = new atlas.source.DataSource();
+          radiusCircleDataSource = new atlas.source.DataSource();
+          
+          // Add data sources to map
+          map.sources.add([datasource, userLocationDataSource, radiusCircleDataSource]);
+
+          // Add the plant pins layer
+          map.imageSprite.add('plant-pin', plantPinImg);
+          map.imageSprite.add('my-location', myLocationImg);
+          
+          // Add a symbol layer for plants
+          map.layers.add(new atlas.layer.SymbolLayer(datasource, null, {
+            iconOptions: {
+              image: 'plant-pin',
+              anchor: 'bottom',
+              allowOverlap: true
+            }
+          }));
+
+          // Add radius circle layers
+          map.layers.add(new atlas.layer.PolygonLayer(radiusCircleDataSource, null, {
+            fillColor: 'rgba(76, 175, 80, 0.15)',
+            fillOpacity: 0.6
+          }));
+          
+          map.layers.add(new atlas.layer.LineLayer(radiusCircleDataSource, null, {
+            strokeColor: 'rgba(76, 175, 80, 0.8)',
+            strokeWidth: 2,
+            strokeDashArray: [5, 5],
+            strokeOpacity: 0.8
+          }));
+
+          // Add user location layer with improved styling for better visibility
+          map.layers.add(new atlas.layer.SymbolLayer(userLocationDataSource, null, {
+            iconOptions: {
+              image: 'my-location',
+              anchor: 'center',
+              allowOverlap: true,
+              size: 1.0
+            }
+          }));
+
+          // Create a popup
+          popup = new atlas.Popup({
+            pixelOffset: [0, -35],
+            closeButton: true
+          });
+
+          // Add click events
+          map.events.add('click', function(e) {
+            if (e.shapes && e.shapes.length > 0) {
+              // Click on a plant pin
+              const properties = e.shapes[0].getProperties();
+              
+              // Create popup content
+              const content = document.createElement('div');
+              content.className = 'popup-content';
+              content.innerHTML = \`
+                <strong>\${properties.title || 'Plant'}</strong>
+                <div class="popup-price">$\${parseFloat(properties.price || 0).toFixed(2)}</div>
+                <div class="popup-location">\${properties.location || ''}</div>
+                \${properties.distance ? '<div class="popup-distance">Distance: ' + properties.distance.toFixed(2) + ' km</div>' : ''}
+              \`;
+              
+              // Add button
+              const button = document.createElement('button');
+              button.className = 'popup-button';
+              button.textContent = 'View Details';
+              button.onclick = function() {
+                // Send message to parent
+                sendMessage({
+                  type: 'PIN_CLICKED',
+                  productId: properties.id
+                });
+              };
+              content.appendChild(button);
+              
+              // Show popup
+              popup.setOptions({
+                content: content,
+                position: e.shapes[0].getCoordinates()
+              });
+              popup.open(map);
+              
+              // Also send PIN_CLICKED message directly to show mini card
+              sendMessage({
+                type: 'PIN_CLICKED',
+                productId: properties.id
+              });
+            } else {
+              // Click on map
+              popup.close();
+              
+              // Send coordinates
+              sendMessage({
+                type: 'MAP_CLICKED',
+                coordinates: {
+                  latitude: e.position[1],
+                  longitude: e.position[0]
+                }
+              });
+            }
+          });
+
+          // Tell the React component the map is ready
+          sendMessage({ type: 'MAP_READY' });
+          
+          // Add initial products if available
+          if (${JSON.stringify(products).length} > 2) {
+            updateMarkers(${JSON.stringify(products)});
+          }
+        });
+
+        // Handle errors
+        map.events.add('error', function(e) {
+          log("Map error: " + JSON.stringify(e));
+          sendMessage({ 
+            type: 'MAP_ERROR', 
+            error: e.error ? e.error.toString() : 'Unknown map error'
+          });
+        });
+      } catch (e) {
+        log("Map initialization error: " + e.toString());
+        sendMessage({ 
+          type: 'ERROR', 
+          message: e.toString() 
+        });
+      }
+    };
+
+    // Update markers
     function updateMarkers(list) {
-      if (!src || !clusterSrc) {
-        updateDebug("Cannot update markers: sources not initialized");
+      if (!datasource || !map) {
+        log("Cannot update markers: datasource not initialized");
         return;
       }
       
-      src.clear();
-      clusterSrc.clear();
+      datasource.clear();
       
       if (!Array.isArray(list) || !list.length) {
-        updateDebug("No products to display on map");
+        log("No products to display on map");
         return;
       }
 
-      updateDebug("Adding " + list.length + " products to map");
-      const points = list.reduce((arr, p) => {
+      log("Adding " + list.length + " products to map");
+      
+      // Add points to datasource
+      list.forEach(function(p) {
         const lat = p.location?.latitude;
         const lon = p.location?.longitude;
         
         if (lat == null || lon == null) {
-          updateDebug("Product missing coords: " + (p.id || p._id || 'unknown'));
-          return arr;
+          log("Product missing coordinates: " + (p.id || p._id || 'unknown'));
+          return;
         }
         
-        const common = {
-          id: p.id || p._id || Math.random().toString(36).slice(2),
-          title: p.title || p.name || 'Plant',
-          price: p.price || 0,
-          location: p.city || p.location?.city || '',
-          distance: p.distance || 0,
-          rating: p.rating || 0,
-          sellerName: p.seller?.name || p.sellerName || 'Unknown Seller',
-          sellerRating: p.seller?.rating || 0
-        };
-        
-        arr.push(new atlas.data.Feature(
+        // Add point to datasource
+        datasource.add(new atlas.data.Feature(
           new atlas.data.Point([lon, lat]),
-          common
-        ));
-        
-        return arr;
-      }, []);
-
-      if (points.length > 0) {
-        updateDebug("Added " + points.length + " points to map");
-        src.add(points);
-        clusterSrc.add(points);
-
-        if (points.length === 1) {
-          map.setCamera({
-            center: points[0].geometry.coordinates,
-            zoom: 13
-          });
-        } else if (points.length > 1) {
-          try {
-            const bounds = atlas.data.BoundingBox.fromData(points);
-            map.setCamera({
-              bounds,
-              padding: 50
-            });
-          } catch (e) {
-            updateDebug("Error setting camera bounds: " + e.toString());
-            // Just center on first point as fallback
-            map.setCamera({
-              center: points[0].geometry.coordinates,
-              zoom: 10
-            });
+          {
+            id: p.id || p._id || Math.random().toString(36).slice(2),
+            title: p.title || p.name || 'Plant',
+            price: p.price || 0,
+            location: p.city || p.location?.city || '',
+            distance: p.distance || 0,
+            rating: p.rating || 0,
+            sellerName: p.seller?.name || p.sellerName || 'Unknown Seller',
+            sellerRating: p.seller?.rating || 0
           }
-        }
-      } else {
-        updateDebug("No points with valid coordinates found");
-      }
-    }
-
-    // IMPROVED: Function to draw a radius circle with enhanced visualization
-    function drawRadiusCircle(center, radiusKm) {
-      if (!radiusCircle) {
-        updateDebug("Cannot draw radius: circle source not initialized");
-        return;
-      }
-      
-      radiusCircle.clear();
-      
-      if (!center || !radiusKm) {
-        updateDebug("Invalid center or radius");
-        return;
-      }
-      
-      updateDebug("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
-      
-      try {
-        // Create a circle polygon with higher precision for smoother appearance
-        const circle = atlas.math.getRegularPolygonPath(
-          center,
-          radiusKm * 1000, // Convert km to meters
-          96, // Number of vertices (smooth circle)
-          0, // Start angle
-          'meters' // Units
-        );
-        
-        radiusCircle.add(new atlas.data.Feature(
-          new atlas.data.Polygon([circle]),
-          { radius: radiusKm }
         ));
-        
-        // Fit map to circle
-        const buffer = radiusKm * 0.2; // 20% buffer
-        const bounds = new atlas.data.BoundingBox(
-          center[0] - buffer,
-          center[1] - buffer,
-          center[0] + buffer,
-          center[1] + buffer
-        );
-        
+      });
+
+      // Fit map to contain all points
+      if (datasource.getShapes().length > 0) {
         map.setCamera({
-          bounds,
+          bounds: atlas.data.BoundingBox.fromData(datasource.toJson()),
           padding: 50
         });
-        
-        updateDebug("Radius circle drawn successfully");
-      } catch (e) {
-        updateDebug("Error drawing radius circle: " + e.toString());
       }
     }
 
-    // Function to show user's current location
+    // Draw radius circle with improved implementation for better visualization
+    function drawRadiusCircle(center, radiusKm) {
+      if (!radiusCircleDataSource || !map) {
+        log("Cannot draw radius: datasource not initialized");
+        return;
+      }
+      
+      radiusCircleDataSource.clear();
+      
+      if (!center || !radiusKm) {
+        log("Invalid center or radius");
+        return;
+      }
+      
+      log("Drawing radius circle: " + radiusKm + "km at [" + center[0] + ", " + center[1] + "]");
+      
+      // Create circle with higher precision for smoother appearance
+      // Note: Using getRegularPolygonPath with many points creates a smoother circle
+      const circle = atlas.math.getRegularPolygonPath(
+        center,
+        radiusKm * 1000, // Convert km to meters
+        96, // Number of vertices (smooth circle)
+        0, // Start angle
+        'meters' // Units
+      );
+      
+      // Add to datasource
+      radiusCircleDataSource.add(new atlas.data.Feature(
+        new atlas.data.Polygon([circle])
+      ));
+    }
+
+    // Show user location with improved handling
     function showUserLocation(latitude, longitude) {
-      if (!userLocationDataSource) {
-        updateDebug("Cannot show user location: data source not initialized");
+      if (!userLocationDataSource || !map) {
+        log("Cannot show user location: datasource not initialized");
         return;
       }
       
       userLocationDataSource.clear();
       
-      if (latitude === undefined || longitude === undefined) {
-        updateDebug("Invalid user location coordinates");
+      if (typeof latitude === 'undefined' || typeof longitude === 'undefined') {
+        log("Invalid user location coordinates");
         return;
       }
       
-      updateDebug("Showing user location at: " + latitude + ", " + longitude);
+      log("Showing user location at: " + latitude + ", " + longitude);
       
-      // Add a point for the user location with custom properties
+      // Add user location point with properties
       userLocationDataSource.add(new atlas.data.Feature(
         new atlas.data.Point([longitude, latitude]),
         { type: 'userLocation' }
       ));
       
-      // Center the map on the user's location
+      // Center map on location with animation
       map.setCamera({
         center: [longitude, latitude],
-        zoom: 15
+        zoom: 15,
+        type: "fly"  // smoother animation
       });
     }
 
-    // Messaging bridge
-    function sendMsg(obj) {
-      const str = JSON.stringify(obj);
-      if (window.ReactNativeWebView) {
-        window.ReactNativeWebView.postMessage(str);
-      } else {
-        window.parent?.postMessage(str, '*');
-      }
-    }
-
-    // Handle incoming messages - IMPROVED ERROR HANDLING
-    window.handleMessage = (raw) => {
+    // Message handling with improved JSON parsing
+    window.handleMessage = function(data) {
       try {
-        const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
-        updateDebug("Received message: " + msg.type);
-        
-        if (msg.type === 'UPDATE_PRODUCTS') {
-          try {
-            updateMarkers(msg.products);
-          } catch (e) {
-            updateDebug("Error updating products: " + e.toString());
-          }
+        // Make sure data is an object
+        let message = data;
+        if (typeof data === 'string') {
+          message = JSON.parse(data);
         }
         
-        if (msg.type === 'SET_REGION') {
-          try {
-            map.setCamera({
-              center: [msg.longitude, msg.latitude],
-              zoom: msg.zoom || map.getCamera().zoom
-            });
-          } catch (e) {
-            updateDebug("Error setting region: " + e.toString());
-          }
-        }
+        log("Received message: " + message.type);
         
-        if (msg.type === 'SELECT_PRODUCT') {
-          try {
-            const feats = src.getShapes();
-            for (const f of feats) {
-              if (f.getProperties().id === msg.productId) {
-                const pos = f.getCoordinates();
-                makePopupContent(f.getProperties(), pos);
-                map.setCamera({
-                  center: pos,
-                  zoom: 15
-                });
-                break;
-              }
-            }
-          } catch (e) {
-            updateDebug("Error selecting product: " + e.toString());
-          }
-        }
-        
-        if (msg.type === 'DRAW_RADIUS') {
-          try {
+        switch (message.type) {
+          case 'UPDATE_PRODUCTS':
+            updateMarkers(message.products);
+            break;
+          case 'DRAW_RADIUS':
             drawRadiusCircle(
-              [msg.longitude, msg.latitude],
-              msg.radius
+              [message.longitude, message.latitude],
+              message.radius
             );
-          } catch (e) {
-            updateDebug("Error drawing radius: " + e.toString());
-          }
+            break;
+          case 'CLEAR_RADIUS':
+            if (radiusCircleDataSource) {
+              radiusCircleDataSource.clear();
+            }
+            break;
+          case 'SHOW_MY_LOCATION':
+            showUserLocation(message.latitude, message.longitude);
+            break;
+          case 'SET_REGION':
+            if (map) {
+              map.setCamera({
+                center: [message.longitude, message.latitude],
+                zoom: message.zoom || map.getCamera().zoom
+              });
+            }
+            break;
         }
-        
-        if (msg.type === 'CLEAR_RADIUS') {
-          try {
-            radiusCircle.clear();
-          } catch (e) {
-            updateDebug("Error clearing radius: " + e.toString());
-          }
-        }
-        
-        if (msg.type === 'SHOW_MY_LOCATION') {
-          try {
-            showUserLocation(msg.latitude, msg.longitude);
-          } catch (e) {
-            updateDebug("Error showing location: " + e.toString());
-          }
-        }
-        
       } catch (e) {
-        updateDebug("Error handling message: " + e.toString());
+        log("Error handling message: " + e.toString());
       }
     };
 
-    // Set up event listener on document for web integration
-    document.addEventListener('message', function(e) {
+    // Send message to parent
+    function sendMessage(obj) {
       try {
-        if (e.data) {
-          window.handleMessage(e.data);
+        const str = JSON.stringify(obj);
+        if (window.ReactNativeWebView) {
+          window.ReactNativeWebView.postMessage(str);
+        } else {
+          window.parent.postMessage(str, '*');
         }
-      } catch (err) {
-        updateDebug("Error in document message handler: " + err.toString());
+      } catch (e) {
+        log("Error sending message: " + e.toString());
       }
-    });
+    }
   </script>
+  <script src="https://atlas.microsoft.com/sdk/javascript/service/2/atlas-service.min.js"></script>
 </body>
 </html>
 `;
@@ -773,10 +591,18 @@ const CrossPlatformAzureMapView = ({
 
     const handleMsg = (event) => {
       if (!event.data) return;
+      
       try {
-        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+        // Parse message if it's a string
+        let data;
+        if (typeof event.data === 'string') {
+          data = JSON.parse(event.data);
+        } else {
+          console.log("Received non-string message from map, skipping JSON parsing");
+          return;
+        }
         
-        console.log('Map message received:', data.type);
+        console.log("Map message received:", data.type);
         
         switch (data.type) {
           case 'MAP_READY':
@@ -785,14 +611,15 @@ const CrossPlatformAzureMapView = ({
             onMapReady?.();
             if (products?.length) {
               const iframe = document.getElementById('azureMapsIframe');
-              iframe?.contentWindow?.handleMessage?.(
-                JSON.stringify({ type: 'UPDATE_PRODUCTS', products })
-              );
+              if (iframe?.contentWindow?.handleMessage) {
+                iframe.contentWindow.handleMessage({
+                  type: 'UPDATE_PRODUCTS',
+                  products
+                });
+              }
             }
             break;
           case 'PIN_CLICKED':
-            console.log('Pin clicked:', data.productId);
-            setSelectedProduct(data.productId);
             onSelectProduct?.(data.productId);
             break;
           case 'MAP_CLICKED':
@@ -800,35 +627,19 @@ const CrossPlatformAzureMapView = ({
             break;
           case 'MAP_ERROR':
           case 'ERROR':
-            console.error('Map error:', data.message || data.error);
+            console.error("Map error:", data.message || data.error);
             setIsError(true);
             setErrorMessage(data.message || data.error || 'Unknown error');
             break;
-          default:
-            // Ignore other messages
         }
       } catch (err) {
-        console.error('Error handling map message:', err);
+        console.error("Error handling map message:", err);
       }
     };
 
     window.addEventListener('message', handleMsg);
-    
-    // Also listen for the custom event
-    const pinClickedHandler = (e) => {
-      if (e.detail && e.detail.productId) {
-        console.log('Pin clicked (custom event):', e.detail.productId);
-        setSelectedProduct(e.detail.productId);
-        onSelectProduct?.(e.detail.productId);
-      }
-    };
-    
-    document.addEventListener('pinclicked', pinClickedHandler);
 
-    return () => {
-      window.removeEventListener('message', handleMsg);
-      document.removeEventListener('pinclicked', pinClickedHandler);
-    };
+    return () => window.removeEventListener('message', handleMsg);
   }, [products, onMapReady, onSelectProduct, onMapPress]);
 
   useEffect(initWebMap, [initWebMap]);
@@ -838,8 +649,16 @@ const CrossPlatformAzureMapView = ({
   /* ------------------------------------------------------------------ */
   const handleWebViewMessage = (e) => {
     try {
-      const data = JSON.parse(e.nativeEvent.data);
-      console.log('Mobile WebView message:', data.type);
+      // Parse message if it's a string
+      let data;
+      if (typeof e.nativeEvent.data === 'string') {
+        data = JSON.parse(e.nativeEvent.data);
+      } else {
+        console.log("Received non-string WebView message, skipping JSON parsing");
+        return;
+      }
+      
+      console.log("WebView message received:", data.type);
       
       switch (data.type) {
         case 'MAP_READY':
@@ -848,8 +667,6 @@ const CrossPlatformAzureMapView = ({
           onMapReady?.();
           break;
         case 'PIN_CLICKED':
-          console.log('Pin clicked:', data.productId);
-          setSelectedProduct(data.productId);
           onSelectProduct?.(data.productId);
           break;
         case 'MAP_CLICKED':
@@ -857,15 +674,13 @@ const CrossPlatformAzureMapView = ({
           break;
         case 'MAP_ERROR':
         case 'ERROR':
-          console.error('Map error:', data.message || data.error);
+          console.error("Map error:", data.message || data.error);
           setIsError(true);
           setErrorMessage(data.message || data.error || 'Unknown error');
           break;
-        default:
-          // Ignore other messages
       }
     } catch (err) {
-      console.error('Error parsing WebView message:', err);
+      console.error("Error handling WebView message:", err);
     }
   };
 
@@ -875,20 +690,23 @@ const CrossPlatformAzureMapView = ({
   useEffect(() => {
     if (!mapReady || !products?.length) return;
 
-    console.log('Sending products to map:', products.length);
-    const msg = { type: 'UPDATE_PRODUCTS', products };
+    console.log("Updating map products:", products.length);
     
-    if (Platform.OS === 'web') {
-      const iframe = document.getElementById('azureMapsIframe');
-      if (iframe?.contentWindow?.handleMessage) {
-        iframe.contentWindow.handleMessage(JSON.stringify(msg));
-      } else {
-        console.warn('Iframe or handleMessage not available');
+    try {
+      const msg = { type: 'UPDATE_PRODUCTS', products };
+      
+      if (Platform.OS === 'web') {
+        const iframe = document.getElementById('azureMapsIframe');
+        if (iframe?.contentWindow?.handleMessage) {
+          iframe.contentWindow.handleMessage(msg);
+        }
+      } else if (webViewRef.current) {
+        webViewRef.current.injectJavaScript(
+          `window.handleMessage(${JSON.stringify(msg)}); true;`
+        );
       }
-    } else if (webViewRef.current) {
-      webViewRef.current.injectJavaScript(
-        `window.handleMessage(${JSON.stringify(JSON.stringify(msg))}); true;`
-      );
+    } catch (err) {
+      console.error("Error sending product updates:", err);
     }
   }, [products, mapReady]);
 
@@ -912,13 +730,6 @@ const CrossPlatformAzureMapView = ({
     </View>
   );
 
-  const renderEmpty = () => (
-    <View style={styles.emptyContainer}>
-      <MaterialIcons name="location-off" size={48} color="#aaa" />
-      <Text style={styles.emptyText}>No plants with location data</Text>
-    </View>
-  );
-
   /* ------------------------------------------------------------------ */
   /* WEB platform                                                        */
   /* ------------------------------------------------------------------ */
@@ -930,6 +741,7 @@ const CrossPlatformAzureMapView = ({
         title="AzureMap"
         srcDoc={generateMapHtml()}
         style={{ width: '100%', height: '100%', border: 'none' }}
+        sandbox="allow-scripts allow-same-origin"
       />
       {isLoading && renderLoading()}
     </View>
@@ -953,8 +765,8 @@ const CrossPlatformAzureMapView = ({
           setIsError(true);
           setErrorMessage(e.nativeEvent.description || 'WebView error');
         }}
-        javaScriptEnabled
-        domStorageEnabled
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
         originWhitelist={['*']}
         style={styles.map}
       />
@@ -1023,19 +835,7 @@ const styles = StyleSheet.create({
     color: '#666', 
     textAlign: 'center', 
     marginTop: 8 
-  },
-  emptyContainer: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 24,
-    backgroundColor: 'rgba(255,255,255,0.9)',
-  },
-  emptyText: { 
-    fontSize: 16, 
-    color: '#666', 
-    marginTop: 12 
-  },
+  }
 });
 
 export default CrossPlatformAzureMapView;
