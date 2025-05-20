@@ -25,13 +25,37 @@ import UserPlantDetails from '../screens/UserPlantDetails';
 // Import marketplace navigation
 import MainTabs from './MainTabs';
 
+// Import Business screens
+import PersonaSelectionScreen from '../Business/BusinessScreens/PersonaSelectionScreen';
+import BusinessWelcomeScreen from '../Business/BusinessScreens/BusinessWelcomeScreen';
+import BusinessSignUpScreen from '../Business/BusinessScreens/BusinessSignUpScreen';
+import BusinessSignInScreen from '../Business/BusinessScreens/BusinessSignInScreen';
+import BusinessInventoryScreen from '../Business/BusinessScreens/BusinessInventoryScreen';
+import AddInventoryScreen from '../Business/BusinessScreens/AddInventoryScreen';
+import BusinessHomeScreen from '../Business/BusinessScreens/BusinessHomeScreen';
+import BusinessProfileScreen from '../Business/BusinessScreens/BusinessProfileScreen';
+import BusinessOrdersScreen from '../Business/BusinessScreens/BusinessOrdersScreen';
+
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   return (
     <FormProvider>
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
-        {/* Login and Signup screens */}
+      <Stack.Navigator initialRouteName="PersonaSelection" screenOptions={{ headerShown: false }}>
+        {/* Persona Selection */}
+        <Stack.Screen name="PersonaSelection" component={PersonaSelectionScreen} />
+        
+        {/* Business Flow */}
+        <Stack.Screen name="BusinessWelcomeScreen" component={BusinessWelcomeScreen} />
+        <Stack.Screen name="BusinessSignUpScreen" component={BusinessSignUpScreen} />
+        <Stack.Screen name="BusinessSignInScreen" component={BusinessSignInScreen} />
+        <Stack.Screen name="BusinessInventoryScreen" component={BusinessInventoryScreen} />
+        <Stack.Screen name="AddInventoryScreen" component={AddInventoryScreen} />
+        <Stack.Screen name="BusinessHomeScreen" component={BusinessHomeScreen} />
+        <Stack.Screen name="BusinessProfileScreen" component={BusinessProfileScreen} />
+        <Stack.Screen name="OrdersScreen" component={BusinessOrdersScreen} />
+        
+        {/* Consumer Login and Signup screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
         <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
