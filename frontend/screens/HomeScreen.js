@@ -46,7 +46,7 @@ export default function HomeScreen({ navigation }) {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 800,
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
   }, []);
 

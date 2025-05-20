@@ -12,7 +12,6 @@ import {
   Platform,
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
-import LottieView from 'lottie-react-native';
 
 const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const { width } = Dimensions.get('window');

@@ -105,7 +105,7 @@ def get_container(container_name):
         # Select right database based on container prefix using normalized name for checking
         if (normalized_name.startswith('marketplace_') or normalized_name in 
             ['marketplace_plants', 'marketplace_conversations', 'marketplace_reviews',
-             'marketplace_messages', 'marketplace_wishlists', 'users']):
+     'marketplace_messages', 'marketplace_wishlists', 'users', 'inventory', 'business_users']):
             database = get_marketplace_db_client()
         else:
             database = get_database_client()
