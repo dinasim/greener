@@ -124,7 +124,10 @@ export default function BusinessHomeScreen({ navigation }) {
   };
   
   const handleInventory = () => {
-    navigation.navigate('InventoryScreen', { businessId });
+    navigation.navigate('AddInventoryScreen', { 
+      businessId,
+      showInventory: true // Add this parameter to show inventory directly
+    });
   };
   
   const handleOrders = () => {

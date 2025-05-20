@@ -25,16 +25,11 @@ import UserPlantDetails from '../screens/UserPlantDetails';
 // Import marketplace navigation
 import MainTabs from './MainTabs';
 
-// Import Business screens
+// Import Business navigation - FIXED
+import BusinessNavigation from '../Business/BusinessNavigation';
+
+// Import Persona Selection
 import PersonaSelectionScreen from '../Business/BusinessScreens/PersonaSelectionScreen';
-import BusinessWelcomeScreen from '../Business/BusinessScreens/BusinessWelcomeScreen';
-import BusinessSignUpScreen from '../Business/BusinessScreens/BusinessSignUpScreen';
-import BusinessSignInScreen from '../Business/BusinessScreens/BusinessSignInScreen';
-import BusinessInventoryScreen from '../Business/BusinessScreens/BusinessInventoryScreen';
-import AddInventoryScreen from '../Business/BusinessScreens/AddInventoryScreen';
-import BusinessHomeScreen from '../Business/BusinessScreens/BusinessHomeScreen';
-import BusinessProfileScreen from '../Business/BusinessScreens/BusinessProfileScreen';
-import BusinessOrdersScreen from '../Business/BusinessScreens/BusinessOrdersScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -42,20 +37,13 @@ export default function AppNavigator() {
   return (
     <FormProvider>
       <Stack.Navigator initialRouteName="PersonaSelection" screenOptions={{ headerShown: false }}>
-        {/* Persona Selection */}
+        {/* Persona Selection - FIXED: Start here */}
         <Stack.Screen name="PersonaSelection" component={PersonaSelectionScreen} />
         
-        {/* Business Flow */}
-        <Stack.Screen name="BusinessWelcomeScreen" component={BusinessWelcomeScreen} />
-        <Stack.Screen name="BusinessSignUpScreen" component={BusinessSignUpScreen} />
-        <Stack.Screen name="BusinessSignInScreen" component={BusinessSignInScreen} />
-        <Stack.Screen name="BusinessInventoryScreen" component={BusinessInventoryScreen} />
-        <Stack.Screen name="AddInventoryScreen" component={AddInventoryScreen} />
-        <Stack.Screen name="BusinessHomeScreen" component={BusinessHomeScreen} />
-        <Stack.Screen name="BusinessProfileScreen" component={BusinessProfileScreen} />
-        <Stack.Screen name="OrdersScreen" component={BusinessOrdersScreen} />
+        {/* Business Flow - FIXED: Full business navigation */}
+        <Stack.Screen name="BusinessFlow" component={BusinessNavigation} />
         
-        {/* Consumer Login and Signup screens */}
+        {/* Consumer/User Login and Signup screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
         <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
@@ -67,14 +55,14 @@ export default function AppNavigator() {
         
         <Stack.Screen name="PlantReview" component={PlantReviewScreen} />
 
-        {/* Home and Other Screens */}
+        {/* Consumer Home and Other Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
         <Stack.Screen name="UserPlantDetail" component={UserPlantDetails} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen name="MainTabs" component={MainTabs} />
 
-        {/* Other screens */}
+        {/* Other consumer screens */}
         <Stack.Screen name="Camera" component={CameraScreen} />
         <Stack.Screen name="AddPlant" component={AddPlantScreen} />
         <Stack.Screen name="SearchPlants" component={searchPlants} />
