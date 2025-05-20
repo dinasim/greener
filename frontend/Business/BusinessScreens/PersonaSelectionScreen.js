@@ -13,7 +13,7 @@ export default function PersonaSelectionScreen({ navigation }) {
   const choosePersona = async (type) => {
     await AsyncStorage.setItem('userType', type);
     if (type === 'business') {
-      navigation.replace('BusinessWelcomeScreen');
+      navigation.replace('BusinessFlow'); // FIXED: Navigate to business flow
     } else {
       navigation.replace('Login');
     }

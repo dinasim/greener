@@ -1,200 +1,237 @@
 # backend/business-dashboard/__init__.py
 import logging
 import json
-from datetime import datetime, timedelta
 import azure.functions as func
-from db_helpers import get_marketplace_container
-from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
+from azure.cosmos import CosmosClient
+from datetime import datetime, timedelta
+import os
+
+# Database connection details for marketplace
+MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
+MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
+
+def add_cors_headers(response):
+    """Add CORS headers to response"""
+    response.headers.update({
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email'
+    })
+    return response
+
+def get_user_id_from_request(req):
+    """Extract user ID from request headers"""
+    user_id = req.headers.get('X-User-Email')
+    return user_id
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business dashboard function processed a request.')
     
     # Handle OPTIONS method for CORS preflight
     if req.method == 'OPTIONS':
-        return handle_options_request()
+        response = func.HttpResponse("", status_code=200)
+        return add_cors_headers(response)
     
     try:
-        # Get user ID from request headers for authentication
-        user_id = extract_user_id(req)
-        if not user_id:
-            return create_error_response("User authentication required", 401)
+        # Get business ID from headers
+        business_id = get_user_id_from_request(req)
         
-        # Use user_id as business_id
-        business_id = user_id
-        logging.info(f"Loading dashboard data for business: {business_id}")
-        
-        # Get all required containers
-        business_users_container = get_marketplace_container("business_users")
-        inventory_container = get_marketplace_container("inventory")
-        orders_container = get_marketplace_container("orders")
-        
-        # 1. Get business profile info
-        try:
-            business_profile = business_users_container.read_item(
-                item=business_id,
-                partition_key=business_id
+        if not business_id:
+            response = func.HttpResponse(
+                json.dumps({"error": "Business authentication required. Please provide X-User-Email header."}),
+                status_code=401,
+                mimetype="application/json"
             )
-        except Exception as e:
-            logging.error(f"Business profile not found: {str(e)}")
-            return create_error_response("Business profile not found", 404)
+            return add_cors_headers(response)
         
-        # 2. Get inventory data
+        logging.info(f"Getting dashboard data for business: {business_id}")
+        
+        # Connect to marketplace database
         try:
+            # Parse connection string
+            params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
+            account_endpoint = params.get('AccountEndpoint')
+            account_key = params.get('AccountKey')
+            
+            if not account_endpoint or not account_key:
+                raise ValueError("Invalid marketplace connection string")
+            
+            # Create client and get containers
+            client = CosmosClient(account_endpoint, credential=account_key)
+            database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
+            
+            # Get all containers we need
+            business_users_container = database.get_container_client("business_users")
+            inventory_container = database.get_container_client("inventory")
+            orders_container = database.get_container_client("orders")
+            transactions_container = database.get_container_client("business_transactions")
+            
+            # 1. Get or create business profile
+            try:
+                business_profile = business_users_container.read_item(item=business_id, partition_key=business_id)
+                logging.info(f"Found existing business profile for {business_id}")
+            except Exception:
+                # Create default business profile if doesn't exist
+                logging.info(f"Creating default business profile for {business_id}")
+                business_profile = {
+                    "id": business_id,
+                    "email": business_id,
+                    "businessName": business_id.split('@')[0].replace('.', ' ').title() + " Business",
+                    "businessType": "Plant Business",
+                    "contactEmail": business_id,
+                    "joinDate": datetime.utcnow().isoformat(),
+                    "status": "active",
+                    "rating": 0,
+                    "reviewCount": 0,
+                    "settings": {
+                        "notifications": True,
+                        "messages": True,
+                        "lowStockThreshold": 5
+                    }
+                }
+                business_users_container.upsert_item(business_profile)
+            
+            # 2. Get inventory metrics
             inventory_query = "SELECT * FROM c WHERE c.businessId = @businessId"
+            inventory_params = [{"name": "@businessId", "value": business_id}]
             inventory_items = list(inventory_container.query_items(
                 query=inventory_query,
-                parameters=[{"name": "@businessId", "value": business_id}],
-                enable_cross_partition_query=True
+                parameters=inventory_params,
+                enable_cross_partition_query=False
             ))
-        except Exception as e:
-            logging.error(f"Error fetching inventory: {str(e)}")
-            inventory_items = []
-        
-        # 3. Get orders data (last 30 days)
-        try:
-            thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
-            orders_query = """
-                SELECT * FROM c 
-                WHERE c.businessId = @businessId 
-                AND c.orderDate >= @startDate
-                ORDER BY c.orderDate DESC
-            """
-            recent_orders = list(orders_container.query_items(
+            
+            # Calculate inventory metrics
+            total_inventory = len(inventory_items)
+            active_inventory = len([item for item in inventory_items if item.get('status') == 'active'])
+            low_stock_items = [item for item in inventory_items 
+                             if item.get('quantity', 0) <= item.get('minThreshold', 5) and item.get('status') == 'active']
+            inventory_value = sum([item.get('price', 0) * item.get('quantity', 0) for item in inventory_items])
+            
+            # 3. Get order metrics
+            orders_query = "SELECT * FROM c WHERE c.businessId = @businessId"
+            orders_params = [{"name": "@businessId", "value": business_id}]
+            orders = list(orders_container.query_items(
                 query=orders_query,
-                parameters=[
-                    {"name": "@businessId", "value": business_id},
-                    {"name": "@startDate", "value": thirty_days_ago}
-                ],
-                enable_cross_partition_query=True
+                parameters=orders_params,
+                enable_cross_partition_query=False,
+                partition_key=business_id
             ))
-        except Exception as e:
-            logging.error(f"Error fetching orders: {str(e)}")
-            recent_orders = []
-        
-        # Calculate dashboard metrics
-        dashboard_data = calculate_dashboard_metrics(
-            business_profile, 
-            inventory_items, 
-            recent_orders
-        )
-        
-        logging.info(f"Dashboard data calculated for {business_id}: {len(inventory_items)} inventory items, {len(recent_orders)} recent orders")
-        
-        return create_success_response(dashboard_data)
+            
+            # Calculate order metrics
+            today = datetime.utcnow().date()
+            total_orders = len(orders)
+            pending_orders = len([order for order in orders if order.get('status') == 'pending'])
+            
+            # 4. Get transaction metrics
+            transactions_query = "SELECT * FROM c WHERE c.businessId = @businessId AND c.type = 'sale'"
+            transactions_params = [{"name": "@businessId", "value": business_id}]
+            transactions = list(transactions_container.query_items(
+                query=transactions_query,
+                parameters=transactions_params,
+                enable_cross_partition_query=False,
+                partition_key=business_id
+            ))
+            
+            # Calculate sales metrics
+            total_sales = sum([t.get('amount', 0) for t in transactions])
+            
+            # Today's sales
+            today_sales = sum([
+                t.get('amount', 0) for t in transactions 
+                if t.get('date', '').startswith(today.isoformat())
+            ])
+            
+            # 5. Top products (from sales data)
+            product_sales = {}
+            for transaction in transactions:
+                for item in transaction.get('items', []):
+                    product_id = item.get('productId', 'Unknown')
+                    product_name = item.get('name', 'Unknown Product')
+                    quantity = item.get('quantity', 0)
+                    revenue = item.get('price', 0) * quantity
+                    
+                    if product_id not in product_sales:
+                        product_sales[product_id] = {
+                            'name': product_name,
+                            'sold': 0,
+                            'revenue': 0
+                        }
+                    
+                    product_sales[product_id]['sold'] += quantity
+                    product_sales[product_id]['revenue'] += revenue
+            
+            # Sort top products by revenue
+            top_products = sorted(product_sales.values(), key=lambda x: x['revenue'], reverse=True)[:5]
+            
+            # 6. Recent orders
+            recent_orders = sorted(orders, key=lambda x: x.get('orderDate', ''), reverse=True)[:5]
+            formatted_recent_orders = []
+            for order in recent_orders:
+                formatted_recent_orders.append({
+                    'id': order.get('id'),
+                    'customer': order.get('customerName', 'Unknown Customer'),
+                    'total': order.get('total', 0),
+                    'status': order.get('status', 'pending'),
+                    'date': order.get('orderDate')
+                })
+            
+            # 7. Low stock details
+            low_stock_details = []
+            for item in low_stock_items[:5]:  # Top 5 low stock items
+                low_stock_details.append({
+                    'id': item.get('id'),
+                    'title': item.get('name', item.get('common_name', 'Unknown Item')),
+                    'quantity': item.get('quantity', 0),
+                    'minThreshold': item.get('minThreshold', 5)
+                })
+            
+            # Build dashboard response
+            dashboard_data = {
+                "businessInfo": {
+                    "businessName": business_profile.get('businessName', 'Your Business'),
+                    "businessType": business_profile.get('businessType', 'Plant Business'),
+                    "businessLogo": business_profile.get('logo'),
+                    "email": business_profile.get('email', business_id),
+                    "rating": business_profile.get('rating', 0),
+                    "reviewCount": business_profile.get('reviewCount', 0),
+                    "joinDate": business_profile.get('joinDate')
+                },
+                "metrics": {
+                    "totalSales": round(total_sales, 2),
+                    "salesToday": round(today_sales, 2),
+                    "newOrders": pending_orders,
+                    "lowStockItems": len(low_stock_items),
+                    "totalInventory": total_inventory,
+                    "activeInventory": active_inventory,
+                    "totalOrders": total_orders,
+                    "inventoryValue": round(inventory_value, 2)
+                },
+                "topProducts": top_products,
+                "recentOrders": formatted_recent_orders,
+                "lowStockDetails": low_stock_details
+            }
+            
+            response = func.HttpResponse(
+                json.dumps(dashboard_data, default=str),
+                status_code=200,
+                mimetype="application/json"
+            )
+            return add_cors_headers(response)
+            
+        except Exception as db_error:
+            logging.error(f"Database error: {str(db_error)}")
+            response = func.HttpResponse(
+                json.dumps({"error": f"Database error: {str(db_error)}"}),
+                status_code=500,
+                mimetype="application/json"
+            )
+            return add_cors_headers(response)
     
     except Exception as e:
-        logging.error(f"Error loading dashboard: {str(e)}")
-        return create_error_response(f"Internal server error: {str(e)}", 500)
-
-def calculate_dashboard_metrics(business_profile, inventory_items, recent_orders):
-    """Calculate business dashboard metrics from real data"""
-    
-    # Business info
-    business_name = business_profile.get('businessName', 'Your Business')
-    business_logo = business_profile.get('logo')
-    
-    # Inventory metrics
-    total_inventory = len(inventory_items)
-    active_inventory = len([item for item in inventory_items if item.get('status') == 'active'])
-    low_stock_items = [
-        item for item in inventory_items 
-        if item.get('quantity', 0) <= item.get('minThreshold', 5)
-    ]
-    low_stock_count = len(low_stock_items)
-    
-    # Calculate total inventory value
-    total_inventory_value = sum(
-        (item.get('quantity', 0) * item.get('price', 0)) 
-        for item in inventory_items
-    )
-    
-    # Orders metrics
-    total_orders = len(recent_orders)
-    completed_orders = [order for order in recent_orders if order.get('status') == 'completed']
-    pending_orders = [order for order in recent_orders if order.get('status') in ['pending', 'processing']]
-    
-    # Revenue calculations
-    total_revenue = sum(order.get('total', 0) for order in completed_orders)
-    
-    # Today's metrics
-    today = datetime.utcnow().date().isoformat()
-    today_orders = [
-        order for order in recent_orders 
-        if order.get('orderDate', '').startswith(today)
-    ]
-    today_revenue = sum(order.get('total', 0) for order in today_orders if order.get('status') == 'completed')
-    
-    # Top selling products (based on recent orders)
-    product_sales = {}
-    for order in completed_orders:
-        for item in order.get('items', []):
-            product_name = item.get('name', 'Unknown Product')
-            if product_name not in product_sales:
-                product_sales[product_name] = {
-                    'name': product_name,
-                    'sold': 0,
-                    'revenue': 0
-                }
-            product_sales[product_name]['sold'] += item.get('quantity', 0)
-            product_sales[product_name]['revenue'] += item.get('totalPrice', 0)
-    
-    # Sort and get top 3
-    top_products = sorted(
-        product_sales.values(), 
-        key=lambda x: x['revenue'], 
-        reverse=True
-    )[:3]
-    
-    # Recent orders for display (last 5)
-    recent_orders_display = []
-    for order in recent_orders[:5]:
-        recent_orders_display.append({
-            'id': order.get('id'),
-            'customer': order.get('customerName', 'Unknown Customer'),
-            'date': order.get('orderDate'),
-            'total': order.get('total', 0),
-            'status': order.get('status', 'pending')
-        })
-    
-    # Low stock details
-    low_stock_details = []
-    for item in low_stock_items[:5]:  # Top 5 low stock items
-        low_stock_details.append({
-            'id': item.get('id'),
-            'title': item.get('common_name') or item.get('productName', 'Unknown Item'),
-            'quantity': item.get('quantity', 0),
-            'minThreshold': item.get('minThreshold', 5)
-        })
-    
-    return {
-        'businessInfo': {
-            'businessId': business_profile.get('id'),
-            'businessName': business_name,
-            'businessType': business_profile.get('businessType', 'Plant Business'),
-            'businessLogo': business_logo,
-            'joinDate': business_profile.get('joinDate'),
-            'email': business_profile.get('email'),
-            'rating': business_profile.get('rating', 0),
-            'reviewCount': business_profile.get('reviewCount', 0)
-        },
-        'metrics': {
-            'totalSales': total_revenue,
-            'salesToday': today_revenue,
-            'newOrders': len(pending_orders),
-            'lowStockItems': low_stock_count,
-            'totalInventory': total_inventory,
-            'activeInventory': active_inventory,
-            'totalOrders': total_orders,
-            'inventoryValue': total_inventory_value
-        },
-        'topProducts': top_products,
-        'recentOrders': recent_orders_display,
-        'lowStockDetails': low_stock_details,
-        'summary': {
-            'last30Days': {
-                'orders': total_orders,
-                'revenue': total_revenue,
-                'completedOrders': len(completed_orders)
-            }
-        }
-    }
+        logging.error(f"Unexpected error: {str(e)}")
+        response = func.HttpResponse(
+            json.dumps({"error": f"Internal server error: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+        return add_cors_headers(response)
