@@ -1,4 +1,4 @@
-// screens/BusinessHomeScreen.js
+// Business/BusinessScreens/BusinessHomeScreen.js - Updated with Components
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -20,6 +20,15 @@ import {
 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+
+// Import Business Components
+import KPIWidget from '../components/KPIWidget';
+import BusinessDashboardCharts from '../components/BusinessDashboardCharts';
+import LowStockBanner from '../components/LowStockBanner';
+import TopSellingProductsList from '../components/TopSellingProductsList';
+import OrderDetailModal from '../components/OrderDetailModal';
+
+// Import API services
 import { getBusinessDashboard } from '../services/businessApi';
 
 export default function BusinessHomeScreen({ navigation }) {
@@ -28,6 +37,8 @@ export default function BusinessHomeScreen({ navigation }) {
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [businessId, setBusinessId] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
   
   // Load dashboard data when screen comes into focus
   useFocusEffect(
@@ -101,21 +112,16 @@ export default function BusinessHomeScreen({ navigation }) {
     },
     topProducts: [],
     recentOrders: [],
-    lowStockDetails: []
+    lowStockDetails: [],
+    chartData: {
+      sales: { labels: [], values: [], total: 0, average: 0 },
+      orders: { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 },
+      inventory: { inStock: 0, lowStock: 0, outOfStock: 0 }
+    }
   });
   
   const onRefresh = () => {
     loadDashboardData();
-  };
-  
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'pending': return '#FFA000';
-      case 'processing': return '#2196F3';
-      case 'completed': return '#4CAF50';
-      case 'cancelled': return '#F44336';
-      default: return '#757575';
-    }
   };
   
   // Navigation handlers
@@ -126,7 +132,7 @@ export default function BusinessHomeScreen({ navigation }) {
   const handleInventory = () => {
     navigation.navigate('AddInventoryScreen', { 
       businessId,
-      showInventory: true // Add this parameter to show inventory directly
+      showInventory: true
     });
   };
   
@@ -143,13 +149,77 @@ export default function BusinessHomeScreen({ navigation }) {
   };
 
   const handleSettings = () => {
-    navigation.navigate('BusinessSettings');
+    navigation.navigate('BusinessSettingsScreen');
   };
 
   const handleProfile = () => {
     navigation.navigate('BusinessProfileScreen');
   };
-  
+
+  const handleAnalytics = () => {
+    navigation.navigate('BusinessAnalyticsScreen', { businessId });
+  };
+
+  // Order management handlers
+  const handleOrderPress = (order) => {
+    setSelectedOrder(order);
+    setShowOrderModal(true);
+  };
+
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
+    try {
+      // Update order status logic here
+      console.log('Updating order status:', orderId, newStatus);
+      // Refresh data after update
+      await loadDashboardData();
+      setShowOrderModal(false);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update order status');
+    }
+  };
+
+  const handleContactCustomer = (order) => {
+    const options = [];
+    
+    if (order.customerPhone) {
+      options.push({
+        text: '📱 Call Customer',
+        onPress: () => Linking.openURL(`tel:${order.customerPhone}`)
+      });
+      
+      options.push({
+        text: '💬 Send SMS', 
+        onPress: () => Linking.openURL(`sms:${order.customerPhone}?body=Hi ${order.customerName}, your order ${order.confirmationNumber} is ready!`)
+      });
+    }
+    
+    options.push({
+      text: '📧 Send Email',
+      onPress: () => Linking.openURL(`mailto:${order.customerEmail}?subject=Order ${order.confirmationNumber}&body=Hi ${order.customerName}, regarding your order...`)
+    });
+    
+    options.push({ text: 'Cancel', style: 'cancel' });
+    
+    Alert.alert(`Contact ${order.customerName}`, `Order: ${order.confirmationNumber}`, options);
+  };
+
+  // Low stock management
+  const handleManageStock = () => {
+    navigation.navigate('AddInventoryScreen', { 
+      businessId,
+      showInventory: true,
+      filter: 'lowStock' 
+    });
+  };
+
+  const handleRestock = (item) => {
+    navigation.navigate('ProductEditScreen', { 
+      productId: item.id,
+      businessId,
+      focusField: 'quantity'
+    });
+  };
+
   if (isLoading && !dashboardData) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -210,9 +280,14 @@ export default function BusinessHomeScreen({ navigation }) {
             </View>
           </View>
         </View>
-        <TouchableOpacity style={styles.settingsButton} onPress={handleSettings}>
-          <MaterialIcons name="settings" size={24} color="#216a94" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerButton} onPress={handleAnalytics}>
+            <MaterialIcons name="analytics" size={20} color="#216a94" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={handleSettings}>
+            <MaterialIcons name="settings" size={20} color="#216a94" />
+          </TouchableOpacity>
+        </View>
       </View>
       
       <ScrollView 
@@ -227,51 +302,57 @@ export default function BusinessHomeScreen({ navigation }) {
         }
         showsVerticalScrollIndicator={false}
       >
-        {/* Enhanced KPI Cards */}
+        {/* Low Stock Banner */}
+        <LowStockBanner
+          lowStockItems={data.lowStockDetails || []}
+          onManageStock={handleManageStock}
+          onRestock={handleRestock}
+          autoRefresh={true}
+        />
+
+        {/* Enhanced KPI Widgets */}
         <View style={styles.kpiContainer}>
-          <View style={styles.kpiCard}>
-            <View style={[styles.kpiIconContainer, { backgroundColor: '#216a94' }]}>
-              <FontAwesome name="dollar" size={20} color="#fff" />
-            </View>
-            <View style={styles.kpiContent}>
-              <Text style={styles.kpiValue}>${data.metrics.totalSales.toFixed(2)}</Text>
-              <Text style={styles.kpiLabel}>Total Revenue</Text>
-              <Text style={styles.kpiSubLabel}>Last 30 days</Text>
-            </View>
-          </View>
+          <KPIWidget
+            title="Total Revenue"
+            value={data.metrics.totalSales}
+            change={data.metrics.revenueGrowth}
+            icon="cash"
+            format="currency"
+            color="#216a94"
+            onPress={handleAnalytics}
+          />
           
-          <View style={styles.kpiCard}>
-            <View style={[styles.kpiIconContainer, { backgroundColor: '#4CAF50' }]}>
-              <FontAwesome name="line-chart" size={20} color="#fff" />
-            </View>
-            <View style={styles.kpiContent}>
-              <Text style={styles.kpiValue}>${data.metrics.salesToday.toFixed(2)}</Text>
-              <Text style={styles.kpiLabel}>Today's Sales</Text>
-              <Text style={styles.kpiSubLabel}>Current day</Text>
-            </View>
-          </View>
+          <KPIWidget
+            title="Today's Sales"
+            value={data.metrics.salesToday}
+            change={data.metrics.dailyGrowth}
+            icon="trending-up"
+            format="currency"
+            color="#4CAF50"
+            onPress={handleAnalytics}
+          />
           
-          <View style={styles.kpiCard}>
-            <View style={[styles.kpiIconContainer, { backgroundColor: '#FF9800' }]}>
-              <MaterialIcons name="shopping-cart" size={20} color="#fff" />
-            </View>
-            <View style={styles.kpiContent}>
-              <Text style={styles.kpiValue}>{data.metrics.newOrders}</Text>
-              <Text style={styles.kpiLabel}>Pending Orders</Text>
-              <Text style={styles.kpiSubLabel}>Need attention</Text>
-            </View>
-          </View>
+          <KPIWidget
+            title="New Orders"
+            value={data.metrics.newOrders}
+            change={data.metrics.orderGrowth}
+            icon="shopping-cart"
+            format="number"
+            color="#FF9800"
+            onPress={handleOrders}
+            trend={data.metrics.newOrders > 0 ? 'up' : 'neutral'}
+          />
           
-          <View style={styles.kpiCard}>
-            <View style={[styles.kpiIconContainer, { backgroundColor: data.metrics.lowStockItems > 0 ? '#F44336' : '#9E9E9E' }]}>
-              <MaterialIcons name="warning" size={20} color="#fff" />
-            </View>
-            <View style={styles.kpiContent}>
-              <Text style={styles.kpiValue}>{data.metrics.lowStockItems}</Text>
-              <Text style={styles.kpiLabel}>Low Stock</Text>
-              <Text style={styles.kpiSubLabel}>Items to restock</Text>
-            </View>
-          </View>
+          <KPIWidget
+            title="Low Stock"
+            value={data.metrics.lowStockItems}
+            change={data.metrics.stockChange}
+            icon="warning"
+            format="number"
+            color={data.metrics.lowStockItems > 0 ? "#F44336" : "#9E9E9E"}
+            onPress={handleInventory}
+            trend={data.metrics.lowStockItems > 0 ? 'down' : 'neutral'}
+          />
         </View>
 
         {/* Additional Metrics Row */}
@@ -297,6 +378,15 @@ export default function BusinessHomeScreen({ navigation }) {
             <Text style={styles.metricLabel}>Inventory Value</Text>
           </View>
         </View>
+        
+        {/* Charts Dashboard */}
+        <BusinessDashboardCharts
+          salesData={data.chartData?.sales || { labels: [], values: [], total: 0, average: 0 }}
+          ordersData={data.chartData?.orders || { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 }}
+          inventoryData={data.chartData?.inventory || { inStock: 0, lowStock: 0, outOfStock: 0 }}
+          onRefresh={loadDashboardData}
+          autoRefresh={true}
+        />
         
         {/* Quick Actions */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -342,62 +432,61 @@ export default function BusinessHomeScreen({ navigation }) {
           </TouchableOpacity>
         </View>
         
-        {/* Marketplace Button */}
+        {/* Enhanced Marketplace Button */}
         <TouchableOpacity 
           style={styles.marketplaceButton}
           onPress={handleMarketplace}
         >
           <MaterialCommunityIcons name="storefront" size={24} color="#fff" />
           <Text style={styles.marketplaceButtonText}>Browse Marketplace</Text>
+          <MaterialIcons name="arrow-forward" size={20} color="#fff" />
         </TouchableOpacity>
 
-        {/* Low Stock Alert */}
-        {data.lowStockDetails && data.lowStockDetails.length > 0 && (
-          <View style={styles.alertCard}>
-            <View style={styles.alertHeader}>
-              <MaterialIcons name="warning" size={20} color="#ff9800" />
-              <Text style={styles.alertTitle}>Low Stock Alert</Text>
-            </View>
-            {data.lowStockDetails.slice(0, 3).map(item => (
-              <View key={item.id} style={styles.alertItem}>
-                <Text style={styles.alertItemText}>{item.title}</Text>
-                <Text style={styles.alertItemCount}>
-                  {item.quantity} left (min: {item.minThreshold})
-                </Text>
-              </View>
-            ))}
-            <TouchableOpacity 
-              style={styles.alertButton}
-              onPress={handleInventory}
-            >
-              <Text style={styles.alertButtonText}>Manage Inventory</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        {/* Top Selling Products */}
+        <TopSellingProductsList
+          businessId={businessId}
+          timeframe="month"
+          onProductPress={(product) => navigation.navigate('BusinessProductDetailScreen', { 
+            productId: product.id, 
+            businessId 
+          })}
+          limit={5}
+        />
         
         {/* Recent Orders */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Recent Orders</Text>
           <TouchableOpacity style={styles.viewAllButton} onPress={handleOrders}>
             <Text style={styles.viewAllText}>View All</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#216a94" />
           </TouchableOpacity>
         </View>
         
         <View style={styles.ordersContainer}>
           {data.recentOrders && data.recentOrders.length > 0 ? (
-            data.recentOrders.map((order) => (
-              <TouchableOpacity key={order.id} style={styles.orderItem}>
+            data.recentOrders.slice(0, 3).map((order) => (
+              <TouchableOpacity 
+                key={order.id} 
+                style={styles.orderItem}
+                onPress={() => handleOrderPress(order)}
+              >
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderConfirmation}>#{order.confirmationNumber}</Text>
+                  <View style={[styles.statusPill, { backgroundColor: getStatusColor(order.status) }]}>
+                    <Text style={styles.statusText}>{order.status}</Text>
+                  </View>
+                </View>
                 <View style={styles.orderDetails}>
-                  <Text style={styles.orderCustomer}>{order.customer}</Text>
+                  <Text style={styles.orderCustomer}>{order.customerName}</Text>
                   <Text style={styles.orderDate}>
                     {order.date ? new Date(order.date).toLocaleDateString() : 'Recent'}
                   </Text>
                 </View>
                 <View style={styles.orderInfo}>
                   <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
-                  <View style={[styles.statusPill, { backgroundColor: getStatusColor(order.status) }]}>
-                    <Text style={styles.statusText}>{order.status}</Text>
-                  </View>
+                  <Text style={styles.orderItems}>
+                    {order.items?.length || 0} items
+                  </Text>
                 </View>
               </TouchableOpacity>
             ))
@@ -406,37 +495,10 @@ export default function BusinessHomeScreen({ navigation }) {
               <MaterialIcons name="receipt" size={48} color="#e0e0e0" />
               <Text style={styles.emptyStateText}>No recent orders</Text>
               <Text style={styles.emptyStateSubtext}>Orders will appear here when customers place them</Text>
-            </View>
-          )}
-        </View>
-        
-        {/* Top Products */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Top Selling Products</Text>
-          <TouchableOpacity style={styles.viewAllButton} onPress={handleInventory}>
-            <Text style={styles.viewAllText}>View All</Text>
-          </TouchableOpacity>
-        </View>
-        
-        <View style={styles.topProductsContainer}>
-          {data.topProducts && data.topProducts.length > 0 ? (
-            data.topProducts.map((product, index) => (
-              <TouchableOpacity key={index} style={styles.productItem}>
-                <View style={styles.productIconContainer}>
-                  <MaterialIcons name="eco" size={24} color="#fff" />
-                </View>
-                <View style={styles.productDetails}>
-                  <Text style={styles.productName}>{product.name}</Text>
-                  <Text style={styles.productSold}>{product.sold} sold</Text>
-                </View>
-                <Text style={styles.productRevenue}>${product.revenue.toFixed(2)}</Text>
+              <TouchableOpacity style={styles.createOrderButton} onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}>
+                <MaterialIcons name="add" size={16} color="#216a94" />
+                <Text style={styles.createOrderText}>Create Order</Text>
               </TouchableOpacity>
-            ))
-          ) : (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons name="chart-line" size={48} color="#e0e0e0" />
-              <Text style={styles.emptyStateText}>No sales data yet</Text>
-              <Text style={styles.emptyStateSubtext}>Start selling to see your top products here</Text>
             </View>
           )}
         </View>
@@ -473,7 +535,7 @@ export default function BusinessHomeScreen({ navigation }) {
         </View>
       </ScrollView>
       
-      {/* Bottom Navigation */}
+      {/* Enhanced Bottom Navigation */}
       <View style={styles.bottomNav}>
         <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
           <MaterialIcons name="dashboard" size={24} color="#216a94" />
@@ -504,8 +566,30 @@ export default function BusinessHomeScreen({ navigation }) {
           <Text style={styles.navText}>Profile</Text>
         </TouchableOpacity>
       </View>
+
+      {/* Order Detail Modal */}
+      <OrderDetailModal
+        visible={showOrderModal}
+        order={selectedOrder}
+        onClose={() => setShowOrderModal(false)}
+        onUpdateStatus={handleUpdateOrderStatus}
+        onContactCustomer={handleContactCustomer}
+        businessInfo={data.businessInfo}
+      />
     </SafeAreaView>
   );
+
+  // Helper function for status colors
+  function getStatusColor(status) {
+    switch (status) {
+      case 'pending': return '#FFA000';
+      case 'confirmed': return '#2196F3';
+      case 'ready': return '#9C27B0';
+      case 'completed': return '#4CAF50';
+      case 'cancelled': return '#F44336';
+      default: return '#757575';
+    }
+  }
 }
 
 const styles = StyleSheet.create({
@@ -595,7 +679,11 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 2,
   },
-  settingsButton: {
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  headerButton: {
     padding: 8,
     borderRadius: 6,
     backgroundColor: '#f0f8ff',
@@ -608,47 +696,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     justifyContent: 'space-between',
     padding: 16,
-  },
-  kpiCard: {
-    backgroundColor: '#fff',
-    width: '48%',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  kpiIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#216a94',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  kpiContent: {
-    flex: 1,
-  },
-  kpiValue: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  kpiLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  kpiSubLabel: {
-    fontSize: 10,
-    color: '#999',
-    marginTop: 1,
+    gap: 12,
   },
   additionalMetrics: {
     flexDirection: 'row',
@@ -685,6 +733,7 @@ const styles = StyleSheet.create({
     color: '#333',
     marginHorizontal: 16,
     marginBottom: 12,
+    marginTop: 8,
   },
   quickActionsContainer: {
     flexDirection: 'row',
@@ -714,8 +763,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#4CAF50',
     marginHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
     marginBottom: 24,
     elevation: 2,
     shadowColor: '#000',
@@ -728,61 +777,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     fontSize: 16,
     marginLeft: 8,
-  },
-  alertCard: {
-    backgroundColor: '#fff8e1',
-    margin: 16,
-    marginTop: 0,
-    marginBottom: 20,
-    borderRadius: 12,
-    padding: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#ff9800',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  alertHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  alertTitle: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#f57c00',
-    marginLeft: 8,
-  },
-  alertItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  alertItemText: {
-    fontSize: 14,
-    color: '#555',
-    flex: 1,
-  },
-  alertItemCount: {
-    fontSize: 14,
-    color: '#f57c00',
-    fontWeight: '500',
-  },
-  alertButton: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#ff9800',
-    borderRadius: 8,
-    paddingVertical: 8,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  alertButtonText: {
-    fontSize: 14,
-    color: '#ff9800',
-    fontWeight: '600',
+    marginRight: 8,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -792,11 +787,14 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   viewAllButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
     padding: 4,
   },
   viewAllText: {
     color: '#216a94',
     fontSize: 14,
+    marginRight: 4,
   },
   ordersContainer: {
     marginHorizontal: 16,
@@ -807,35 +805,22 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
-    elevation: 1,
   },
-  orderDetails: {
-    flex: 1,
+  orderHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  orderCustomer: {
-    fontSize: 16,
+  orderConfirmation: {
+    fontSize: 14,
     fontWeight: 'bold',
     color: '#333',
-  },
-  orderDate: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-  },
-  orderInfo: {
-    alignItems: 'flex-end',
-  },
-  orderTotal: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 4,
   },
   statusPill: {
     paddingHorizontal: 8,
@@ -847,49 +832,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
-  topProductsContainer: {
-    marginHorizontal: 16,
-    marginBottom: 24,
+  orderDetails: {
+    marginBottom: 8,
   },
-  productItem: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  productIconContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  productDetails: {
-    flex: 1,
-  },
-  productName: {
+  orderCustomer: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
   },
-  productSold: {
+  orderDate: {
     fontSize: 12,
     color: '#666',
-    marginTop: 4,
+    marginTop: 2,
   },
-  productRevenue: {
+  orderInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  orderTotal: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#4CAF50',
+  },
+  orderItems: {
+    fontSize: 12,
+    color: '#666',
   },
   emptyState: {
     alignItems: 'center',
@@ -908,6 +876,23 @@ const styles = StyleSheet.create({
     color: '#999',
     marginTop: 4,
     textAlign: 'center',
+  },
+  createOrderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f8ff',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#216a94',
+  },
+  createOrderText: {
+    color: '#216a94',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
   },
   businessCard: {
     backgroundColor: '#fff',
