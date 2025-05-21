@@ -37,7 +37,7 @@
     "expo-camera": "~16.1.6",
     "expo-dev-client": "~5.1.8",
     "expo-file-system": "~18.1.10",
-    "expo-haptics": "^14.1.4",
+    "expo-haptics": "~14.1.4",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~14.1.4",
     "expo-location": "~18.1.5",
