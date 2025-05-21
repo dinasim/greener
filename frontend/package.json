@@ -47,9 +47,15 @@
     "expo-web-browser": "~14.1.6",
     "firebase": "^11.8.1",
     "jwt-decode": "^4.0.0",
+<<<<<<< HEAD
     "lottie-react-native": "^7.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+=======
+    "lottie-react-native": "7.2.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+>>>>>>> f28c6fe ("lottie...")
     "react-native": "^0.79.2",
     "react-native-animatable": "^1.4.0",
     "react-native-chart-kit": "^6.12.0",
