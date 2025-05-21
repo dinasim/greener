@@ -42,7 +42,7 @@ export default function SignupReminders({ navigation }) {
       setGranted(true);
 
       // 2. Register the service worker (must exist at this path!)
-      const swReg = await navigator.serviceWorker.register("/service-worker.js");
+      const swReg = await navigator.serviceWorker.register("/sw.js");
       // 3. VAPID public key from Azure Notification Hub (base64)
       const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_KEY; // <-- PUT YOUR VAPID PUBLIC KEY HERE
       const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
