@@ -52,8 +52,6 @@ const cityList = ['Acre', 'Afula', 'Arad', 'Arraba', 'Ashdod', 'Ashkelon', 'Baqa
         console.log("📱 Token received:", expoPushToken);  // ✅ Add this!
         updateFormData("expoPushToken", expoPushToken);
       };
-  
-      registerForPushNotifications();
     }, []);
   
     const handleCitySelect = async () => {

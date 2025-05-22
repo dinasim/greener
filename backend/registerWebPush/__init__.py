@@ -3,6 +3,7 @@ import logging
 import json
 import requests
 import os
+from azure.cosmos import CosmosClient, exceptions
 
 # Your Notification Hub info
 NAMESPACE = "greener-webpush"   
@@ -74,23 +75,32 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         response = requests.put(uri, headers=headers, json=installation)
 
         if response.status_code in (200, 201):
-            logging.info("Azure NH registration success")
+            logging.info("✅ Azure NH registration success")
 
             # ✅ Update Cosmos DB
             try:
+                logging.info("🔄 Connecting to Cosmos DB...")
                 client = CosmosClient(COSMOS_ENDPOINT, COSMOS_KEY)
                 db = client.get_database_client(DATABASE_NAME)
                 container = db.get_container_client(CONTAINER_NAME)
 
+                logging.info(f"🔍 Looking up user: {installation_id}")
                 user_doc = container.read_item(item=installation_id, partition_key=installation_id)
-                user_doc["notificationsEnabled"] = True
-                user_doc["pushChannel"] = payload.get("pushChannel")  # Optional
+                logging.info("✅ Found user document.")
 
-                container.replace_item(item=user_doc["id"], body=user_doc)
-                logging.info("User document updated in Cosmos DB.")
+                # Update fields
+                user_doc["notificationsEnabled"] = True
+                user_doc["pushChannel"] = payload.get("pushChannel")
+
+                # Replace in Cosmos
+                container.replace_item(item=installation_id, body=user_doc)
+                logging.info("✅ User document updated in Cosmos DB.")
+
+            except exceptions.CosmosResourceNotFoundError:
+                logging.error(f"❌ User with id {installation_id} not found in Cosmos DB.")
 
             except Exception as db_error:
-                logging.error(f"Error updating Cosmos DB: {str(db_error)}")
+                logging.error(f"🔥 Unexpected error updating Cosmos DB: {str(db_error)}")
 
             return func.HttpResponse("Registered and updated Cosmos DB.", status_code=200)
 

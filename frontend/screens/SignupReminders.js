@@ -5,8 +5,6 @@ import {
 } from "react-native";
 import { useForm } from "../context/FormContext";
 
-// !!! You must have a service-worker.js in your public/ directory !!!
-
 export default function SignupReminders({ navigation }) {
   const [granted, setGranted] = useState(null);
   const { formData } = useForm();
@@ -21,7 +19,15 @@ export default function SignupReminders({ navigation }) {
     }).start();
   }, []);
 
-  // Request browser push permission and register Service Worker
+  useEffect(() => {
+    if (formData.email) {
+      console.log("✅ Email available:", formData.email);
+      requestWebPush(); // trigger registration once email is ready
+    } else {
+      console.log("⏳ Waiting for formData.email...");
+    }
+  }, [formData.email]);
+
   const requestWebPush = async () => {
     if (Platform.OS !== "web") {
       Alert.alert("Web Push Only", "Browser push notifications only work on web browsers.");
@@ -32,7 +38,6 @@ export default function SignupReminders({ navigation }) {
       return;
     }
     try {
-      // 1. Request notification permission
       const permission = await Notification.requestPermission();
       if (permission !== "granted") {
         setGranted(false);
@@ -41,31 +46,24 @@ export default function SignupReminders({ navigation }) {
       }
       setGranted(true);
 
-      // 2. Register the service worker (must exist at this path!)
       const swReg = await navigator.serviceWorker.register("/sw.js");
-      // 3. VAPID public key from Azure Notification Hub (base64)
-      const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_KEY; // <-- PUT YOUR VAPID PUBLIC KEY HERE
+      const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_KEY;
       const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
-      // 4. Subscribe to push
       const subscription = await swReg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey,
       });
 
-      // 5. Send subscription to backend (Azure Notification Hub registration)
       await saveSubscriptionToBackend(subscription);
-
       Alert.alert("Notifications Enabled ✅");
-
     } catch (err) {
       console.error("Push subscription error:", err);
       Alert.alert("Error", "Failed to subscribe for notifications.");
     }
   };
 
-  // Utility: Convert base64 key for VAPID
-  function urlBase64ToUint8Array(base64String) {
+  const urlBase64ToUint8Array = (base64String) => {
     const padding = "=".repeat((4 - base64String.length % 4) % 4);
     const base64 = (base64String + padding)
       .replace(/-/g, "+")
@@ -76,14 +74,13 @@ export default function SignupReminders({ navigation }) {
       outputArray[i] = rawData.charCodeAt(i);
     }
     return outputArray;
-  }
+  };
 
-  // Send subscription object to backend
   const saveSubscriptionToBackend = async (subscription) => {
     try {
       const sub = subscription.toJSON();
       const payload = {
-        installationId: formData.email, // unique ID per user
+        installationId: formData.email,
         platform: "browser",
         pushChannel: {
           endpoint: sub.endpoint,
@@ -93,14 +90,17 @@ export default function SignupReminders({ navigation }) {
         tags: [`user:${formData.email}`, "plant-owner", "browser"],
       };
 
-      // Send to your backend (endpoint to register with Notification Hub)
-      await fetch("https://usersfunctions.azurewebsites.net/api/registerWebPush", {
+      console.log("📦 Payload being sent to backend:", payload);
+
+      const response = await fetch("https://usersfunctions.azurewebsites.net/api/registerWebPush", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      console.log("Web Push subscription sent to backend:", payload);
+      console.log("✅ Response status:", response.status);
+      const responseText = await response.text();
+      console.log("📨 Response text:", responseText);
     } catch (error) {
       console.error("❌ Failed to save subscription:", error);
     }

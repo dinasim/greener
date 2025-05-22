@@ -46,6 +46,9 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
+    "notification": {
+      "vapidPublicKey": "YOUR_PUBLIC_VAPID_KEY_HERE"
+    },
     "extra": {
       "expoClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
       "webClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
