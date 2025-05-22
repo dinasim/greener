@@ -1,6 +1,7 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { FormProvider } from '../context/FormContext';
+import { Platform } from 'react-native';
 
 // Importing screens
 import LoginScreen from '../screens/LoginScreen';
@@ -25,7 +26,7 @@ import UserPlantDetails from '../screens/UserPlantDetails';
 // Import marketplace navigation
 import MainTabs from './MainTabs';
 
-// Import Business navigation - FIXED
+// Import Business navigation
 import BusinessNavigation from '../Business/BusinessNavigation';
 
 // Import Persona Selection
@@ -36,12 +37,25 @@ const Stack = createNativeStackNavigator();
 export default function AppNavigator() {
   return (
     <FormProvider>
-      <Stack.Navigator initialRouteName="PersonaSelection" screenOptions={{ headerShown: false }}>
-        {/* Persona Selection - FIXED: Start here */}
+      <Stack.Navigator 
+        initialRouteName="PersonaSelection" 
+        screenOptions={{ 
+          headerShown: false,
+          animation: Platform.OS === 'web' ? 'none' : 'default',
+          gestureEnabled: Platform.OS !== 'web'
+        }}
+      >
+        {/* Persona Selection */}
         <Stack.Screen name="PersonaSelection" component={PersonaSelectionScreen} />
         
-        {/* Business Flow - FIXED: Full business navigation */}
-        <Stack.Screen name="BusinessFlow" component={BusinessNavigation} />
+        {/* Business Flow - using the updated BusinessNavigation */}
+        <Stack.Screen 
+          name="BusinessFlow" 
+          component={BusinessNavigation}
+          options={{
+            animation: 'none', // Disable animation for this transition to prevent rendering issues
+          }} 
+        />
         
         {/* Consumer/User Login and Signup screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
@@ -60,7 +74,13 @@ export default function AppNavigator() {
         <Stack.Screen name="UserPlantDetail" component={UserPlantDetails} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
-        <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen 
+          name="MainTabs" 
+          component={MainTabs}
+          options={{
+            animation: 'none', // Disable animation for tab transitions
+          }}
+        />
 
         {/* Other consumer screens */}
         <Stack.Screen name="Camera" component={CameraScreen} />

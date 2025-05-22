@@ -37,7 +37,7 @@
     "expo-camera": "~16.1.6",
     "expo-dev-client": "~5.1.8",
     "expo-file-system": "~18.1.10",
-    "expo-haptics": "~14.1.4",
+    "expo-haptics": "^14.1.4",
     "expo-image-picker": "~16.1.4",
     "expo-linear-gradient": "~14.1.4",
     "expo-location": "~18.1.5",
@@ -47,15 +47,9 @@
     "expo-web-browser": "~14.1.6",
     "firebase": "^11.8.1",
     "jwt-decode": "^4.0.0",
-<<<<<<< HEAD
     "lottie-react-native": "^7.2.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-=======
-    "lottie-react-native": "7.2.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
->>>>>>> f28c6fe ("lottie...")
     "react-native": "^0.79.2",
     "react-native-animatable": "^1.4.0",
     "react-native-chart-kit": "^6.12.0",
