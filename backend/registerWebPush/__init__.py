@@ -9,8 +9,13 @@ NAMESPACE = "greener-webpush"
 HUB_NAME = "greener-hub"    
 KEY_NAME = "DefaultFullSharedAccessSignature"  
 KEY_VALUE = os.environ.get('AZURE_NH_FULL_ACCESS_KEY')  
-
 API_VERSION = "2015-01"
+
+# Cosmos DB info
+COSMOS_ENDPOINT = os.environ.get("COSMOS_DB_ENDPOINT")
+COSMOS_KEY = os.environ.get("COSMOS_DB_KEY")
+DATABASE_NAME = "greener-database"
+CONTAINER_NAME = "Users"
 
 def generate_sas_token(uri, key_name, key_value, expiry=3600):
     import urllib.parse
@@ -30,8 +35,7 @@ def generate_sas_token(uri, key_name, key_value, expiry=3600):
         ).digest()
     )
     token = (
-        "SharedAccessSignature sr={}&sig={}&se={}&skn={}"
-        .format(encoded_uri, urllib.parse.quote_plus(signature), ttl, key_name)
+        f"SharedAccessSignature sr={encoded_uri}&sig={urllib.parse.quote_plus(signature)}&se={ttl}&skn={key_name}"
     )
     return token
 
@@ -39,7 +43,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('registerWebPush function processed a request.')
 
     try:
-        # 1. Get the JSON payload from the frontend
         payload = req.get_json()
         logging.info(f"Received payload: {json.dumps(payload)}")
 
@@ -47,36 +50,50 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if not installation_id:
             return func.HttpResponse("Missing installationId", status_code=400)
 
-        # 2. Prepare the installation object for Azure NH
         installation = {
             "installationId": installation_id,
             "platform": "browser",
             "pushChannel": payload.get("pushChannel"),
         }
-        # Optionally add tags:
+
         if "tags" in payload:
             installation["tags"] = payload["tags"]
 
-        # 3. Prepare Azure NH URL
         uri = f"https://{NAMESPACE}.servicebus.windows.net/{HUB_NAME}/installations/{installation_id}?api-version={API_VERSION}"
-
-        # 4. Generate SAS token
         sas_token = generate_sas_token(
             f"https://{NAMESPACE}.servicebus.windows.net/{HUB_NAME}",
             KEY_NAME,
             KEY_VALUE
         )
 
-        # 5. Make PUT request to Azure Notification Hub
         headers = {
             "Authorization": sas_token,
             "Content-Type": "application/json",
         }
+
         response = requests.put(uri, headers=headers, json=installation)
 
         if response.status_code in (200, 201):
-            logging.info(f"Azure NH registration success: {response.status_code}")
-            return func.HttpResponse("Registered with Azure Notification Hub!", status_code=200)
+            logging.info("Azure NH registration success")
+
+            # ✅ Update Cosmos DB
+            try:
+                client = CosmosClient(COSMOS_ENDPOINT, COSMOS_KEY)
+                db = client.get_database_client(DATABASE_NAME)
+                container = db.get_container_client(CONTAINER_NAME)
+
+                user_doc = container.read_item(item=installation_id, partition_key=installation_id)
+                user_doc["notificationsEnabled"] = True
+                user_doc["pushChannel"] = payload.get("pushChannel")  # Optional
+
+                container.replace_item(item=user_doc["id"], body=user_doc)
+                logging.info("User document updated in Cosmos DB.")
+
+            except Exception as db_error:
+                logging.error(f"Error updating Cosmos DB: {str(db_error)}")
+
+            return func.HttpResponse("Registered and updated Cosmos DB.", status_code=200)
+
         else:
             logging.error(f"Azure NH error: {response.status_code} {response.text}")
             return func.HttpResponse(f"Azure NH Error: {response.status_code}\n{response.text}", status_code=500)
