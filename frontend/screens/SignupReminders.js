@@ -83,14 +83,14 @@ export default function SignupReminders({ navigation }) {
     try {
       const sub = subscription.toJSON();
       const payload = {
-        installationId: formData.email, // or a unique user ID if you want
+        installationId: formData.email, // unique ID per user
         platform: "browser",
         pushChannel: {
           endpoint: sub.endpoint,
           p256dh: sub.keys.p256dh,
           auth: sub.keys.auth,
         },
-        // add any extra info (plant/user context) as needed
+        tags: [`user:${formData.email}`, "plant-owner", "browser"],
       };
 
       // Send to your backend (endpoint to register with Notification Hub)

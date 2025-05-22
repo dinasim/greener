@@ -5,10 +5,10 @@ import requests
 import os
 
 # Your Notification Hub info
-NAMESPACE = "<greener-webpush>"   
-HUB_NAME = "<greener-hub>"     # Example: 'my-hub'
-KEY_NAME = "<DefaultFullSharedAccessSignature>"  # Usually 'DefaultFullSharedAccessSignature'
-KEY_VALUE = os.environ.get('AZURE_NH_FULL_ACCESS_KEY')  # Found in Access Policies
+NAMESPACE = "greener-webpush"   
+HUB_NAME = "greener-hub"    
+KEY_NAME = "DefaultFullSharedAccessSignature"  
+KEY_VALUE = os.environ.get('AZURE_NH_FULL_ACCESS_KEY')  
 
 API_VERSION = "2015-01"
 
