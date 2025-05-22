@@ -24,6 +24,7 @@ export default function SignupReminders({ navigation }) {
       Alert.alert("Web Push Only", "Browser push notifications only work on web browsers.");
       return;
     }
+
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
       Alert.alert("Not supported", "Web Push API is not supported in this browser.");
       return;
@@ -49,18 +50,19 @@ export default function SignupReminders({ navigation }) {
         applicationServerKey: convertedVapidKey,
       });
 
-      // Save pushChannel to context for later use
+      // Save to context
       updateFormData("expoPushToken", {
         endpoint: subscription.endpoint,
         p256dh: subscription.toJSON().keys.p256dh,
         auth: subscription.toJSON().keys.auth,
       });
 
-      console.log("📦 Subscription saved to context");
+      console.log("📦 Web push token saved to context");
 
+      // ✅ Send to backend
       await saveSubscriptionToBackend(subscription);
-      Alert.alert("Notifications Enabled ✅");
 
+      Alert.alert("Notifications Enabled ✅");
     } catch (err) {
       console.error("❌ Push subscription error:", err);
       Alert.alert("Error", "Failed to subscribe for notifications.");
@@ -108,10 +110,6 @@ export default function SignupReminders({ navigation }) {
   };
 
   const handleContinue = () => {
-    if (!formData.email) {
-      Alert.alert("Missing Email", "Please go back and sign in first.");
-      return;
-    }
     navigation.navigate("SignInGoogleScreen");
   };
 

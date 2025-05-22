@@ -77,7 +77,7 @@ export default function SignInGoogleScreen({ navigation }) {
     if (!response) return;
     setIsLoading(true);
 
-    if (response.type === 'success') {
+     if (response.type === 'success') {
       const { access_token } = response.params || {};
 
       if (access_token) {
@@ -89,6 +89,7 @@ export default function SignInGoogleScreen({ navigation }) {
               updateFormData('email', userInfo.email);
               saveEmailForMarketplace(userInfo.email);
 
+              // ⚠️ Now push token will be in context already if approved on Reminder screen
               saveUserToBackend({
                 email: userInfo.email,
                 name: userInfo.name,
@@ -142,7 +143,6 @@ export default function SignInGoogleScreen({ navigation }) {
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${access_token}` },
       });
-
       if (!res.ok) throw new Error('Failed to fetch user info');
       return await res.json();
     } catch (error) {
