@@ -114,5 +114,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
 
     except Exception as e:
-        logging.error(f"🔥 Error sending weather advice: {e}")
-        return func.HttpResponse("Server error", status_code=500)
+        logging.error("🔥 Error sending weather advice:")
+        logging.exception(e)  # <- This logs the full stack trace
+        return func.HttpResponse(f"Server error: {str(e)}", status_code=500)
