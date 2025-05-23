@@ -8,7 +8,9 @@ __pycache__/
 .venv/
 venv/
 env/
+*.egg
 *.egg-info/
+*.whl
 bin/
 obj/
 # Node.js
@@ -29,3 +31,7 @@ local.settings.json
 
 # Logs
 *.log
+
+# Compiled outputs
+*.dll
+*.pdb
