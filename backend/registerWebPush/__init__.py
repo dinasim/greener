@@ -6,8 +6,8 @@ import os
 from azure.cosmos import CosmosClient, exceptions
 
 # Your Notification Hub info
-NAMESPACE = "greener-webpush"   
-HUB_NAME = "greener-hub"    
+NAMESPACE = os.getenv("NH_NAMESPACE")   
+HUB_NAME = os.getenv("HUB_NAME")    
 KEY_NAME = "DefaultFullSharedAccessSignature"  
 KEY_VALUE = os.environ.get('AZURE_NH_FULL_ACCESS_KEY')  
 API_VERSION = "2015-01"
