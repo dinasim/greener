@@ -40,6 +40,7 @@ def generate_sas_token(uri, key_name, key_value, expiry=3600):
     return f"SharedAccessSignature sr={encoded_uri}&sig={urllib.parse.quote_plus(signature)}&se={ttl}&skn={key_name}"
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info(f"🌐 NH Namespace: {NH_NAMESPACE}, Hub Name: {HUB_NAME}")
     logging.info("✅ Weather notification function started.")
 
     try:
