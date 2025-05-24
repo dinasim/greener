@@ -111,23 +111,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 message = "✅ Weather looks great for your plants today!"
 
             # ✅ Send notification via Notification Hub
-            hub_uri = f"https://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}"
-            send_uri = f"{hub_uri}/messages/?api-version=2015-01"
-            sas_token = generate_sas_token(hub_uri, "DefaultFullSharedAccessSignature", NH_ACCESS_KEY)
+            sb_uri = f"sb://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}"
+            send_uri = f"https://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}/messages/?api-version=2015-01"
+            sas_token = generate_sas_token(sb_uri, "RootManageSharedAccessKey", NH_ACCESS_KEY)
 
             headers = {
                 "Authorization": sas_token,
-                "Content-Type": "application/json",
+                "Content-Type": "application/json;charset=utf-8",
                 "ServiceBusNotification-Format": "webpush",
-                "ServiceBusNotification-Tags": f"user:{email}"
+                "ServiceBusNotification-Tags": f"user:{email}"  
             }
 
-            payload = {
-                "data": {
-                    "title": "🌱 Plant Weather Update",
-                    "body": message
-                }
-            }
+            payload = json.dumps({
+                "title": "🌱 Plant Weather Update",
+                "body": message,
+                "icon": "https://via.placeholder.com/128",
+                "vibrate": [200, 100, 200],
+                "requireInteraction": True
+            })
 
             response = requests.post(send_uri, headers=headers, json=payload)
             response.raise_for_status()

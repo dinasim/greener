@@ -20,7 +20,7 @@ export default function SignupReminders({ navigation }) {
   }, []);
 
   const requestWebPush = async () => {
-    if (Platform.OS !== "web") {
+     if (Platform.OS !== "web") {
       Alert.alert("Web Push Only", "Browser push notifications only work on web browsers.");
       return;
     }
@@ -38,10 +38,17 @@ export default function SignupReminders({ navigation }) {
         Alert.alert("Permission Denied", "You can still continue, but we won't send reminders.");
         return;
       }
+
       setGranted(true);
       console.log("✅ Permission granted");
 
+      // ✅ Register service worker and wait until ready
       const swReg = await navigator.serviceWorker.register("/sw.js");
+      console.log("🛠️ Service worker registered");
+
+      await navigator.serviceWorker.ready;
+      console.log("✅ Service worker active");
+
       const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_KEY;
       const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
 
@@ -50,7 +57,6 @@ export default function SignupReminders({ navigation }) {
         applicationServerKey: convertedVapidKey,
       });
 
-      // Save to context
       updateFormData("webPushSubscription", {
         endpoint: subscription.endpoint,
         p256dh: subscription.toJSON().keys.p256dh,
@@ -59,14 +65,14 @@ export default function SignupReminders({ navigation }) {
 
       console.log("📦 Web push token saved to context");
 
-      // ✅ Send to backend
       if (!formData.email) {
         Alert.alert("Missing Email", "Please sign in before enabling notifications.");
         return;
       }
-      await saveSubscriptionToBackend(subscription);
 
+      await saveSubscriptionToBackend(subscription);
       Alert.alert("Notifications Enabled ✅");
+
     } catch (err) {
       console.error("❌ Push subscription error:", err);
       Alert.alert("Error", "Failed to subscribe for notifications.");
