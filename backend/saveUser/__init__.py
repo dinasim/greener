@@ -15,7 +15,7 @@ endpoint = os.environ.get('COSMOS_URI')
 key = os.environ.get('COSMOS_KEY')
 client = CosmosClient(endpoint, credential=key)
 
-# Reference your Cosmos DB database and containers
+# Reference Cosmos DB database and containers
 database_name = 'GreenerDB'
 
 try:
@@ -29,7 +29,7 @@ except Exception as e:
 
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python saveUser function processed a request.')
+    logging.info('🌱 saveUser function triggered.')
 
     if not user_container or not plant_container:
         return func.HttpResponse(
@@ -40,7 +40,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         user_info = req.get_json()
-        logging.info(f"Received user data: {user_info}")
+        logging.info(f"📥 Received user data: {user_info}")
     except ValueError:
         return func.HttpResponse(
             body=json.dumps({"error": "Invalid JSON body."}),
@@ -52,7 +52,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         try:
             user_info['id'] = user_info['email']  # Use email as document ID
 
-            # Check if user already exists
+            # Query existing user
             query = "SELECT * FROM Users u WHERE u.email = @email"
             parameters = [{"name": "@email", "value": user_info['email']}]
 
@@ -63,10 +63,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             ))
 
             if existing_users:
-                logging.info(f"Updating existing user: {user_info['email']}")
+                logging.info(f"🔁 Updating existing user: {user_info['email']}")
                 existing_user = existing_users[0]
 
-                # Update fields selectively
+                # Selective update of fields
                 existing_user.update({
                     "name": user_info.get("name", existing_user.get("name")),
                     "type": user_info.get("type", existing_user.get("type")),
@@ -74,13 +74,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "kids": user_info.get("kids", existing_user.get("kids")),
                     "intersted": user_info.get("intersted", existing_user.get("intersted")),
                     "expoPushToken": user_info.get("expoPushToken", existing_user.get("expoPushToken")),
+                    "webPushSubscription": user_info.get("webPushSubscription", existing_user.get("webPushSubscription")),
                     "location": user_info.get("location", existing_user.get("location"))
                 })
 
                 user_container.replace_item(item=existing_user['id'], body=existing_user)
             else:
-                logging.info(f"Creating new user: {user_info['email']}")
-                # Create only the allowed fields
+                logging.info(f"➕ Creating new user: {user_info['email']}")
                 new_user = {
                     "id": user_info["email"],
                     "email": user_info["email"],
@@ -90,21 +90,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "kids": user_info.get("kids"),
                     "intersted": user_info.get("intersted"),
                     "expoPushToken": user_info.get("expoPushToken"),
+                    "webPushSubscription": user_info.get("webPushSubscription"),
                     "location": user_info.get("location")
                 }
                 user_container.create_item(body=new_user)
 
-            # Save plant locations for the user
+            # Handle plant locations
             if "plantLocations" in user_info:
                 for loc in user_info["plantLocations"]:
                     item = {
                         "id": f"{user_info['email']}::{loc}",
                         "email": user_info["email"],
                         "location": loc,
-                        "plants": []  # Placeholder for actual plant data
+                        "plants": []
                     }
                     plant_container.upsert_item(body=item)
-                    logging.info(f"Upserted plant location '{loc}' for user {user_info['email']}")
+                    logging.info(f"📍 Upserted plant location '{loc}' for user {user_info['email']}")
 
             response = func.HttpResponse(
                 body=json.dumps({"message": "User data, location, and plant locations saved successfully."}),
@@ -114,14 +115,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return add_cors_headers(response)
 
         except exceptions.CosmosHttpResponseError as e:
-            logging.error(f"Cosmos DB error: {e}")
+            logging.error(f"❌ Cosmos DB error: {e}")
             return func.HttpResponse(
                 body=json.dumps({"error": f"Cosmos DB error: {str(e)}"}),
                 status_code=500,
                 mimetype="application/json"
             )
         except Exception as e:
-            logging.error(f"Unhandled error: {e}")
+            logging.error(f"🔥 Unhandled error: {e}")
             return func.HttpResponse(
                 body=json.dumps({"error": str(e)}),
                 status_code=500,

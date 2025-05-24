@@ -17,7 +17,8 @@ export const FormProvider = ({ children }) => {
     intersted: '',
     animals: '',
     kids: '',
-    expoPushToken: '',
+    expoPushToken: '',         // for future mobile support
+    webPushSubscription: null, 
     userLocation: null // can be a city string or a GPS object
   });
 

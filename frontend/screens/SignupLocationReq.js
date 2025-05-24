@@ -39,19 +39,7 @@ const cityList = ['Acre', 'Afula', 'Arad', 'Arraba', 'Ashdod', 'Ashkelon', 'Baqa
         useNativeDriver: true,
       }).start();
   
-      const registerForPushNotifications = async () => {
-        const { status } = await Notifications.requestPermissionsAsync();
-        if (status !== 'granted') {
-          console.warn("🚫 Notification permission denied");
-          return;
-        }
-    
-        const tokenData = await Notifications.getExpoPushTokenAsync();
-        const expoPushToken = tokenData.data;
-    
-        console.log("📱 Token received:", expoPushToken);  // ✅ Add this!
-        updateFormData("expoPushToken", expoPushToken);
-      };
+      // Placeholder for future mobile token registration via Notification Hub
     }, []);
   
     const handleCitySelect = async () => {

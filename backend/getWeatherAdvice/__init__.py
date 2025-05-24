@@ -3,6 +3,11 @@ import azure.functions as func
 import os
 import requests
 import json
+import urllib.parse
+import hmac
+import hashlib
+import base64
+import time
 from azure.cosmos import CosmosClient
 from dotenv import load_dotenv
 
@@ -15,28 +20,27 @@ NH_NAMESPACE = os.getenv("NH_NAMESPACE")
 HUB_NAME = os.getenv("HUB_NAME")
 NH_ACCESS_KEY = os.getenv("AZURE_NH_FULL_ACCESS_KEY")
 
-# Notification Hub configuration
-NH_API_URL = f"https://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}/installations?api-version=2015-01"
-NH_HEADERS = {
-    "Content-Type": "application/json",
-    "Authorization": NH_ACCESS_KEY
-}
-
 # Cosmos setup
 client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
 database = client.get_database_client("GreenerDB")
 users_container = database.get_container_client("Users")
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info("✅ main() function entered")
-    logging.info("🌿 Weather notification function started.")
+# Helper to generate SAS token
+def generate_sas_token(uri, key_name, key_value, expiry=3600):
+    ttl = int(time.time() + expiry)
+    encoded_uri = urllib.parse.quote_plus(uri)
+    sign_key = f"{encoded_uri}\n{ttl}"
+    signature = base64.b64encode(
+        hmac.new(
+            key_value.encode("utf-8"),
+            sign_key.encode("utf-8"),
+            hashlib.sha256
+        ).digest()
+    )
+    return f"SharedAccessSignature sr={encoded_uri}&sig={urllib.parse.quote_plus(signature)}&se={ttl}&skn={key_name}"
 
-    logging.info(f"🔧 AZURE_MAPS_KEY loaded: {AZURE_MAPS_KEY is not None}")
-    logging.info(f"🔧 COSMOS_URI loaded: {COSMOS_URI is not None}")
-    logging.info(f"🔧 COSMOS_KEY loaded: {COSMOS_KEY is not None}")
-    logging.info(f"🔧 NH_NAMESPACE loaded: {NH_NAMESPACE is not None}")
-    logging.info(f"🔧 HUB_NAME loaded: {HUB_NAME is not None}")
-    logging.info(f"🔧 NH_ACCESS_KEY loaded: {NH_ACCESS_KEY is not None}")
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("✅ Weather notification function started.")
 
     try:
         users = list(users_container.read_all_items())
@@ -46,23 +50,19 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         for user in users:
             email = user.get("email", "[no email]")
             location = user.get("location")
-            token = user.get("expoPushToken")
+            token = user.get("webPushSubscription")
 
             logging.info(f"🔍 Processing user: {email}")
 
-            if not location:
-                logging.warning(f"⚠️ Skipping {email} — no location data.")
+            if not location or "city" not in location:
+                logging.warning(f"⚠️ Skipping {email} — invalid or missing location.")
                 continue
 
             if not token or not isinstance(token, dict) or not token.get("endpoint"):
-                logging.warning(f"⚠️ Skipping {email} — missing or invalid web push token.")
+                logging.warning(f"⚠️ Skipping {email} — invalid web push token.")
                 continue
 
-            if "city" not in location:
-                logging.warning(f"⚠️ Skipping {email} — location has no city.")
-                continue
-
-            # Geocode city name
+            # Geocode city
             city = location["city"]
             geo_url = "https://atlas.microsoft.com/search/address/json"
             geo_params = {
@@ -109,22 +109,28 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             else:
                 message = "✅ Weather looks great for your plants today!"
 
-            # Register installation with Notification Hub
-            installation = {
-                "installationId": email,
-                "platform": "browser",
-                "pushChannel": token,
-                "tags": [f"user:{email}", "browser"]
-            }
-            nh_res = requests.put(
-                f"{NH_API_URL}/{email}",
-                headers=NH_HEADERS,
-                json=installation
-            )
-            nh_res.raise_for_status()
-            logging.info(f"✅ Registered installation for {email}")
+            # ✅ Send notification via Notification Hub
+            hub_uri = f"https://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}"
+            send_uri = f"{hub_uri}/messages/?api-version=2015-01"
+            sas_token = generate_sas_token(hub_uri, "DefaultFullSharedAccessSignature", NH_ACCESS_KEY)
 
-            # Record user
+            headers = {
+                "Authorization": sas_token,
+                "Content-Type": "application/json",
+                "ServiceBusNotification-Format": "webpush",
+                "ServiceBusNotification-Tags": f"user:{email}"
+            }
+
+            payload = {
+                "data": {
+                    "title": "🌱 Plant Weather Update",
+                    "body": message
+                }
+            }
+
+            response = requests.post(send_uri, headers=headers, json=payload)
+            response.raise_for_status()
+            logging.info(f"✅ Notification sent to {email}")
             sent_notifications.append(email)
 
         return func.HttpResponse(

@@ -90,7 +90,7 @@ export default function SignInGoogleScreen({ navigation }) {
               saveEmailForMarketplace(userInfo.email);
 
               // ⚠️ Now push token will be in context already if approved on Reminder screen
-              saveUserToBackend({
+              const userData = {
                 email: userInfo.email,
                 name: userInfo.name,
                 googleId: userInfo.sub,
@@ -98,9 +98,14 @@ export default function SignInGoogleScreen({ navigation }) {
                 intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
-                expoPushToken: formData.expoPushToken,
+                expoPushToken: formData.expoPushToken || null,
+                webPushSubscription: formData.webPushSubscription || null,
                 location: formData.userLocation,
-              });
+              };
+
+              console.log("📦 Sending user data:", userData);
+
+              saveUserToBackend(userData);
             } else {
               setIsLoading(false);
               setAuthError('Failed to fetch user info from Google');

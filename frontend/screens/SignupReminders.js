@@ -51,7 +51,7 @@ export default function SignupReminders({ navigation }) {
       });
 
       // Save to context
-      updateFormData("expoPushToken", {
+      updateFormData("webPushSubscription", {
         endpoint: subscription.endpoint,
         p256dh: subscription.toJSON().keys.p256dh,
         auth: subscription.toJSON().keys.auth,
@@ -60,6 +60,10 @@ export default function SignupReminders({ navigation }) {
       console.log("📦 Web push token saved to context");
 
       // ✅ Send to backend
+      if (!formData.email) {
+        Alert.alert("Missing Email", "Please sign in before enabling notifications.");
+        return;
+      }
       await saveSubscriptionToBackend(subscription);
 
       Alert.alert("Notifications Enabled ✅");

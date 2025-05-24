@@ -18,6 +18,12 @@ COSMOS_KEY = os.environ.get("COSMOS_DB_KEY")
 DATABASE_NAME = "greener-database"
 CONTAINER_NAME = "Users"
 
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
 def generate_sas_token(uri, key_name, key_value, expiry=3600):
     import urllib.parse
     import time
@@ -35,21 +41,27 @@ def generate_sas_token(uri, key_name, key_value, expiry=3600):
             hashlib.sha256
         ).digest()
     )
-    token = (
+    return (
         f"SharedAccessSignature sr={encoded_uri}&sig={urllib.parse.quote_plus(signature)}&se={ttl}&skn={key_name}"
     )
-    return token
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('registerWebPush function processed a request.')
 
     try:
-        payload = req.get_json()
-        logging.info(f"Received payload: {json.dumps(payload)}")
+        try:
+            payload = req.get_json()
+        except ValueError:
+            try:
+                payload = json.loads(req.get_body())
+            except Exception:
+                return add_cors_headers(func.HttpResponse("Invalid JSON body", status_code=400))
+
+        logging.info(f"✅ Payload received: {json.dumps(payload)}")
 
         installation_id = payload.get("installationId")
         if not installation_id:
-            return func.HttpResponse("Missing installationId", status_code=400)
+            return add_cors_headers(func.HttpResponse("Missing installationId", status_code=400))
 
         installation = {
             "installationId": installation_id,
@@ -77,7 +89,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if response.status_code in (200, 201):
             logging.info("✅ Azure NH registration success")
 
-            # ✅ Update Cosmos DB
             try:
                 logging.info("🔄 Connecting to Cosmos DB...")
                 client = CosmosClient(COSMOS_ENDPOINT, COSMOS_KEY)
@@ -88,26 +99,31 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 user_doc = container.read_item(item=installation_id, partition_key=installation_id)
                 logging.info("✅ Found user document.")
 
-                # Update fields
-                user_doc["notificationsEnabled"] = True
-                user_doc["pushChannel"] = payload.get("pushChannel")
+                push_channel = payload.get("pushChannel")
 
-                # Replace in Cosmos
+                if isinstance(push_channel, dict):  # Web Push format
+                    user_doc["webPushSubscription"] = push_channel
+                elif isinstance(push_channel, str):  # Mobile format
+                    user_doc["expoPushToken"] = push_channel
+
+                user_doc["notificationsEnabled"] = True
+
                 container.replace_item(item=installation_id, body=user_doc)
                 logging.info("✅ User document updated in Cosmos DB.")
 
             except exceptions.CosmosResourceNotFoundError:
                 logging.error(f"❌ User with id {installation_id} not found in Cosmos DB.")
+                return add_cors_headers(func.HttpResponse("User not found in database", status_code=404))
 
             except Exception as db_error:
                 logging.error(f"🔥 Unexpected error updating Cosmos DB: {str(db_error)}")
 
-            return func.HttpResponse("Registered and updated Cosmos DB.", status_code=200)
+            return add_cors_headers(func.HttpResponse("Registered and updated Cosmos DB.", status_code=200))
 
         else:
             logging.error(f"Azure NH error: {response.status_code} {response.text}")
-            return func.HttpResponse(f"Azure NH Error: {response.status_code}\n{response.text}", status_code=500)
+            return add_cors_headers(func.HttpResponse(f"Azure NH Error: {response.status_code}\n{response.text}", status_code=500))
 
     except Exception as e:
         logging.error(f"Error in registerWebPush: {str(e)}")
-        return func.HttpResponse("Error registering", status_code=400)
+        return add_cors_headers(func.HttpResponse("Error registering", status_code=400))
