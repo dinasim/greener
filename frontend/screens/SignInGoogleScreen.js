@@ -22,6 +22,25 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
 
+// For web push
+import { initializeApp } from "firebase/app";
+import { getMessaging, getToken } from "firebase/messaging";
+
+// For mobile push
+import messaging from '@react-native-firebase/messaging';
+
+// Firebase web config and VAPID key
+const firebaseConfig = {
+  apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
+  authDomain: "greenerapp2025.firebaseapp.com",
+  projectId: "greenerapp2025",
+  storageBucket: "greenerapp2025.appspot.com",
+  messagingSenderId: "241318918547",
+  appId: "1:241318918547:web:9fc472ce576da839f11066",
+  measurementId: "G-8K9XS4GPRM"
+};
+const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+
 WebBrowser.maybeCompleteAuthSession();
 
 const windowHeight = Dimensions.get("window").height;
@@ -30,19 +49,16 @@ export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
-  const fadeAnim = useRef(new Animated.Value(0)).current; 
+  const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Pick correct client IDs from app.json/extraconfig
   const webClientId = Constants.expoConfig.extra.expoClientId;
   const androidClientId = Constants.expoConfig.extra.androidClientId;
   const iosClientId = Constants.expoConfig.extra.iosClientId;
 
-  // Figure out environment and set redirect URI and client ID
   const isWeb = Platform.OS === 'web';
   const isStandalone = Constants.appOwnership === 'standalone';
 
   const redirectUri = AuthSession.makeRedirectUri({
-    // useProxy: true for Expo Go/dev/web, false for standalone build
     useProxy: !isStandalone,
     native: 'greener://',
   });
@@ -77,19 +93,30 @@ export default function SignInGoogleScreen({ navigation }) {
     if (!response) return;
     setIsLoading(true);
 
-     if (response.type === 'success') {
+    if (response.type === 'success') {
       const { access_token } = response.params || {};
 
       if (access_token) {
         setMarketplaceToken(access_token);
 
         fetchUserInfoFromGoogle(access_token)
-          .then((userInfo) => {
+          .then(async (userInfo) => {
             if (userInfo) {
               updateFormData('email', userInfo.email);
               saveEmailForMarketplace(userInfo.email);
 
-              // ⚠️ Now push token will be in context already if approved on Reminder screen
+              // --------- Register push token based on platform ---------
+              let webPushToken = null;
+              let fcmToken = null;
+              if (Platform.OS === "web") {
+                webPushToken = await getAndSaveWebPushToken(userInfo.email);
+                updateFormData('webPushSubscription', webPushToken);
+              } else if (Platform.OS === "android" || Platform.OS === "ios") {
+                fcmToken = await getAndSaveFcmToken(userInfo.email);
+                updateFormData('fcmToken', fcmToken);
+              }
+              // -------------------------------------------------------
+
               const userData = {
                 email: userInfo.email,
                 name: userInfo.name,
@@ -98,8 +125,9 @@ export default function SignInGoogleScreen({ navigation }) {
                 intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
-                expoPushToken: formData.expoPushToken || null,
-                webPushSubscription: formData.webPushSubscription || null,
+                expoPushToken: null, // deprecated
+                webPushSubscription: webPushToken || formData.webPushSubscription || null,
+                fcmToken: fcmToken || formData.fcmToken || null,
                 location: formData.userLocation,
               };
 
@@ -123,6 +151,7 @@ export default function SignInGoogleScreen({ navigation }) {
       setIsLoading(false);
       setAuthError('Failed to authenticate with Google');
     }
+    // eslint-disable-next-line
   }, [response]);
 
   const setMarketplaceToken = async (token) => {
@@ -180,6 +209,61 @@ export default function SignInGoogleScreen({ navigation }) {
       setAuthError('Server connection error.');
     }
   }
+
+  // --------- Web Push Helper Function ------------
+  async function getAndSaveWebPushToken(email) {
+    if (Platform.OS !== "web" || !email) return null;
+    try {
+      await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const app = initializeApp(firebaseConfig);
+      const messaging = getMessaging(app);
+      const token = await getToken(messaging, { vapidKey });
+
+      // Save token to backend (update user with webPushSubscription)
+      await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email,
+          webPushSubscription: token,
+          platform: "web"
+        }),
+      });
+      return token;
+    } catch (err) {
+      return null;
+    }
+  }
+  // -----------------------------------------------
+
+  // --------- FCM (Mobile) Push Helper Function ------------
+  async function getAndSaveFcmToken(email) {
+    if ((Platform.OS !== "android" && Platform.OS !== "ios") || !email) return null;
+    try {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (enabled) {
+        const token = await messaging().getToken();
+
+        // Save token to backend (update user with fcmToken)
+        await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email,
+            fcmToken: token,
+            platform: Platform.OS
+          }),
+        });
+        return token;
+      }
+    } catch (err) {
+      return null;
+    }
+  }
+  // --------------------------------------------------------
 
   return (
     <SafeAreaView style={styles.safeArea}>

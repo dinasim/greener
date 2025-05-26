@@ -47,7 +47,7 @@
       "favicon": "./assets/favicon.png"
     },
     "notification": {
-      "vapidPublicKey": "YOUR_PUBLIC_VAPID_KEY_HERE"
+      "vapidPublicKey": "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg"
     },
     "extra": {
       "expoClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
