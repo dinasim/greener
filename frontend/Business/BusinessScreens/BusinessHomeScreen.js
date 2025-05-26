@@ -1,4 +1,4 @@
-// Business/BusinessScreens/BusinessHomeScreen.js - Updated with Components
+// Business/BusinessScreens/BusinessHomeScreen.js - FIXED VERSION
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -11,6 +11,7 @@ import {
   RefreshControl,
   Image,
   Alert,
+  Linking,
 } from 'react-native';
 import { 
   MaterialCommunityIcons, 
@@ -20,8 +21,6 @@ import {
 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-import NotificationBell from '../components/NotificationBell';
-import { useNotificationManager } from '../components/NotificationManager';
 
 // Import Business Components
 import KPIWidget from '../components/KPIWidget';
@@ -29,30 +28,11 @@ import BusinessDashboardCharts from '../components/BusinessDashboardCharts';
 import LowStockBanner from '../components/LowStockBanner';
 import TopSellingProductsList from '../components/TopSellingProductsList';
 import OrderDetailModal from '../components/OrderDetailModal';
+import NotificationBell from '../components/NotificationBell';
+import { useNotificationManager } from '../components/NotificationManager';
 
 // Import API services
 import { getBusinessDashboard } from '../services/businessApi';
-
-// Add inside BusinessHomeScreen component
-const {
-  hasNewNotifications,
-  notifications
-} = useNotificationManager(businessId, navigation);
-
-// Update header to include notification bell
-<View style={styles.headerActions}>
-  <NotificationBell
-    hasNotifications={hasNewNotifications}
-    notificationCount={notifications.length}
-    onPress={() => navigation.navigate('NotificationCenterScreen', { businessId })}
-  />
-  <TouchableOpacity style={styles.headerButton} onPress={handleAnalytics}>
-    <MaterialIcons name="analytics" size={20} color="#216a94" />
-  </TouchableOpacity>
-  <TouchableOpacity style={styles.headerButton} onPress={handleSettings}>
-    <MaterialIcons name="settings" size={20} color="#216a94" />
-  </TouchableOpacity>
-</View>
 
 export default function BusinessHomeScreen({ navigation }) {
   const [dashboardData, setDashboardData] = useState(null);
@@ -62,6 +42,13 @@ export default function BusinessHomeScreen({ navigation }) {
   const [businessId, setBusinessId] = useState(null);
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
+
+  // Notification manager
+  const {
+    hasNewNotifications,
+    notifications,
+    clearAllNotifications
+  } = useNotificationManager(businessId, navigation);
   
   // Load dashboard data when screen comes into focus
   useFocusEffect(
@@ -168,7 +155,7 @@ export default function BusinessHomeScreen({ navigation }) {
   };
   
   const handleMarketplace = () => {
-    navigation.navigate('MarketplaceHome');
+    navigation.navigate('MainTabs');
   };
 
   const handleSettings = () => {
@@ -181,6 +168,10 @@ export default function BusinessHomeScreen({ navigation }) {
 
   const handleAnalytics = () => {
     navigation.navigate('BusinessAnalyticsScreen', { businessId });
+  };
+
+  const handleWateringChecklist = () => {
+    navigation.navigate('WateringChecklistScreen', { businessId });
   };
 
   // Order management handlers
@@ -304,6 +295,11 @@ export default function BusinessHomeScreen({ navigation }) {
           </View>
         </View>
         <View style={styles.headerActions}>
+          <NotificationBell
+            hasNotifications={hasNewNotifications}
+            notificationCount={notifications.length}
+            onPress={() => navigation.navigate('NotificationCenterScreen', { businessId })}
+          />
           <TouchableOpacity style={styles.headerButton} onPress={handleAnalytics}>
             <MaterialIcons name="analytics" size={20} color="#216a94" />
           </TouchableOpacity>
@@ -446,12 +442,12 @@ export default function BusinessHomeScreen({ navigation }) {
           
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={handleCustomers}
+            onPress={handleWateringChecklist}
           >
             <View style={[styles.actionIconContainer, { backgroundColor: '#9C27B0' }]}>
-              <MaterialIcons name="people" size={24} color="#fff" />
+              <MaterialCommunityIcons name="water" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Customers</Text>
+            <Text style={styles.actionText}>Watering</Text>
           </TouchableOpacity>
         </View>
         

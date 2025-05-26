@@ -1,4 +1,4 @@
-// Business/BusinessScreens/WateringChecklistScreen.js
+// Business/BusinessScreens/WateringChecklistScreen.js - FIXED VERSION
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -19,28 +19,10 @@ import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Haptics from 'expo-haptics';
-// Add to imports
+
+// Import components
+import NotificationBell from '../components/NotificationBell';
 import { useNotificationManager } from '../components/NotificationManager';
-
-// Add inside WateringChecklistScreen component
-const {
-  hasNewNotifications,
-  notifications,
-  clearAllNotifications
-} = useNotificationManager(businessId, navigation);
-
-// Update notification button in header
-<TouchableOpacity 
-  style={styles.notificationButton}
-  onPress={() => navigation.navigate('NotificationCenterScreen', { businessId })}
->
-  <NotificationBell
-    hasNotifications={hasNewNotifications}
-    notificationCount={notifications.length}
-    size={20}
-    color="#fff"
-  />
-</TouchableOpacity>
 
 // Import services
 import { 
@@ -77,6 +59,13 @@ export default function WateringChecklistScreen({ navigation, route }) {
   // Auto-refresh timer
   const refreshTimer = useRef(null);
   const autoRefreshInterval = 60000; // 1 minute
+
+  // Notification manager
+  const {
+    hasNewNotifications,
+    notifications,
+    clearAllNotifications
+  } = useNotificationManager(businessId, navigation);
   
   // Initialize when screen comes into focus
   useFocusEffect(
@@ -460,6 +449,14 @@ export default function WateringChecklistScreen({ navigation, route }) {
           </View>
           
           <View style={styles.headerButtons}>
+            <NotificationBell
+              hasNotifications={hasNewNotifications}
+              notificationCount={notifications.length}
+              onPress={() => navigation.navigate('NotificationCenterScreen', { businessId })}
+              size={20}
+              color="#fff"
+            />
+            
             <TouchableOpacity 
               style={styles.headerButton}
               onPress={toggleAutoRefresh}
@@ -473,7 +470,7 @@ export default function WateringChecklistScreen({ navigation, route }) {
             
             <TouchableOpacity 
               style={styles.headerButton}
-              onPress={() => navigation.navigate('NotificationSettings')}
+              onPress={() => navigation.navigate('NotificationSettingsScreen', { businessId })}
             >
               <MaterialIcons name="notifications" size={22} color="#fff" />
             </TouchableOpacity>

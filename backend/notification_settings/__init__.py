@@ -11,23 +11,60 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Notification Settings API triggered.')
     
     try:
-        # Initialize Cosmos client
-        endpoint = os.environ["COSMOSDB__MARKETPLACE_CONNECTION_STRING"]
-        key = os.environ["COSMOSDB_KEY"]
-        database_id = os.environ["COSMOSDB_MARKETPLACE_DATABASE_NAME"]
-        container_id = "watering_notifications"
+        # Get authentication info (matching existing pattern)
+        user_email = req.headers.get('X-User-Email')
+        user_type = req.headers.get('X-User-Type')
+        business_id = req.headers.get('X-Business-ID')
         
-        client = CosmosClient(endpoint, key)
-        database = client.get_database_client(database_id)
-        container = database.get_container_client(container_id)
+        # Use user email as business ID if business ID not provided
+        if not business_id and user_email:
+            business_id = user_email
+        
+        if not business_id:
+            return func.HttpResponse(
+                json.dumps({"error": "Business ID or User Email is required"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        logging.info(f"Notification settings request from business: {business_id}, user: {user_email}")
+        
+        # Initialize Cosmos client (matching existing pattern)
+        try:
+            connection_string = os.environ["COSMOSDB__MARKETPLACE_CONNECTION_STRING"]
+            
+            # Extract endpoint and key from connection string
+            parts = dict(part.split('=', 1) for part in connection_string.split(';') if '=' in part)
+            endpoint = parts.get('AccountEndpoint')
+            key = parts.get('AccountKey')
+            
+            if not endpoint or not key:
+                # Fallback to separate environment variables
+                endpoint = os.environ.get("COSMOS_URI")
+                key = os.environ.get("COSMOS_KEY")
+            
+            database_id = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
+            container_id = "watering_notifications"
+            
+            client = CosmosClient(endpoint, credential=key)
+            database = client.get_database_client(database_id)
+            container = database.get_container_client(container_id)
+            
+        except Exception as cosmos_error:
+            logging.error(f"Error initializing Cosmos client: {str(cosmos_error)}")
+            return func.HttpResponse(
+                json.dumps({"error": "Database connection failed"}),
+                status_code=500,
+                mimetype="application/json"
+            )
         
         # Handle different HTTP methods
         if req.method == "GET":
-            return get_notification_settings(container, req)
+            return get_notification_settings(container, business_id)
         elif req.method == "POST":
-            return create_or_update_notification_settings(container, req)
+            return create_or_update_notification_settings(container, req, business_id)
         elif req.method == "DELETE":
-            return delete_notification_settings(container, req)
+            return delete_notification_settings(container, req, business_id)
         else:
             return func.HttpResponse(
                 json.dumps({"error": "Method not allowed"}),
@@ -43,20 +80,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
-def get_notification_settings(container, req):
+def get_notification_settings(container, business_id):
     """Get notification settings for a business"""
     try:
-        business_id = req.params.get('businessId')
-        if not business_id:
-            business_id = req.headers.get('X-Business-ID')
-        
-        if not business_id:
-            return func.HttpResponse(
-                json.dumps({"error": "Business ID is required"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
         # Query for notification settings
         query = "SELECT * FROM c WHERE c.businessId = @businessId"
         settings = list(container.query_items(
@@ -79,6 +105,7 @@ def get_notification_settings(container, req):
         
         return func.HttpResponse(
             json.dumps({
+                "success": True,
                 "settings": settings[0] if settings else {},
                 "businessId": business_id
             }),
@@ -88,9 +115,13 @@ def get_notification_settings(container, req):
     
     except Exception as e:
         logging.error(f"Error getting notification settings: {str(e)}")
-        raise
+        return func.HttpResponse(
+            json.dumps({"error": f"Error getting settings: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
 
-def create_or_update_notification_settings(container, req):
+def create_or_update_notification_settings(container, req, business_id):
     """Create or update notification settings"""
     try:
         req_body = req.get_json()
@@ -98,17 +129,6 @@ def create_or_update_notification_settings(container, req):
         if not req_body:
             return func.HttpResponse(
                 json.dumps({"error": "Request body is required"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
-        business_id = req_body.get('businessId')
-        if not business_id:
-            business_id = req.headers.get('X-Business-ID')
-        
-        if not business_id:
-            return func.HttpResponse(
-                json.dumps({"error": "Business ID is required"}),
                 status_code=400,
                 mimetype="application/json"
             )
@@ -155,17 +175,20 @@ def create_or_update_notification_settings(container, req):
     
     except Exception as e:
         logging.error(f"Error creating notification settings: {str(e)}")
-        raise
+        return func.HttpResponse(
+            json.dumps({"error": f"Error saving settings: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
 
-def delete_notification_settings(container, req):
+def delete_notification_settings(container, req, business_id):
     """Delete notification settings"""
     try:
         setting_id = req.params.get('settingId')
-        business_id = req.headers.get('X-Business-ID')
         
-        if not setting_id or not business_id:
+        if not setting_id:
             return func.HttpResponse(
-                json.dumps({"error": "Setting ID and Business ID are required"}),
+                json.dumps({"error": "Setting ID is required"}),
                 status_code=400,
                 mimetype="application/json"
             )
@@ -184,4 +207,8 @@ def delete_notification_settings(container, req):
     
     except Exception as e:
         logging.error(f"Error deleting notification settings: {str(e)}")
-        raise
+        return func.HttpResponse(
+            json.dumps({"error": f"Error deleting settings: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
