@@ -43,10 +43,30 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
   const handleSellerPress = (e) => {
     e.stopPropagation();
-    navigation.navigate('SellerProfile', {
-      sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
-      sellerData: plant.seller || { name: plant.sellerName || 'Unknown Seller' }
-    });
+    
+    // Check if this is a business seller
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
+    
+    if (isBusiness) {
+      // Navigate to business seller profile
+      navigation.navigate('BusinessSellerProfile', {
+        sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
+        businessId: plant.seller?._id || plant.seller?.id || plant.sellerId,
+        sellerData: plant.seller || { 
+          name: plant.sellerName || 'Business Seller',
+          isBusiness: true
+        }
+      });
+    } else {
+      // Navigate to individual seller profile
+      navigation.navigate('SellerProfile', {
+        sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
+        sellerData: plant.seller || { 
+          name: plant.sellerName || 'Unknown Seller',
+          isBusiness: false
+        }
+      });
+    }
   };
 
   const toggleFavorite = async (e) => {
@@ -87,11 +107,14 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
   const handleContact = (e) => {
     e.stopPropagation();
     const sellerName = plant.seller?.name || 'Plant Seller';
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business';
+    
     navigation.navigate('Messages', {
       sellerId: plant.seller?._id || plant.sellerId,
       plantId: plant.id || plant._id,
       plantName: plant.title || plant.name,
-      sellerName
+      sellerName,
+      isBusiness
     });
   };
 
@@ -145,14 +168,12 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
   const renderRating = () => {
     const rating = plant.rating;
     
-    // Show "New Product" text for no ratings
     if (!rating || rating === 0) {
       return (
         <Text style={styles.newProductText}>New Product</Text>
       );
     }
 
-    // Show star rating
     return (
       <View style={styles.productRatingContainer}>
         {[1, 2, 3, 4, 5].map((star) => (
@@ -171,19 +192,27 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     );
   };
 
-  // Render seller rating with "New Seller" for zero ratings
+  // Render seller rating with "New Seller" for zero ratings and business indicator
   const renderSellerRating = () => {
     const sellerRating = plant.seller?.rating;
     const reviewCount = plant.seller?.totalReviews || 0;
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business';
 
-    // Show "New Seller" for no ratings
     if (!sellerRating || sellerRating === 0) {
       return (
-        <Text style={styles.newSellerText}>New Seller</Text>
+        <View style={styles.sellerInfoContainer}>
+          <Text style={styles.newSellerText}>
+            {isBusiness ? 'New Business' : 'New Seller'}
+          </Text>
+          {isBusiness && (
+            <View style={styles.businessBadge}>
+              <MaterialIcons name="store" size={10} color="#4CAF50" />
+            </View>
+          )}
+        </View>
       );
     }
 
-    // Show star rating
     return (
       <View style={styles.sellerRatingContainer}>
         <FontAwesome name="star" size={12} color="#FFC107" />
@@ -191,11 +220,17 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
           {reviewCount > 0 && ` (${reviewCount})`}
         </Text>
+        {isBusiness && (
+          <View style={styles.businessBadge}>
+            <MaterialIcons name="store" size={10} color="#4CAF50" />
+          </View>
+        )}
       </View>
     );
   };
 
   const isList = layout === 'list';
+  const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business';
 
   return (
     <TouchableOpacity
@@ -204,6 +239,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
         styles.card,
         isList && styles.listCard,
         isOffline && styles.offlineCard,
+        isBusiness && styles.businessCard,
       ]}
       onPress={handlePress}
       activeOpacity={0.8}
@@ -217,6 +253,11 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
         {isOffline && (
           <View style={styles.offlineIndicator}>
             <MaterialIcons name="cloud-off" size={12} color="#fff" />
+          </View>
+        )}
+        {isBusiness && (
+          <View style={styles.businessIndicator}>
+            <MaterialIcons name="store" size={12} color="#fff" />
           </View>
         )}
         <TouchableOpacity style={styles.favoriteButton} onPress={toggleFavorite}>
@@ -305,6 +346,10 @@ const styles = StyleSheet.create({
           },
         })),
   },
+  businessCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#4CAF50',
+  },
   listCard: {
     flexDirection: 'row',
     maxWidth: '100%',
@@ -335,6 +380,14 @@ const styles = StyleSheet.create({
     bottom: 8,
     left: 8,
     backgroundColor: 'rgba(0,0,0,0.6)',
+    borderRadius: 12,
+    padding: 4,
+  },
+  businessIndicator: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(76, 175, 80, 0.9)',
     borderRadius: 12,
     padding: 4,
   },
@@ -455,6 +508,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#888',
     fontStyle: 'italic',
+  },
+  businessBadge: {
+    backgroundColor: '#e8f5e8',
+    borderRadius: 8,
+    padding: 2,
+    marginLeft: 4,
   },
   footer: {
     flexDirection: 'row',

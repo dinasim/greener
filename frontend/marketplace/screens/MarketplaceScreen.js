@@ -12,14 +12,20 @@ import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
+import MarketplaceFilterToggle from '../components/MarketplaceFilterToggle';
 import { getAll, getNearbyProducts, geocodeAddress } from '../services/marketplaceApi';
 import syncService from '../services/SyncService';
-import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener } from '../services/MarketplaceUpdates';
+import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener, triggerUpdate } from '../services/MarketplaceUpdates';
 
 const useMarketplaceUpdates = (callback) => {
   useEffect(() => {
     const listenerId = 'marketplace-screen-' + Date.now();
-    addUpdateListener(listenerId, callback);
+    addUpdateListener(listenerId, [
+      UPDATE_TYPES.WISHLIST,
+      UPDATE_TYPES.PRODUCT,
+      UPDATE_TYPES.REVIEW,
+      UPDATE_TYPES.INVENTORY
+    ], callback);
     return () => {
       removeUpdateListener(listenerId);
     };
@@ -33,6 +39,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
+  const [sellerType, setSellerType] = useState('all'); // 'all', 'individual', 'business'
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortOption, setSortOption] = useState('recent');
   const [viewMode, setViewMode] = useState('grid');
@@ -44,8 +51,27 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const [isOnline, setIsOnline] = useState(true);
   const [lastRefreshTime, setLastRefreshTime] = useState(Date.now());
   const [showFilters, setShowFilters] = useState(false);
+  const [sellerTypeCounts, setSellerTypeCounts] = useState({
+    all: 0,
+    individual: 0,
+    business: 0
+  });
+  const [userType, setUserType] = useState('individual'); // Track current user type
   const plantsRef = useRef(plants);
   const loadPlantsRef = useRef(null);
+
+  // Check user type on component mount
+  useEffect(() => {
+    const checkUserType = async () => {
+      try {
+        const storedUserType = await AsyncStorage.getItem('userType');
+        setUserType(storedUserType || 'individual');
+      } catch (error) {
+        console.error('Error checking user type:', error);
+      }
+    };
+    checkUserType();
+  }, []);
 
   const handleBackPress = () => {
     navigation.navigate('Home');
@@ -53,7 +79,6 @@ const MarketplaceScreen = ({ navigation, route }) => {
 
   const navigateToMessages = useCallback((params = {}) => {
     try {
-      // Find the appropriate navigation path
       if (navigation.canNavigate('MainTabs')) {
         navigation.navigate('MainTabs', {
           screen: 'Messages',
@@ -88,37 +113,11 @@ const MarketplaceScreen = ({ navigation, route }) => {
         seller: {
           name: plant.sellerName || (plant.seller?.name && plant.seller.name !== 'Unknown Seller' ? plant.seller.name : 'Plant Enthusiast'),
           _id: plant.sellerId || plant.seller?._id || 'unknown',
+          isBusiness: plant.sellerType === 'business' || plant.isBusinessListing || false,
           ...(plant.seller || {})
         }
       };
     });
-  };
-
-  const formatLocation = (locationData) => {
-    if (!locationData) return 'Location unavailable';
-    let formattedLocation = '';
-    if (locationData.city) {
-      formattedLocation = locationData.city;
-    }
-    if (locationData.region && locationData.region !== locationData.city) {
-      if (formattedLocation) {
-        formattedLocation += `, ${locationData.region}`;
-      } else {
-        formattedLocation = locationData.region;
-      }
-    }
-    if (locationData.country && !formattedLocation.includes(locationData.country) && 
-        locationData.country !== locationData.city && locationData.country !== locationData.region) {
-      if (formattedLocation) {
-        formattedLocation += `, ${locationData.country}`;
-      } else {
-        formattedLocation = locationData.country;
-      }
-    }
-    if (!formattedLocation && locationData.latitude && locationData.longitude) {
-      formattedLocation = `Near ${locationData.latitude.toFixed(2)}, ${locationData.longitude.toFixed(2)}`;
-    }
-    return formattedLocation;
   };
 
   const loadPlants = useCallback(async (pageNum = 1, resetData = false) => {
@@ -128,6 +127,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
       if (pageNum === 1) {
         setIsLoading(true);
       }
+      
       if (!isOnline) {
         const cachedData = await syncService.getCachedData('marketplace_plants');
         if (cachedData) {
@@ -137,6 +137,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
           } else {
             setPlants(prevPlants => [...prevPlants, ...normalizedData]);
           }
+          calculateSellerTypeCounts(normalizedData);
           setIsLoading(false);
           setIsRefreshing(false);
           return;
@@ -147,6 +148,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
           return;
         }
       }
+
       const data = await getAll(
         pageNum,
         selectedCategory === 'All' ? null : selectedCategory,
@@ -154,9 +156,11 @@ const MarketplaceScreen = ({ navigation, route }) => {
         { 
           minPrice: priceRange.min, 
           maxPrice: priceRange.max,
-          sortBy: sortOption 
+          sortBy: sortOption,
+          sellerType: sellerType === 'all' ? null : sellerType
         }
       );
+      
       if (data && data.products) {
         const normalizedProducts = normalizePlantSellerInfo(data.products);
         if (resetData) {
@@ -166,6 +170,10 @@ const MarketplaceScreen = ({ navigation, route }) => {
         }
         setPage(pageNum);
         setHasMorePages(data.pages > pageNum);
+        
+        // Calculate seller type counts
+        calculateSellerTypeCounts(normalizedProducts);
+        
         await syncService.cacheData('marketplace_plants', normalizedProducts);
       }
       setIsLoading(false);
@@ -176,7 +184,22 @@ const MarketplaceScreen = ({ navigation, route }) => {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [hasMorePages, isOnline, searchQuery, selectedCategory, priceRange, sortOption]);
+  }, [hasMorePages, isOnline, searchQuery, selectedCategory, priceRange, sortOption, sellerType]);
+
+  // Calculate counts for each seller type
+  const calculateSellerTypeCounts = (plantsArray) => {
+    const counts = plantsArray.reduce((acc, plant) => {
+      acc.all++;
+      if (plant.seller?.isBusiness || plant.sellerType === 'business') {
+        acc.business++;
+      } else {
+        acc.individual++;
+      }
+      return acc;
+    }, { all: 0, individual: 0, business: 0 });
+    
+    setSellerTypeCounts(counts);
+  };
 
   useEffect(() => {
     plantsRef.current = plants;
@@ -201,35 +224,32 @@ const MarketplaceScreen = ({ navigation, route }) => {
     useCallback(() => {
       loadPlants(1, true);
       
-      // Check if we should refresh additional data
       const checkUpdates = async () => {
         try {
-          // Check various update flags
           const wishlistUpdated = await AsyncStorage.getItem('WISHLIST_UPDATED');
           const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED');
           const profileUpdated = await AsyncStorage.getItem('PROFILE_UPDATED');
           const reviewUpdated = await AsyncStorage.getItem('REVIEW_UPDATED');
           const productUpdated = await AsyncStorage.getItem('PRODUCT_UPDATED');
+          const inventoryUpdated = await AsyncStorage.getItem('INVENTORY_UPDATED');
           
           const needsRefresh = wishlistUpdated || favoritesUpdated || 
                                profileUpdated || reviewUpdated || 
-                               productUpdated || route.params?.refresh;
+                               productUpdated || inventoryUpdated || route.params?.refresh;
           
           if (needsRefresh) {
-            // Clear all update flags
             await Promise.all([
               AsyncStorage.removeItem('WISHLIST_UPDATED'),
               AsyncStorage.removeItem('FAVORITES_UPDATED'),
               AsyncStorage.removeItem('PROFILE_UPDATED'),
               AsyncStorage.removeItem('REVIEW_UPDATED'),
-              AsyncStorage.removeItem('PRODUCT_UPDATED')
+              AsyncStorage.removeItem('PRODUCT_UPDATED'),
+              AsyncStorage.removeItem('INVENTORY_UPDATED')
             ]);
             
-            // Reload plants
             loadPlants(1, true);
             setLastRefreshTime(Date.now());
             
-            // Clear refresh param if present
             if (route.params?.refresh) {
               navigation.setParams({ refresh: undefined });
             }
@@ -241,7 +261,6 @@ const MarketplaceScreen = ({ navigation, route }) => {
       
       checkUpdates();
       
-      // Get location if available
       (async () => {
         try {
           const cachedLocation = await AsyncStorage.getItem('@UserLocation');
@@ -252,75 +271,18 @@ const MarketplaceScreen = ({ navigation, route }) => {
           console.warn('Error loading cached location:', e);
         }
       })();
-      
-      // Return cleanup function
-      return () => {
-        // Any cleanup needed
-      };
     }, [navigation, route.params?.refresh])
   );
   
   useEffect(() => {
     applyFilters();
-  }, [searchQuery, selectedCategory, priceRange, plants, sortOption]);
-
-  useEffect(() => {
-    try {
-      AsyncStorage.setItem('@ViewModePreference', viewMode);
-    } catch (e) {
-      console.warn('Error saving view mode preference:', e);
-    }
-  }, [viewMode]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const savedViewMode = await AsyncStorage.getItem('@ViewModePreference');
-        if (savedViewMode) {
-          setViewMode(savedViewMode);
-        }
-      } catch (e) {
-        console.warn('Error loading view mode preference:', e);
-      }
-    })();
-  }, []);
-
-  useEffect(() => {
-    const checkWishlistUpdates = async () => {
-      try {
-        const wishlistUpdated = await AsyncStorage.getItem('WISHLIST_UPDATED');
-        if (wishlistUpdated) {
-          await AsyncStorage.removeItem('WISHLIST_UPDATED');
-          loadPlants(1, true);
-        }
-      } catch (error) {
-        console.warn('Error checking wishlist updates:', error);
-      }
-    };
-    checkWishlistUpdates();
-  }, []);
-
-  useEffect(() => {
-    const checkFavoritesUpdates = async () => {
-      try {
-        const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
-                            || await AsyncStorage.getItem('WISHLIST_UPDATED');
-        if (favoritesUpdated) {
-          await AsyncStorage.removeItem('FAVORITES_UPDATED');
-          await AsyncStorage.removeItem('WISHLIST_UPDATED');
-          loadPlants(1, true);
-        }
-      } catch (error) {
-        console.warn('Error checking favorites updates:', error);
-      }
-    };
-    checkFavoritesUpdates();
-  }, []);
+  }, [searchQuery, selectedCategory, priceRange, plants, sortOption, sellerType]);
 
   const handleMarketplaceUpdate = useCallback((updateType, data) => {
     console.log(`[MarketplaceScreen] Received update: ${updateType}`, data);
     const currentPlants = plantsRef.current;
     const currentLoadPlants = loadPlantsRef.current;
+    
     if (updateType === UPDATE_TYPES.WISHLIST) {
       if (data && data.plantId) {
         setPlants(prevPlants => {
@@ -344,7 +306,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
       } else {
         if (currentLoadPlants) currentLoadPlants(1, true);
       }
-    } else if (updateType === UPDATE_TYPES.PRODUCT || updateType === UPDATE_TYPES.REVIEW) {
+    } else if (updateType === UPDATE_TYPES.PRODUCT || updateType === UPDATE_TYPES.REVIEW || updateType === UPDATE_TYPES.INVENTORY) {
       if (currentLoadPlants) currentLoadPlants(1, true);
     }
     setLastRefreshTime(Date.now());
@@ -360,30 +322,39 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const applyFilters = () => {
     if (!plants.length) return;
     let results = normalizePlantSellerInfo([...plants]);
+    
+    // Apply seller type filter
+    if (sellerType !== 'all') {
+      results = results.filter(plant => {
+        const isBusinessSeller = plant.seller?.isBusiness || plant.sellerType === 'business';
+        return sellerType === 'business' ? isBusinessSeller : !isBusinessSeller;
+      });
+    }
+    
     if (selectedCategory !== 'All') {
       results = results.filter(plant =>
         plant.category?.toLowerCase() === selectedCategory.toLowerCase()
       );
     }
-    results = results.filter(
-      plant => {
-        const price = parseFloat(plant.price);
-        return !isNaN(price) && price >= priceRange.min && price <= priceRange.max;
-      }
-    );
+    
+    results = results.filter(plant => {
+      const price = parseFloat(plant.price);
+      return !isNaN(price) && price >= priceRange.min && price <= priceRange.max;
+    });
+    
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
-      results = results.filter(
-        plant =>
-          plant.name?.toLowerCase().includes(query) ||
-          plant.title?.toLowerCase().includes(query) ||
-          plant.description?.toLowerCase().includes(query) ||
-          plant.city?.toLowerCase().includes(query) ||
-          (typeof plant.location === 'string' && plant.location.toLowerCase().includes(query)) ||
-          (plant.location?.city && plant.location.city.toLowerCase().includes(query)) ||
-          plant.category?.toLowerCase().includes(query)
+      results = results.filter(plant =>
+        plant.name?.toLowerCase().includes(query) ||
+        plant.title?.toLowerCase().includes(query) ||
+        plant.description?.toLowerCase().includes(query) ||
+        plant.city?.toLowerCase().includes(query) ||
+        (typeof plant.location === 'string' && plant.location.toLowerCase().includes(query)) ||
+        (plant.location?.city && plant.location.city.toLowerCase().includes(query)) ||
+        plant.category?.toLowerCase().includes(query)
       );
     }
+    
     activeFilters.forEach(filter => {
       if (filter.type === 'seller' && filter.value) {
         results = results.filter(plant => 
@@ -392,6 +363,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         );
       }
     });
+    
     results = sortPlants(results, sortOption);
     setFilteredPlants(results);
   };
@@ -435,6 +407,12 @@ const MarketplaceScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleSellerTypeChange = (type) => {
+    setSellerType(type);
+    setPage(1);
+    loadPlants(1, true);
+  };
+
   const handlePriceRangeChange = (range) => {
     setPriceRange(range);
   };
@@ -445,7 +423,6 @@ const MarketplaceScreen = ({ navigation, route }) => {
 
   const handleViewModeChange = (mode) => {
     if (mode === 'map') {
-      // Navigate to map screen instead of changing view mode locally
       navigation.navigate('MapView', { 
         products: filteredPlants,
         initialLocation: userLocation
@@ -459,22 +436,6 @@ const MarketplaceScreen = ({ navigation, route }) => {
     if (!isLoading && hasMorePages) {
       loadPlants(page + 1);
     }
-  };
-
-  const handleRemoveFilter = (filterId) => {
-    setActiveFilters(activeFilters.filter(f => f.id !== filterId));
-  };
-
-  const handleResetFilters = () => {
-    setActiveFilters([]);
-    setPriceRange({ min: 0, max: 1000 });
-    setSelectedCategory('All');
-    setSearchQuery('');
-    loadPlants(1, true);
-  };
-
-  const toggleFilters = () => {
-    setShowFilters(!showFilters);
   };
 
   const renderEmptyList = () => {
@@ -510,7 +471,13 @@ const MarketplaceScreen = ({ navigation, route }) => {
       <View style={styles.centerContainer}>
         <MaterialIcons name="eco" size={48} color="#aaa" />
         <Text style={styles.noResultsText}>No plants found matching your criteria</Text>
-        <TouchableOpacity style={styles.resetButton} onPress={handleResetFilters}>
+        <TouchableOpacity style={styles.resetButton} onPress={() => {
+          setSellerType('all');
+          setSelectedCategory('All');
+          setSearchQuery('');
+          setPriceRange({ min: 0, max: 1000 });
+          loadPlants(1, true);
+        }}>
           <Text style={styles.resetButtonText}>Reset Filters</Text>
         </TouchableOpacity>
       </View>
@@ -572,16 +539,25 @@ const MarketplaceScreen = ({ navigation, route }) => {
         onBackPress={handleBackPress}
         onNotificationsPress={() => navigateToMessages({})}
       />
+      
       <SearchBar
         value={searchQuery}
         onChangeText={handleSearch}
         onSubmit={() => loadPlants(1, true)}
         style={styles.searchBarContainer}
       />
+      
+      <MarketplaceFilterToggle
+        sellerType={sellerType}
+        onSellerTypeChange={handleSellerTypeChange}
+        counts={sellerTypeCounts}
+      />
+      
       <CategoryFilter
         selectedCategory={selectedCategory}
         onSelect={handleCategorySelect}
       />
+      
       <FilterSection
         sortOption={sortOption}
         onSortChange={handleSortChange}
@@ -590,9 +566,19 @@ const MarketplaceScreen = ({ navigation, route }) => {
         viewMode={viewMode}
         onViewModeChange={handleViewModeChange}
         activeFilters={activeFilters}
-        onRemoveFilter={handleRemoveFilter}
-        onResetFilters={handleResetFilters}
+        onRemoveFilter={(filterId) => {
+          setActiveFilters(activeFilters.filter(f => f.id !== filterId));
+        }}
+        onResetFilters={() => {
+          setActiveFilters([]);
+          setPriceRange({ min: 0, max: 1000 });
+          setSelectedCategory('All');
+          setSearchQuery('');
+          setSellerType('all');
+          loadPlants(1, true);
+        }}
       />
+      
       <FlatList
         data={filteredPlants}
         renderItem={({ item }) => (
@@ -614,15 +600,19 @@ const MarketplaceScreen = ({ navigation, route }) => {
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
         }
       />
-      <TouchableOpacity 
-        style={styles.addButton} 
-        onPress={() => navigation.navigate('AddPlant')}
-        accessible={true}
-        accessibilityLabel="Add a new plant"
-        accessibilityRole="button"
-      >
-        <MaterialIcons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
+      
+      {/* Only show Add button for individual users, not businesses */}
+      {userType !== 'business' && (
+        <TouchableOpacity 
+          style={styles.addButton} 
+          onPress={() => navigation.navigate('AddPlant')}
+          accessible={true}
+          accessibilityLabel="Add a new plant"
+          accessibilityRole="button"
+        >
+          <MaterialIcons name="add" size={30} color="#fff" />
+        </TouchableOpacity>
+      )}
     </SafeAreaView>
   );
 };
@@ -724,22 +714,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 }, 
     shadowOpacity: 0.2, 
     shadowRadius: 4,
-  },
-  filterButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 6,
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginVertical: 8,
-    alignSelf: 'flex-start',
-    marginLeft: 16,
-  },
-  filterButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
   },
 });
 
