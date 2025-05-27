@@ -45,15 +45,21 @@ WebBrowser.maybeCompleteAuthSession();
 
 const windowHeight = Dimensions.get("window").height;
 
+// This is your Expo Go client ID (from host.exp.exponent)
+const EXPO_GOOGLE_CLIENT_ID = "241318918547-apo19m563ah7q2ii68mv975l9fvbtpdv.apps.googleusercontent.com";
+// Replace these with your real values from Google Cloud Console if you have them:
+const ANDROID_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.androidClientId;
+const IOS_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.iosClientId;
+const WEB_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.expoClientId;
+;
+
+// ====================================
+
 export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  const webClientId = Constants.expoConfig.extra.expoClientId;
-  const androidClientId = Constants.expoConfig.extra.androidClientId;
-  const iosClientId = Constants.expoConfig.extra.iosClientId;
 
   const isWeb = Platform.OS === 'web';
   const isStandalone = Constants.appOwnership === 'standalone';
@@ -63,18 +69,13 @@ export default function SignInGoogleScreen({ navigation }) {
     native: 'greener://',
   });
 
-  const clientId = isWeb
-    ? webClientId
-    : Platform.OS === 'android'
-      ? androidClientId
-      : iosClientId;
-
+  // --- This will automatically choose the right clientId for the platform ---
   const [request, response, promptAsync] = Google.useAuthRequest(
     {
-      clientId,
-      webClientId,
-      iosClientId,
-      androidClientId,
+      expoClientId: EXPO_GOOGLE_CLIENT_ID,
+      androidClientId: ANDROID_GOOGLE_CLIENT_ID,
+      iosClientId: IOS_GOOGLE_CLIENT_ID,
+      webClientId: WEB_GOOGLE_CLIENT_ID,
       redirectUri,
       scopes: ['openid', 'profile', 'email'],
     },

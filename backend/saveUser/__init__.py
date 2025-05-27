@@ -1,3 +1,4 @@
+# /api/saveUser function (Azure Functions - Python)
 import logging
 import azure.functions as func
 import json
@@ -27,7 +28,6 @@ except Exception as e:
     user_container = None
     plant_container = None
 
-
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('🌱 saveUser function triggered.')
 
@@ -37,6 +37,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+
+    # Handle preflight request for CORS
+    if req.method == "OPTIONS":
+        return add_cors_headers(func.HttpResponse("", status_code=204))
 
     try:
         user_info = req.get_json()
@@ -66,17 +70,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logging.info(f"🔁 Updating existing user: {user_info['email']}")
                 existing_user = existing_users[0]
 
-                # Selective update of fields
-                existing_user.update({
-                    "name": user_info.get("name", existing_user.get("name")),
-                    "type": user_info.get("type", existing_user.get("type")),
-                    "animals": user_info.get("animals", existing_user.get("animals")),
-                    "kids": user_info.get("kids", existing_user.get("kids")),
-                    "intersted": user_info.get("intersted", existing_user.get("intersted")),
-                    "expoPushToken": user_info.get("expoPushToken", existing_user.get("expoPushToken")),
-                    "webPushSubscription": user_info.get("webPushSubscription", existing_user.get("webPushSubscription")),
-                    "location": user_info.get("location", existing_user.get("location"))
-                })
+                # Update these fields if present
+                fields = [
+                    "name", "type", "animals", "kids", "intersted",
+                    "expoPushToken", "webPushSubscription", "fcmToken", "location"
+                ]
+                for field in fields:
+                    if field in user_info:
+                        existing_user[field] = user_info[field]
 
                 user_container.replace_item(item=existing_user['id'], body=existing_user)
             else:
@@ -89,13 +90,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "animals": user_info.get("animals"),
                     "kids": user_info.get("kids"),
                     "intersted": user_info.get("intersted"),
-                    "expoPushToken": user_info.get("expoPushToken"),
                     "webPushSubscription": user_info.get("webPushSubscription"),
+                    "fcmToken": user_info.get("fcmToken"),
                     "location": user_info.get("location")
                 }
                 user_container.create_item(body=new_user)
 
-            # Handle plant locations
+            # Handle plant locations (optional)
             if "plantLocations" in user_info:
                 for loc in user_info["plantLocations"]:
                     item = {
