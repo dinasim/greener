@@ -73,7 +73,7 @@ export default function SignupLocationReq({ navigation }) {
         trigger: null,
       });
     }
-    setTimeout(() => navigation.navigate("SignupReminders"), 300);
+    setTimeout(() => navigation.navigate("SignInGoogleScreen"), 300);
   };
 
   const handleDetectCity = async () => {
@@ -217,7 +217,7 @@ export default function SignupLocationReq({ navigation }) {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupReminders")}
+          onPress={() => navigation.navigate("SignInGoogleScreen")}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>
