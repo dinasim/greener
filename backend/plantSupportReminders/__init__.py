@@ -6,10 +6,13 @@ import firebase_admin
 from firebase_admin import credentials, messaging
 
 # Initialize Firebase only once
+firebase_initialized = False
 def init_firebase():
-    if not firebase_admin._apps:
+    global firebase_initialized
+    if not firebase_initialized:
         cred = credentials.Certificate(os.path.join(os.path.dirname(__file__), 'serviceAccountKey.json'))
         firebase_admin.initialize_app(cred)
+        firebase_initialized = True
 
 # Azure Cosmos DB setup
 COSMOS_URI = os.environ["COSMOS_URI"]
@@ -41,7 +44,6 @@ def main(mytimer):
         water_due = False
         feed_due = False
 
-        # Check watering
         try:
             next_water = datetime.datetime.fromisoformat(plant.get("next_water"))
             if next_water.date() <= today:
@@ -51,7 +53,6 @@ def main(mytimer):
             water_due = True
             logging.warning(f"⚠️ next_water missing or invalid for {plant_id}, treating as due.")
 
-        # Check feeding
         try:
             next_feed = datetime.datetime.fromisoformat(plant.get("next_feed"))
             if next_feed.date() <= today:
@@ -67,16 +68,24 @@ def main(mytimer):
 
         try:
             user = users_container.read_item(email, partition_key=email)
-            token = user.get("webPushSubscription") or user.get("fcmToken")
+            web_token = user.get("webPushSubscription")
+            fcm_token = user.get("fcmToken")
+
+            token = None
+            if isinstance(web_token, str):
+                token = web_token
+            elif isinstance(fcm_token, str):
+                token = fcm_token
+
             if not token:
-                logging.warning(f"❌ No push token found for user {email}")
+                logging.warning(f"❌ No valid push token for user {email}")
                 continue
-            logging.info(f"📲 Token for {email}: {token}")
+
+            logging.info(f"📲 Using token for {email}: {token}")
         except Exception as e:
             logging.warning(f"⚠️ Could not fetch user {email}: {e}")
             continue
 
-        # Send notifications
         if water_due:
             send_push(token, f"💧 Time to water your {common_name}!")
         if feed_due:
