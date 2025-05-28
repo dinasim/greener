@@ -1,20 +1,22 @@
 import logging
+import os
+import requests
+import json
+from azure.cosmos import CosmosClient
+import firebase_admin
+from firebase_admin import credentials, messaging
+import azure.functions as func
+
 logging.warning("🟡 [IMPORT] File started loading...")
+
 # Top-level import & setup with debugging/logging protection
 try:
-    import azure.functions as func
     logging.warning("🟢 [IMPORT] azure.functions OK")
-    import os
     logging.warning("🟢 [IMPORT] os OK")
-    import requests
     logging.warning("🟢 [IMPORT] requests OK")
-    import json
     logging.warning("🟢 [IMPORT] json OK")
-    from azure.cosmos import CosmosClient
     logging.warning("🟢 [IMPORT] CosmosClient OK")
-    import firebase_admin
     logging.warning("🟢 [IMPORT] firebase_admin OK")
-    from firebase_admin import credentials, messaging
     logging.warning("🟢 [IMPORT] firebase_admin.credentials, messaging OK")
 except Exception as e:
     logging.error(f"❌ [IMPORT CRASHED] {e}")
@@ -53,14 +55,16 @@ except Exception as top_level_exc:
     sys.exit(1)
 
 # -------------------------------------------
-def main(req: func.HttpRequest) -> func.HttpResponse:
+def main(mytimer: func.TimerRequest) -> None:
+    if mytimer.past_due:
+        logging.warning('The timer is past due!')
     logging.warning("🚀 getWeatherAdvice function started")
 
     try:
         init_firebase()
     except Exception as e:
         logging.error(f"🔥 Firebase initialization failed: {e}")
-        return func.HttpResponse("Firebase init failed", status_code=500)
+        return
 
     try:
         users = list(users_container.read_all_items())
@@ -83,7 +87,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 continue
 
             city = location["city"]
-            # 🟡🟡🟡 DEBUGGING
             logging.warning(f"🌆 [DEBUG] City: {city}")
             logging.warning(f"🔑 [DEBUG] Azure Maps Key: {AZURE_MAPS_KEY[:6]}... (length={len(AZURE_MAPS_KEY) if AZURE_MAPS_KEY else 0})")
 
@@ -97,15 +100,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "query": city,
                     "countrySet": "IL"
                 }
-
                 geo_res = requests.get(geo_url, params=geo_params)
                 geo_res.raise_for_status()
                 geo_data = geo_res.json()
-
                 if not geo_data["results"]:
                     logging.warning(f"❌ Skipping {email} — failed to geocode city.")
                     continue
-
                 coords = geo_data["results"][0]["position"]
                 lat, lon = coords["lat"], coords["lon"]
                 logging.info(f"📍 {city} resolved to coordinates: {lat}, {lon}")
@@ -122,17 +122,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "duration": 1,
                     "unit": "metric"
                 }
-
                 res = requests.get(weather_url, params=weather_params)
                 res.raise_for_status()
                 forecast = res.json()["forecasts"][0]
-
                 temp = forecast["temperature"]["maximum"]["value"]
                 wind = forecast["day"]["wind"]["speed"]["value"]
                 rain = forecast["day"].get("precipitationProbability", 0)
-
                 logging.info(f"🌡️ Temp: {temp}°C, 💨 Wind: {wind} km/h, 🌧️ Rain Chance: {rain}%")
-
                 if rain > 50:
                     message = "☔ Rain expected today — bring your plants inside."
                 elif wind > 20:
@@ -162,15 +158,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             except Exception as send_err:
                 logging.error(f"❌ Push send failed for {email}: {send_err}")
 
-        return func.HttpResponse(
-            json.dumps({"status": "done", "notified_users": sent_notifications}),
-            mimetype="application/json"
-        )
+        logging.info(f"✅ Weather advice notifications sent: {sent_notifications}")
 
     except Exception as outer_err:
         logging.error("🔥 Unhandled error in main logic:")
         logging.exception(outer_err)
-        return func.HttpResponse("Unhandled server error", status_code=500)
-
-
+        # No return, just log
 
