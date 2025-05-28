@@ -16,7 +16,6 @@ def init_firebase():
 
 def main(mytimer: func.TimerRequest) -> None:
     logging.info('⏰ Timer function triggered: Sending push to all users.')
-
     init_firebase()
 
     # Cosmos DB setup

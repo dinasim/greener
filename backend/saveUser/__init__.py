@@ -44,6 +44,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         user_info = req.get_json()
+        logging.info(f"🔍 webPushSubscription: {user_info.get('webPushSubscription')}")
         logging.info(f"📥 Received user data: {user_info}")
     except ValueError:
         return func.HttpResponse(
@@ -73,7 +74,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 # Update these fields if present
                 fields = [
                     "name", "type", "animals", "kids", "intersted",
-                    "expoPushToken", "webPushSubscription", "fcmToken", "location"
+                    "expoPushToken", "webPushSubscription", "fcmToken", "location", "googleId"
                 ]
                 for field in fields:
                     if field in user_info:
@@ -92,7 +93,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "intersted": user_info.get("intersted"),
                     "webPushSubscription": user_info.get("webPushSubscription"),
                     "fcmToken": user_info.get("fcmToken"),
-                    "location": user_info.get("location")
+                    "location": user_info.get("location"),
+                    "googleId": user_info.get("googleId"),  # ✅ ADD THIS
+                    "expoPushToken": user_info.get("expoPushToken")  # ✅ ADD THIS TOO FOR CONSISTENCY
                 }
                 user_container.create_item(body=new_user)
 
