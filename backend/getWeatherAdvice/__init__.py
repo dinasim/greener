@@ -56,6 +56,7 @@ except Exception as top_level_exc:
 
 # -------------------------------------------
 def main(mytimer: func.TimerRequest) -> None:
+    return  # 🚫 Function disabled: notifications will not be sent
     if mytimer.past_due:
         logging.warning('The timer is past due!')
     logging.warning("🚀 getWeatherAdvice function started")
@@ -92,6 +93,8 @@ def main(mytimer: func.TimerRequest) -> None:
 
             logging.info(f"🌍 Attempting to geocode city: {city}")
 
+             # === AZURE MAPS API CALL: Geocoding (costs per API call) ===
+             """
             try:
                 geo_url = "https://atlas.microsoft.com/search/address/json"
                 geo_params = {
@@ -112,7 +115,10 @@ def main(mytimer: func.TimerRequest) -> None:
             except Exception as geo_err:
                 logging.error(f"❌ Geocoding failed for {email}: {geo_err}")
                 continue
+            """
 
+            # === AZURE MAPS API CALL: Weather (costs per API call) ===
+            """
             try:
                 weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
                 weather_params = {
@@ -142,6 +148,8 @@ def main(mytimer: func.TimerRequest) -> None:
             except Exception as weather_err:
                 logging.error(f"❌ Weather fetch failed for {email}: {weather_err}")
                 continue
+            """
+
 
             # Send Firebase push
             try:
