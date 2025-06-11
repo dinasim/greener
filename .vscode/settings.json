@@ -7,7 +7,7 @@
   "debug.internalConsoleOptions": "neverOpen",
   "azureFunctions.postDeployTask": "npm install (functions)",
   "azureFunctions.projectLanguageModel": 4,
-  "azureFunctions.preDeployTask": "npm prune (functions)",
+  "azureFunctions.preDeployTask": "func: extensions install",
   "C_Cpp_Runner.cCompilerPath": "gcc",
   "C_Cpp_Runner.cppCompilerPath": "g++",
   "C_Cpp_Runner.debuggerPath": "gdb",
@@ -65,5 +65,9 @@
   "C_Cpp_Runner.showCompilationTime": false,
   "C_Cpp_Runner.useLinkTimeOptimization": false,
   "C_Cpp_Runner.msvcSecureNoWarnings": false,
-  "azureFunctions.showExtensionsCsprojWarning": false
+  "azureFunctions.showExtensionsCsprojWarning": false,
+  "files.exclude": {
+    "obj": true,
+    "bin": true
+  }
 }

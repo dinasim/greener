@@ -2,6 +2,9 @@
   "expo": {
     "name": "Greener",
     "slug": "greener",
+    "platforms": ["ios", "android", "web"],
+    "originalFullName": "@dinasim/greener",
+    "owner": "dina2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -12,13 +15,13 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
+    "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
+      "bundleIdentifier": "com.dinasim.greener",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search."
+        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -27,19 +30,34 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.yourname.greener",
-      "permissions": [
-        "RECORD_AUDIO"
-      ]
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": {
+            "scheme": "greener",
+            "host": "",
+            "pathPrefix": "/"
+          },
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ],
+      "permissions": ["RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "extra": {
-      "expoClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com",
-      "webClientId": "137391532421-qge2ocrdega22mkq53iu722h1uvoll4l.apps.googleusercontent.com"
+    "notification": {
+      "vapidPublicKey": "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg"
     },
-    "plugins": [
-      "expo-asset"
-    ]
+    "extra": {
+      "expoClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
+      "webClientId": "241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr.apps.googleusercontent.com",
+      "iosClientId": "241318918547-cmj5p79839ci9kdrgjmbuskpfu6j4e6h.apps.googleusercontent.com",
+      "androidClientId": "241318918547-tctcf9f11ii3ndn0ilohgqbjpjbej9a8.apps.googleusercontent.com",
+      "eas": {
+        "projectId": "6915a87a-3492-4315-b77e-ca7cfbf609fc"
+      }
+    },
+    "plugins": ["expo-asset"]
   }
 }

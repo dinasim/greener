@@ -105,8 +105,18 @@ export default function PlantLocationScreen({ navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupIntersted")}
+          style={[
+            styles.nextButton,
+            (!formData.plantLocations || formData.plantLocations.length === 0) && { backgroundColor: "#bdbdbd" }
+          ]}
+          // Disable the button if nothing is selected
+          onPress={() => {
+            if (formData.plantLocations && formData.plantLocations.length > 0) {
+              navigation.navigate("SignupIntersted");
+            }
+          }}
+          activeOpacity={(!formData.plantLocations || formData.plantLocations.length === 0) ? 1 : 0.7}
+          disabled={!formData.plantLocations || formData.plantLocations.length === 0}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>

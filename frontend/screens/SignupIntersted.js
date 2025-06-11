@@ -103,8 +103,17 @@ export default function InterestPage({ navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupAnimals")}
+          style={[
+            styles.nextButton,
+            (!formData.Intersted || formData.Intersted === "") && { backgroundColor: "#bdbdbd" }
+          ]}
+          onPress={() => {
+            if (formData.Intersted && formData.Intersted !== "") {
+              navigation.navigate("SignupAnimals");
+            }
+          }}
+          activeOpacity={(!formData.Intersted || formData.Intersted === "") ? 1 : 0.7}
+          disabled={!formData.Intersted || formData.Intersted === ""}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>

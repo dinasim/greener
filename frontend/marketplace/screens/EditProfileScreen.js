@@ -1,185 +1,241 @@
+// screens/EditProfileScreen.js (enhanced version)
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   StyleSheet,
-  ScrollView,
+  TouchableOpacity,
   Image,
+  ScrollView,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
+  KeyboardAvoidingView,
   SafeAreaView,
-  Modal,
 } from 'react-native';
-import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { LinearGradient } from 'expo-linear-gradient';
-import * as Animatable from 'react-native-animatable';
-
+import { updateUserProfile, fetchUserProfile } from '../services/marketplaceApi';
 import MarketplaceHeader from '../components/MarketplaceHeader';
-import { fetchUserProfile, updateUserProfile } from '../services/marketplaceApi';
-import config from '../services/config';
-
-const SAMPLE_USER = {
-  id: 'user123',
-  name: 'Plant Enthusiast',
-  email: 'plant.lover@example.com',
-  phoneNumber: '+1 (555) 123-4567',
-  avatar: 'https://via.placeholder.com/150?text=User',
-  bio: 'Passionate plant enthusiast with a love for tropical houseplants.',
-  location: 'Seattle, WA',
-};
+import LocationPicker from '../components/LocationPicker';
 
 const EditProfileScreen = () => {
   const navigation = useNavigation();
+  
+  // Profile state
+  const [profile, setProfile] = useState({
+    name: '',
+    email: '',
+    avatar: '',
+    bio: '',
+    city: '',
+    phone: '',
+    languages: '',
+    fullAddress: '',
+    birthDate: '',
+    socialMedia: {
+      instagram: '',
+      facebook: '',
+    },
+    location: null,
+    joinDate: new Date().toISOString()
+  });
+  
+  // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [user, setUser] = useState(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phoneNumber: '',
-    bio: '',
-    location: '',
-    avatar: null,
-  });
-  const [formErrors, setFormErrors] = useState({});
-  const [showSuccess, setShowSuccess] = useState(false);
-
+  const [avatarChanged, setAvatarChanged] = useState(false);
+  
+  // Load user profile
   useEffect(() => {
     loadUserProfile();
   }, []);
-
+  
   const loadUserProfile = async () => {
     try {
       setIsLoading(true);
       setError(null);
-      let data;
-      try {
-        data = await fetchUserProfile();
-      } catch {
-        await new Promise(resolve => setTimeout(resolve, 500));
-        data = { user: SAMPLE_USER };
+      
+      // Get email from AsyncStorage
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      
+      if (!userEmail) {
+        setError('User not logged in');
+        setIsLoading(false);
+        return;
       }
-
-      const userData = data.user || SAMPLE_USER;
-      setUser(userData);
-      setFormData({
-        name: userData.name || '',
-        email: userData.email || '',
-        phoneNumber: userData.phoneNumber || '',
-        bio: userData.bio || '',
-        location: userData.location || '',
-        avatar: userData.avatar || null,
-      });
+      
+      // Fetch user profile
+      const data = await fetchUserProfile(userEmail);
+      
+      if (data && data.user) {
+        // Update state with user data, preserving defaults for missing fields
+        setProfile({
+          ...profile,
+          ...data.user,
+          name: data.user.name || '',
+          email: data.user.email || userEmail,
+          avatar: data.user.avatar || '',
+          bio: data.user.bio || '',
+          city: data.user.city || (data.user.location?.city || ''),
+          phone: data.user.phone || '',
+          languages: data.user.languages || '',
+          fullAddress: data.user.fullAddress || '',
+          birthDate: data.user.birthDate || '',
+          socialMedia: data.user.socialMedia || {
+            instagram: '',
+            facebook: ''
+          },
+          joinDate: data.user.joinDate || new Date().toISOString()
+        });
+      } else {
+        // Set default profile with email
+        setProfile({
+          ...profile,
+          email: userEmail,
+        });
+      }
+      
       setIsLoading(false);
     } catch (err) {
-      setError('Failed to load profile.');
+      console.error('Error loading profile:', err);
+      setError('Failed to load profile. Please try again later.');
       setIsLoading(false);
     }
   };
-
-  const handleChange = (key, value) => {
-    setFormData({ ...formData, [key]: value });
-    if (formErrors[key]) {
-      setFormErrors({ ...formErrors, [key]: '' });
+  
+  // Handle field changes
+  const handleChange = (field, value) => {
+    if (field.includes('.')) {
+      // Handle nested fields like socialMedia.instagram
+      const [parent, child] = field.split('.');
+      setProfile(prev => ({
+        ...prev,
+        [parent]: {
+          ...prev[parent],
+          [child]: value
+        }
+      }));
+    } else {
+      // Handle regular fields
+      setProfile(prev => ({
+        ...prev,
+        [field]: value
+      }));
     }
   };
-
-  const pickImage = async () => {
+  
+  // Handle location change
+  const handleLocationChange = (locationData) => {
+    setProfile(prev => ({
+      ...prev,
+      location: locationData,
+      city: locationData.city || prev.city
+    }));
+  };
+  
+  // Pick avatar image
+  const pickAvatar = async () => {
     try {
+      // Request media library permissions
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
       if (!permissionResult.granted) {
         Alert.alert('Permission Required', 'We need permission to access your photos');
         return;
       }
+      
+      // Launch image picker
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
-      if (!result.canceled && result.assets?.length > 0) {
-        setFormData({ ...formData, avatar: result.assets[0].uri });
+      
+      if (!result.canceled) {
+        // Get selected asset
+        const selectedAsset = result.assets?.[0] || { uri: result.uri };
+        
+        if (selectedAsset?.uri) {
+          setProfile(prev => ({
+            ...prev,
+            avatar: selectedAsset.uri
+          }));
+          setAvatarChanged(true);
+        }
       }
     } catch (err) {
-      Alert.alert('Error', 'Failed to pick image');
+      console.error('Error picking image:', err);
+      Alert.alert('Error', 'Failed to select image. Please try again.');
     }
   };
-
-  const validateForm = () => {
-    const errors = {};
-    if (!formData.name.trim()) errors.name = 'Please enter your name';
-    else if (formData.name.length < 3 || formData.name.length > 50)
-      errors.name = 'Name should be between 3 and 50 characters';
-
-    if (!formData.email.trim()) errors.email = 'Please enter your email';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email))
-      errors.email = 'Invalid email format';
-
-    if (!formData.phoneNumber.trim()) errors.phoneNumber = 'Enter your phone number';
-    else if (formData.phoneNumber.length < 7)
-      errors.phoneNumber = 'Enter a valid phone number';
-
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
+  
+  // Save profile changes
   const handleSave = async () => {
-    if (!validateForm()) return;
     try {
-      setIsSaving(true);
-      const updatedUserData = {
-        name: formData.name,
-        email: formData.email,
-        phoneNumber: formData.phoneNumber,
-        bio: formData.bio,
-        location: formData.location,
-      };
-      if (formData.avatar !== user.avatar) {
-        updatedUserData.avatar = formData.avatar;
+      // Validate required fields
+      if (!profile.name.trim()) {
+        Alert.alert('Error', 'Name is required');
+        return;
       }
-
-      await updateUserProfile(user.id, updatedUserData);
-      await AsyncStorage.setItem('userProfile', JSON.stringify({ ...user, ...updatedUserData }));
-      setShowSuccess(true);
-      setTimeout(() => {
-        setShowSuccess(false);
-        navigation.goBack();
-      }, 1500);
+      
+      setIsSaving(true);
+      
+      // Prepare data for API
+      const profileData = {
+        name: profile.name,
+        bio: profile.bio,
+        city: profile.city,
+        phone: profile.phone,
+        languages: profile.languages,
+        fullAddress: profile.fullAddress,
+        birthDate: profile.birthDate,
+        socialMedia: profile.socialMedia,
+        location: profile.location,
+      };
+      
+      // Upload avatar if changed
+      if (avatarChanged && profile.avatar) {
+        try {
+          // Upload image implementation goes here
+          // For now, we'll just use the URI directly
+          profileData.avatar = profile.avatar;
+        } catch (uploadErr) {
+          console.error('Error uploading avatar:', uploadErr);
+          Alert.alert('Warning', 'Could not upload avatar, but other profile changes will be saved.');
+        }
+      }
+      
+      // Call API to update profile
+      await updateUserProfile(profile.email, profileData);
+      
+      // Success!
+      Alert.alert('Success', 'Profile updated successfully');
+      
+      // Navigate back
+      navigation.navigate('Profile', { refresh: true });
     } catch (err) {
-      Alert.alert('Error', 'Failed to update profile');
+      console.error('Error saving profile:', err);
+      Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
       setIsSaving(false);
     }
   };
-
-  const handleCancel = () => navigation.goBack();
-
-  const renderSuccessModal = () => (
-    <Modal visible={showSuccess} transparent animationType="fade">
-      <View style={styles.successOverlay}>
-        <Animatable.View animation="zoomIn" style={styles.successContent}>
-          <MaterialIcons name="check-circle" size={60} color="#4CAF50" />
-          <Text style={styles.successTitle}>Profile Updated</Text>
-          <Text style={styles.successText}>Your changes have been saved.</Text>
-        </Animatable.View>
-      </View>
-    </Modal>
-  );
-
+  
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <LinearGradient colors={['#4CAF50', '#81C784']}>
-          <MarketplaceHeader title="Edit Profile" showBackButton onNotificationsPress={() => navigation.navigate('Messages')} />
-        </LinearGradient>
+        <MarketplaceHeader
+          title="Edit Profile"
+          showBackButton={true}
+          onBackPress={() => navigation.goBack()}
+        />
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading profile...</Text>
@@ -187,105 +243,291 @@ const EditProfileScreen = () => {
       </SafeAreaView>
     );
   }
-
+  
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader
+          title="Edit Profile"
+          showBackButton={true}
+          onBackPress={() => navigation.goBack()}
+        />
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadUserProfile}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+  
   return (
     <SafeAreaView style={styles.container}>
-      <LinearGradient colors={['#4CAF50', '#81C784']}>
-      <MarketplaceHeader 
-  title="Edit Profile" 
-  showBackButton 
-  onBackPress={() => navigation.goBack()}
-  showNotifications={false} 
-/>      </LinearGradient>
-
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <MarketplaceHeader
+        title="Edit Profile"
+        showBackButton={true}
+        onBackPress={() => navigation.goBack()}
+      />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardAvoidContainer}
+      >
         <ScrollView style={styles.scrollView}>
-          <Animatable.View animation="fadeInDown" delay={150} style={styles.avatarContainer}>
-            <TouchableOpacity onPress={pickImage}>
-              <Image
-                source={{ uri: formData.avatar || 'https://via.placeholder.com/150?text=User' }}
-                style={styles.avatar}
-              />
-              <View style={styles.editAvatarButton}>
-                <Feather name="camera" size={16} color="#fff" />
-              </View>
-            </TouchableOpacity>
-          </Animatable.View>
-
-          <Animatable.View animation="fadeInUp" delay={300} style={styles.formContainer}>
-            {['name', 'email', 'phoneNumber', 'location', 'bio'].map((field, index) => (
-              <View key={field} style={styles.formGroup}>
-                <Text style={styles.label}>{field.charAt(0).toUpperCase() + field.slice(1)}</Text>
-                <TextInput
-                  style={[styles.input, formErrors[field] && styles.errorInput, field === 'bio' && styles.textArea]}
-                  value={formData[field]}
-                  onChangeText={(text) => handleChange(field, text)}
-                  placeholder={`Your ${field}`}
-                  multiline={field === 'bio'}
-                  numberOfLines={field === 'bio' ? 4 : 1}
-                  keyboardType={field === 'email' ? 'email-address' : field === 'phoneNumber' ? 'phone-pad' : 'default'}
-                />
-                {formErrors[field] && <Text style={styles.errorText}>{formErrors[field]}</Text>}
-              </View>
-            ))}
-          </Animatable.View>
-
-          <View style={styles.actionButtons}>
-            <TouchableOpacity style={[styles.button, styles.cancelButton]} onPress={handleCancel}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.saveButton, isSaving && styles.disabledButton]}
-              onPress={handleSave}
-              disabled={isSaving}
-            >
-              {isSaving ? <ActivityIndicator size="small" color="#fff" /> : <Text style={styles.saveButtonText}>Save</Text>}
+          <View style={styles.avatarSection}>
+            <Image
+              source={{
+                uri: profile.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile.name || 'U')}&background=4CAF50&color=fff&size=256`
+              }}
+              style={styles.avatar}
+            />
+            <TouchableOpacity style={styles.changeAvatarButton} onPress={pickAvatar}>
+              <MaterialIcons name="photo-camera" size={18} color="#fff" />
+              <Text style={styles.changeAvatarText}>Change Photo</Text>
             </TouchableOpacity>
           </View>
+          
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Public Information</Text>
+            <Text style={styles.sectionSubtitle}>This information will be visible to other users</Text>
+            
+            <Text style={styles.label}>Name <Text style={styles.requiredText}>*</Text></Text>
+            <TextInput
+              style={styles.input}
+              value={profile.name}
+              onChangeText={(text) => handleChange('name', text)}
+              placeholder="Your name"
+            />
+            
+            <Text style={styles.label}>Email</Text>
+            <TextInput
+              style={[styles.input, styles.disabledInput]}
+              value={profile.email}
+              editable={false}
+            />
+            
+            <Text style={styles.label}>Bio</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={profile.bio}
+              onChangeText={(text) => handleChange('bio', text)}
+              placeholder="Tell others about yourself..."
+              multiline
+            />
+            
+            <Text style={styles.label}>Languages</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.languages}
+              onChangeText={(text) => handleChange('languages', text)}
+              placeholder="Hebrew, English, Arabic, etc."
+            />
+            
+            <Text style={styles.label}>Location</Text>
+            <LocationPicker
+              value={profile.location}
+              onChange={handleLocationChange}
+            />
+          </View>
+          
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Private Information</Text>
+            <Text style={styles.sectionSubtitle}>This information is private and not shown to other users</Text>
+            
+            <Text style={styles.label}>Phone Number</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.phone}
+              onChangeText={(text) => handleChange('phone', text)}
+              placeholder="Your phone number"
+              keyboardType="phone-pad"
+            />
+            
+            <Text style={styles.label}>Full Address</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              value={profile.fullAddress}
+              onChangeText={(text) => handleChange('fullAddress', text)}
+              placeholder="Your complete address"
+              multiline
+            />
+            
+            <Text style={styles.label}>Birth Date</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.birthDate}
+              onChangeText={(text) => handleChange('birthDate', text)}
+              placeholder="YYYY-MM-DD"
+            />
+          </View>
+          
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Social Media</Text>
+            
+            <Text style={styles.label}>Instagram</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.socialMedia?.instagram || ''}
+              onChangeText={(text) => handleChange('socialMedia.instagram', text)}
+              placeholder="Your Instagram username"
+            />
+            
+            <Text style={styles.label}>Facebook</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.socialMedia?.facebook || ''}
+              onChangeText={(text) => handleChange('socialMedia.facebook', text)}
+              placeholder="Your Facebook profile"
+            />
+          </View>
+          
+          <TouchableOpacity
+            style={[styles.saveButton, isSaving && styles.disabledButton]}
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save Changes</Text>
+            )}
+          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
-
-      {renderSuccessModal()}
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  scrollView: { padding: 16 },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 10, color: '#666' },
-  avatarContainer: { alignItems: 'center', marginTop: 20, marginBottom: 30 },
-  avatar: { width: 120, height: 120, borderRadius: 60, backgroundColor: '#f0f0f0' },
-  editAvatarButton: {
-    position: 'absolute', bottom: 0, right: 0, width: 36, height: 36, borderRadius: 18,
-    backgroundColor: '#4CAF50', justifyContent: 'center', alignItems: 'center',
-    borderWidth: 2, borderColor: '#fff',
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
   },
-  formContainer: { marginBottom: 20 },
-  formGroup: { marginBottom: 16 },
-  label: { fontSize: 16, fontWeight: '600', marginBottom: 6, color: '#333' },
+  keyboardAvoidContainer: {
+    flex: 1,
+  },
+  scrollView: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#4CAF50',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: 16,
+    color: '#f44336',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  retryButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  avatarSection: {
+    alignItems: 'center',
+    marginVertical: 20,
+  },
+  avatar: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: '#eee',
+  },
+  changeAvatarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    marginTop: 10,
+  },
+  changeAvatarText: {
+    color: '#fff',
+    marginLeft: 8,
+    fontWeight: '600',
+  },
+  formSection: {
+    padding: 16,
+    borderTopWidth: 8,
+    borderTopColor: '#f0f0f0',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 16,
+  },
+  label: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+    marginBottom: 8,
+  },
+  requiredText: {
+    color: '#f44336',
+  },
   input: {
-    borderWidth: 1, borderColor: '#ddd', borderRadius: 8, paddingHorizontal: 12,
-    paddingVertical: 10, fontSize: 16, backgroundColor: '#f9f9f9',
-    shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1, shadowRadius: 4, elevation: 2,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#333',
+    backgroundColor: '#f9f9f9',
+    marginBottom: 16,
   },
-  textArea: { height: 100, textAlignVertical: 'top' },
-  errorInput: { borderColor: '#f44336' },
-  errorText: { color: '#f44336', fontSize: 14, marginTop: 2 },
-  actionButtons: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 40 },
-  button: { flex: 1, paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
-  cancelButton: { backgroundColor: '#f5f5f5', marginRight: 8, borderWidth: 1, borderColor: '#ddd' },
-  cancelButtonText: { color: '#666', fontSize: 16, fontWeight: '600' },
-  saveButton: { backgroundColor: '#4CAF50', marginLeft: 8 },
-  saveButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  disabledButton: { backgroundColor: '#A5D6A7' },
-  successOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.7)', justifyContent: 'center', alignItems: 'center' },
-  successContent: { backgroundColor: '#fff', padding: 30, borderRadius: 12, alignItems: 'center', width: '80%' },
-  successTitle: { fontSize: 22, fontWeight: 'bold', color: '#333', marginTop: 16, marginBottom: 8 },
-  successText: { fontSize: 16, color: '#666', textAlign: 'center' },
+  disabledInput: {
+    backgroundColor: '#eee',
+    color: '#999',
+  },
+  textArea: {
+    height: 100,
+    textAlignVertical: 'top',
+  },
+  saveButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 16,
+    borderRadius: 8,
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 40,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  disabledButton: {
+    opacity: 0.7,
+  },
 });
 
 export default EditProfileScreen;

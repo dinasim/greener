@@ -1,3 +1,4 @@
+// components/MarketplaceHeader.js
 import React from 'react';
 import {
   View,
@@ -9,9 +10,12 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
 
 /**
  * MarketplaceHeader component - Consistent header for marketplace screens
+ * Fixed to ensure notification button works correctly
+ * 
  * @param {Object} props Component props
  * @param {string} props.title Header title text
  * @param {boolean} props.showBackButton Whether to show back button (default: false)
@@ -28,6 +32,37 @@ const MarketplaceHeader = ({
 }) => {
   // Get safe area insets for proper spacing
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
+  
+  // Ensure notification button has a valid handler
+  const handleNotificationsPress = () => {
+    if (onNotificationsPress) {
+      // Use provided handler
+      onNotificationsPress();
+    } else {
+      // Default behavior - navigate to Messages
+      try {
+        // First try to navigate directly to Messages
+        if (navigation.canNavigate && navigation.canNavigate('Messages')) {
+          navigation.navigate('Messages');
+        } 
+        // If that fails, try with MarketplaceTabs
+        else if (navigation.canNavigate && navigation.canNavigate('MarketplaceTabs')) {
+          navigation.navigate('MarketplaceTabs', { screen: 'Messages' });
+        }
+        // If that fails too, try with MainTabs
+        else if (navigation.canNavigate && navigation.canNavigate('MainTabs')) {
+          navigation.navigate('MainTabs', { screen: 'Messages' });
+        }
+        // Fallback if none of the above work
+        else {
+          console.warn('Could not navigate to Messages screen');
+        }
+      } catch (error) {
+        console.error('Navigation error:', error);
+      }
+    }
+  };
   
   return (
     <View style={[
@@ -64,7 +99,7 @@ const MarketplaceHeader = ({
           {showNotifications && (
             <TouchableOpacity 
               style={styles.iconButton}
-              onPress={onNotificationsPress}
+              onPress={handleNotificationsPress}
               accessibilityLabel="Notifications"
               accessibilityRole="button"
             >

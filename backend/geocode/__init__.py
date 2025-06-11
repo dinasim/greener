@@ -1,4 +1,5 @@
-# Backend: /backend/geocode/__init__.py
+# geo code: 
+# Backend: /backend/geocode/__init__.py - Updated version
 
 import logging
 import json
@@ -29,7 +30,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return create_error_response("Address is required", 400)
         
         # Access the Azure Maps API
-        azure_maps_key = os.environ.get("AZURE_MAPS_KEY")
+        azure_maps_key = os.environ.get("AZURE_MAPS_MARKETPLACE_KEY")
         
         if not azure_maps_key:
             return create_error_response("Azure Maps configuration is missing", 500)
@@ -64,8 +65,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "formattedAddress": result.get('address', {}).get('freeformAddress', address),
             "city": result.get('address', {}).get('municipality', ''),
             "country": result.get('address', {}).get('country', ''),
-            "postalCode": result.get('address', {}).get('postalCode', '')
+            "postalCode": result.get('address', {}).get('postalCode', ''),
+            "street": result.get('address', {}).get('streetName', ''),
+            "houseNumber": result.get('address', {}).get('streetNumber', '')
         }
+        
+        # Log what we found
+        logging.info(f"Geocoded '{address}' to {formatted_result['latitude']}, {formatted_result['longitude']}")
         
         return create_success_response(formatted_result)
     

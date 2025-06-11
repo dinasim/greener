@@ -42,7 +42,7 @@ venv/
 .DS_Store
 
 # IDEs and editors
-.vscode/
+
 .idea/
 *.suo
 *.ntvs*

@@ -19,18 +19,31 @@ import LocationPlantsScreen from '../screens/LocationPlantsScreen';
 import PlantDetail from '../screens/PlantDetailScreen';
 import DiseaseChecker from '../screens/DiseaseCheckerScreen';
 import PlantReviewScreen from '../screens/PlantReviewScreen';
-
+import searchPlants from '../screens/SearchPlantScreen';
+import UserPlantDetails from '../screens/UserPlantDetails';
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
+
+// Import Business navigation - FIXED
+import BusinessNavigation from '../Business/BusinessNavigation';
+
+// Import Persona Selection
+import PersonaSelectionScreen from '../Business/BusinessScreens/PersonaSelectionScreen';
 
 const Stack = createNativeStackNavigator();
 
 export default function AppNavigator() {
   return (
     <FormProvider>
-      <Stack.Navigator initialRouteName="Login" screenOptions={{ headerShown: false }}>
-        {/* Login and Signup screens */}
+      <Stack.Navigator initialRouteName="PersonaSelection" screenOptions={{ headerShown: false }}>
+        {/* Persona Selection - FIXED: Start here */}
+        <Stack.Screen name="PersonaSelection" component={PersonaSelectionScreen} />
+        
+        {/* Business Flow - FIXED: Full business navigation */}
+        <Stack.Screen name="BusinessFlow" component={BusinessNavigation} />
+        
+        {/* Consumer/User Login and Signup screens */}
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
         <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
@@ -42,15 +55,17 @@ export default function AppNavigator() {
         
         <Stack.Screen name="PlantReview" component={PlantReviewScreen} />
 
-        {/* Home and Other Screens */}
+        {/* Consumer Home and Other Screens */}
         <Stack.Screen name="Home" component={HomeScreen} />
+        <Stack.Screen name="UserPlantDetail" component={UserPlantDetails} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen name="MainTabs" component={MainTabs} />
 
-        {/* Other screens */}
+        {/* Other consumer screens */}
         <Stack.Screen name="Camera" component={CameraScreen} />
         <Stack.Screen name="AddPlant" component={AddPlantScreen} />
+        <Stack.Screen name="SearchPlants" component={searchPlants} />
         <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
         <Stack.Screen name="Locations" component={LocationsScreen} />
         <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />

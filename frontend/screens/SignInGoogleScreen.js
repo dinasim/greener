@@ -11,6 +11,7 @@ import {
   ScrollView,
   Dimensions,
   Animated,
+  Platform,
 } from 'react-native';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -21,22 +22,55 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
 
+// For web push
+import { getApps, initializeApp } from "firebase/app";
+import { getMessaging, getToken } from "firebase/messaging";
+
+// For mobile push
+import messaging from '@react-native-firebase/messaging';
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
+  authDomain: "greenerapp2025.firebaseapp.com",
+  projectId: "greenerapp2025",
+  storageBucket: "greenerapp2025.appspot.com",
+  messagingSenderId: "241318918547",
+  appId: "1:241318918547:web:9fc472ce576da839f11066",
+  measurementId: "G-8K9XS4GPRM"
+};
+const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+
 WebBrowser.maybeCompleteAuthSession();
 
 const windowHeight = Dimensions.get("window").height;
+const EXPO_GOOGLE_CLIENT_ID = "241318918547-apo19m563ah7q2ii68mv975l9fvbtpdv.apps.googleusercontent.com";
+const ANDROID_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.androidClientId;
+const IOS_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.iosClientId;
+const WEB_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.expoClientId;
 
 export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const isStandalone = Constants.appOwnership === 'standalone';
 
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    clientId: Constants.expoConfig.extra.expoClientId,
-    webClientId: Constants.expoConfig.extra.webClientId,
-    redirectUri: AuthSession.makeRedirectUri({ useProxy: true }),
-    scopes: ['openid', 'profile', 'email'],
+  const redirectUri = AuthSession.makeRedirectUri({
+    useProxy: !isStandalone,
+    native: 'greener://',
   });
+
+  const [request, response, promptAsync] = Google.useAuthRequest(
+    {
+      expoClientId: EXPO_GOOGLE_CLIENT_ID,
+      androidClientId: ANDROID_GOOGLE_CLIENT_ID,
+      iosClientId: IOS_GOOGLE_CLIENT_ID,
+      webClientId: WEB_GOOGLE_CLIENT_ID,
+      redirectUri,
+      scopes: ['openid', 'profile', 'email'],
+    },
+    { useProxy: !isStandalone }
+  );
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -55,14 +89,24 @@ export default function SignInGoogleScreen({ navigation }) {
 
       if (access_token) {
         setMarketplaceToken(access_token);
-
         fetchUserInfoFromGoogle(access_token)
-          .then((userInfo) => {
+          .then(async (userInfo) => {
             if (userInfo) {
               updateFormData('email', userInfo.email);
               saveEmailForMarketplace(userInfo.email);
 
-              saveUserToBackend({
+              let webPushToken = null;
+              let fcmToken = null;
+              if (Platform.OS === "web") {
+                webPushToken = await getWebPushToken();
+                console.log("📦 WebPushToken being sent:", webPushToken);
+                updateFormData('webPushSubscription', webPushToken);
+              } else if (Platform.OS === "android" || Platform.OS === "ios") {
+                fcmToken = await getFcmToken();
+                //updateFormData('fcmToken', fcmToken);
+              }
+
+              const userData = {
                 email: userInfo.email,
                 name: userInfo.name,
                 googleId: userInfo.sub,
@@ -70,9 +114,14 @@ export default function SignInGoogleScreen({ navigation }) {
                 intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
-                expoPushToken: formData.expoPushToken,
+                expoPushToken: null,
+                webPushSubscription: webPushToken || formData.webPushSubscription || null,
+                fcmToken: fcmToken || null,
                 location: formData.userLocation,
-              });
+              };
+
+              console.log("📦 Sending user data:", userData);
+              saveUserToBackend(userData);
             } else {
               setIsLoading(false);
               setAuthError('Failed to fetch user info from Google');
@@ -115,9 +164,7 @@ export default function SignInGoogleScreen({ navigation }) {
       const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${access_token}` },
       });
-
       if (!res.ok) throw new Error('Failed to fetch user info');
-
       return await res.json();
     } catch (error) {
       console.error(error);
@@ -150,6 +197,35 @@ export default function SignInGoogleScreen({ navigation }) {
     }
   }
 
+  async function getWebPushToken() {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return null;
+
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const messaging = getMessaging(app);
+      return await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+    } catch (err) {
+      console.error("❌ Error getting web push token:", err);
+      return null;
+    }
+  }
+
+  async function getFcmToken() {
+    try {
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!enabled) return null;
+      return await messaging().getToken();
+    } catch (err) {
+      console.error("❌ Error getting FCM token:", err);
+      return null;
+    }
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ImageBackground
@@ -159,7 +235,7 @@ export default function SignInGoogleScreen({ navigation }) {
       >
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
+            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>  
               <Text style={styles.title}>Sign In</Text>
               <Text style={styles.subtitle}>Use your Google account to log in</Text>
 
@@ -205,7 +281,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 32, fontWeight: "bold", color: "#2e7d32", marginBottom: 10 },
   subtitle: { fontSize: 16, color: "#388e3c", marginBottom: 30, textAlign: "center" },
   googleButton: {
-    backgroundColor: "#4285F4",
+    backgroundColor: "#228b22",
     paddingVertical: 14,
     borderRadius: 10,
     width: "100%",

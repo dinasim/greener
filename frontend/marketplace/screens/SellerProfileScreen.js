@@ -1,33 +1,23 @@
 // screens/SellerProfileScreen.js
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  ActivityIndicator,
-  FlatList,
-  ScrollView,
-  SafeAreaView,
-  Alert,
-  Platform,
+  View, Text, StyleSheet, Image, TouchableOpacity, ActivityIndicator, FlatList,
+  ScrollView, SafeAreaView, Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import ReviewForm from '../components/ReviewForm';
+import ToastMessage from '../components/ToastMessage';
 import { fetchUserProfile } from '../services/marketplaceApi';
 
 const SellerProfileScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const sellerId = route.params?.sellerId || 'user123';
-
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -36,28 +26,29 @@ const SellerProfileScreen = () => {
   const [sellerRating, setSellerRating] = useState({ average: 0, count: 0 });
   const [avatarError, setAvatarError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(Date.now());
+  
+  // Toast message state
+  const [toast, setToast] = useState({
+    visible: false,
+    message: '',
+    type: 'info'
+  });
 
   useEffect(() => { 
     loadSellerProfile();
-    
-    // Check if favorites were updated
     const checkUpdates = async () => {
       try {
         const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED') 
                               || await AsyncStorage.getItem('WISHLIST_UPDATED');
-                              
         if (favoritesUpdated) {
-          // Clear both flags
           await AsyncStorage.removeItem('FAVORITES_UPDATED');
           await AsyncStorage.removeItem('WISHLIST_UPDATED');
-          // Refresh data
           setRefreshKey(Date.now());
         }
       } catch (error) {
         console.warn('Error checking updates:', error);
       }
     };
-    
     checkUpdates();
   }, [sellerId, refreshKey]);
 
@@ -65,25 +56,17 @@ const SellerProfileScreen = () => {
     try {
       setIsLoading(true);
       setError(null);
-      
-      // Make sure we have a valid seller ID
       if (!sellerId) {
         console.error("No seller ID provided");
         setError('Unable to load seller profile. Missing seller ID.');
         setIsLoading(false);
         return;
       }
-      
       console.log("Loading seller profile for ID:", sellerId);
-      
-      // Attempt to fetch the user profile
       const data = await fetchUserProfile(sellerId);
-      
       if (data && data.user) {
         console.log("Seller profile loaded successfully");
         setUser(data.user);
-        
-        // Update seller info in listings for consistency
         if (data.user.listings) {
           data.user.listings.forEach(listing => {
             if (!listing.seller) {
@@ -96,10 +79,7 @@ const SellerProfileScreen = () => {
           });
         }
       } else {
-        // If the API returns empty data, use a fallback approach
         console.warn("API returned empty user data, using fallback");
-        
-        // Try to construct a minimal seller object from product data if available
         if (route.params?.sellerData) {
           const sellerData = route.params.sellerData;
           setUser({
@@ -119,7 +99,6 @@ const SellerProfileScreen = () => {
           setError('Seller profile could not be loaded.');
         }
       }
-      
       setIsLoading(false);
     } catch (err) {
       console.error('Error fetching seller profile:', err);
@@ -128,55 +107,74 @@ const SellerProfileScreen = () => {
     }
   };
 
-  const handleAddReview = () => {
-    // Check if user is trying to review themselves
-    const checkSelfReview = async () => {
-      try {
-        const userEmail = await AsyncStorage.getItem('userEmail');
-        if (userEmail === sellerId) {
-          Alert.alert(
-            "Cannot Review Yourself", 
-            "You cannot leave a review for your own profile."
-          );
-          return;
-        }
-        setShowReviewForm(true);
-      } catch (err) {
-        console.error("Error checking user email:", err);
-        setShowReviewForm(true); // Allow review anyway
-      }
-    };
-    
-    checkSelfReview();
+  // Show a toast message
+  const showToast = (message, type = 'info') => {
+    setToast({
+      visible: true,
+      message,
+      type
+    });
   };
 
-  const handleReviewsLoaded = (ratingsData) => {
-    // Only update if we have rating data
-    if (ratingsData && typeof ratingsData.averageRating === 'number') {
+  // Hide the toast message
+  const hideToast = () => {
+    setToast(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
+
+  // Fixed review button handler with toast messages
+  const handleAddReview = () => {
+    AsyncStorage.getItem('userEmail')
+      .then(userEmail => {
+        console.log('Current user email:', userEmail);
+        console.log('Seller ID:', sellerId);
+        
+        if (userEmail === sellerId) {
+          // Show toast message instead of Alert
+          showToast("You cannot leave a review for your own profile", "error");
+          return;
+        }
+        
+        // Explicitly set the review form visibility to true
+        console.log('Setting review form to visible');
+        setShowReviewForm(true);
+      })
+      .catch(err => {
+        console.error("Error checking user email:", err);
+        // If we can't check, show a warning but still allow adding a review
+        showToast("User verification failed, proceeding anyway", "warning");
+        setShowReviewForm(true);
+      });
+  };
+
+  const handleReviewsLoaded = (data) => {
+    if (data && typeof data === 'object') {
       setSellerRating({
-        average: ratingsData.averageRating || 0,
-        count: ratingsData.count || 0
+        average: data.averageRating || 0,
+        count: data.count || 0
       });
     }
   };
 
   const handleReviewSubmitted = () => {
-    // Refresh the reviews list after a new review is submitted
-    if (activeTab !== 'reviews') {
-      setActiveTab('reviews');
-    }
+    // Set active tab to reviews so the user can see their new review
+    setActiveTab('reviews');
     
-    // Force a refresh of the data
+    // Refresh the reviews list
     setRefreshKey(Date.now());
+    
+    // Show toast notification for successful submission
+    showToast("Your review has been submitted successfully!", "success");
+    
+    // Close the review form
+    setShowReviewForm(false);
   };
 
-  // Generate a reliable avatar URL with name initials
   const getAvatarUrl = (name, email) => {
-    // First try using the name for a nicer display
     const displayName = name || 'Unknown';
     const firstInitial = displayName.charAt(0).toUpperCase();
-    
-    // Use UI Avatars service for a reliable, colorful avatar with initials
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(firstInitial)}&background=4CAF50&color=fff&size=256`;
   };
 
@@ -193,14 +191,10 @@ const SellerProfileScreen = () => {
         />
       );
     }
-
-    // Check if user has listings property
-    const listings = user?.listings || [];
     
-    // Filter by status
+    const listings = user?.listings || [];
     const filtered = listings.filter(p => {
       if (activeTab === 'myPlants') {
-        // Active listings have status 'active' or undefined/null status
         return p.status === 'active' || !p.status;
       } else if (activeTab === 'sold') {
         return p.status === 'sold';
@@ -208,7 +202,6 @@ const SellerProfileScreen = () => {
       return false;
     });
     
-    // Make sure each listing has the correct seller info
     filtered.forEach(listing => {
       if (!listing.seller || !listing.seller.name || listing.seller.name === 'Unknown Seller') {
         listing.seller = {
@@ -278,17 +271,12 @@ const SellerProfileScreen = () => {
     );
   }
 
-  // Generate avatar URL with fallback
   const avatarUrl = user.avatar && !avatarError 
     ? user.avatar 
     : getAvatarUrl(user.name, user.email);
-
-  // Calculate rating to display (prefer the one from reviews component if available)
   const displayRating = sellerRating.average > 0 
     ? sellerRating.average 
     : (user.stats?.rating || 0);
-  
-  // Format the rating to show only 1 decimal place
   const formattedRating = typeof displayRating === 'number' 
     ? displayRating.toFixed(1) 
     : '0.0';
@@ -302,8 +290,16 @@ const SellerProfileScreen = () => {
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
       
+      {/* Toast Message Component */}
+      <ToastMessage 
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={3000}
+      />
+      
       <ScrollView>
-        {/* Profile card similar to ProfileScreen */}
         <View style={styles.profileCard}>
           <Image 
             source={{ uri: avatarUrl }} 
@@ -320,18 +316,17 @@ const SellerProfileScreen = () => {
             Joined {new Date(user.joinDate || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
           </Text>
           {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
-          
-          {/* Review button instead of edit profile */}
           <TouchableOpacity 
             style={styles.reviewButton} 
             onPress={handleAddReview}
+            accessible={true}
+            accessibilityLabel="Write a review"
+            accessibilityRole="button"
           >
             <MaterialIcons name="rate-review" size={16} color="#4CAF50" />
             <Text style={styles.reviewButtonText}>Write a Review</Text>
           </TouchableOpacity>
         </View>
-
-        {/* Stats row - identical to ProfileScreen */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{user.stats?.plantsCount || 0}</Text>
@@ -343,57 +338,32 @@ const SellerProfileScreen = () => {
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{formattedRating}</Text>
-            <Text style={styles.statLabel}>
-              Rating ({sellerRating.count || 0})
-            </Text>
+            <Text style={styles.statLabel}>Rating ({sellerRating.count || 0})</Text>
           </View>
         </View>
-
-        {/* Tabs - similar to ProfileScreen */}
         <View style={styles.tabsContainer}>
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'myPlants' && styles.activeTabButton]} 
             onPress={() => setActiveTab('myPlants')}
           >
-            <MaterialIcons 
-              name="eco" 
-              size={24} 
-              color={activeTab === 'myPlants' ? '#4CAF50' : '#666'} 
-            />
-            <Text style={[styles.tabText, activeTab === 'myPlants' && styles.activeTabText]}>
-              Active
-            </Text>
+            <MaterialIcons name="eco" size={24} color={activeTab === 'myPlants' ? '#4CAF50' : '#666'} />
+            <Text style={[styles.tabText, activeTab === 'myPlants' && styles.activeTabText]}>Active</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'sold' && styles.activeTabButton]} 
             onPress={() => setActiveTab('sold')}
           >
-            <MaterialIcons 
-              name="local-offer" 
-              size={24} 
-              color={activeTab === 'sold' ? '#4CAF50' : '#666'} 
-            />
-            <Text style={[styles.tabText, activeTab === 'sold' && styles.activeTabText]}>
-              Sold
-            </Text>
+            <MaterialIcons name="local-offer" size={24} color={activeTab === 'sold' ? '#4CAF50' : '#666'} />
+            <Text style={[styles.tabText, activeTab === 'sold' && styles.activeTabText]}>Sold</Text>
           </TouchableOpacity>
-          
           <TouchableOpacity 
             style={[styles.tabButton, activeTab === 'reviews' && styles.activeTabButton]} 
             onPress={() => setActiveTab('reviews')}
           >
-            <MaterialIcons 
-              name="star" 
-              size={24} 
-              color={activeTab === 'reviews' ? '#4CAF50' : '#666'} 
-            />
-            <Text style={[styles.tabText, activeTab === 'reviews' && styles.activeTabText]}>
-              Reviews
-            </Text>
+            <MaterialIcons name="star" size={24} color={activeTab === 'reviews' ? '#4CAF50' : '#666'} />
+            <Text style={[styles.tabText, activeTab === 'reviews' && styles.activeTabText]}>Reviews</Text>
           </TouchableOpacity>
         </View>
-
         <View style={styles.tabContent}>{renderTabContent()}</View>
       </ScrollView>
       
@@ -410,44 +380,15 @@ const SellerProfileScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f5f5f5' 
-  },
-  loadingContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  loadingText: { 
-    marginTop: 10, 
-    fontSize: 16, 
-    color: '#666' 
-  },
-  errorContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    padding: 20 
-  },
-  errorText: { 
-    fontSize: 16, 
-    color: '#f44336', 
-    textAlign: 'center', 
-    marginVertical: 10 
-  },
-  retryButton: { 
-    paddingVertical: 10, 
-    paddingHorizontal: 20, 
-    backgroundColor: '#4CAF50', 
-    borderRadius: 6 
-  },
-  retryText: { 
-    color: '#fff', 
-    fontWeight: '600' 
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 10, fontSize: 16, color: '#666' },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
+  errorText: { fontSize: 16, color: '#f44336', textAlign: 'center', marginVertical: 10 },
+  retryButton: { paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#4CAF50', borderRadius: 6 },
+  retryText: { color: '#fff', fontWeight: '600' },
   profileCard: {
-    backgroundColor: '#f0f9f3', // Light green background
+    backgroundColor: '#f0f9f3', 
     margin: 16, 
     padding: 20, 
     borderRadius: 16, 
@@ -463,7 +404,7 @@ const styles = StyleSheet.create({
     height: 90, 
     borderRadius: 45, 
     marginBottom: 12,
-    backgroundColor: '#4CAF50', // Placeholder background color
+    backgroundColor: '#4CAF50',
   },
   userName: { 
     fontSize: 20, 
@@ -559,7 +500,8 @@ const styles = StyleSheet.create({
   },
   tabContent: { 
     flex: 1, 
-    padding: 8 
+    padding: 8,
+    minHeight: 300,
   },
   emptyStateContainer: { 
     alignItems: 'center', 

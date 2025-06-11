@@ -8,8 +8,11 @@ __pycache__/
 .venv/
 venv/
 env/
+*.egg
 *.egg-info/
-
+*.whl
+bin/
+obj/
 # Node.js
 node_modules/
 npm-debug.log
@@ -20,8 +23,18 @@ yarn-error.log
 .DS_Store
 Thumbs.db
 
-# Visual Studio Code
+# Ignore local settings and secrets
+local.settings.json
+
+# VS Code settings
 .vscode/
 
 # Logs
 *.log
+
+# Compiled outputs
+*.dll
+*.pdb
+
+# Notifications
+plantSupportReminders/serviceAccountKey.json

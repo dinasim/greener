@@ -1,3 +1,5 @@
+// AddPlantScreen.js
+
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -13,13 +15,14 @@ import {
   Platform,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { SwipeListView } from 'react-native-swipe-list-view';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
+import { SwipeListView } from 'react-native-swipe-list-view';
+import HomeToolbar from '../components/HomeTool';
 
 const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
-const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyplantphoto';
+const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyPlantPhoto';
 
-// Stub data for popular plants (for first load)
+// Fallback list for trending/popular plants
 const fallbackPopular = [
   { id: 'Epipremnum aureum', common_name: 'Golden Pothos', scientific_name: 'Epipremnum aureum', family_common_name: 'Araceae', image_url: null },
   { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata', family_common_name: 'Asparagaceae', image_url: null },
@@ -35,12 +38,12 @@ export default function AddPlantScreen({ navigation }) {
   const [loading, setLoading]             = useState(false);
   const [searchDone, setSearchDone]       = useState(false);
 
-  // Normalize API shape
+  // Normalizes API data for local rendering
   const normalize = p => ({
     id:                  p.id,
     common_name:         p.common_name || '',
     scientific_name:     p.scientific_name || p.latin_name || '',
-    image_url:           p.image_url || p.image_urls?.[0] || null,
+    image_url: p.image_url || (Array.isArray(p.image_urls) ? p.image_urls[0] : null) || null,
     family_common_name:  p.family_common_name || p.origin || '',
     care_difficulty:     p.care_difficulty || null,
     shade:               p.shade           || null,
@@ -48,7 +51,7 @@ export default function AddPlantScreen({ navigation }) {
     temperature:         p.temperature     || null,
   });
 
-  // fetch full record by scientific name
+  // Fetch plant details by scientific name
   async function fetchByScientificName(name) {
     try {
       const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(name)}`);
@@ -60,7 +63,7 @@ export default function AddPlantScreen({ navigation }) {
     }
   }
 
-  // on mount, load popular plants
+  // Load popular plants on mount
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -75,7 +78,7 @@ export default function AddPlantScreen({ navigation }) {
     })();
   }, []);
 
-  // text search
+  // Search by text
   const loadCosmosPlants = async () => {
     if (!query.trim() || loading) return;
     setLoading(true);
@@ -92,7 +95,7 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // photo search (native)
+  // Photo search handler (mobile: FormData upload)
   const processFileNative = async uri => {
     const filename = uri.split('/').pop();
     const extMatch = /\.(\w+)$/.exec(filename);
@@ -100,11 +103,16 @@ export default function AddPlantScreen({ navigation }) {
     const form = new FormData();
     form.append('images', { uri, name: filename, type });
     form.append('organs', 'leaf');
-    const resp = await fetch(PLANTNET_PROXY_URL, { method: 'POST', body: form });
+    const resp = await fetch(PLANTNET_PROXY_URL, {
+      method: 'POST',
+      body: form,
+      // Do NOT set Content-Type header! Let fetch do it.
+    });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json();
   };
 
+  // Photo search main handler
   const handlePhotoSearch = async () => {
     if (Platform.OS === 'web') {
       document.getElementById('web-file-input').click();
@@ -119,19 +127,19 @@ export default function AddPlantScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes: [ImagePicker.MediaType.IMAGE]});
+    const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes: [ImagePicker.MediaTypeOptions.Images]});
     const uri  = pick.assets?.[0]?.uri || pick.uri;
     if (!uri) { setLoading(false); return; }
-
     try {
-      const json    = await processFileNative(uri);
+      const json = await processFileNative(uri);
+      console.log("Photo search server response:", json); // Debug
       const results = json.results || [];
       setPlants(results.map(r => ({
-        id:                 r.species.scientificNameWithoutAuthor,
-        common_name:        r.species.commonNames?.[0] || '',
-        scientific_name:    r.species.scientificNameWithoutAuthor,
-        image_url:          r.images[0]?.url?.o || r.images[0]?.url?.m || r.images[0]?.url?.s || null,
-        family_common_name: r.species.family.scientificNameWithoutAuthor,
+        id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
+        common_name:        r.species?.commonNames?.[0] || '',
+        scientific_name:    r.species?.scientificNameWithoutAuthor,
+        image_url:          r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s || null,
+        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
       })));
       setSearchDone(true);
     } catch (err) {
@@ -141,7 +149,7 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // web file upload
+  // Web file upload handler (FormData upload)
   const handleWebFileUpload = async e => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -149,19 +157,20 @@ export default function AddPlantScreen({ navigation }) {
     setSearchDone(false);
     setPlants([]);
     const form = new FormData();
-    form.append('organs', 'leaf');
     form.append('images', file, file.name);
+    form.append('organs', 'leaf');
     try {
       const resp = await fetch(PLANTNET_PROXY_URL, { method: 'POST', body: form });
       if (!resp.ok) throw new Error(await resp.text());
-      const json    = await resp.json();
+      const json = await resp.json();
+      console.log("Web upload server response:", json); // Debug
       const results = json.results || [];
       setPlants(results.map(r => ({
-        id:                 r.species.scientificNameWithoutAuthor,
-        common_name:        r.species.commonNames?.[0] || '',
-        scientific_name:    r.species.scientificNameWithoutAuthor,
-        image_url:          r.images[0]?.url?.o || r.images[0]?.url?.m || r.images[0]?.url?.s || null,
-        family_common_name: r.species.family.scientificNameWithoutAuthor,
+        id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
+        common_name:        r.species?.commonNames?.[0] || '',
+        scientific_name:    r.species?.scientificNameWithoutAuthor,
+        image_url:          r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s || null,
+        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
       })));
       setSearchDone(true);
     } catch (err) {
@@ -172,7 +181,7 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // render care icons
+  // Render icons
   const renderCareIcons = p => {
     const col = (v,c) => v ? c : '#ccc';
     return (
@@ -194,7 +203,7 @@ export default function AddPlantScreen({ navigation }) {
     );
   };
 
-  // render each card and handle navigation if exists
+  // Render cards
   const renderCard = ({ item, index }) => (
     <SwipeListView
       data={[item]}
@@ -202,7 +211,6 @@ export default function AddPlantScreen({ navigation }) {
         <TouchableOpacity
           style={styles.card}
           onPress={() => {
-            // Preview/encyclopedia view:
             navigation.navigate('PlantDetail', { plantId: item.id });
           }}
         >
@@ -243,7 +251,6 @@ export default function AddPlantScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <Text style={styles.header}>Add a Plant</Text>
-
       {/* Search + Scan */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
@@ -272,7 +279,6 @@ export default function AddPlantScreen({ navigation }) {
           />
         )}
       </View>
-
       {/* List */}
       {!searchDone ? (
         <FlatList
@@ -291,6 +297,7 @@ export default function AddPlantScreen({ navigation }) {
       ) : (
         !loading && <Text style={styles.noResults}>No plants found. Try another search.</Text>
       )}
+    <HomeToolbar navigation={navigation} />
     </SafeAreaView>
   );
 }
