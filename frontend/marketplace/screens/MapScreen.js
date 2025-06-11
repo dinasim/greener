@@ -1,4 +1,5 @@
-// screens/MapScreen.js (Enhanced Version)
+
+// screens/MapScreen.js (Complete Business-Integrated Version)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -25,8 +26,9 @@ import BusinessListView from '../components/BusinessListView';
 import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
 import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
 import MapModeToggle from '../components/MapModeToggle';
-import { getNearbyProducts, getAzureMapsKey, reverseGeocode } from '../services/marketplaceApi';
-import { getNearbyBusinesses } from '../services/businessApi';
+import { getNearbyProducts } from '../services/marketplaceApi';
+import { getNearbyBusinesses } from '../../Business/services/businessApi';
+import { getAzureMapsKey, reverseGeocode } from '../services/azureMapsService';
 
 /**
  * Enhanced MapScreen with Plants/Businesses toggle
@@ -303,8 +305,8 @@ const MapScreen = () => {
       lng = selectedProductData.location?.longitude;
       label = selectedProductData.title || selectedProductData.name;
     } else if (mapMode === 'businesses' && selectedBusinessData) {
-      lat = selectedBusinessData.location?.latitude;
-      lng = selectedBusinessData.location?.longitude;
+      lat = selectedBusinessData.location?.latitude || selectedBusinessData.address?.latitude;
+      lng = selectedBusinessData.location?.longitude || selectedBusinessData.address?.longitude;
       label = selectedBusinessData.businessName || selectedBusinessData.name;
     }
     

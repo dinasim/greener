@@ -1,3 +1,4 @@
+// components/SearchBar.js - Enhanced with Business Integration
 import React, { useState } from 'react';
 import {
   View,
@@ -7,19 +8,59 @@ import {
   Text,
   Platform,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import SpeechToTextComponent from './SpeechToTextComponent';
 
 /**
- * Enhanced SearchBar component that uses SpeechToTextComponent for voice input
+ * Enhanced SearchBar component with business-aware search capabilities
+ * Provides different search hints based on current filter context
  * 
  * @param {Object} props Component props
  * @param {string} props.value Current search text value
  * @param {Function} props.onChangeText Callback when text changes
  * @param {Function} props.onSubmit Callback when search is submitted
+ * @param {string} props.sellerType Current seller type filter ('all', 'individual', 'business')
  * @param {Object} props.style Additional styles for the container
+ * @param {string} props.placeholder Custom placeholder text
  */
-const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
+const SearchBar = ({ 
+  value, 
+  onChangeText, 
+  onSubmit, 
+  sellerType = 'all',
+  style,
+  placeholder
+}) => {
+  // Generate context-aware placeholder text
+  const getPlaceholder = () => {
+    if (placeholder) return placeholder;
+    
+    switch (sellerType) {
+      case 'business':
+        return 'Search business plants, tools, accessories...';
+      case 'individual':
+        return 'Search individual plant listings...';
+      default:
+        return 'Search plants, accessories, tools...';
+    }
+  };
+
+  // Get search suggestions based on current context
+  const getSearchSuggestions = () => {
+    const commonSuggestions = ['Monstera', 'Snake Plant', 'Pothos', 'Succulent'];
+    const businessSuggestions = ['Plant Tools', 'Fertilizer', 'Pots', 'Seeds'];
+    const individualSuggestions = ['Cutting', 'Houseplant', 'Outdoor Plant'];
+
+    switch (sellerType) {
+      case 'business':
+        return [...commonSuggestions, ...businessSuggestions];
+      case 'individual':
+        return [...commonSuggestions, ...individualSuggestions];
+      default:
+        return [...commonSuggestions, ...businessSuggestions, ...individualSuggestions];
+    }
+  };
+
   // Handle clearing the search input
   const handleClear = () => {
     onChangeText?.('');
@@ -30,33 +71,65 @@ const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
     onSubmit?.();
   };
 
-  // Handle speech transcription results
+  // Handle quick search suggestions
+  const handleQuickSearch = (searchTerm) => {
+    onChangeText?.(searchTerm);
+    setTimeout(() => {
+      onSubmit?.();
+    }, 100);
+  };
+
+  // Handle speech transcription results with business context
   const handleTranscriptionResult = (transcribedText) => {
     if (transcribedText) {
-      // Update the search text with transcription result
-      onChangeText?.(transcribedText);
+      // Add business context to voice search if needed
+      let contextualText = transcribedText;
       
-      // Automatically submit after a short delay to give user a chance to see what was transcribed
+      // If user is searching in business mode and says generic terms, 
+      // we can keep it as is since businesses sell various items
+      onChangeText?.(contextualText);
+      
+      // Automatically submit after a short delay
       setTimeout(() => {
         onSubmit?.();
       }, 500);
     }
   };
 
+  // Get icon for current search context
+  const getContextIcon = () => {
+    switch (sellerType) {
+      case 'business':
+        return <MaterialCommunityIcons name="store" size={16} color="#FF9800" />;
+      case 'individual':
+        return <MaterialCommunityIcons name="account" size={16} color="#2196F3" />;
+      default:
+        return <MaterialIcons name="search" size={16} color="#4CAF50" />;
+    }
+  };
+
+  // Show quick suggestions only when search is empty and there's focus
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const suggestions = getSearchSuggestions().slice(0, 4); // Show top 4
+
   return (
     <View style={[styles.container, style]}>
       <View style={styles.searchContainer}>
-        {/* Search icon */}
-        <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
+        {/* Context icon */}
+        <View style={styles.contextIcon}>
+          {getContextIcon()}
+        </View>
 
         {/* Search input */}
         <TextInput
           style={styles.input}
-          placeholder="Search plants..."
+          placeholder={getPlaceholder()}
           placeholderTextColor="#999"
           value={value}
           onChangeText={onChangeText}
           onSubmitEditing={handleSubmit}
+          onFocus={() => setShowSuggestions(!value)}
+          onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           returnKeyType="search"
           clearButtonMode="while-editing"
         />
@@ -68,23 +141,48 @@ const SearchBar = ({ value, onChangeText, onSubmit, style }) => {
           </TouchableOpacity>
         ) : null}
 
-        {/* Voice search button - now using SpeechToTextComponent */}
+        {/* Voice search button */}
         <SpeechToTextComponent 
           onTranscriptionResult={handleTranscriptionResult}
           style={styles.micButton}
         />
       </View>
+
+      {/* Search context indicator */}
+      {sellerType !== 'all' && (
+        <View style={styles.contextIndicator}>
+          <Text style={styles.contextText}>
+            Searching in: {sellerType === 'business' ? 'Business sellers' : 'Individual sellers'}
+          </Text>
+        </View>
+      )}
+
+      {/* Quick search suggestions */}
+      {showSuggestions && !value && (
+        <View style={styles.suggestionsContainer}>
+          <Text style={styles.suggestionsTitle}>Popular searches:</Text>
+          <View style={styles.suggestionsList}>
+            {suggestions.map((suggestion, index) => (
+              <TouchableOpacity
+                key={index}
+                style={styles.suggestionChip}
+                onPress={() => handleQuickSearch(suggestion)}
+              >
+                <Text style={styles.suggestionText}>{suggestion}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    padding: 12,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
-    alignItems: 'center',
   },
   searchContainer: {
     flexDirection: 'row',
@@ -92,10 +190,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
     borderRadius: 8,
     paddingHorizontal: 12,
-    width: '90%',
+    marginHorizontal: 12,
+    marginTop: 12,
+    marginBottom: 8,
   },
-  searchIcon: {
+  contextIcon: {
     marginRight: 8,
+    width: 20,
+    alignItems: 'center',
   },
   input: {
     flex: 1,
@@ -109,6 +211,44 @@ const styles = StyleSheet.create({
   },
   micButton: {
     padding: 6,
+  },
+  contextIndicator: {
+    paddingHorizontal: 12,
+    paddingBottom: 8,
+  },
+  contextText: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  suggestionsContainer: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+  },
+  suggestionsTitle: {
+    fontSize: 12,
+    color: '#888',
+    marginBottom: 8,
+  },
+  suggestionsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  suggestionChip: {
+    backgroundColor: '#f0f9f0',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    marginRight: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: '#e0f0e0',
+  },
+  suggestionText: {
+    fontSize: 13,
+    color: '#4CAF50',
+    fontWeight: '500',
   },
 });
 

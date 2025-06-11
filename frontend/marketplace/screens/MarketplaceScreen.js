@@ -1,4 +1,4 @@
-// screens/MarketplaceScreen.js
+// screens/MarketplaceScreen.js - FIXED VERSION (Removed duplicate filter)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, FlatList, ActivityIndicator, StyleSheet, Text, TouchableOpacity,
@@ -11,8 +11,9 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
-import FilterSection from '../components/FilterSection';
 import MarketplaceFilterToggle from '../components/MarketplaceFilterToggle';
+import SortOptions from '../components/SortOptions';
+import MapToggle from '../components/MapToggle';
 import { getAll, getNearbyProducts, geocodeAddress } from '../services/marketplaceApi';
 import syncService from '../services/SyncService';
 import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener, triggerUpdate } from '../services/MarketplaceUpdates';
@@ -558,26 +559,20 @@ const MarketplaceScreen = ({ navigation, route }) => {
         onSelect={handleCategorySelect}
       />
       
-      <FilterSection
-        sortOption={sortOption}
-        onSortChange={handleSortChange}
-        priceRange={priceRange}
-        onPriceChange={handlePriceRangeChange}
-        viewMode={viewMode}
-        onViewModeChange={handleViewModeChange}
-        activeFilters={activeFilters}
-        onRemoveFilter={(filterId) => {
-          setActiveFilters(activeFilters.filter(f => f.id !== filterId));
-        }}
-        onResetFilters={() => {
-          setActiveFilters([]);
-          setPriceRange({ min: 0, max: 1000 });
-          setSelectedCategory('All');
-          setSearchQuery('');
-          setSellerType('all');
-          loadPlants(1, true);
-        }}
-      />
+      {/* SIMPLIFIED FILTER ROW - Only Sort and Map Toggle */}
+      <View style={styles.filterRow}>
+        <SortOptions 
+          selectedOption={sortOption}
+          onSelectOption={handleSortChange}
+        />
+        
+        <View style={styles.spacer} />
+        
+        <MapToggle 
+          viewMode={viewMode} 
+          onViewModeChange={handleViewModeChange} 
+        />
+      </View>
       
       <FlatList
         data={filteredPlants}
@@ -635,6 +630,18 @@ const styles = StyleSheet.create({
   },
   listViewContainer: { 
     paddingHorizontal: 16 
+  },
+  filterRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  spacer: {
+    flex: 1,
   },
   centerContainer: { 
     flex: 1, 

@@ -1,134 +1,130 @@
-// components/MarketplaceFilterToggle.js
+// components/MarketplaceFilterToggle.js - FIXED VERSION
 import React from 'react';
 import {
   View,
   Text,
-  StyleSheet,
   TouchableOpacity,
-  Animated,
-  Platform,
+  StyleSheet,
+  Dimensions,
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-/**
- * Toggle component for filtering between individual and business products
- * 
- * @param {Object} props
- * @param {string} props.sellerType - Current seller type filter ('all', 'individual', 'business')
- * @param {Function} props.onSellerTypeChange - Callback when seller type changes
- * @param {Object} props.counts - Counts of products by seller type
- */
+const { width } = Dimensions.get('window');
+
 const MarketplaceFilterToggle = ({ 
   sellerType = 'all', 
-  onSellerTypeChange,
-  counts = { all: 0, individual: 0, business: 0 }
+  onSellerTypeChange, 
+  counts = { all: 0, individual: 0, business: 0 } 
 }) => {
-  // Animation value for the slider
-  const [slideAnim] = React.useState(new Animated.Value(
-    sellerType === 'all' ? 0 : sellerType === 'individual' ? 0 : 1
-  ));
-  
-  // Update animation when seller type changes
-  React.useEffect(() => {
-    Animated.timing(slideAnim, {
-      toValue: sellerType === 'business' ? 1 : 0,
-      duration: 200,
-      useNativeDriver: Platform.OS !== 'web',
-    }).start();
-  }, [sellerType]);
-  
-  // Handle toggling between seller types
-  const handleToggle = () => {
-    const nextType = sellerType === 'business' ? 'individual' : 'business';
-    onSellerTypeChange(nextType);
+  const handlePress = (type) => {
+    if (onSellerTypeChange) {
+      onSellerTypeChange(type);
+    }
   };
-  
-  // Handle clicking on "All" filter
-  const handleAllFilter = () => {
-    onSellerTypeChange('all');
-  };
-  
+
+  const getButtonStyle = (type) => [
+    styles.filterButton,
+    sellerType === type && styles.activeFilterButton
+  ];
+
+  const getTextStyle = (type) => [
+    styles.filterButtonText,
+    sellerType === type && styles.activeFilterButtonText
+  ];
+
+  const getCountStyle = (type) => [
+    styles.countBadge,
+    sellerType === type && styles.activeCountBadge
+  ];
+
   return (
     <View style={styles.container}>
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity 
-          style={[
-            styles.allButton, 
-            sellerType === 'all' && styles.allButtonActive
-          ]} 
-          onPress={handleAllFilter}
-          accessibilityRole="button"
-          accessibilityLabel="Show all sellers"
-          accessibilityState={{ selected: sellerType === 'all' }}
+      <View style={styles.filterToggleContainer}>
+        {/* All Products Button */}
+        <TouchableOpacity
+          style={getButtonStyle('all')}
+          onPress={() => handlePress('all')}
+          activeOpacity={0.7}
         >
-          <MaterialIcons 
-            name="view-list" 
-            size={16} 
-            color={sellerType === 'all' ? '#ffffff' : '#4CAF50'} 
-          />
-          <Text style={[
-            styles.allButtonText,
-            sellerType === 'all' && styles.allButtonTextActive
-          ]}>
-            All ({counts.all})
-          </Text>
-        </TouchableOpacity>
-        
-        <View style={styles.toggleWrapper}>
-          <TouchableOpacity
-            style={styles.toggle}
-            onPress={handleToggle}
-            accessibilityRole="switch"
-            accessibilityLabel={`Toggle between individual and business sellers. Currently showing ${sellerType} sellers.`}
-            accessibilityState={{ checked: sellerType === 'business' }}
-          >
-            <Animated.View 
-              style={[
-                styles.toggleThumb,
-                {
-                  transform: [{
-                    translateX: slideAnim.interpolate({
-                      inputRange: [0, 1],
-                      outputRange: [2, Platform.OS === 'web' ? 76 : 76]
-                    })
-                  }]
-                }
-              ]}
-            >
-              <MaterialCommunityIcons 
-                name={sellerType === 'business' ? 'store' : 'account'} 
-                size={16} 
-                color="#4CAF50" 
-              />
-            </Animated.View>
-            
-            <View style={styles.toggleLabels}>
+          <View style={styles.buttonContent}>
+            <MaterialIcons 
+              name="apps" 
+              size={18} 
+              color={sellerType === 'all' ? '#fff' : '#4CAF50'} 
+            />
+            <Text style={getTextStyle('all')}>
+              All
+            </Text>
+            <View style={getCountStyle('all')}>
               <Text style={[
-                styles.toggleLabel,
-                sellerType !== 'business' && styles.toggleLabelActive
+                styles.countText,
+                sellerType === 'all' && styles.activeCountText
               ]}>
-                Individual ({counts.individual})
-              </Text>
-              <Text style={[
-                styles.toggleLabel,
-                sellerType === 'business' && styles.toggleLabelActive
-              ]}>
-                Business ({counts.business})
+                {counts.all}
               </Text>
             </View>
-          </TouchableOpacity>
-        </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Individual Sellers Button */}
+        <TouchableOpacity
+          style={getButtonStyle('individual')}
+          onPress={() => handlePress('individual')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.buttonContent}>
+            <MaterialIcons 
+              name="person" 
+              size={18} 
+              color={sellerType === 'individual' ? '#fff' : '#4CAF50'} 
+            />
+            <Text style={getTextStyle('individual')}>
+              Individual
+            </Text>
+            <View style={getCountStyle('individual')}>
+              <Text style={[
+                styles.countText,
+                sellerType === 'individual' && styles.activeCountText
+              ]}>
+                {counts.individual}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
+
+        {/* Business Sellers Button */}
+        <TouchableOpacity
+          style={getButtonStyle('business')}
+          onPress={() => handlePress('business')}
+          activeOpacity={0.7}
+        >
+          <View style={styles.buttonContent}>
+            <MaterialCommunityIcons 
+              name="store" 
+              size={18} 
+              color={sellerType === 'business' ? '#fff' : '#4CAF50'} 
+            />
+            <Text style={getTextStyle('business')}>
+              Business
+            </Text>
+            <View style={getCountStyle('business')}>
+              <Text style={[
+                styles.countText,
+                sellerType === 'business' && styles.activeCountText
+              ]}>
+                {counts.business}
+              </Text>
+            </View>
+          </View>
+        </TouchableOpacity>
       </View>
-      
-      <View style={styles.filterHint}>
-        <MaterialIcons name="info-outline" size={14} color="#4CAF50" />
-        <Text style={styles.hintText}>
-          {sellerType === 'all' 
-            ? 'Showing all sellers' 
-            : sellerType === 'individual' 
-              ? 'Showing individual sellers only' 
-              : 'Showing business sellers only'
-          }
+
+      {/* Filter Description */}
+      <View style={styles.descriptionContainer}>
+        <Text style={styles.descriptionText}>
+          {sellerType === 'all' && `Showing all ${counts.all} products from individual sellers and businesses`}
+          {sellerType === 'individual' && `Showing ${counts.individual} products from individual plant enthusiasts`}
+          {sellerType === 'business' && `Showing ${counts.business} products from verified plant businesses`}
         </Text>
       </View>
     </View>
@@ -137,91 +133,83 @@ const MarketplaceFilterToggle = ({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     backgroundColor: '#fff',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
   },
-  toggleContainer: {
+  filterToggleContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 8,
   },
-  allButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+  filterButton: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
     backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44, // Ensure touch target is large enough
   },
-  allButtonActive: {
+  activeFilterButton: {
     backgroundColor: '#4CAF50',
-  },
-  allButtonText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '500',
-  },
-  allButtonTextActive: {
-    color: '#ffffff',
-  },
-  toggleWrapper: {
-    overflow: 'hidden',
-    borderRadius: 20,
-  },
-  toggle: {
-    width: 150,
-    height: 36,
-    borderRadius: 20,
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    position: 'relative',
-  },
-  toggleThumb: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#ffffff',
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowColor: '#4CAF50',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.2,
-    shadowRadius: 1,
-    zIndex: 1,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  toggleLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 12,
-  },
-  toggleLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-    marginLeft: 22,
-    marginRight: 22,
-  },
-  toggleLabelActive: {
-    color: '#4CAF50',
-    fontWeight: 'bold',
-  },
-  filterHint: {
-    flexDirection: 'row',
+  buttonContent: {
     alignItems: 'center',
-    marginTop: 8,
+    justifyContent: 'center',
+    width: '100%',
   },
-  hintText: {
+  filterButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#4CAF50',
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  activeFilterButtonText: {
+    color: '#fff',
+  },
+  countBadge: {
+    backgroundColor: '#e0e0e0',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 2,
+    minWidth: 20,
+    alignItems: 'center',
+  },
+  activeCountBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  countText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#666',
+  },
+  activeCountText: {
+    color: '#fff',
+  },
+  descriptionContainer: {
+    alignItems: 'center',
+  },
+  descriptionText: {
     fontSize: 12,
     color: '#666',
-    marginLeft: 4,
+    textAlign: 'center',
+    lineHeight: 16,
   },
 });
 

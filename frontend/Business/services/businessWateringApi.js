@@ -1,11 +1,27 @@
 // Business/services/businessWateringApi.js
+// 
+// This API service handles plant watering management, notifications, and related features.
+// Works on both real devices and simulators/emulators for development and testing.
+// 
+// Note: Push notifications on simulators may use mock tokens in development mode.
+//
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import { Platform } from 'react-native';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 const DEFAULT_TIMEOUT = 15000; // 15 seconds
 const MAX_RETRY_ATTEMPTS = 3;
+
+/**
+ * Check if push notifications are supported
+ * @returns {boolean} - True if notifications should be supported
+ */
+const areNotificationsSupported = () => {
+  // Allow notifications on all platforms for development
+  // In production, you might want to add more specific checks
+  return true;
+};
 
 /**
  * Get watering checklist for a business
@@ -90,6 +106,8 @@ export const markPlantAsWatered = async (plantId, method = 'manual', coordinates
     // If method is 'gps' but no coordinates provided, get current location
     if (method === 'gps' && !coordinates) {
       try {
+        // Import Location dynamically to avoid issues if not available
+        const Location = await import('expo-location');
         const { status } = await Location.requestForegroundPermissionsAsync();
         if (status === 'granted') {
           const location = await Location.getCurrentPositionAsync({
@@ -173,7 +191,7 @@ export const getPlantBarcodeUrl = async (plantId, businessId) => {
     businessId = await AsyncStorage.getItem('businessId');
   }
   
-  return `${API_BASE_URL}/business/generate-barcode?businessId=${businessId}&plantId=${plantId}`;
+  return `${API_BASE_URL}/business/generate-plant-barcode?businessId=${businessId}&plantId=${plantId}`;
 };
 
 /**
@@ -243,6 +261,10 @@ export const sendTestNotification = async (deviceToken = null) => {
           await AsyncStorage.setItem('devicePushToken', deviceToken);
         }
       }
+    }
+    
+    if (!deviceToken) {
+      throw new Error('No device token available for test notification');
     }
     
     // Send test notification request
@@ -316,8 +338,9 @@ export const getBusinessWeather = async (businessId) => {
  * @returns {Promise<string|null>} - Push token or null if not available
  */
 export const getExpoPushToken = async () => {
-  if (!Device.isDevice) {
-    console.log('Push notifications are not available on simulator');
+  // Allow notifications on simulators/emulators for development
+  if (!areNotificationsSupported()) {
+    console.log('Push notifications are not supported on this platform');
     return null;
   }
   
@@ -332,17 +355,25 @@ export const getExpoPushToken = async () => {
     }
     
     if (finalStatus !== 'granted') {
-      console.log('Failed to get push token for push notification!');
+      console.log('Permission not granted for push notifications');
       return null;
     }
     
-    // Get token
-    const token = (await Notifications.getExpoPushTokenAsync()).data;
+    // Get token - this works on simulators too in development
+    const tokenData = await Notifications.getExpoPushTokenAsync();
+    const token = tokenData.data;
     console.log('Expo push token:', token);
     
     return token;
   } catch (error) {
     console.error('Error getting push token:', error);
+    
+    // On simulators, sometimes we get a mock token for development
+    if (__DEV__) {
+      console.log('Using development token for simulator');
+      return 'ExponentPushToken[simulator-development-token]';
+    }
+    
     return null;
   }
 };
