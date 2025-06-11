@@ -21,6 +21,56 @@ DATABASE_NAME = "GreenerDB"
 USER_PLANTS_CONTAINER = "userPlants"
 USERS_CONTAINER = "Users"
 
+def update_next_water(user_plants_container, plant):
+    try:
+        # Get water_days from plant entry (fallback: 7 days)
+        water_days = plant.get("water_days", 7)
+        # Use previous next_water as base (default to now if missing)
+        prev_next_water = plant.get("next_water")
+        try:
+            prev_dt = datetime.datetime.fromisoformat(prev_next_water)
+        except Exception:
+            prev_dt = datetime.datetime.utcnow()
+        new_next_water = prev_dt + datetime.timedelta(days=water_days)
+        user_plants_container.patch_item(
+            plant["id"], 
+            partition_key=plant["email"], 
+            patch_operations=[{"op": "replace", "path": "/next_water", "value": new_next_water.isoformat()}]
+        )
+        logging.info(f"🔁 Updated next_water for {plant['id']} to {new_next_water}")
+    except Exception as e:
+        logging.error(f"❌ Failed to update next_water for {plant['id']}: {e}")
+
+def update_next_feed(user_plants_container, plant):
+    try:
+        # Parse feed frequency from plant entry (fallback: 35 days)
+        feed_str = plant.get("feed", "")
+        # crude parse: "Every N weeks" or "Every N days"
+        days = 35
+        import re
+        match = re.search(r"Every (\d+) week", feed_str)
+        if match:
+            days = int(match.group(1)) * 7
+        else:
+            match = re.search(r"Every (\d+) day", feed_str)
+            if match:
+                days = int(match.group(1))
+        prev_next_feed = plant.get("next_feed")
+        try:
+            prev_dt = datetime.datetime.fromisoformat(prev_next_feed)
+        except Exception:
+            prev_dt = datetime.datetime.utcnow()
+        new_next_feed = prev_dt + datetime.timedelta(days=days)
+        user_plants_container.patch_item(
+            plant["id"], 
+            partition_key=plant["email"], 
+            patch_operations=[{"op": "replace", "path": "/next_feed", "value": new_next_feed.isoformat()}]
+        )
+        logging.info(f"🔁 Updated next_feed for {plant['id']} to {new_next_feed}")
+    except Exception as e:
+        logging.error(f"❌ Failed to update next_feed for {plant['id']}: {e}")
+
+
 def main(mytimer):
     logging.warning(f"🟢 Function started at {datetime.datetime.utcnow().isoformat()}")
     logging.info("🌿 plantSupportReminders function triggered!")
@@ -88,8 +138,10 @@ def main(mytimer):
 
         if water_due:
             send_push(token, f"💧 Time to water your {common_name}!")
+            update_next_water(user_plants_container, plant)
         if feed_due:
             send_push(token, f"🌿 Time to fertilize your {common_name}!")
+            update_next_feed(user_plants_container, plant)
 
 def send_push(token, message):
     try:
