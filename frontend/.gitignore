@@ -35,3 +35,34 @@ yarn-error.*
 *.tsbuildinfo
 
 .env
+
+# .NET build artifacts
+bin/
+obj/
+*.dll
+*.pdb
+*.cache
+*.sourcelink.json
+
+# Visual Studio / .NET
+.vs/
+*.user
+*.suo
+*.userprefs
+*.sln.docstates
+
+# Python (for Azure Functions backend)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Azure Functions
+local.settings.json
+.azure/

@@ -1,4 +1,4 @@
-// frontend/components/FilterSection.js
+// components/FilterSection.js - Enhanced with Business Integration
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -10,10 +10,11 @@ import {
   Pressable,
   Animated,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import MapToggle from './MapToggle';
 import PriceRange from './PriceRange';
 import SortOptions from './SortOptions';
+import MarketplaceFilterToggle from './MarketplaceFilterToggle';
 
 const FilterSection = ({
   sortOption = 'recent',
@@ -24,9 +25,12 @@ const FilterSection = ({
   onViewModeChange,
   category,
   onCategoryChange,
+  sellerType = 'all', // New prop for business/individual filtering
+  onSellerTypeChange, // New prop for handling seller type changes
   activeFilters = [],
   onRemoveFilter,
   onResetFilters,
+  businessCounts = { all: 0, individual: 0, business: 0 }, // New prop for counts
 }) => {
   // State
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -87,9 +91,10 @@ const FilterSection = ({
     });
   };
 
-  // Count active filters
+  // Count active filters (including seller type and price range)
   const activeFilterCount = activeFilters.length + 
-    ((safePriceRange.min > 0 || safePriceRange.max < 1000) ? 1 : 0);
+    ((safePriceRange.min > 0 || safePriceRange.max < 1000) ? 1 : 0) +
+    (sellerType !== 'all' ? 1 : 0);
 
   // Modal slide-in animation
   const slideAnimation = {
@@ -115,8 +120,24 @@ const FilterSection = ({
     opacity: modalAnimation,
   };
 
+  // Reset all filters including seller type
+  const handleResetAllFilters = () => {
+    setLocalPriceRange({ min: 0, max: 1000 });
+    onPriceChange && onPriceChange({ min: 0, max: 1000 });
+    onSellerTypeChange && onSellerTypeChange('all');
+    onResetFilters && onResetFilters();
+    hideFilterModal();
+  };
+
   return (
     <View style={styles.mainContainer}>
+      {/* Business/Individual Filter Toggle */}
+      <MarketplaceFilterToggle
+        sellerType={sellerType}
+        onSellerTypeChange={onSellerTypeChange}
+        counts={businessCounts}
+      />
+
       {/* Active Filters Row (conditional) */}
       {activeFilterCount > 0 && (
         <ScrollView 
@@ -125,9 +146,33 @@ const FilterSection = ({
           style={styles.activeFiltersContainer}
           contentContainerStyle={styles.activeFiltersContent}
         >
+          {/* Seller Type Filter Pill */}
+          {sellerType !== 'all' && (
+            <View style={styles.filterPill}>
+              <MaterialCommunityIcons 
+                name={sellerType === 'business' ? 'store' : 'account'} 
+                size={14} 
+                color={sellerType === 'business' ? '#FF9800' : '#2196F3'} 
+              />
+              <Text style={[
+                styles.filterPillText,
+                { color: sellerType === 'business' ? '#FF9800' : '#2196F3' }
+              ]}>
+                {sellerType === 'business' ? 'Business Only' : 'Individual Only'}
+              </Text>
+              <TouchableOpacity 
+                onPress={() => onSellerTypeChange && onSellerTypeChange('all')}
+                hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+              >
+                <MaterialIcons name="close" size={16} color="#777" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Price Range Filter Pill (if active) */}
           {(safePriceRange.min > 0 || safePriceRange.max < 1000) && (
             <View style={styles.filterPill}>
+              <MaterialIcons name="attach-money" size={14} color="#4CAF50" />
               <Text style={styles.filterPillText}>
                 ${safePriceRange.min} - ${safePriceRange.max}
               </Text>
@@ -159,10 +204,10 @@ const FilterSection = ({
           {activeFilterCount > 1 && (
             <TouchableOpacity 
               style={styles.clearAllButton}
-              onPress={onResetFilters}
+              onPress={handleResetAllFilters}
             >
               <Text style={styles.clearAllText}>Clear All</Text>
-              </TouchableOpacity>
+            </TouchableOpacity>
           )}
         </ScrollView>
       )}
@@ -224,6 +269,60 @@ const FilterSection = ({
                 </View>
                 
                 <ScrollView>
+                  {/* Seller Type Filter in Modal */}
+                  <View style={styles.modalSection}>
+                    <Text style={styles.sectionTitle}>Seller Type</Text>
+                    <View style={styles.sellerTypeButtons}>
+                      <TouchableOpacity
+                        style={[
+                          styles.sellerTypeButton,
+                          sellerType === 'all' && styles.selectedSellerType
+                        ]}
+                        onPress={() => onSellerTypeChange && onSellerTypeChange('all')}
+                      >
+                        <MaterialIcons name="people" size={20} color={sellerType === 'all' ? '#fff' : '#4CAF50'} />
+                        <Text style={[
+                          styles.sellerTypeText,
+                          sellerType === 'all' && styles.selectedSellerTypeText
+                        ]}>
+                          All ({businessCounts.all})
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.sellerTypeButton,
+                          sellerType === 'individual' && styles.selectedSellerType
+                        ]}
+                        onPress={() => onSellerTypeChange && onSellerTypeChange('individual')}
+                      >
+                        <MaterialCommunityIcons name="account" size={20} color={sellerType === 'individual' ? '#fff' : '#2196F3'} />
+                        <Text style={[
+                          styles.sellerTypeText,
+                          sellerType === 'individual' && styles.selectedSellerTypeText
+                        ]}>
+                          Individual ({businessCounts.individual})
+                        </Text>
+                      </TouchableOpacity>
+                      
+                      <TouchableOpacity
+                        style={[
+                          styles.sellerTypeButton,
+                          sellerType === 'business' && styles.selectedSellerType
+                        ]}
+                        onPress={() => onSellerTypeChange && onSellerTypeChange('business')}
+                      >
+                        <MaterialCommunityIcons name="store" size={20} color={sellerType === 'business' ? '#fff' : '#FF9800'} />
+                        <Text style={[
+                          styles.sellerTypeText,
+                          sellerType === 'business' && styles.selectedSellerTypeText
+                        ]}>
+                          Business ({businessCounts.business})
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
                   {/* Price Range in Modal */}
                   <View style={styles.modalSection}>
                     <Text style={styles.sectionTitle}>Price Range</Text>
@@ -232,8 +331,8 @@ const FilterSection = ({
                       initialMin={localPriceRange.min}
                       initialMax={localPriceRange.max}
                       style={styles.priceRange}
-                      hideTitle={true} // Hide the component title since we have a section title
-                      max={1000} // Set maximum price limit
+                      hideTitle={true}
+                      max={1000}
                     />
                   </View>
                   
@@ -241,11 +340,7 @@ const FilterSection = ({
                   <View style={styles.modalActions}>
                     <TouchableOpacity 
                       style={styles.resetButton}
-                      onPress={() => {
-                        setLocalPriceRange({ min: 0, max: 1000 });
-                        if (onResetFilters) onResetFilters();
-                        hideFilterModal();
-                      }}
+                      onPress={handleResetAllFilters}
                     >
                       <Text style={styles.resetButtonText}>Reset All</Text>
                     </TouchableOpacity>
@@ -295,7 +390,7 @@ const styles = StyleSheet.create({
   filterPillText: {
     fontSize: 13,
     color: '#4CAF50',
-    marginRight: 6,
+    marginHorizontal: 6,
     fontWeight: '500',
   },
   clearAllButton: {
@@ -393,6 +488,34 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     color: '#333',
     textAlign: 'center',
+  },
+  sellerTypeButtons: {
+    flexDirection: 'column',
+    gap: 12,
+  },
+  sellerTypeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#f9f9f9',
+  },
+  selectedSellerType: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  sellerTypeText: {
+    fontSize: 14,
+    color: '#333',
+    marginLeft: 8,
+    fontWeight: '500',
+  },
+  selectedSellerTypeText: {
+    color: '#fff',
   },
   priceRange: {
     marginTop: 8,

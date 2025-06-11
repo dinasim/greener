@@ -1,9 +1,9 @@
-// Business/services/businessApi.js - FIXED VERSION
+// Business/services/businessApi.js - ENHANCED VERSION WITH MAP FEATURES
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-// Enhanced error handling and logging
+// Enhanced error handling
 class ApiError extends Error {
   constructor(message, status, response) {
     super(message);
@@ -42,15 +42,14 @@ const getEnhancedHeaders = async () => {
   }
 };
 
-// Enhanced response handler with detailed error reporting
+// Enhanced response handler
 const handleApiResponse = async (response, context = 'API Request') => {
-  const startTime = Date.now();
-  console.log(`📡 ${context} - Status: ${response.status} (${Date.now() - startTime}ms)`);
+  console.log(`📡 ${context} - Status: ${response.status}`);
   
   let responseText;
   try {
     responseText = await response.text();
-    console.log(`📝 ${context} - Response: ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+    console.log(`📝 ${context} - Response:`, responseText.substring(0, 500));
   } catch (textError) {
     console.error(`❌ ${context} - Error reading response:`, textError);
     throw new ApiError(`Failed to read response: ${textError.message}`, response.status);
@@ -82,13 +81,13 @@ const handleApiResponse = async (response, context = 'API Request') => {
   }
 };
 
-// Retry mechanism for failed requests
+// Retry mechanism
 const apiRequest = async (url, options = {}, retries = 3, context = 'Request') => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       console.log(`🚀 Attempt ${attempt}/${retries} - ${context}: ${url}`);
       const response = await fetch(url, {
-        timeout: 15000, // 15 second timeout
+        timeout: 15000,
         ...options
       });
       return await handleApiResponse(response, context);
@@ -99,7 +98,6 @@ const apiRequest = async (url, options = {}, retries = 3, context = 'Request') =
         throw error;
       }
       
-      // Wait before retry (exponential backoff)
       const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
       console.log(`⏱️ Retrying in ${delay}ms...`);
       await new Promise(resolve => setTimeout(resolve, delay));
@@ -108,12 +106,11 @@ const apiRequest = async (url, options = {}, retries = 3, context = 'Request') =
 };
 
 /**
- * Enhanced Business Dashboard API
- * Gets comprehensive dashboard data with caching
+ * Get Business Dashboard Data
  */
 export const getBusinessDashboard = async () => {
   try {
-    console.log('📊 Loading enhanced business dashboard...');
+    console.log('📊 Loading business dashboard...');
     const headers = await getEnhancedHeaders();
     
     const url = `${API_BASE_URL}/business/dashboard`;
@@ -122,7 +119,7 @@ export const getBusinessDashboard = async () => {
       headers,
     }, 3, 'Business Dashboard');
     
-    // Cache the response for offline access
+    // Cache the response
     try {
       await AsyncStorage.setItem('cached_dashboard', JSON.stringify({
         data: response,
@@ -134,7 +131,7 @@ export const getBusinessDashboard = async () => {
     
     return response;
   } catch (error) {
-    console.error('❌ Enhanced dashboard error:', error);
+    console.error('❌ Dashboard error:', error);
     
     // Try to return cached data
     try {
@@ -157,62 +154,46 @@ export const getBusinessDashboard = async () => {
 };
 
 /**
- * FIXED: Enhanced Inventory Management - Using correct route
+ * Get Business Inventory
  */
-export const getBusinessInventory = async (businessId, filters = {}) => {
+export const getBusinessInventory = async (businessId) => {
   try {
-    console.log('📦 Loading enhanced inventory for business:', businessId);
+    console.log('📦 Loading inventory for business:', businessId);
     const headers = await getEnhancedHeaders();
     
-    // FIXED: Use the correct route pattern from backend
     const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(businessId)}`;
     console.log('📦 Calling inventory URL:', url);
     
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
-    }, 3, 'Enhanced Inventory');
+    }, 3, 'Business Inventory');
     
-    // Process and enhance the inventory data
+    // Process the inventory data
     const inventory = response.inventory || response.items || response.data || [];
     
     return {
+      success: true,
+      businessId: response.businessId || businessId,
       inventory: inventory.map(item => ({
         ...item,
         isLowStock: (item.quantity || 0) <= (item.minThreshold || 5),
         finalPrice: item.finalPrice || (item.price - (item.price * (item.discount || 0) / 100)),
         lastUpdated: item.updatedAt || item.dateAdded || new Date().toISOString()
       })),
-      summary: response.summary || {
-        totalItems: inventory.length,
-        activeItems: inventory.filter(i => i.status === 'active').length,
-        lowStockItems: inventory.filter(i => (i.quantity || 0) <= (i.minThreshold || 5)).length,
-        totalValue: inventory.reduce((sum, i) => sum + ((i.price || 0) * (i.quantity || 0)), 0)
-      },
-      filters: response.filters || {},
+      totalItems: response.totalItems || inventory.length,
+      activeItems: response.activeItems || inventory.filter(i => i.status === 'active').length,
+      lowStockItems: response.lowStockItems || inventory.filter(i => (i.quantity || 0) <= (i.minThreshold || 5)).length,
       lastRefreshed: new Date().toISOString()
     };
   } catch (error) {
-    console.error('❌ Enhanced inventory error:', error);
-    
-    // Return empty data structure on error instead of throwing
-    return {
-      inventory: [],
-      summary: {
-        totalItems: 0,
-        activeItems: 0,
-        lowStockItems: 0,
-        totalValue: 0
-      },
-      filters: {},
-      lastRefreshed: new Date().toISOString(),
-      error: error.message
-    };
+    console.error('❌ Inventory error:', error);
+    throw error;
   }
 };
 
 /**
- * FIXED: Enhanced Plant Search with correct route
+ * Search Plants Database
  */
 export const searchPlants = async (query, options = {}) => {
   if (!query || query.length < 2) {
@@ -220,31 +201,18 @@ export const searchPlants = async (query, options = {}) => {
   }
   
   try {
-    console.log('🔍 Enhanced plant search:', query, options);
+    console.log('🔍 Plant search:', query, options);
     const headers = await getEnhancedHeaders();
     
-    // FIXED: Use the correct route pattern
     const queryParams = new URLSearchParams();
     queryParams.append('q', query);
     if (options.limit) queryParams.append('limit', options.limit);
-    if (options.category) queryParams.append('category', options.category);
-    if (options.difficulty) queryParams.append('difficulty', options.difficulty);
     
     const url = `${API_BASE_URL}/business/plants/search?${queryParams.toString()}`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
-    }, 3, 'Enhanced Plant Search');
-    
-    // Save search to history
-    try {
-      const searchHistory = await AsyncStorage.getItem('plantSearchHistory');
-      const history = searchHistory ? JSON.parse(searchHistory) : [];
-      const newHistory = [query, ...history.filter(h => h !== query)].slice(0, 10);
-      await AsyncStorage.setItem('plantSearchHistory', JSON.stringify(newHistory));
-    } catch (historyError) {
-      console.warn('⚠️ Failed to save search history:', historyError);
-    }
+    }, 3, 'Plant Search');
     
     const plants = response.plants || response.data || [];
     
@@ -252,25 +220,25 @@ export const searchPlants = async (query, options = {}) => {
       plants: plants.map(plant => ({
         ...plant,
         searchScore: plant.searchScore || 1,
-        popularityScore: plant.popularityScore || 0,
-        careComplexity: plant.difficulty ? (plant.difficulty > 7 ? 'Advanced' : plant.difficulty > 4 ? 'Intermediate' : 'Beginner') : 'Unknown'
+        careComplexity: plant.difficulty ? 
+          (plant.difficulty > 7 ? 'Advanced' : plant.difficulty > 4 ? 'Intermediate' : 'Beginner') : 
+          'Unknown'
       })),
-      suggestions: response.suggestions || [],
-      totalCount: response.totalCount || plants.length,
-      searchTime: response.searchTime || Date.now()
+      count: response.count || plants.length,
+      total: response.total || plants.length
     };
   } catch (error) {
-    console.error('❌ Enhanced plant search error:', error);
+    console.error('❌ Plant search error:', error);
     throw error;
   }
 };
 
 /**
- * FIXED: Enhanced Inventory Item Creation with correct route
+ * Create Inventory Item
  */
 export const createInventoryItem = async (inventoryData) => {
   try {
-    console.log('➕ Creating enhanced inventory item:', inventoryData);
+    console.log('➕ Creating inventory item:', inventoryData);
     
     // Client-side validation
     const errors = [];
@@ -295,24 +263,23 @@ export const createInventoryItem = async (inventoryData) => {
       finalPrice: inventoryData.price - (inventoryData.price * (inventoryData.discount || 0) / 100)
     };
     
-    // FIXED: Use correct route pattern
     const url = `${API_BASE_URL}/business/inventory/create`;
     const response = await apiRequest(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(enhancedData),
-    }, 3, 'Create Enhanced Inventory');
+    }, 3, 'Create Inventory');
     
     console.log('✅ Inventory item created successfully');
     return response;
   } catch (error) {
-    console.error('❌ Enhanced inventory creation error:', error);
+    console.error('❌ Inventory creation error:', error);
     throw error;
   }
 };
 
 /**
- * FIXED: Update inventory item with correct route
+ * Update Inventory Item
  */
 export const updateInventoryItem = async (inventoryId, updateData) => {
   try {
@@ -327,7 +294,6 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
         undefined
     };
     
-    // FIXED: Use correct route pattern with inventoryId in path
     const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
     const response = await apiRequest(url, {
       method: 'PATCH',
@@ -344,210 +310,52 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
 };
 
 /**
- * FIXED: Enhanced Orders Management with correct route
+ * Delete Inventory Item
  */
-export const getBusinessOrders = async (businessId, options = {}) => {
+export const deleteInventoryItem = async (inventoryId) => {
   try {
-    console.log('📋 Loading enhanced orders...', options);
+    console.log('🗑️ Deleting inventory item:', inventoryId);
     const headers = await getEnhancedHeaders();
     
-    // FIXED: Use correct route pattern
-    const queryParams = new URLSearchParams();
-    if (businessId) queryParams.append('businessId', businessId);
-    if (options.status) queryParams.append('status', options.status);
-    if (options.limit) queryParams.append('limit', options.limit);
-    if (options.offset) queryParams.append('offset', options.offset);
-    if (options.startDate) queryParams.append('startDate', options.startDate);
-    if (options.endDate) queryParams.append('endDate', options.endDate);
-    
-    const url = `${API_BASE_URL}/business/orders?${queryParams.toString()}`;
+    const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
     const response = await apiRequest(url, {
-      method: 'GET',
+      method: 'DELETE',
       headers,
-    }, 3, 'Enhanced Orders');
+    }, 3, 'Delete Inventory Item');
     
-    const orders = response.orders || [];
-    
-    // Calculate enhanced metrics
-    const now = new Date();
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    
-    const enhancedSummary = {
-      totalOrders: orders.length,
-      pendingCount: orders.filter(o => o.status === 'pending').length,
-      readyCount: orders.filter(o => o.status === 'ready').length,
-      completedCount: orders.filter(o => o.status === 'completed').length,
-      todayOrders: orders.filter(o => new Date(o.orderDate) >= todayStart).length,
-      todayRevenue: orders
-        .filter(o => new Date(o.orderDate) >= todayStart && o.status === 'completed')
-        .reduce((sum, o) => sum + (o.total || 0), 0),
-      avgOrderValue: orders.length > 0 ? orders.reduce((sum, o) => sum + (o.total || 0), 0) / orders.length : 0,
-      statusCounts: orders.reduce((counts, order) => {
-        counts[order.status] = (counts[order.status] || 0) + 1;
-        return counts;
-      }, {}),
-      communicationInfo: {
-        messagesEnabled: true,
-        emailEnabled: true,
-        smsEnabled: true
-      }
-    };
-    
-    return {
-      success: true,
-      orders: orders.map(order => ({
-        ...order,
-        isUrgent: order.status === 'pending' && 
-          (Date.now() - new Date(order.orderDate)) > 24 * 60 * 60 * 1000, // 24+ hours old
-        timeAgo: getTimeAgo(order.orderDate),
-        totalQuantity: order.items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0
-      })),
-      summary: enhancedSummary,
-      pagination: response.pagination || {},
-      filters: response.filters || {}
-    };
+    console.log('✅ Inventory item deleted successfully');
+    return response;
   } catch (error) {
-    console.error('❌ Enhanced orders error:', error);
-    
-    // Return empty data structure on error
-    return {
-      success: false,
-      orders: [],
-      summary: {
-        totalOrders: 0,
-        pendingCount: 0,
-        readyCount: 0,
-        completedCount: 0,
-        todayOrders: 0,
-        todayRevenue: 0,
-        avgOrderValue: 0,
-        statusCounts: {},
-        communicationInfo: { messagesEnabled: true, emailEnabled: true, smsEnabled: true }
-      },
-      error: error.message
-    };
+    console.error('❌ Inventory delete error:', error);
+    throw error;
   }
 };
 
 /**
- * FIXED: Enhanced Order Creation with correct route
+ * Publish Inventory to Marketplace
  */
-export const createOrder = async (orderData) => {
+export const publishInventoryToMarketplace = async (inventoryIds) => {
   try {
-    console.log('🛒 Creating enhanced order:', orderData);
-    
-    // Enhanced validation
-    const errors = [];
-    if (!orderData.businessId) errors.push('Business ID is required');
-    if (!orderData.customerEmail) errors.push('Customer email is required');
-    if (!orderData.customerName) errors.push('Customer name is required');
-    if (!orderData.items || orderData.items.length === 0) errors.push('Order must contain items');
-    
-    if (errors.length > 0) {
-      throw new ApiError(`Validation failed: ${errors.join(', ')}`);
-    }
-    
+    console.log('📢 Publishing inventory to marketplace:', inventoryIds);
     const headers = await getEnhancedHeaders();
     
-    // Generate confirmation number
-    const confirmationNumber = 'ORD-' + Date.now().toString().slice(-8) + 
-      Math.random().toString(36).substring(2, 5).toUpperCase();
-    
-    const enhancedOrder = {
-      ...orderData,
-      confirmationNumber,
-      orderDate: new Date().toISOString(),
-      status: 'pending',
-      fulfillmentType: 'pickup',
-      communication: {
-        preferredMethod: orderData.communicationPreference || 'messages',
-        messagesEnabled: true,
-        emailEnabled: true,
-        lastContactDate: null
-      }
-    };
-    
-    // FIXED: Use correct route pattern
-    const url = `${API_BASE_URL}/business/orders/create`;
+    const url = `${API_BASE_URL}/business/inventory/publish`;
     const response = await apiRequest(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(enhancedOrder),
-    }, 3, 'Create Enhanced Order');
+      body: JSON.stringify({ inventoryIds }),
+    }, 3, 'Publish to Marketplace');
     
-    console.log('✅ Order created successfully:', response.order?.confirmationNumber);
+    console.log('✅ Inventory published to marketplace');
     return response;
   } catch (error) {
-    console.error('❌ Enhanced order creation error:', error);
+    console.error('❌ Publish to marketplace error:', error);
     throw error;
   }
 };
 
 /**
- * FIXED: Real-time order status updates with correct route
- */
-export const updateOrderStatus = async (orderId, newStatus, notes = '') => {
-  try {
-    console.log('🔄 Updating order status:', orderId, newStatus);
-    const headers = await getEnhancedHeaders();
-    
-    const updateData = {
-      orderId,
-      status: newStatus,
-      notes,
-      updatedAt: new Date().toISOString(),
-      staffAssigned: headers['X-User-Email'] || 'system'
-    };
-    
-    // FIXED: Use correct route pattern
-    const url = `${API_BASE_URL}/business/orders`;
-    const response = await apiRequest(url, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(updateData),
-    }, 3, 'Update Order Status');
-    
-    console.log('✅ Order status updated successfully');
-    return response;
-  } catch (error) {
-    console.error('❌ Order status update error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get business customers
- */
-export const getBusinessCustomers = async (businessId) => {
-  try {
-    console.log('👥 Getting business customers for:', businessId);
-    const headers = await getEnhancedHeaders();
-    
-    const url = `${API_BASE_URL}/business/customers`;
-    const response = await apiRequest(url, {
-      method: 'GET',
-      headers,
-    }, 3, 'Get Business Customers');
-    
-    const customers = Array.isArray(response) ? response : (response.customers || []);
-    
-    console.log(`Business customers loaded: ${customers.length} customers`);
-    return customers;
-  } catch (error) {
-    console.error('❌ Get business customers error:', error);
-    
-    // Return empty array instead of throwing for customer listing
-    if (error.message.includes('404') || error.message.includes('not found')) {
-      console.log('No customers found, returning empty array');
-      return [];
-    }
-    
-    throw error;
-  }
-};
-
-/**
- * FIXED: Create or update business profile with correct route
+ * Create/Update Business Profile
  */
 export const createBusinessProfile = async (businessData) => {
   try {
@@ -576,7 +384,7 @@ export const createBusinessProfile = async (businessData) => {
 };
 
 /**
- * FIXED: Get business profile with correct route
+ * Get Business Profile (Enhanced for Map Usage)
  */
 export const getBusinessProfile = async (businessId) => {
   try {
@@ -596,19 +404,198 @@ export const getBusinessProfile = async (businessId) => {
   }
 };
 
-// Utility Functions
-const getTimeAgo = (dateString) => {
-  const now = new Date();
-  const date = new Date(dateString);
-  const diffMs = now - date;
-  const diffMinutes = Math.floor(diffMs / (1000 * 60));
-  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+/**
+ * Fetch Business Profile with Inventory (For Map Display)
+ */
+export const fetchBusinessProfile = async (businessId) => {
+  try {
+    console.log('🏢 Fetching complete business profile for map:', businessId);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/marketplace/business-profile/${encodeURIComponent(businessId)}`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Fetch Business Profile for Map');
+    
+    // Cache business profile
+    try {
+      await AsyncStorage.setItem(`cached_business_profile_${businessId}`, JSON.stringify({
+        data: response,
+        timestamp: Date.now()
+      }));
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to cache business profile:', cacheError);
+    }
+    
+    return response;
+  } catch (error) {
+    console.error('❌ Fetch business profile error:', error);
+    
+    // Try to return cached profile on error
+    try {
+      const cached = await AsyncStorage.getItem(`cached_business_profile_${businessId}`);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        const isStale = Date.now() - timestamp > 600000; // 10 minutes
+        
+        if (!isStale) {
+          console.log('📱 Returning cached business profile');
+          return { ...data, fromCache: true };
+        }
+      }
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to load cached business profile:', cacheError);
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Get Nearby Businesses (For Map Feature)
+ */
+export const getNearbyBusinesses = async (latitude, longitude, radius = 10, businessType = null) => {
+  try {
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      throw new ApiError('Valid coordinates required');
+    }
+    
+    console.log('🗺️ Getting nearby businesses:', { latitude, longitude, radius, businessType });
+    const headers = await getEnhancedHeaders();
+    
+    let queryParams = `lat=${latitude}&lon=${longitude}&radius=${radius}`;
+    if (businessType && businessType !== 'all') {
+      queryParams += `&businessType=${encodeURIComponent(businessType)}`;
+    }
+    
+    const url = `${API_BASE_URL}/marketplace/nearby-businesses?${queryParams}`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Get Nearby Businesses');
+    
+    // Process and enhance business data
+    const businesses = (response.businesses || []).map(business => ({
+      ...business,
+      distance: business.distance || 0,
+      isBusiness: true,
+      // Ensure consistent data structure for map display
+      location: business.location || {
+        latitude: business.address?.latitude,
+        longitude: business.address?.longitude,
+        city: business.address?.city || 'Unknown location'
+      }
+    }));
+    
+    // Cache nearby businesses
+    try {
+      await AsyncStorage.setItem('cached_nearby_businesses', JSON.stringify({
+        data: { ...response, businesses },
+        location: { latitude, longitude, radius },
+        timestamp: Date.now()
+      }));
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to cache nearby businesses:', cacheError);
+    }
+    
+    return {
+      ...response,
+      businesses,
+      count: businesses.length
+    };
+  } catch (error) {
+    console.error('❌ Get nearby businesses error:', error);
+    
+    // Try to return cached businesses on error
+    try {
+      const cached = await AsyncStorage.getItem('cached_nearby_businesses');
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        const isStale = Date.now() - timestamp > 300000; // 5 minutes
+        
+        if (!isStale) {
+          console.log('📱 Returning cached nearby businesses');
+          return { ...data, fromCache: true };
+        }
+      }
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to load cached nearby businesses:', cacheError);
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * Get Business Hours Status
+ */
+export const getBusinessHoursStatus = (businessHours) => {
+  if (!businessHours || !Array.isArray(businessHours)) {
+    return { status: 'unknown', message: 'Hours not available' };
+  }
   
-  if (diffMinutes < 60) return `${diffMinutes}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  if (diffDays < 7) return `${diffDays}d ago`;
-  return date.toLocaleDateString();
+  const now = new Date();
+  const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][now.getDay()];
+  const todayHours = businessHours.find(h => h.day === dayName);
+  
+  if (!todayHours || todayHours.isClosed) {
+    return { status: 'closed', message: 'Closed Today' };
+  }
+  
+  // Check if currently open (simplified)
+  const currentTime = now.getHours() * 60 + now.getMinutes();
+  const [openHour, openMin] = todayHours.open.split(':').map(Number);
+  const [closeHour, closeMin] = todayHours.close.split(':').map(Number);
+  const openTime = openHour * 60 + openMin;
+  const closeTime = closeHour * 60 + closeMin;
+  
+  if (currentTime >= openTime && currentTime < closeTime) {
+    return { status: 'open', message: 'Open Now' };
+  } else {
+    return { status: 'closed', message: 'Closed Now' };
+  }
+};
+
+/**
+ * Calculate Distance Between Two Points
+ */
+export const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Earth's radius in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+};
+
+/**
+ * Clear Business Cache
+ */
+export const clearBusinessCache = async () => {
+  try {
+    console.log('🧹 Clearing business cache...');
+    
+    const keys = await AsyncStorage.getAllKeys();
+    const cacheKeys = keys.filter(key => 
+      key.startsWith('cached_dashboard') || 
+      key.startsWith('cached_business_profile_') ||
+      key.startsWith('cached_nearby_businesses')
+    );
+    
+    if (cacheKeys.length > 0) {
+      await AsyncStorage.multiRemove(cacheKeys);
+      console.log(`✅ Cleared ${cacheKeys.length} business cache items`);
+    }
+    
+    return { success: true, clearedItems: cacheKeys.length };
+  } catch (error) {
+    console.error('❌ Error clearing business cache:', error);
+    return { success: false, error: error.message };
+  }
 };
 
 /**
@@ -632,74 +619,24 @@ export const checkApiHealth = async () => {
   }
 };
 
-/**
- * Delete inventory item - NEW
- */
-export const deleteInventoryItem = async (inventoryId) => {
-  try {
-    console.log('🗑️ Deleting inventory item:', inventoryId);
-    const headers = await getEnhancedHeaders();
-    
-    const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
-    const response = await apiRequest(url, {
-      method: 'DELETE',
-      headers,
-    }, 3, 'Delete Inventory Item');
-    
-    console.log('✅ Inventory item deleted successfully');
-    return response;
-  } catch (error) {
-    console.error('❌ Inventory delete error:', error);
-    throw error;
-  }
-};
-
-/**
- * Get low stock items
- */
-export const getLowStockItems = async (businessId) => {
-  try {
-    console.log('⚠️ Getting low stock items for:', businessId);
-    const inventoryResponse = await getBusinessInventory(businessId);
-    
-    const lowStockItems = inventoryResponse.inventory.filter(item => 
-      item.isLowStock && item.status === 'active'
-    );
-    
-    return lowStockItems;
-  } catch (error) {
-    console.error('❌ Low stock items error:', error);
-    return [];
-  }
-};
-
-/**
- * Test API connection
- */
-export const testConnection = async () => {
-  try {
-    return await checkApiHealth();
-  } catch (error) {
-    console.error('❌ Connection test failed:', error);
-    return { healthy: false, error: error.message };
-  }
-};
-
-// Export all API functions
+// Export all functions
 export default {
+  // Existing functions
   getBusinessDashboard,
   getBusinessInventory,
   searchPlants,
   createInventoryItem,
   updateInventoryItem,
   deleteInventoryItem,
-  getLowStockItems,
+  publishInventoryToMarketplace,
   createBusinessProfile,
   getBusinessProfile,
-  getBusinessOrders,
-  createOrder,
-  updateOrderStatus,
-  getBusinessCustomers,
   checkApiHealth,
-  testConnection
+  
+  // New map-related functions
+  fetchBusinessProfile,
+  getNearbyBusinesses,
+  getBusinessHoursStatus,
+  calculateDistance,
+  clearBusinessCache
 };

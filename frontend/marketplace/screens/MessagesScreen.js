@@ -8,6 +8,7 @@ import { useRoute, useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import { fetchConversations, fetchMessages, sendMessage, startConversation } from '../services/marketplaceApi';
+import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 const MessagesScreen = () => {
   const navigation = useNavigation();
@@ -16,6 +17,7 @@ const MessagesScreen = () => {
   const plantId = route.params?.plantId;
   const plantName = route.params?.plantName;
   const sellerName = route.params?.sellerName;
+  const isBusiness = route.params?.isBusiness || false;
   const [activeTab, setActiveTab] = useState(sellerId ? 'chat' : 'conversations');
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
@@ -25,7 +27,21 @@ const MessagesScreen = () => {
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [userType, setUserType] = useState('individual');
   const flatListRef = useRef(null);
+  
+  // Check user type on mount
+  useEffect(() => {
+    const checkUserType = async () => {
+      try {
+        const storedUserType = await AsyncStorage.getItem('userType');
+        setUserType(storedUserType || 'individual');
+      } catch (error) {
+        console.error('Error checking user type:', error);
+      }
+    };
+    checkUserType();
+  }, []);
   
   useEffect(() => {
     loadConversations();
@@ -124,7 +140,7 @@ const MessagesScreen = () => {
   const handleSendMessage = async () => {
     if (!newMessage.trim()) return;
   
-    const messageText = newMessage; // Ensure it's available in both try and catch
+    const messageText = newMessage;
     const tempId = 'temp-' + Date.now();
   
     try {
@@ -154,13 +170,13 @@ const MessagesScreen = () => {
         console.log('Starting new conversation with:', sellerId, 'about plant:', plantId);
         const result = await startConversation(sellerId, plantId, messageText, userEmail);
         if (result?.messageId || result?.conversationId) {
-          // Use the returned conversation/message ID, or create a new conversation object
           setSelectedConversation({
             id: result.conversationId || result.messageId,
             otherUserName: sellerName || result.sellerName || 'Seller',
             plantName: plantName || 'Plant',
             plantId: plantId,
-            sellerId: sellerId
+            sellerId: sellerId,
+            isBusiness: isBusiness
           });
           setTimeout(() => loadConversations(), 500);
         } else {
@@ -175,19 +191,29 @@ const MessagesScreen = () => {
           msg.id === tempId ? { ...msg, pending: false } : msg
         )
       );
+      
+      // Trigger FCM notification for the other user
+      triggerUpdate(UPDATE_TYPES.MESSAGE, {
+        type: 'NEW_MESSAGE',
+        conversationId: selectedConversation?.id,
+        senderId: userEmail,
+        receiverId: sellerId,
+        message: messageText,
+        plantName: plantName,
+        timestamp: Date.now()
+      });
   
       setIsSending(false);
     } catch (err) {
       console.error('Error sending message:', err);
       setIsSending(false);
-      setNewMessage(messageText); // Restore message text
+      setNewMessage(messageText);
       setMessages(prevMessages =>
         prevMessages.filter(m => m.id !== tempId)
       );
       Alert.alert('Error', 'Failed to send message. Please try again.', [{ text: 'OK' }]);
     }
   };
-  
   
   const handleRefresh = () => {
     setRefreshing(true);
@@ -266,10 +292,17 @@ const MessagesScreen = () => {
         <View style={styles.centerContainer}>
           <MaterialIcons name="forum" size={48} color="#aaa" />
           <Text style={styles.noConversationsText}>You don't have any conversations yet</Text>
-          <Text style={styles.startConversationText}>Start a conversation by contacting a seller from a plant listing</Text>
-          <TouchableOpacity style={styles.browseButton} onPress={() => navigation.navigate('MarketplaceHome')}>
-            <Text style={styles.browseButtonText}>Browse Plants</Text>
-          </TouchableOpacity>
+          <Text style={styles.startConversationText}>
+            {userType === 'business' 
+              ? 'Customers will message you about your plants'
+              : 'Start a conversation by contacting a seller from a plant listing'
+            }
+          </Text>
+          {userType !== 'business' && (
+            <TouchableOpacity style={styles.browseButton} onPress={() => navigation.navigate('MarketplaceHome')}>
+              <Text style={styles.browseButtonText}>Browse Plants</Text>
+            </TouchableOpacity>
+          )}
         </View>
       );
     }
@@ -287,7 +320,17 @@ const MessagesScreen = () => {
             />
             <View style={styles.conversationInfo}>
               <View style={styles.conversationHeader}>
-                <Text style={styles.userName} numberOfLines={1}>{item.otherUserName || 'User'}</Text>
+                <View style={styles.userNameContainer}>
+                  <Text style={styles.userName} numberOfLines={1}>
+                    {item.otherUserName || 'User'}
+                  </Text>
+                  {item.isBusiness && (
+                    <View style={styles.businessBadge}>
+                      <MaterialIcons name="store" size={12} color="#4CAF50" />
+                      <Text style={styles.businessBadgeText}>Business</Text>
+                    </View>
+                  )}
+                </View>
                 <Text style={styles.timeStamp}>{formatTimestamp(item.lastMessageTimestamp)}</Text>
               </View>
               <View style={styles.messagePreviewContainer}>
@@ -355,9 +398,16 @@ const MessagesScreen = () => {
               <MaterialIcons name="arrow-back" size={24} color="#333" />
             </TouchableOpacity>
             <View style={styles.chatHeaderInfo}>
-              <Text style={styles.chatHeaderName} numberOfLines={1}>
-                {selectedConversation?.otherUserName || sellerName || 'New Message'}
-              </Text>
+              <View style={styles.chatHeaderNameContainer}>
+                <Text style={styles.chatHeaderName} numberOfLines={1}>
+                  {selectedConversation?.otherUserName || sellerName || 'New Message'}
+                </Text>
+                {(selectedConversation?.isBusiness || isBusiness) && (
+                  <View style={styles.businessBadge}>
+                    <MaterialIcons name="store" size={14} color="#4CAF50" />
+                  </View>
+                )}
+              </View>
               <Text style={styles.chatHeaderPlant} numberOfLines={1}>
                 {selectedConversation?.plantName || plantName || 'Plant Discussion'}
               </Text>
@@ -391,7 +441,10 @@ const MessagesScreen = () => {
                     <>
                       <MaterialIcons name="forum" size={48} color="#aaa" />
                       <Text style={styles.emptyChatText}>New Conversation</Text>
-                      <Text style={styles.emptyChatSubtext}>Send a message about {plantName || 'this plant'}</Text>
+                      <Text style={styles.emptyChatSubtext}>
+                        Send a message about {plantName || 'this plant'}
+                        {isBusiness && ' to this business'}
+                      </Text>
                     </>
                   ) : (
                     <>
@@ -408,7 +461,7 @@ const MessagesScreen = () => {
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder="Type a message..."
+            placeholder={`Message ${isBusiness ? 'business' : 'seller'}...`}
             value={newMessage}
             onChangeText={setNewMessage}
             multiline
@@ -468,7 +521,18 @@ const styles = StyleSheet.create({
   avatar: { width: 52, height: 52, borderRadius: 26, marginRight: 14, backgroundColor: '#e0e0e0' },
   conversationInfo: { flex: 1 },
   conversationHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
+  userNameContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
   userName: { fontSize: 16, fontWeight: '700', color: '#212121', flex: 1 },
+  businessBadge: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#e8f5e8', 
+    paddingHorizontal: 6, 
+    paddingVertical: 2, 
+    borderRadius: 8,
+    marginLeft: 8
+  },
+  businessBadgeText: { fontSize: 10, color: '#4CAF50', marginLeft: 2, fontWeight: '600' },
   timeStamp: { fontSize: 12, color: '#999' },
   messagePreviewContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   messagePreview: { fontSize: 14, color: '#757575', flex: 1 },
@@ -478,7 +542,8 @@ const styles = StyleSheet.create({
   chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
   backButton: { padding: 4 },
   chatHeaderInfo: { flex: 1, marginLeft: 12 },
-  chatHeaderName: { fontSize: 17, fontWeight: '700', color: '#333' },
+  chatHeaderNameContainer: { flexDirection: 'row', alignItems: 'center' },
+  chatHeaderName: { fontSize: 17, fontWeight: '700', color: '#333', flex: 1 },
   chatHeaderPlant: { fontSize: 13, color: '#4CAF50' },
   messagesList: { flexGrow: 1, padding: 16 },
   messageContainer: { flexDirection: 'row', marginBottom: 14, maxWidth: '80%' },

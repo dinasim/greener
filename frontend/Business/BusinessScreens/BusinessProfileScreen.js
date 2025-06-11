@@ -1,4 +1,4 @@
-// screens/Business/BusinessProfileScreen.js
+// Business/BusinessScreens/BusinessProfileScreen.js - FIXED FOR REAL BACKEND
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
@@ -23,133 +23,177 @@ import {
   MaterialCommunityIcons 
 } from '@expo/vector-icons';
 
-// Import common components
-import LoadingError from '../../marketplace/screens/ProfileScreen-parts/LoadingError';
-import EmptyState from '../../marketplace/screens/ProfileScreen-parts/EmptyState';
+// Import common components (fix relative paths)
+// Note: Adjust these paths based on your actual file structure
+// import LoadingError from '../../marketplace/screens/ProfileScreen-parts/LoadingError';
+// import EmptyState from '../../marketplace/screens/ProfileScreen-parts/EmptyState';
+
+// For now, let's create simple inline components to avoid import errors
+const LoadingError = ({ isLoading, loadingText, error, onRetry }) => {
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#216a94" />
+        <Text style={{ marginTop: 16, fontSize: 16, color: '#666' }}>
+          {loadingText || 'Loading...'}
+        </Text>
+      </View>
+    );
+  }
+  
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 }}>
+        <MaterialIcons name="error-outline" size={48} color="#f44336" />
+        <Text style={{ fontSize: 18, fontWeight: '600', color: '#333', marginTop: 16, textAlign: 'center' }}>
+          Something went wrong
+        </Text>
+        <Text style={{ fontSize: 14, color: '#666', marginTop: 8, textAlign: 'center' }}>
+          {error}
+        </Text>
+        {onRetry && (
+          <TouchableOpacity 
+            style={{ 
+              backgroundColor: '#216a94', 
+              paddingVertical: 12, 
+              paddingHorizontal: 24, 
+              borderRadius: 8, 
+              marginTop: 20 
+            }}
+            onPress={onRetry}
+          >
+            <Text style={{ color: '#fff', fontWeight: '600' }}>Try Again</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  }
+  
+  return null;
+};
+
+const EmptyState = ({ icon, message, buttonText, onButtonPress }) => (
+  <View style={{ alignItems: 'center', paddingVertical: 40, paddingHorizontal: 20 }}>
+    <MaterialIcons name={icon} size={64} color="#e0e0e0" />
+    <Text style={{ 
+      fontSize: 16, 
+      color: '#666', 
+      textAlign: 'center', 
+      marginTop: 16,
+      lineHeight: 22
+    }}>
+      {message}
+    </Text>
+    {buttonText && onButtonPress && (
+      <TouchableOpacity 
+        style={{ 
+          backgroundColor: '#216a94', 
+          paddingVertical: 12, 
+          paddingHorizontal: 24, 
+          borderRadius: 8, 
+          marginTop: 20 
+        }}
+        onPress={onButtonPress}
+      >
+        <Text style={{ color: '#fff', fontWeight: '600' }}>{buttonText}</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
 
 const BusinessProfileScreen = ({ navigation }) => {
   // State variables
   const [profile, setProfile] = useState(null);
+  const [customers, setCustomers] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [soldItems, setSoldItems] = useState([]);
+  const [lowStockItems, setLowStockItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('inventory');
-  
-  // Sample data - In a real app, this would come from the API
-  const sampleBusinessData = {
-    id: 'business_1',
-    email: 'green_haven@example.com',
-    businessName: 'Green Haven Nursery',
-    name: 'Sarah Johnson',
-    description: 'Specializing in rare indoor plants and premium gardening supplies since 2018. Our mission is to bring nature into your home with carefully curated plants and eco-friendly tools.',
-    logo: null, // Will use placeholder
-    joinDate: '2022-03-15T00:00:00Z',
-    location: {
-      address: '123 Green Street',
-      city: 'Hadera',
-      country: 'Israel',
-      latitude: 32.4391,
-      longitude: 34.9197
-    },
-    businessType: 'Nursery',
-    contactPhone: '+972 54 123 4567',
-    stats: {
-      inventory: 45,
-      sold: 128,
-      revenue: 7590,
-      rating: 4.8,
-      reviewCount: 37
-    },
-    inventory: [
-      { 
-        id: 'p1', 
-        title: 'Monstera Deliciosa', 
-        price: 49.99, 
-        image: 'https://images.unsplash.com/photo-1614594975525-e45190c55d0b?ixlib=rb-4.0.3',
-        category: 'indoor',
-        quantity: 8,
-        status: 'active'
-      },
-      { 
-        id: 'p2', 
-        title: 'Fiddle Leaf Fig', 
-        price: 79.99, 
-        image: 'https://images.unsplash.com/photo-1613737693060-1ae28acc547f?ixlib=rb-4.0.3',
-        category: 'indoor',
-        quantity: 5,
-        status: 'active'
-      },
-      { 
-        id: 'p3', 
-        title: 'Snake Plant', 
-        price: 34.99, 
-        image: 'https://images.unsplash.com/photo-1593482892290-f54c7f9b7947?ixlib=rb-4.0.3',
-        category: 'indoor',
-        quantity: 12,
-        status: 'active'
-      },
-    ],
-    soldItems: [
-      { 
-        id: 's1', 
-        title: 'Boston Fern', 
-        price: 29.99, 
-        image: 'https://images.unsplash.com/photo-1614594576072-11654a4b9cf6?ixlib=rb-4.0.3',
-        soldAt: '2023-05-10T14:22:00Z',
-        buyer: 'Michael K.'
-      },
-      { 
-        id: 's2', 
-        title: 'Potting Soil Premium Mix', 
-        price: 19.99, 
-        image: 'https://images.unsplash.com/photo-1562688900-a67885d7c3b7?ixlib=rb-4.0.3',
-        soldAt: '2023-05-08T09:45:00Z',
-        buyer: 'Sarah L.'
-      },
-    ],
-    reviews: [
-      {
-        id: 'r1',
-        userName: 'David K.',
-        rating: 5,
-        text: 'Amazing plants, arrived in perfect condition. Will definitely buy again!',
-        createdAt: '2023-05-01T10:30:00Z'
-      },
-      {
-        id: 'r2',
-        userName: 'Rachel M.',
-        rating: 4,
-        text: 'Great selection and quality. Delivery was a bit delayed but the plants were worth the wait.',
-        createdAt: '2023-04-22T15:45:00Z'
-      }
-    ],
-    lowStock: [
-      { 
-        id: 'p2', 
-        title: 'Fiddle Leaf Fig', 
-        quantity: 2,
-        minThreshold: 3
-      },
-      { 
-        id: 'p4', 
-        title: 'Ceramic Planter - Large', 
-        quantity: 1,
-        minThreshold: 5
-      }
-    ]
-  };
+  const [businessId, setBusinessId] = useState(null);
 
   // Load profile data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
-      loadProfileData();
+      initializeScreen();
     }, [])
   );
 
-  // Function to load profile data
-  const loadProfileData = async () => {
-    if (refreshing) {
-      // If already refreshing, don't start another load
+  // Initialize screen with business ID and load data
+  const initializeScreen = async () => {
+    try {
+      const storedBusinessId = await AsyncStorage.getItem('businessId');
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      
+      if (!storedBusinessId && !userEmail) {
+        setError('Business ID not found. Please sign in again.');
+        return;
+      }
+      
+      const businessIdToUse = storedBusinessId || userEmail;
+      setBusinessId(businessIdToUse);
+      
+      console.log('📱 Business Profile Screen initialized with ID:', businessIdToUse);
+      loadAllData(businessIdToUse);
+    } catch (err) {
+      console.error('❌ Error initializing business profile screen:', err);
+      setError('Failed to initialize. Please try again.');
+      setIsLoading(false);
+    }
+  };
+
+  // API call functions using real backend
+  const callAPI = async (endpoint, businessId = null) => {
+    try {
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      const userType = await AsyncStorage.getItem('userType');
+      const storedBusinessId = await AsyncStorage.getItem('businessId');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-User-Email': userEmail || '',
+        'X-User-Type': userType || 'business',
+        'X-Business-ID': storedBusinessId || businessId || ''
+      };
+      
+      let url = `https://usersfunctions.azurewebsites.net/api/${endpoint}`;
+      if (businessId && endpoint.includes('?')) {
+        url += `&businessId=${businessId}`;
+      } else if (businessId && !endpoint.includes('?')) {
+        url += `?businessId=${businessId}`;
+      }
+      
+      console.log(`🔗 Calling API: ${url}`);
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      console.log(`✅ API Response from ${endpoint}:`, data);
+      return data;
+    } catch (error) {
+      console.error(`❌ API Error for ${endpoint}:`, error);
+      throw error;
+    }
+  };
+
+  // Function to load all profile data from real backend
+  const loadAllData = async (businessIdParam) => {
+    if (refreshing) return; // Prevent multiple simultaneous loads
+    
+    const currentBusinessId = businessIdParam || businessId;
+    if (!currentBusinessId) {
+      setError('Business ID is required');
+      setIsLoading(false);
       return;
     }
     
@@ -158,26 +202,114 @@ const BusinessProfileScreen = ({ navigation }) => {
     setRefreshing(true);
     
     try {
-      // In a real app, this would be an API call to fetch business profile
-      // For demonstration, we'll use a timeout to simulate API request
-      const email = await AsyncStorage.getItem('userEmail');
+      console.log('📊 Loading business data for:', currentBusinessId);
       
-      // Simulate API request
-      setTimeout(() => {
-        // Add email to the sample data
-        const profileData = {
-          ...sampleBusinessData,
-          email: email || sampleBusinessData.email
-        };
-        
-        setProfile(profileData);
-        setIsLoading(false);
-        setRefreshing(false);
-      }, 1000);
+      // 1. Load Business Profile
+      try {
+        const profileData = await callAPI(`business/profile?businessId=${currentBusinessId}`);
+        if (profileData && profileData.business) {
+          console.log('✅ Profile loaded:', profileData.business);
+          setProfile(profileData.business);
+        } else {
+          // Create basic profile if API doesn't return proper data
+          const userEmail = await AsyncStorage.getItem('userEmail');
+          setProfile({
+            id: currentBusinessId,
+            email: userEmail,
+            businessName: 'My Business',
+            businessType: 'Business',
+            joinDate: new Date().toISOString()
+          });
+        }
+      } catch (profileError) {
+        console.warn('⚠️ Profile API failed, using basic profile:', profileError.message);
+        const userEmail = await AsyncStorage.getItem('userEmail');
+        setProfile({
+          id: currentBusinessId,
+          email: userEmail,
+          businessName: 'My Business',
+          businessType: 'Business',
+          joinDate: new Date().toISOString()
+        });
+      }
+      
+      // 2. Load Customers (from business-dashboard or business-customers)
+      try {
+        const customerData = await callAPI('business/dashboard');
+        if (Array.isArray(customerData)) {
+          console.log('✅ Customers loaded from dashboard:', customerData.length);
+          setCustomers(customerData);
+          
+          // Extract sold orders from customer data
+          const allSoldOrders = [];
+          customerData.forEach(customer => {
+            if (customer.orders && Array.isArray(customer.orders)) {
+              customer.orders.forEach(order => {
+                if (order.status === 'completed' || order.status === 'processed') {
+                  allSoldOrders.push({
+                    id: order.orderId,
+                    title: 'Order Items',
+                    price: order.total || 0,
+                    image: 'https://images.unsplash.com/photo-1518335935020-cfd19de7c04a?ixlib=rb-4.0.3',
+                    soldAt: order.date,
+                    buyer: customer.name || 'Customer'
+                  });
+                }
+              });
+            }
+          });
+          setSoldItems(allSoldOrders.slice(0, 10));
+        }
+      } catch (customerError) {
+        console.warn('⚠️ Customer data loading failed:', customerError.message);
+        setCustomers([]);
+      }
+      
+      // 3. Load Inventory
+      try {
+        const inventoryData = await callAPI(`business/inventory/${currentBusinessId}`);
+        if (inventoryData && inventoryData.inventory) {
+          console.log('✅ Inventory loaded:', inventoryData.inventory.length, 'items');
+          setInventory(inventoryData.inventory);
+          
+          // Get low stock items
+          const lowStock = inventoryData.inventory.filter(item => 
+            (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
+          );
+          setLowStockItems(lowStock);
+        } else if (Array.isArray(inventoryData)) {
+          console.log('✅ Inventory loaded (array format):', inventoryData.length, 'items');
+          setInventory(inventoryData);
+          
+          const lowStock = inventoryData.filter(item => 
+            (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
+          );
+          setLowStockItems(lowStock);
+        }
+      } catch (inventoryError) {
+        console.warn('⚠️ Inventory loading failed:', inventoryError.message);
+        setInventory([]);
+      }
+      
+      // 4. Load Orders
+      try {
+        const orderData = await callAPI(`business/orders?businessId=${currentBusinessId}`);
+        if (orderData && orderData.orders) {
+          console.log('✅ Orders loaded:', orderData.orders.length);
+          setOrders(orderData.orders);
+        } else if (Array.isArray(orderData)) {
+          console.log('✅ Orders loaded (array format):', orderData.length);
+          setOrders(orderData);
+        }
+      } catch (orderError) {
+        console.warn('⚠️ Orders loading failed:', orderError.message);
+        setOrders([]);
+      }
       
     } catch (err) {
-      console.error('Error loading profile:', err);
-      setError('Could not load business profile. Please try again.');
+      console.error('❌ Error loading business data:', err);
+      setError(`Failed to load business data: ${err.message}`);
+    } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
@@ -185,32 +317,41 @@ const BusinessProfileScreen = ({ navigation }) => {
 
   // Handle refreshing the profile
   const onRefresh = () => {
-    loadProfileData();
+    loadAllData();
   };
 
   // Handle edit profile button press
   const handleEditProfile = () => {
-    navigation.navigate('EditBusinessProfile');
+    Alert.alert(
+      'Edit Profile',
+      'Profile editing feature will be available soon.',
+      [{ text: 'OK' }]
+    );
   };
 
   // Handle adding a new product
   const handleAddProduct = () => {
-    navigation.navigate('AddInventoryScreen');
+    navigation.navigate('AddInventoryScreen', { businessId });
   };
 
   // Handle viewing all inventory
   const handleViewInventory = () => {
-    navigation.navigate('InventoryScreen');
+    navigation.navigate('BusinessInventoryScreen', { businessId });
   };
 
   // Handle viewing an individual product
   const handleProductPress = (productId) => {
-    navigation.navigate('EditProductScreen', { productId });
+    navigation.navigate('EditProductScreen', { productId, businessId });
   };
 
   // Handle viewing all orders
   const handleViewOrders = () => {
-    navigation.navigate('OrdersScreen');
+    navigation.navigate('BusinessOrdersScreen', { businessId });
+  };
+
+  // Handle viewing customers
+  const handleViewCustomers = () => {
+    navigation.navigate('CustomerListScreen', { businessId });
   };
 
   // Handle signing out
@@ -227,14 +368,17 @@ const BusinessProfileScreen = ({ navigation }) => {
           text: "Sign Out", 
           onPress: async () => {
             try {
-              await AsyncStorage.removeItem('userEmail');
-              await AsyncStorage.removeItem('userType');
-              await AsyncStorage.removeItem('businessId');
+              await AsyncStorage.multiRemove([
+                'userEmail',
+                'userType', 
+                'businessId',
+                'authToken'
+              ]);
               
               // Navigate to login screen
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'PersonaSelection' }]
+                routes: [{ name: 'Login' }]
               });
             } catch (e) {
               console.error('Error signing out:', e);
@@ -244,6 +388,31 @@ const BusinessProfileScreen = ({ navigation }) => {
         }
       ]
     );
+  };
+
+  // Get business stats from real data
+  const getBusinessStats = () => {
+    const totalRevenue = customers.reduce((sum, customer) => sum + (customer.totalSpent || 0), 0);
+    const totalOrders = customers.reduce((sum, customer) => sum + (customer.orderCount || 0), 0);
+    
+    return {
+      inventory: inventory.length,
+      sold: totalOrders,
+      revenue: totalRevenue,
+      customers: customers.length,
+      rating: profile?.rating || 0,
+      reviewCount: profile?.reviewCount || 0
+    };
+  };
+
+  // Format currency
+  const formatCurrency = (amount) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(amount || 0);
   };
 
   // Render loading and error states
@@ -256,14 +425,16 @@ const BusinessProfileScreen = ({ navigation }) => {
     );
   }
 
-  if (error) {
+  if (error && !profile) {
     return (
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" />
-        <LoadingError error={error} onRetry={loadProfileData} />
+        <LoadingError error={error} onRetry={() => loadAllData()} />
       </SafeAreaView>
     );
   }
+
+  const stats = getBusinessStats();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -272,10 +443,12 @@ const BusinessProfileScreen = ({ navigation }) => {
       {/* Header with business name and settings button */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <Text style={styles.headerTitle}>{profile?.businessName || 'Business Profile'}</Text>
+          <Text style={styles.headerTitle}>
+            {profile?.businessName || 'Business Profile'}
+          </Text>
           <TouchableOpacity 
             style={styles.settingsButton}
-            onPress={() => navigation.navigate('BusinessSettings')}
+            onPress={() => Alert.alert('Settings', 'Settings feature coming soon!')}
           >
             <MaterialIcons name="settings" size={24} color="#216a94" />
           </TouchableOpacity>
@@ -285,33 +458,50 @@ const BusinessProfileScreen = ({ navigation }) => {
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#216a94']}
+            tintColor="#216a94"
+          />
         }
       >
         {/* Business Profile Card */}
         <View style={styles.profileCard}>
           <View style={styles.profileHeader}>
             {/* Business Logo */}
-            <Image 
-              source={profile?.logo ? { uri: profile.logo } : require('../../assets/business-placeholder.png')}
-              style={styles.businessLogo}
-            />
+            <View style={styles.logoContainer}>
+              {profile?.logo ? (
+                <Image 
+                  source={{ uri: profile.logo }}
+                  style={styles.businessLogo}
+                />
+              ) : (
+                <View style={styles.placeholderLogo}>
+                  <MaterialCommunityIcons name="store" size={32} color="#216a94" />
+                </View>
+              )}
+            </View>
             
             {/* Business Info */}
             <View style={styles.businessInfo}>
-              <Text style={styles.businessName}>{profile?.businessName}</Text>
-              <Text style={styles.businessType}>{profile?.businessType}</Text>
+              <Text style={styles.businessName}>
+                {profile?.businessName || profile?.name || 'My Business'}
+              </Text>
+              <Text style={styles.businessType}>
+                {profile?.businessType || 'Business'}
+              </Text>
               <View style={styles.ratingContainer}>
                 {[1, 2, 3, 4, 5].map((star) => (
                   <MaterialIcons 
                     key={star}
-                    name={star <= Math.round(profile?.stats?.rating || 0) ? "star" : "star-border"}
+                    name={star <= Math.round(stats.rating) ? "star" : "star-border"}
                     size={16}
                     color="#FFC107"
                   />
                 ))}
                 <Text style={styles.ratingText}>
-                  {profile?.stats?.rating?.toFixed(1)} ({profile?.stats?.reviewCount})
+                  {stats.rating > 0 ? `${stats.rating.toFixed(1)} (${stats.reviewCount})` : 'No reviews yet'}
                 </Text>
               </View>
             </View>
@@ -347,61 +537,68 @@ const BusinessProfileScreen = ({ navigation }) => {
                 <Text style={styles.contactText}>{profile.email}</Text>
               </View>
             )}
-            {profile?.location?.city && (
+            {profile?.address?.city && (
               <View style={styles.contactItem}>
                 <MaterialIcons name="location-on" size={16} color="#555" />
                 <Text style={styles.contactText}>
-                  {profile.location.city}{profile.location.country ? `, ${profile.location.country}` : ''}
+                  {profile.address.city}{profile.address.country ? `, ${profile.address.country}` : ''}
                 </Text>
               </View>
             )}
           </View>
           
           {/* Join Date */}
-          <Text style={styles.joinedText}>
-            Business since {new Date(profile?.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
-          </Text>
+          {profile?.joinDate && (
+            <Text style={styles.joinedText}>
+              Business since {new Date(profile.joinDate).toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'long' 
+              })}
+            </Text>
+          )}
         </View>
         
         {/* Stats Cards */}
         <View style={styles.statsContainer}>
-          <View style={styles.statCard}>
+          <TouchableOpacity style={styles.statCard} onPress={handleViewInventory}>
             <View style={[styles.statIconContainer, { backgroundColor: '#4CAF50' }]}>
               <MaterialIcons name="inventory" size={20} color="#fff" />
             </View>
-            <Text style={styles.statValue}>{profile?.stats?.inventory || 0}</Text>
+            <Text style={styles.statValue}>{stats.inventory}</Text>
             <Text style={styles.statLabel}>Inventory</Text>
-          </View>
+          </TouchableOpacity>
           
-          <View style={styles.statCard}>
+          <TouchableOpacity style={styles.statCard} onPress={handleViewOrders}>
             <View style={[styles.statIconContainer, { backgroundColor: '#2196F3' }]}>
               <FontAwesome5 name="shopping-bag" size={18} color="#fff" />
             </View>
-            <Text style={styles.statValue}>{profile?.stats?.sold || 0}</Text>
-            <Text style={styles.statLabel}>Sold</Text>
-          </View>
+            <Text style={styles.statValue}>{stats.sold}</Text>
+            <Text style={styles.statLabel}>Orders</Text>
+          </TouchableOpacity>
           
-          <View style={styles.statCard}>
+          <TouchableOpacity style={styles.statCard} onPress={handleViewCustomers}>
             <View style={[styles.statIconContainer, { backgroundColor: '#FF9800' }]}>
-              <FontAwesome5 name="dollar-sign" size={18} color="#fff" />
+              <MaterialIcons name="people" size={18} color="#fff" />
             </View>
-            <Text style={styles.statValue}>${profile?.stats?.revenue || 0}</Text>
-            <Text style={styles.statLabel}>Revenue</Text>
-          </View>
+            <Text style={styles.statValue}>{stats.customers}</Text>
+            <Text style={styles.statLabel}>Customers</Text>
+          </TouchableOpacity>
         </View>
         
         {/* Low Stock Alert */}
-        {profile?.lowStock && profile.lowStock.length > 0 && (
+        {lowStockItems.length > 0 && (
           <View style={styles.alertCard}>
             <View style={styles.alertHeader}>
               <MaterialIcons name="warning" size={20} color="#ff9800" />
               <Text style={styles.alertTitle}>Low Stock Alert</Text>
             </View>
-            {profile.lowStock.map(item => (
+            {lowStockItems.slice(0, 3).map(item => (
               <View key={item.id} style={styles.alertItem}>
-                <Text style={styles.alertItemText}>{item.title}</Text>
+                <Text style={styles.alertItemText}>
+                  {item.name || item.common_name || item.title}
+                </Text>
                 <Text style={styles.alertItemCount}>
-                  {item.quantity} left of {item.minThreshold} minimum
+                  {item.quantity} left of {item.minThreshold || 5} minimum
                 </Text>
               </View>
             ))}
@@ -440,21 +637,21 @@ const BusinessProfileScreen = ({ navigation }) => {
               color={activeTab === 'sold' ? '#216a94' : '#888'} 
             />
             <Text style={[styles.tabText, activeTab === 'sold' && styles.activeTabText]}>
-              Sold
+              Recent Orders
             </Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={[styles.tab, activeTab === 'reviews' && styles.activeTab]} 
-            onPress={() => setActiveTab('reviews')}
+            style={[styles.tab, activeTab === 'customers' && styles.activeTab]} 
+            onPress={() => setActiveTab('customers')}
           >
             <MaterialIcons 
-              name="star" 
+              name="people" 
               size={22} 
-              color={activeTab === 'reviews' ? '#216a94' : '#888'} 
+              color={activeTab === 'customers' ? '#216a94' : '#888'} 
             />
-            <Text style={[styles.tabText, activeTab === 'reviews' && styles.activeTabText]}>
-              Reviews
+            <Text style={[styles.tabText, activeTab === 'customers' && styles.activeTabText]}>
+              Customers
             </Text>
           </TouchableOpacity>
         </View>
@@ -471,26 +668,49 @@ const BusinessProfileScreen = ({ navigation }) => {
                 </TouchableOpacity>
               </View>
               
-              {profile?.inventory && profile.inventory.length > 0 ? (
+              {inventory.length > 0 ? (
                 <>
-                  {profile.inventory.slice(0, 3).map(item => (
+                  {inventory.slice(0, 3).map(item => (
                     <TouchableOpacity 
                       key={item.id} 
                       style={styles.productCard}
                       onPress={() => handleProductPress(item.id)}
                     >
-                      <Image 
-                        source={{ uri: item.image }} 
-                        style={styles.productImage} 
-                      />
+                      <View style={styles.productImageContainer}>
+                        {item.mainImage || item.image ? (
+                          <Image 
+                            source={{ uri: item.mainImage || item.image }} 
+                            style={styles.productImage} 
+                          />
+                        ) : (
+                          <View style={styles.placeholderImage}>
+                            <MaterialCommunityIcons 
+                              name={item.productType === 'plant' ? 'leaf' : 'cube-outline'} 
+                              size={24} 
+                              color="#4CAF50" 
+                            />
+                          </View>
+                        )}
+                      </View>
                       <View style={styles.productInfo}>
-                        <Text style={styles.productTitle}>{item.title}</Text>
-                        <Text style={styles.productCategory}>{item.category}</Text>
-                        <Text style={styles.productPrice}>${item.price.toFixed(2)}</Text>
+                        <Text style={styles.productTitle}>
+                          {item.name || item.common_name || item.title || 'Product'}
+                        </Text>
+                        <Text style={styles.productCategory}>
+                          {item.category || item.productType || 'General'}
+                        </Text>
+                        <Text style={styles.productPrice}>
+                          ${(item.finalPrice || item.price || 0).toFixed(2)}
+                        </Text>
                       </View>
                       <View style={styles.productQuantity}>
                         <Text style={styles.quantityLabel}>Qty</Text>
-                        <Text style={styles.quantityValue}>{item.quantity}</Text>
+                        <Text style={[
+                          styles.quantityValue,
+                          (item.quantity || 0) <= (item.minThreshold || 5) && styles.lowStockText
+                        ]}>
+                          {item.quantity || 0}
+                        </Text>
                       </View>
                     </TouchableOpacity>
                   ))}
@@ -514,90 +734,116 @@ const BusinessProfileScreen = ({ navigation }) => {
             </>
           )}
           
-          {/* Sold Tab */}
+          {/* Recent Orders Tab */}
           {activeTab === 'sold' && (
             <>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Recently Sold</Text>
+                <Text style={styles.sectionTitle}>Recent Orders</Text>
                 <TouchableOpacity onPress={handleViewOrders}>
                   <Text style={styles.sectionAction}>View All</Text>
                 </TouchableOpacity>
               </View>
               
-              {profile?.soldItems && profile.soldItems.length > 0 ? (
-                <>
-                  {profile.soldItems.map(item => (
-                    <View key={item.id} style={styles.soldItemCard}>
+              {soldItems.length > 0 ? (
+                soldItems.map(item => (
+                  <View key={item.id} style={styles.soldItemCard}>
+                    <View style={styles.productImageContainer}>
                       <Image 
                         source={{ uri: item.image }} 
                         style={styles.productImage} 
                       />
-                      <View style={styles.productInfo}>
-                        <Text style={styles.productTitle}>{item.title}</Text>
-                        <Text style={styles.soldDate}>
-                          Sold {new Date(item.soldAt).toLocaleDateString()}
-                        </Text>
-                        <Text style={styles.soldBuyer}>To: {item.buyer}</Text>
-                      </View>
-                      <View style={styles.productPrice}>
-                        <Text style={styles.soldPriceValue}>${item.price.toFixed(2)}</Text>
-                      </View>
                     </View>
-                  ))}
-                </>
+                    <View style={styles.productInfo}>
+                      <Text style={styles.productTitle}>{item.title}</Text>
+                      <Text style={styles.soldDate}>
+                        {new Date(item.soldAt).toLocaleDateString()}
+                      </Text>
+                      <Text style={styles.soldBuyer}>Customer: {item.buyer}</Text>
+                    </View>
+                    <View style={styles.productPrice}>
+                      <Text style={styles.soldPriceValue}>${item.price.toFixed(2)}</Text>
+                    </View>
+                  </View>
+                ))
               ) : (
                 <EmptyState 
                   icon="local-offer" 
-                  message="You haven't sold any products yet." 
-                  buttonText="View Marketplace" 
-                  onButtonPress={() => navigation.navigate('MarketplaceHome')} 
+                  message="No recent orders found." 
+                  buttonText="View All Orders" 
+                  onButtonPress={handleViewOrders} 
                 />
               )}
             </>
           )}
           
-          {/* Reviews Tab */}
-          {activeTab === 'reviews' && (
+          {/* Customers Tab */}
+          {activeTab === 'customers' && (
             <>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Customer Reviews</Text>
+                <Text style={styles.sectionTitle}>Recent Customers</Text>
+                <TouchableOpacity onPress={handleViewCustomers}>
+                  <Text style={styles.sectionAction}>View All</Text>
+                </TouchableOpacity>
               </View>
               
-              {profile?.reviews && profile.reviews.length > 0 ? (
-                <>
-                  {profile.reviews.map(review => (
-                    <View key={review.id} style={styles.reviewCard}>
-                      <View style={styles.reviewHeader}>
-                        <View style={styles.reviewUser}>
-                          <MaterialIcons name="account-circle" size={24} color="#555" />
-                          <Text style={styles.reviewUserName}>{review.userName}</Text>
-                        </View>
-                        <View style={styles.reviewRating}>
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <MaterialIcons 
-                              key={star}
-                              name={star <= review.rating ? "star" : "star-border"}
-                              size={14}
-                              color="#FFC107"
-                            />
-                          ))}
-                        </View>
-                      </View>
-                      <Text style={styles.reviewText}>{review.text}</Text>
-                      <Text style={styles.reviewDate}>
-                        {new Date(review.createdAt).toLocaleDateString()}
+              {customers.length > 0 ? (
+                customers.slice(0, 5).map(customer => (
+                  <View key={customer.id} style={styles.customerCard}>
+                    <View style={styles.customerIcon}>
+                      <MaterialIcons name="person" size={32} color="#4CAF50" />
+                    </View>
+                    <View style={styles.customerInfo}>
+                      <Text style={styles.customerName}>{customer.name || 'Customer'}</Text>
+                      <Text style={styles.customerEmail}>{customer.email}</Text>
+                      <Text style={styles.customerStats}>
+                        {customer.orderCount || 0} orders • ${(customer.totalSpent || 0).toFixed(2)} spent
                       </Text>
                     </View>
-                  ))}
-                </>
+                    <View style={styles.customerDate}>
+                      <Text style={styles.customerLastOrder}>
+                        {customer.lastOrderDate 
+                          ? new Date(customer.lastOrderDate).toLocaleDateString()
+                          : 'No orders'
+                        }
+                      </Text>
+                    </View>
+                  </View>
+                ))
               ) : (
                 <EmptyState 
-                  icon="star" 
-                  message="You don't have any reviews yet. Reviews will appear here when customers leave feedback." 
+                  icon="people" 
+                  message="No customers yet. Customers will appear here after their first order." 
                 />
               )}
             </>
           )}
+        </View>
+        
+        {/* Quick Action Buttons */}
+        <View style={styles.quickActions}>
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={handleViewInventory}
+          >
+            <MaterialIcons name="inventory" size={20} color="#216a94" />
+            <Text style={styles.quickActionText}>Manage Inventory</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={handleViewOrders}
+          >
+            <MaterialIcons name="receipt" size={20} color="#216a94" />
+            <Text style={styles.quickActionText}>View Orders</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.quickActionButton}
+            onPress={handleViewCustomers}
+          >
+            <MaterialIcons name="people" size={20} color="#216a94" />
+            <Text style={styles.quickActionText}>Customers</Text>
+          </TouchableOpacity>
         </View>
         
         {/* Sign Out Button */}
@@ -608,39 +854,18 @@ const BusinessProfileScreen = ({ navigation }) => {
           <MaterialIcons name="logout" size={18} color="#666" />
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
+        
+        {/* Error display */}
+        {error && (
+          <View style={styles.errorBanner}>
+            <MaterialIcons name="error-outline" size={16} color="#f44336" />
+            <Text style={styles.errorText}>{error}</Text>
+            <TouchableOpacity onPress={() => setError(null)}>
+              <MaterialIcons name="close" size={16} color="#f44336" />
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
-      
-      {/* Bottom Navigation */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => navigation.navigate('BusinessHomeScreen')}
-        >
-          <MaterialIcons name="dashboard" size={24} color="#757575" />
-          <Text style={styles.navText}>Dashboard</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('InventoryScreen')}
-        >
-          <MaterialIcons name="inventory" size={24} color="#757575" />
-          <Text style={styles.navText}>Inventory</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={styles.navItem}
-          onPress={() => navigation.navigate('OrdersScreen')}
-        >
-          <MaterialIcons name="receipt" size={24} color="#757575" />
-          <Text style={styles.navText}>Orders</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={[styles.navItem, styles.activeNavItem]}>
-          <MaterialIcons name="person" size={24} color="#216a94" />
-          <Text style={[styles.navText, styles.activeNavText]}>Profile</Text>
-        </TouchableOpacity>
-      </View>
     </SafeAreaView>
   );
 };
@@ -671,7 +896,7 @@ const styles = StyleSheet.create({
     padding: 6,
   },
   scrollContent: {
-    paddingBottom: 70, // Space for bottom navigation
+    paddingBottom: 40,
   },
   profileCard: {
     backgroundColor: '#fff',
@@ -690,15 +915,25 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
+  logoContainer: {
+    marginRight: 16,
+  },
   businessLogo: {
     width: 70,
     height: 70,
     borderRadius: 35,
     backgroundColor: '#eee',
   },
+  placeholderLogo: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    backgroundColor: '#f0f8ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   businessInfo: {
     flex: 1,
-    marginLeft: 16,
   },
   businessName: {
     fontSize: 18,
@@ -828,6 +1063,7 @@ const styles = StyleSheet.create({
   alertItemText: {
     fontSize: 14,
     color: '#555',
+    flex: 1,
   },
   alertItemCount: {
     fontSize: 14,
@@ -911,15 +1147,25 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 1,
   },
+  productImageContainer: {
+    marginRight: 12,
+  },
   productImage: {
     width: 60,
     height: 60,
     borderRadius: 6,
     backgroundColor: '#eee',
   },
+  placeholderImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 6,
+    backgroundColor: '#f0f9f3',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   productInfo: {
     flex: 1,
-    marginLeft: 12,
     justifyContent: 'center',
   },
   productTitle: {
@@ -951,6 +1197,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333',
+  },
+  lowStockText: {
+    color: '#ff9800',
   },
   addButton: {
     backgroundColor: '#216a94',
@@ -994,46 +1243,78 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#4CAF50',
   },
-  reviewCard: {
+  customerCard: {
+    flexDirection: 'row',
     backgroundColor: '#fff',
     borderRadius: 10,
     marginBottom: 12,
-    padding: 16,
+    padding: 12,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
-  reviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  customerIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#f0f9f3',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginRight: 12,
   },
-  reviewUser: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  customerInfo: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  reviewUserName: {
-    fontSize: 14,
+  customerName: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginLeft: 8,
   },
-  reviewRating: {
-    flexDirection: 'row',
-  },
-  reviewText: {
+  customerEmail: {
     fontSize: 14,
-    color: '#555',
-    lineHeight: 20,
-    marginBottom: 8,
+    color: '#666',
+    marginTop: 2,
   },
-  reviewDate: {
+  customerStats: {
+    fontSize: 12,
+    color: '#4CAF50',
+    marginTop: 4,
+  },
+  customerDate: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  customerLastOrder: {
     fontSize: 12,
     color: '#888',
-    textAlign: 'right',
+  },
+  quickActions: {
+    flexDirection: 'row',
+    marginHorizontal: 16,
+    marginTop: 20,
+    marginBottom: 20,
+    gap: 12,
+  },
+  quickActionButton: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    paddingVertical: 16,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  quickActionText: {
+    fontSize: 12,
+    color: '#216a94',
+    marginTop: 4,
+    fontWeight: '600',
   },
   signOutButton: {
     flexDirection: 'row',
@@ -1048,36 +1329,21 @@ const styles = StyleSheet.create({
     color: '#666',
     marginLeft: 8,
   },
-  bottomNav: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
+  errorBanner: {
     flexDirection: 'row',
-    borderTopWidth: 1,
-    borderTopColor: '#eee',
-    paddingBottom: Platform.OS === 'ios' ? 20 : 10,
-    paddingTop: 10,
-  },
-  navItem: {
-    flex: 1,
     alignItems: 'center',
+    backgroundColor: '#ffebee',
+    margin: 16,
+    padding: 12,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#f44336',
   },
-  activeNavItem: {
-    borderTopWidth: 2,
-    borderTopColor: '#216a94',
-    paddingTop: 8,
-    marginTop: -10,
-  },
-  navText: {
-    fontSize: 12,
-    color: '#757575',
-    marginTop: 4,
-  },
-  activeNavText: {
-    color: '#216a94',
-    fontWeight: 'bold',
+  errorText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#f44336',
+    marginHorizontal: 8,
   },
 });
 
