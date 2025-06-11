@@ -23,9 +23,7 @@ USERS_CONTAINER = "Users"
 
 def update_next_water(user_plants_container, plant):
     try:
-        # Get water_days from plant entry (fallback: 7 days)
         water_days = plant.get("water_days", 7)
-        # Use previous next_water as base (default to now if missing)
         prev_next_water = plant.get("next_water")
         try:
             prev_dt = datetime.datetime.fromisoformat(prev_next_water)
@@ -43,9 +41,7 @@ def update_next_water(user_plants_container, plant):
 
 def update_next_feed(user_plants_container, plant):
     try:
-        # Parse feed frequency from plant entry (fallback: 35 days)
         feed_str = plant.get("feed", "")
-        # crude parse: "Every N weeks" or "Every N days"
         days = 35
         import re
         match = re.search(r"Every (\d+) week", feed_str)
@@ -69,7 +65,6 @@ def update_next_feed(user_plants_container, plant):
         logging.info(f"🔁 Updated next_feed for {plant['id']} to {new_next_feed}")
     except Exception as e:
         logging.error(f"❌ Failed to update next_feed for {plant['id']}: {e}")
-
 
 def main(mytimer):
     logging.warning(f"🟢 Function started at {datetime.datetime.utcnow().isoformat()}")
@@ -121,38 +116,49 @@ def main(mytimer):
             web_token = user.get("webPushSubscription")
             fcm_token = user.get("fcmToken")
 
-            token = None
-            if isinstance(web_token, str):
-                token = web_token
-            elif isinstance(fcm_token, str):
-                token = fcm_token
+            # Send to both if both tokens exist (optional: you could choose to send to one)
+            if water_due:
+                if web_token:
+                    send_push(web_token, f"💧 Time to water your {common_name}!", is_web_push=True)
+                if fcm_token:
+                    send_push(fcm_token, f"💧 Time to water your {common_name}!", is_web_push=False)
+                update_next_water(user_plants_container, plant)
+            if feed_due:
+                if web_token:
+                    send_push(web_token, f"🌿 Time to fertilize your {common_name}!", is_web_push=True)
+                if fcm_token:
+                    send_push(fcm_token, f"🌿 Time to fertilize your {common_name}!", is_web_push=False)
+                update_next_feed(user_plants_container, plant)
 
-            if not token:
-                logging.warning(f"❌ No valid push token for user {email}")
-                continue
-
-            logging.info(f"📲 Using token for {email}: {token}")
         except Exception as e:
-            logging.warning(f"⚠️ Could not fetch user {email}: {e}")
+            logging.warning(f"⚠️ Could not fetch/send notification for user {email}: {e}")
             continue
 
-        if water_due:
-            send_push(token, f"💧 Time to water your {common_name}!")
-            update_next_water(user_plants_container, plant)
-        if feed_due:
-            send_push(token, f"🌿 Time to fertilize your {common_name}!")
-            update_next_feed(user_plants_container, plant)
-
-def send_push(token, message):
+def send_push(token, message, is_web_push=False):
     try:
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title="🌱 Plant Care Reminder",
-                body=message
-            ),
-            token=token
-        )
-        response = messaging.send(message)
-        logging.info(f"✅ Sent push: {message.notification.body}")
+        if is_web_push:
+            msg = messaging.Message(
+                notification=messaging.Notification(
+                    title="🌱 Plant Care Reminder",
+                    body=message
+                ),
+                token=token,
+                webpush=messaging.WebpushConfig(
+                    notification=messaging.WebpushNotification(
+                        title="🌱 Plant Care Reminder",
+                        body=message
+                    )
+                )
+            )
+        else:
+            msg = messaging.Message(
+                notification=messaging.Notification(
+                    title="🌱 Plant Care Reminder",
+                    body=message
+                ),
+                token=token
+            )
+        response = messaging.send(msg)
+        logging.info(f"✅ Sent push: {message}")
     except Exception as e:
         logging.error(f"❌ Failed to send notification: {e}")
