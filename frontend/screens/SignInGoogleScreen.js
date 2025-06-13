@@ -109,7 +109,7 @@ export default function SignInGoogleScreen({ navigation }) {
                 updateFormData('webPushSubscription', webPushToken);
               } else if (Platform.OS === "android" || Platform.OS === "ios") {
                 fcmToken = await getFcmToken();
-                // updateFormData('fcmToken', fcmToken);
+                //updateFormData('fcmToken', fcmToken);
               }
 
               const userData = {
