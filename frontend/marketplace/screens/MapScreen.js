@@ -79,7 +79,7 @@ const MapScreen = () => {
         return false;
       };
 
-      const subscription = BackHandler.addEventListener('hardwareBackPress', handler);
+      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
       return () => subscription.remove();
     }, [viewMode])
   );
