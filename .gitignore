@@ -15,7 +15,9 @@ yarn-error.log*
 # package-lock.json
 # If using yarn, uncomment next line to ignore lockfile
 # yarn.lock
-
+.venv/
+*.pyc
+__pycache__/
 # Python
 __pycache__/
 *.py[cod]

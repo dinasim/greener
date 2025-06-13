@@ -21,6 +21,51 @@ DATABASE_NAME = "GreenerDB"
 USER_PLANTS_CONTAINER = "userPlants"
 USERS_CONTAINER = "Users"
 
+def update_next_water(user_plants_container, plant):
+    try:
+        water_days = plant.get("water_days", 7)
+        prev_next_water = plant.get("next_water")
+        try:
+            prev_dt = datetime.datetime.fromisoformat(prev_next_water)
+        except Exception:
+            prev_dt = datetime.datetime.utcnow()
+        new_next_water = prev_dt + datetime.timedelta(days=water_days)
+        user_plants_container.patch_item(
+            plant["id"], 
+            partition_key=plant["email"], 
+            patch_operations=[{"op": "replace", "path": "/next_water", "value": new_next_water.isoformat()}]
+        )
+        logging.info(f"🔁 Updated next_water for {plant['id']} to {new_next_water}")
+    except Exception as e:
+        logging.error(f"❌ Failed to update next_water for {plant['id']}: {e}")
+
+def update_next_feed(user_plants_container, plant):
+    try:
+        feed_str = plant.get("feed", "")
+        days = 35
+        import re
+        match = re.search(r"Every (\d+) week", feed_str)
+        if match:
+            days = int(match.group(1)) * 7
+        else:
+            match = re.search(r"Every (\d+) day", feed_str)
+            if match:
+                days = int(match.group(1))
+        prev_next_feed = plant.get("next_feed")
+        try:
+            prev_dt = datetime.datetime.fromisoformat(prev_next_feed)
+        except Exception:
+            prev_dt = datetime.datetime.utcnow()
+        new_next_feed = prev_dt + datetime.timedelta(days=days)
+        user_plants_container.patch_item(
+            plant["id"], 
+            partition_key=plant["email"], 
+            patch_operations=[{"op": "replace", "path": "/next_feed", "value": new_next_feed.isoformat()}]
+        )
+        logging.info(f"🔁 Updated next_feed for {plant['id']} to {new_next_feed}")
+    except Exception as e:
+        logging.error(f"❌ Failed to update next_feed for {plant['id']}: {e}")
+
 def main(mytimer):
     logging.warning(f"🟢 Function started at {datetime.datetime.utcnow().isoformat()}")
     logging.info("🌿 plantSupportReminders function triggered!")
@@ -71,36 +116,49 @@ def main(mytimer):
             web_token = user.get("webPushSubscription")
             fcm_token = user.get("fcmToken")
 
-            token = None
-            if isinstance(web_token, str):
-                token = web_token
-            elif isinstance(fcm_token, str):
-                token = fcm_token
+            # Send to both if both tokens exist (optional: you could choose to send to one)
+            if water_due:
+                if web_token:
+                    send_push(web_token, f"💧 Time to water your {common_name}!", is_web_push=True)
+                if fcm_token:
+                    send_push(fcm_token, f"💧 Time to water your {common_name}!", is_web_push=False)
+                update_next_water(user_plants_container, plant)
+            if feed_due:
+                if web_token:
+                    send_push(web_token, f"🌿 Time to fertilize your {common_name}!", is_web_push=True)
+                if fcm_token:
+                    send_push(fcm_token, f"🌿 Time to fertilize your {common_name}!", is_web_push=False)
+                update_next_feed(user_plants_container, plant)
 
-            if not token:
-                logging.warning(f"❌ No valid push token for user {email}")
-                continue
-
-            logging.info(f"📲 Using token for {email}: {token}")
         except Exception as e:
-            logging.warning(f"⚠️ Could not fetch user {email}: {e}")
+            logging.warning(f"⚠️ Could not fetch/send notification for user {email}: {e}")
             continue
 
-        if water_due:
-            send_push(token, f"💧 Time to water your {common_name}!")
-        if feed_due:
-            send_push(token, f"🌿 Time to fertilize your {common_name}!")
-
-def send_push(token, message):
+def send_push(token, message, is_web_push=False):
     try:
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title="🌱 Plant Care Reminder",
-                body=message
-            ),
-            token=token
-        )
-        response = messaging.send(message)
-        logging.info(f"✅ Sent push: {message.notification.body}")
+        if is_web_push:
+            msg = messaging.Message(
+                notification=messaging.Notification(
+                    title="🌱 Plant Care Reminder",
+                    body=message
+                ),
+                token=token,
+                webpush=messaging.WebpushConfig(
+                    notification=messaging.WebpushNotification(
+                        title="🌱 Plant Care Reminder",
+                        body=message
+                    )
+                )
+            )
+        else:
+            msg = messaging.Message(
+                notification=messaging.Notification(
+                    title="🌱 Plant Care Reminder",
+                    body=message
+                ),
+                token=token
+            )
+        response = messaging.send(msg)
+        logging.info(f"✅ Sent push: {message}")
     except Exception as e:
         logging.error(f"❌ Failed to send notification: {e}")

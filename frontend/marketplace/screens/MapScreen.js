@@ -1,4 +1,5 @@
-// screens/MapScreen.js
+
+// screens/MapScreen.js (Complete Business-Integrated Version)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -10,6 +11,7 @@ import {
   Alert,
   Platform,
   BackHandler,
+  Linking,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -20,15 +22,16 @@ import CrossPlatformAzureMapView from '../components/CrossPlatformAzureMapView';
 import MapSearchBox from '../components/MapSearchBox';
 import RadiusControl from '../components/RadiusControl';
 import ProductListView from '../components/ProductListView';
+import BusinessListView from '../components/BusinessListView';
 import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
-import { getNearbyProducts, getAzureMapsKey, reverseGeocode } from '../services/marketplaceApi';
+import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
+import MapModeToggle from '../components/MapModeToggle';
+import { getNearbyProducts } from '../services/marketplaceApi';
+import { getNearbyBusinesses } from '../../Business/services/businessApi';
+import { getAzureMapsKey, reverseGeocode } from '../services/azureMapsService';
 
 /**
- * Enhanced MapScreen component with:
- * 1. Fixed navigation between map and list views
- * 2. Proper display of radius control
- * 3. Plant detail mini cards when clicking pins
- * 4. Improved error handling and state management
+ * Enhanced MapScreen with Plants/Businesses toggle
  */
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -36,7 +39,9 @@ const MapScreen = () => {
   const { products = [], initialLocation } = route.params || {};
 
   // State variables
+  const [mapMode, setMapMode] = useState('plants'); // 'plants' or 'businesses'
   const [mapProducts, setMapProducts] = useState(products);
+  const [mapBusinesses, setMapBusinesses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [selectedLocation, setSelectedLocation] = useState(initialLocation);
@@ -44,16 +49,20 @@ const MapScreen = () => {
   const [azureMapsKey, setAzureMapsKey] = useState(null);
   const [isKeyLoading, setIsKeyLoading] = useState(true);
   const [nearbyProducts, setNearbyProducts] = useState([]);
-  const [sortOrder, setSortOrder] = useState('nearest'); // 'nearest' or 'farthest'
+  const [nearbyBusinesses, setNearbyBusinesses] = useState([]);
+  const [sortOrder, setSortOrder] = useState('nearest');
   const [viewMode, setViewMode] = useState('map'); // 'map' or 'list'
   const [showResults, setShowResults] = useState(false);
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [selectedBusiness, setSelectedBusiness] = useState(null);
   const [radiusVisible, setRadiusVisible] = useState(true);
   const [myLocation, setMyLocation] = useState(null);
   const [showMyLocation, setShowMyLocation] = useState(false);
   const [showDetailCard, setShowDetailCard] = useState(false);
   const [selectedProductData, setSelectedProductData] = useState(null);
+  const [selectedBusinessData, setSelectedBusinessData] = useState(null);
+  const [counts, setCounts] = useState({ plants: 0, businesses: 0 });
   
   // Refs
   const mapRef = useRef(null);
@@ -64,11 +73,10 @@ const MapScreen = () => {
     useCallback(() => {
       const onBackPress = () => {
         if (viewMode === 'list') {
-          // If in list view, switch back to map view instead of going back
           setViewMode('map');
-          return true; // Prevent default back behavior
+          return true;
         }
-        return false; // Let default back behavior happen
+        return false;
       };
 
       BackHandler.addEventListener('hardwareBackPress', onBackPress);
@@ -99,14 +107,14 @@ const MapScreen = () => {
     useCallback(() => {
       if (products.length > 0) {
         setMapProducts(products);
-        // If we have products but no selected location, try to calculate center
+        setCounts(prev => ({ ...prev, plants: products.length }));
+        
         if (products.length > 0 && !selectedLocation) {
           const locationsWithCoords = products.filter(
             p => p.location?.latitude && p.location?.longitude
           );
           
           if (locationsWithCoords.length > 0) {
-            // Use first product's location
             setSelectedLocation({
               latitude: locationsWithCoords[0].location.latitude,
               longitude: locationsWithCoords[0].location.longitude,
@@ -116,12 +124,10 @@ const MapScreen = () => {
         }
       }
       
-      // If initial location is provided, set it and search nearby products
       if (initialLocation?.latitude && initialLocation?.longitude) {
         setSelectedLocation(initialLocation);
         if (products.length === 0) {
-          // Only load nearby products if no products were passed in
-          loadNearbyProducts(initialLocation, searchRadius);
+          loadNearbyData(initialLocation, searchRadius);
         }
       }
     }, [products, initialLocation])
@@ -131,9 +137,8 @@ const MapScreen = () => {
   const handleLocationSelect = (location) => {
     setSelectedLocation(location);
     if (location?.latitude && location?.longitude) {
-      // Make sure radius controls stay visible
       setRadiusVisible(true);
-      loadNearbyProducts(location, searchRadius);
+      loadNearbyData(location, searchRadius);
     }
   };
 
@@ -142,72 +147,128 @@ const MapScreen = () => {
     setSearchRadius(radius);
   };
   
-  // Apply radius change and reload products
+  // Apply radius change and reload data
   const handleApplyRadius = (radius) => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyProducts(selectedLocation, radius);
+      loadNearbyData(selectedLocation, radius);
     }
   };
 
-  // Load nearby products based on location and radius
-  const loadNearbyProducts = async (location, radius) => {
+  // Handle map mode change
+  const handleMapModeChange = (newMode) => {
+    setMapMode(newMode);
+    setShowDetailCard(false);
+    setSelectedProduct(null);
+    setSelectedBusiness(null);
+    setSelectedProductData(null);
+    setSelectedBusinessData(null);
+  };
+
+  // Load nearby data based on current map mode
+  const loadNearbyData = async (location, radius) => {
     if (!location?.latitude || !location?.longitude) return;
 
     try {
       setIsLoading(true);
       setError(null);
       setSearchingLocation(true);
-      
-      // Hide detail card if showing
       setShowDetailCard(false);
-      
-      // IMPORTANT: Make sure radius control stays visible during search
       setRadiusVisible(true);
 
-      const result = await getNearbyProducts(
-        location.latitude,
-        location.longitude,
-        radius
-      );
-
-      if (result && result.products) {
-        const products = result.products.map(product => ({
-          ...product,
-          distance: product.distance || 0
-        }));
-        
-        // Sort products by distance
-        const sortedProducts = sortProductsByDistance(products, sortOrder === 'nearest');
-        
-        setMapProducts(sortedProducts);
-        setNearbyProducts(sortedProducts);
-        setShowResults(true);
+      if (mapMode === 'plants') {
+        await loadNearbyProducts(location, radius);
       } else {
-        setMapProducts([]);
-        setNearbyProducts([]);
-        setShowResults(true);
+        await loadNearbyBusinesses(location, radius);
       }
     } catch (err) {
-      console.error('Error loading nearby products:', err);
-      setError('Failed to load products. Please try again.');
+      console.error('Error loading nearby data:', err);
+      setError('Failed to load data. Please try again.');
     } finally {
-      // Always reset these states, even if there's an error
       setIsLoading(false);
       setSearchingLocation(false);
     }
   };
 
+  // Load nearby products
+  const loadNearbyProducts = async (location, radius) => {
+    const result = await getNearbyProducts(
+      location.latitude,
+      location.longitude,
+      radius
+    );
+
+    if (result && result.products) {
+      const products = result.products.map(product => ({
+        ...product,
+        distance: product.distance || 0
+      }));
+      
+      const sortedProducts = sortProductsByDistance(products, sortOrder === 'nearest');
+      
+      setMapProducts(sortedProducts);
+      setNearbyProducts(sortedProducts);
+      setCounts(prev => ({ ...prev, plants: sortedProducts.length }));
+      setShowResults(true);
+    } else {
+      setMapProducts([]);
+      setNearbyProducts([]);
+      setCounts(prev => ({ ...prev, plants: 0 }));
+      setShowResults(true);
+    }
+  };
+
+  // Load nearby businesses
+  const loadNearbyBusinesses = async (location, radius) => {
+    const result = await getNearbyBusinesses(
+      location.latitude,
+      location.longitude,
+      radius
+    );
+
+    if (result && result.businesses) {
+      const businesses = result.businesses.map(business => ({
+        ...business,
+        distance: business.distance || 0
+      }));
+      
+      const sortedBusinesses = sortBusinessesByDistance(businesses, sortOrder === 'nearest');
+      
+      setMapBusinesses(sortedBusinesses);
+      setNearbyBusinesses(sortedBusinesses);
+      setCounts(prev => ({ ...prev, businesses: sortedBusinesses.length }));
+      setShowResults(true);
+    } else {
+      setMapBusinesses([]);
+      setNearbyBusinesses([]);
+      setCounts(prev => ({ ...prev, businesses: 0 }));
+      setShowResults(true);
+    }
+  };
+
   // Handle product selection from map
   const handleProductSelect = (productId) => {
-    // Find selected product
     const product = mapProducts.find(p => p.id === productId || p._id === productId);
     
     if (product) {
       console.log("Product selected:", product.title || product.name);
-      
-      // Set selected product for highlighting
       setSelectedProduct(product);
       setSelectedProductData(product);
+      setSelectedBusiness(null);
+      setSelectedBusinessData(null);
+      setShowDetailCard(true);
+    }
+  };
+
+  // Handle business selection from map
+  const handleBusinessSelect = (businessId) => {
+    const business = mapBusinesses.find(b => b.id === businessId);
+    
+    if (business) {
+      console.log("Business selected:", business.businessName || business.name);
+      setSelectedBusiness(business);
+      setSelectedBusinessData(business);
+      setSelectedProduct(null);
+      setSelectedProductData(null);
       setShowDetailCard(true);
     }
   };
@@ -217,26 +278,64 @@ const MapScreen = () => {
     setShowDetailCard(false);
   };
   
-  // Handle view details button on mini card
+  // Handle view details button on mini cards
   const handleViewProductDetails = () => {
     if (selectedProductData) {
-      // Navigate to plant detail screen
       navigation.navigate('PlantDetail', { 
         plantId: selectedProductData.id || selectedProductData._id 
       });
     }
   };
 
-  // FIXED: Get current location - Now properly gets device GPS and preserves radius control
+  const handleViewBusinessDetails = () => {
+    if (selectedBusinessData) {
+      navigation.navigate('BusinessSellerProfile', { 
+        sellerId: selectedBusinessData.id,
+        businessId: selectedBusinessData.id
+      });
+    }
+  };
+
+  // Handle get directions
+  const handleGetDirections = () => {
+    let lat, lng, label;
+    
+    if (mapMode === 'plants' && selectedProductData) {
+      lat = selectedProductData.location?.latitude;
+      lng = selectedProductData.location?.longitude;
+      label = selectedProductData.title || selectedProductData.name;
+    } else if (mapMode === 'businesses' && selectedBusinessData) {
+      lat = selectedBusinessData.location?.latitude || selectedBusinessData.address?.latitude;
+      lng = selectedBusinessData.location?.longitude || selectedBusinessData.address?.longitude;
+      label = selectedBusinessData.businessName || selectedBusinessData.name;
+    }
+    
+    if (!lat || !lng) {
+      Alert.alert('Error', 'Location coordinates not available');
+      return;
+    }
+    
+    const encodedLabel = encodeURIComponent(label);
+    let url;
+    
+    if (Platform.OS === 'ios') {
+      url = `maps://app?daddr=${lat},${lng}&ll=${lat},${lng}&q=${encodedLabel}`;
+    } else {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedLabel}`;
+    }
+    
+    Linking.openURL(url).catch(err => {
+      console.error('Error opening maps app:', err);
+      Alert.alert('Error', 'Could not open maps application');
+    });
+  };
+
+  // Get current location
   const handleGetCurrentLocation = async () => {
     try {
       setIsLoading(true);
       setSearchingLocation(true);
-      
-      // Hide detail card if showing
       setShowDetailCard(false);
-      
-      // IMPORTANT: Make sure radius control stays visible
       setRadiusVisible(true);
 
       let { status } = await Location.requestForegroundPermissionsAsync();
@@ -249,20 +348,16 @@ const MapScreen = () => {
 
       const location = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Highest,
-        maximumAge: 10000,  // Get relatively fresh coordinates (10 seconds)
-        timeout: 15000  // 15 seconds timeout
+        maximumAge: 10000,
+        timeout: 15000
       });
 
       const { latitude, longitude } = location.coords;
-      
-      // Save my location state for the map marker
       setMyLocation({ latitude, longitude });
       setShowMyLocation(true);
 
       try {
-        // Reverse geocode to get address details
         const addressData = await reverseGeocode(latitude, longitude);
-
         const locationData = {
           latitude,
           longitude,
@@ -271,10 +366,9 @@ const MapScreen = () => {
         };
 
         setSelectedLocation(locationData);
-        loadNearbyProducts(locationData, searchRadius);
+        loadNearbyData(locationData, searchRadius);
       } catch (geocodeError) {
         console.error('Geocoding error:', geocodeError);
-        // If geocoding fails, still use the coordinates
         const locationData = {
           latitude,
           longitude,
@@ -283,13 +377,12 @@ const MapScreen = () => {
         };
 
         setSelectedLocation(locationData);
-        loadNearbyProducts(locationData, searchRadius);
+        loadNearbyData(locationData, searchRadius);
       }
     } catch (err) {
       console.error('Error getting current location:', err);
       Alert.alert('Location Error', 'Could not get your current location. Please try again later.');
     } finally {
-      // CRITICAL FIX: Always reset these states, even if there's an error
       setIsLoading(false);
       setSearchingLocation(false);
     }
@@ -300,19 +393,22 @@ const MapScreen = () => {
     const newOrder = sortOrder === 'nearest' ? 'farthest' : 'nearest';
     setSortOrder(newOrder);
     
-    // Re-sort products
-    const sorted = sortProductsByDistance(nearbyProducts, newOrder === 'nearest');
-    setMapProducts(sorted);
-    setNearbyProducts(sorted);
+    if (mapMode === 'plants') {
+      const sorted = sortProductsByDistance(nearbyProducts, newOrder === 'nearest');
+      setMapProducts(sorted);
+      setNearbyProducts(sorted);
+    } else {
+      const sorted = sortBusinessesByDistance(nearbyBusinesses, newOrder === 'nearest');
+      setMapBusinesses(sorted);
+      setNearbyBusinesses(sorted);
+    }
   };
 
   // Toggle view mode between map and list
   const toggleViewMode = () => {
-    // If showing detail card, hide it when switching views
     if (showDetailCard) {
       setShowDetailCard(false);
     }
-    
     setViewMode(viewMode === 'map' ? 'list' : 'map');
   };
 
@@ -325,9 +421,17 @@ const MapScreen = () => {
     });
   };
 
+  // Sort businesses by distance
+  const sortBusinessesByDistance = (businessList, ascending = true) => {
+    return [...businessList].sort((a, b) => {
+      const distA = a.distance || 0;
+      const distB = b.distance || 0;
+      return ascending ? distA - distB : distB - distA;
+    });
+  };
+
   // Handle map click
   const handleMapPress = (coordinates) => {
-    // Hide detail card if showing
     if (showDetailCard) {
       setShowDetailCard(false);
       return;
@@ -341,28 +445,23 @@ const MapScreen = () => {
         city: 'Selected Location',
       });
       
-      // IMPORTANT: Make sure radius control stays visible when clicking on map
       setRadiusVisible(true);
-      
-      // Load nearby products with the new location
-      loadNearbyProducts(coordinates, searchRadius);
+      loadNearbyData(coordinates, searchRadius);
     }
   };
 
-  // Retry loading products
+  // Retry loading data
   const handleRetry = () => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyProducts(selectedLocation, searchRadius);
+      loadNearbyData(selectedLocation, searchRadius);
     }
   };
   
-  // FIXED: Custom back handler for proper navigation
+  // Custom back handler
   const handleBackPress = () => {
-    // If in list view, switch back to map view
     if (viewMode === 'list') {
       setViewMode('map');
     } else {
-      // Otherwise, go back to previous screen
       navigation.goBack();
     }
   };
@@ -387,8 +486,12 @@ const MapScreen = () => {
 
   // Prepare header title
   const headerTitle = viewMode === 'list' 
-    ? `Plants near ${selectedLocation?.city || 'you'}`
-    : (selectedLocation?.city ? `Plants near ${selectedLocation.city}` : "Map View");
+    ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation?.city || 'you'}`
+    : (selectedLocation?.city ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation.city}` : "Map View");
+
+  // Get current map data based on mode
+  const currentMapData = mapMode === 'plants' ? mapProducts : mapBusinesses;
+  const currentNearbyData = mapMode === 'plants' ? nearbyProducts : nearbyBusinesses;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -400,13 +503,22 @@ const MapScreen = () => {
       />
 
       <View style={styles.mapContainer}>
+        {/* Map Mode Toggle */}
+        <MapModeToggle 
+          mapMode={mapMode}
+          onMapModeChange={handleMapModeChange}
+          counts={counts}
+        />
+
         {/* Map View */}
         {viewMode === 'map' && (
           <>
             {isLoading && searchingLocation ? (
               <View style={styles.searchingOverlay}>
                 <ActivityIndicator size="large" color="#4CAF50" />
-                <Text style={styles.searchingText}>Finding plants nearby...</Text>
+                <Text style={styles.searchingText}>
+                  Finding {mapMode === 'plants' ? 'plants' : 'businesses'} nearby...
+                </Text>
               </View>
             ) : error ? (
               <View style={styles.errorOverlay}>
@@ -423,8 +535,11 @@ const MapScreen = () => {
             
             <CrossPlatformAzureMapView
               ref={mapRef}
-              products={mapProducts}
+              products={mapMode === 'plants' ? mapProducts : []}
+              businesses={mapMode === 'businesses' ? mapBusinesses : []}
+              mapMode={mapMode}
               onSelectProduct={handleProductSelect}
+              onSelectBusiness={handleBusinessSelect}
               initialRegion={
                 selectedLocation
                   ? {
@@ -443,8 +558,8 @@ const MapScreen = () => {
               useCustomPin={true}
             />
             
-            {/* Plant Detail Mini Card */}
-            {showDetailCard && selectedProductData && (
+            {/* Detail Mini Cards */}
+            {showDetailCard && selectedProductData && mapMode === 'plants' && (
               <View style={styles.detailCardContainer}>
                 <PlantDetailMiniCard
                   plant={selectedProductData}
@@ -453,23 +568,49 @@ const MapScreen = () => {
                 />
               </View>
             )}
+
+            {showDetailCard && selectedBusinessData && mapMode === 'businesses' && (
+              <View style={styles.detailCardContainer}>
+                <BusinessDetailMiniCard
+                  business={selectedBusinessData}
+                  onClose={handleCloseDetailCard}
+                  onViewDetails={handleViewBusinessDetails}
+                  onGetDirections={handleGetDirections}
+                />
+              </View>
+            )}
           </>
         )}
 
-        {/* List View with toggle button */}
+        {/* List View */}
         {viewMode === 'list' && (
           <View style={styles.listContainer}>
-            <ProductListView
-              products={nearbyProducts}
-              isLoading={isLoading}
-              error={error}
-              onRetry={handleRetry}
-              onProductSelect={(productId) => navigation.navigate('PlantDetail', { plantId: productId })}
-              sortOrder={sortOrder}
-              onSortChange={toggleSortOrder}
-            />
+            {mapMode === 'plants' ? (
+              <ProductListView
+                products={nearbyProducts}
+                isLoading={isLoading}
+                error={error}
+                onRetry={handleRetry}
+                onProductSelect={(productId) => navigation.navigate('PlantDetail', { plantId: productId })}
+                sortOrder={sortOrder}
+                onSortChange={toggleSortOrder}
+              />
+            ) : (
+              <BusinessListView
+                businesses={nearbyBusinesses}
+                isLoading={isLoading}
+                error={error}
+                onRetry={handleRetry}
+                onBusinessSelect={(businessId) => navigation.navigate('BusinessSellerProfile', { 
+                  sellerId: businessId,
+                  businessId: businessId
+                })}
+                sortOrder={sortOrder}
+                onSortChange={toggleSortOrder}
+              />
+            )}
             
-            {/* Down button to go back to map */}
+            {/* Back to Map Button */}
             <TouchableOpacity
               style={styles.backToMapButton}
               onPress={toggleViewMode}
@@ -500,7 +641,7 @@ const MapScreen = () => {
         </TouchableOpacity>
 
         {/* Toggle View Button (only shown in map view) */}
-        {viewMode === 'map' && mapProducts.length > 0 && (
+        {viewMode === 'map' && currentMapData.length > 0 && (
           <TouchableOpacity
             style={styles.viewToggleButton}
             onPress={toggleViewMode}
@@ -510,17 +651,18 @@ const MapScreen = () => {
           </TouchableOpacity>
         )}
 
-        {/* Enhanced Radius Control with Integrated Product List */}
+        {/* Enhanced Radius Control */}
         {selectedLocation && viewMode === 'map' && radiusVisible && (
           <RadiusControl
             radius={searchRadius}
             onRadiusChange={handleRadiusChange}
             onApply={handleApplyRadius}
-            products={nearbyProducts}
+            products={mapMode === 'plants' ? nearbyProducts : nearbyBusinesses}
             isLoading={isLoading}
             error={error}
-            onProductSelect={handleProductSelect}
+            onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
             onToggleViewMode={toggleViewMode}
+            dataType={mapMode}
           />
         )}
       </View>
@@ -602,7 +744,7 @@ const styles = StyleSheet.create({
   currentLocationButton: {
     position: 'absolute',
     right: 10,
-    bottom: Platform.OS === 'ios' ? 450 : 420, // Position above the radius control
+    bottom: Platform.OS === 'ios' ? 450 : 420,
     backgroundColor: '#4CAF50',
     width: 50,
     height: 50,
@@ -617,7 +759,7 @@ const styles = StyleSheet.create({
   },
   viewToggleButton: {
     position: 'absolute',
-    right: 70, // Position to the left of the current location button
+    right: 70,
     bottom: Platform.OS === 'ios' ? 450 : 420,
     backgroundColor: '#2196F3',
     paddingHorizontal: 16,
@@ -660,7 +802,7 @@ const styles = StyleSheet.create({
   },
   detailCardContainer: {
     position: 'absolute',
-    bottom: 400, // Position above the radius control
+    bottom: 400,
     left: 16,
     right: 16,
     zIndex: 20,

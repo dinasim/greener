@@ -1,4 +1,4 @@
-// Business/BusinessScreens/BusinessOrdersScreen.js - Enhanced Version
+// Business/BusinessScreens/BusinessOrdersScreen.js - ENHANCED with Components
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -9,9 +9,7 @@ import {
   SafeAreaView,
   ActivityIndicator,
   RefreshControl,
-  Image,
   Alert,
-  Modal,
   TextInput,
   Animated,
   Platform,
@@ -26,8 +24,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { format } from 'date-fns';
 
+// Import Components from memory
+import OrderDetailModal from '../components/OrderDetailModal';
+import CustomerDetailModal from '../components/CustomerDetailModal';
+
 // Import API services
-import { getBusinessOrders, updateOrderStatus } from '../services/businessOrderApi';
+import { getBusinessOrders, updateOrderStatus, getBusinessCustomers } from '../services/businessOrderApi';
 
 export default function BusinessOrdersScreen({ navigation, route }) {
   const { businessId: routeBusinessId } = route.params || {};
@@ -35,20 +37,24 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   // State variables
   const [orders, setOrders] = useState([]);
   const [filteredOrders, setFilteredOrders] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [businessId, setBusinessId] = useState(routeBusinessId);
   const [currentFilter, setCurrentFilter] = useState('all');
   const [currentSort, setCurrentSort] = useState('date-desc');
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // Modal states - ENHANCED with memory components
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [detailModalVisible, setDetailModalVisible] = useState(false);
-  const [updateStatusModalVisible, setUpdateStatusModalVisible] = useState(false);
-  const [noteModalVisible, setNoteModalVisible] = useState(false);
-  const [orderNote, setOrderNote] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [orderDetailModalVisible, setOrderDetailModalVisible] = useState(false);
+  const [customerDetailModalVisible, setCustomerDetailModalVisible] = useState(false);
+  
   const [summary, setSummary] = useState({});
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [businessInfo, setBusinessInfo] = useState({});
   
   // Animation refs
   const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -58,9 +64,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   // Auto-refresh interval
   const refreshInterval = useRef(null);
 
-  // Initialize business ID
+  // Initialize business ID and load data
   useEffect(() => {
-    const initializeBusinessId = async () => {
+    const initializeData = async () => {
       try {
         let id = businessId;
         if (!id) {
@@ -70,8 +76,17 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           setBusinessId(id);
         }
         
+        // Load business info from storage for modal
+        const savedProfile = await AsyncStorage.getItem('businessProfile');
+        if (savedProfile) {
+          setBusinessInfo(JSON.parse(savedProfile));
+        }
+        
         if (id) {
-          await fetchOrders(id);
+          await Promise.all([
+            fetchOrders(id),
+            loadCustomers(id)
+          ]);
           startAutoRefresh();
         }
         
@@ -95,7 +110,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       }
     };
     
-    initializeBusinessId();
+    initializeData();
     
     return () => {
       stopAutoRefresh();
@@ -107,6 +122,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     useCallback(() => {
       if (businessId) {
         fetchOrders(businessId, true); // Silent refresh
+        loadCustomers(businessId);
         startAutoRefresh();
       }
       
@@ -115,6 +131,19 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       };
     }, [businessId])
   );
+
+  // Load customers for modal integration
+  const loadCustomers = async (id = businessId) => {
+    if (!id) return;
+    
+    try {
+      const customerData = await getBusinessCustomers(id);
+      setCustomers(customerData || []);
+      console.log(`Loaded ${customerData?.length || 0} customers`);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+    }
+  };
 
   // Auto-refresh functionality
   const startAutoRefresh = () => {
@@ -246,11 +275,14 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
   // Handle pull-to-refresh
   const handleRefresh = useCallback(() => {
-    fetchOrders();
+    Promise.all([
+      fetchOrders(),
+      loadCustomers()
+    ]);
   }, [fetchOrders]);
 
-  // Update order status with animation
-  const updateOrderStatusWithAnimation = async (orderId, newStatus) => {
+  // ENHANCED: Update order status with modal integration
+  const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
       setLoading(true);
       
@@ -290,45 +322,80 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       await fetchOrders(businessId, true);
     } finally {
       setLoading(false);
-      setUpdateStatusModalVisible(false);
+      setOrderDetailModalVisible(false);
     }
   };
 
-  // Contact customer
-  const contactCustomer = (order) => {
-    const options = [];
-    
-    if (order.customerPhone) {
-      options.push({
-        text: '📱 Call Customer',
-        onPress: () => Linking.openURL(`tel:${order.customerPhone}`)
-      });
+  // ENHANCED: Contact customer with modal integration
+  const handleContactCustomer = (order, method = 'auto') => {
+    if (method === 'auto') {
+      const options = [];
       
-      options.push({
-        text: '💬 Send SMS', 
-        onPress: () => Linking.openURL(`sms:${order.customerPhone}?body=Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup!`)
-      });
+      if (order.customerPhone) {
+        options.push({
+          text: '📱 Call Customer',
+          onPress: () => Linking.openURL(`tel:${order.customerPhone}`)
+        });
+        
+        options.push({
+          text: '💬 Send SMS', 
+          onPress: () => {
+            const message = `Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup at ${businessInfo.businessName || 'our store'}!`;
+            Linking.openURL(`sms:${order.customerPhone}?body=${encodeURIComponent(message)}`);
+          }
+        });
+      }
+      
+      if (order.customerEmail) {
+        options.push({
+          text: '📧 Send Email',
+          onPress: () => {
+            const subject = `Order ${order.confirmationNumber} Update`;
+            const body = `Hi ${order.customerName},\n\nYour order is ready for pickup!\n\nOrder: ${order.confirmationNumber}\nTotal: $${order.total.toFixed(2)}\n\nThank you,\n${businessInfo.businessName || 'Your Plant Store'}`;
+            Linking.openURL(`mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+          }
+        });
+      }
+      
+      if (order.communication?.messagesEnabled) {
+        options.push({
+          text: '💬 Message in App',
+          onPress: () => navigateToMessages(order)
+        });
+      }
+      
+      options.push({ text: 'Cancel', style: 'cancel' });
+      
+      Alert.alert(
+        `Contact ${order.customerName}`,
+        `Order: ${order.confirmationNumber}`,
+        options
+      );
+    } else {
+      // Handle specific contact methods
+      switch (method) {
+        case 'call':
+          if (order.customerPhone) {
+            Linking.openURL(`tel:${order.customerPhone}`);
+          }
+          break;
+        case 'sms':
+          if (order.customerPhone) {
+            const message = `Hi ${order.customerName}, regarding your order ${order.confirmationNumber}...`;
+            Linking.openURL(`sms:${order.customerPhone}?body=${encodeURIComponent(message)}`);
+          }
+          break;
+        case 'email':
+          if (order.customerEmail) {
+            const subject = `Order ${order.confirmationNumber}`;
+            Linking.openURL(`mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}`);
+          }
+          break;
+        case 'message':
+          navigateToMessages(order);
+          break;
+      }
     }
-    
-    options.push({
-      text: '📧 Send Email',
-      onPress: () => Linking.openURL(`mailto:${order.customerEmail}?subject=Order ${order.confirmationNumber}&body=Hi ${order.customerName}, regarding your order...`)
-    });
-    
-    if (order.communication?.messagesEnabled) {
-      options.push({
-        text: '💬 Message in App',
-        onPress: () => navigateToMessages(order)
-      });
-    }
-    
-    options.push({ text: 'Cancel', style: 'cancel' });
-    
-    Alert.alert(
-      `Contact ${order.customerName}`,
-      `Order: ${order.confirmationNumber}`,
-      options
-    );
   };
 
   // Navigate to messages
@@ -345,16 +412,92 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     });
   };
 
-  // View order details
-  const viewOrderDetails = (order) => {
+  // ENHANCED: View order details using OrderDetailModal
+  const handleOrderPress = (order) => {
     setSelectedOrder(order);
-    setDetailModalVisible(true);
+    setOrderDetailModalVisible(true);
   };
 
-  // Show update status modal
-  const showUpdateStatusModal = () => {
-    setDetailModalVisible(false);
-    setUpdateStatusModalVisible(true);
+  // ENHANCED: View customer details using CustomerDetailModal
+  const handleCustomerPress = (order) => {
+    // Find customer in customers array or create minimal customer object
+    let customer = customers.find(c => c.email === order.customerEmail);
+    
+    if (!customer) {
+      customer = {
+        id: order.customerEmail,
+        email: order.customerEmail,
+        name: order.customerName,
+        phone: order.customerPhone,
+        orders: [order],
+        totalSpent: order.total,
+        orderCount: 1,
+        lastOrderDate: order.orderDate,
+        firstPurchaseDate: order.orderDate
+      };
+    }
+    
+    setSelectedCustomer(customer);
+    setCustomerDetailModalVisible(true);
+  };
+
+  // Handle view all orders for customer
+  const handleViewCustomerOrders = (customer) => {
+    setCustomerDetailModalVisible(false);
+    setCurrentFilter('all');
+    setSearchQuery(customer.email);
+  };
+
+  // Handle add customer note
+  const handleAddCustomerNote = (customer) => {
+    Alert.alert(
+      'Add Customer Note',
+      'This feature will be available soon',
+      [{ text: 'OK' }]
+    );
+  };
+
+  // Print receipt functionality
+  const handlePrintReceipt = (order) => {
+    Alert.alert(
+      'Print Receipt',
+      'Receipt printing will be available soon',
+      [{ text: 'OK' }]
+    );
+  };
+
+  // Quick actions for orders
+  const getQuickActions = (order) => {
+    const actions = [];
+    
+    switch (order.status) {
+      case 'pending':
+        actions.push({
+          label: 'Confirm',
+          icon: 'check',
+          color: '#2196F3',
+          action: () => handleUpdateOrderStatus(order.id, 'confirmed')
+        });
+        break;
+      case 'confirmed':
+        actions.push({
+          label: 'Ready',
+          icon: 'shopping-bag',
+          color: '#9C27B0',
+          action: () => handleUpdateOrderStatus(order.id, 'ready')
+        });
+        break;
+      case 'ready':
+        actions.push({
+          label: 'Complete',
+          icon: 'check-circle',
+          color: '#4CAF50',
+          action: () => handleUpdateOrderStatus(order.id, 'completed')
+        });
+        break;
+    }
+    
+    return actions;
   };
 
   // Get status color
@@ -411,9 +554,10 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     return null;
   };
 
-  // Render order item with enhanced design
+  // ENHANCED: Render order item with better design and quick actions
   const renderOrderItem = ({ item, index }) => {
     const priority = getPriorityInfo(item);
+    const quickActions = getQuickActions(item);
     
     return (
       <Animated.View
@@ -432,7 +576,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       >
         <TouchableOpacity 
           style={styles.orderCardContent}
-          onPress={() => viewOrderDetails(item)}
+          onPress={() => handleOrderPress(item)}
           activeOpacity={0.7}
         >
           {/* Priority Badge */}
@@ -461,21 +605,26 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             </View>
           </View>
           
-          {/* Customer Info */}
-          <View style={styles.customerSection}>
+          {/* Customer Info with Press Handler */}
+          <TouchableOpacity 
+            style={styles.customerSection}
+            onPress={() => handleCustomerPress(item)}
+          >
             <View style={styles.customerInfo}>
               <MaterialIcons name="person" size={16} color="#757575" />
               <Text style={styles.customerName}>{item.customerName}</Text>
+              <MaterialIcons name="arrow-forward-ios" size={12} color="#ccc" />
             </View>
-            {item.customerPhone && (
-              <TouchableOpacity 
-                style={styles.contactButton}
-                onPress={() => contactCustomer(item)}
-              >
-                <MaterialIcons name="phone" size={16} color="#4CAF50" />
-              </TouchableOpacity>
-            )}
-          </View>
+            <TouchableOpacity 
+              style={styles.contactButton}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleContactCustomer(item);
+              }}
+            >
+              <MaterialIcons name="phone" size={16} color="#4CAF50" />
+            </TouchableOpacity>
+          </TouchableOpacity>
           
           {/* Order Items Preview */}
           <View style={styles.orderItemsPreview}>
@@ -496,38 +645,22 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             </View>
           </View>
           
-          {/* Order Footer */}
+          {/* Order Footer with Quick Actions */}
           <View style={styles.orderFooter}>
             <View style={styles.orderActions}>
-              {item.status === 'pending' && (
+              {quickActions.map((action, idx) => (
                 <TouchableOpacity 
-                  style={[styles.actionButton, styles.confirmButton]}
-                  onPress={() => updateOrderStatusWithAnimation(item.id, 'confirmed')}
+                  key={idx}
+                  style={[styles.actionButton, { backgroundColor: action.color }]}
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    action.action();
+                  }}
                 >
-                  <MaterialIcons name="check" size={16} color="#fff" />
-                  <Text style={styles.actionButtonText}>Confirm</Text>
+                  <MaterialIcons name={action.icon} size={16} color="#fff" />
+                  <Text style={styles.actionButtonText}>{action.label}</Text>
                 </TouchableOpacity>
-              )}
-              
-              {item.status === 'confirmed' && (
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.readyButton]}
-                  onPress={() => updateOrderStatusWithAnimation(item.id, 'ready')}
-                >
-                  <MaterialIcons name="shopping-bag" size={16} color="#fff" />
-                  <Text style={styles.actionButtonText}>Ready</Text>
-                </TouchableOpacity>
-              )}
-              
-              {item.status === 'ready' && (
-                <TouchableOpacity 
-                  style={[styles.actionButton, styles.completeButton]}
-                  onPress={() => updateOrderStatusWithAnimation(item.id, 'completed')}
-                >
-                  <MaterialIcons name="check-circle" size={16} color="#fff" />
-                  <Text style={styles.actionButtonText}>Complete</Text>
-                </TouchableOpacity>
-              )}
+              ))}
             </View>
             
             <Text style={styles.orderTotal}>${item.total?.toFixed(2)}</Text>
@@ -689,6 +822,37 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           </Animated.View>
         }
         showsVerticalScrollIndicator={false}
+      />
+
+      {/* ENHANCED: Order Detail Modal Integration */}
+      <OrderDetailModal
+        visible={orderDetailModalVisible}
+        order={selectedOrder}
+        onClose={() => setOrderDetailModalVisible(false)}
+        onUpdateStatus={handleUpdateOrderStatus}
+        onContactCustomer={handleContactCustomer}
+        onPrintReceipt={handlePrintReceipt}
+        businessInfo={businessInfo}
+      />
+
+      {/* ENHANCED: Customer Detail Modal Integration */}
+      <CustomerDetailModal
+        visible={customerDetailModalVisible}
+        customer={selectedCustomer}
+        onClose={() => setCustomerDetailModalVisible(false)}
+        onContactCustomer={(customer, method) => {
+          // Find the customer's latest order for contact context
+          const latestOrder = orders
+            .filter(order => order.customerEmail === customer.email)
+            .sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))[0];
+          
+          if (latestOrder) {
+            handleContactCustomer(latestOrder, method);
+          }
+        }}
+        onViewOrders={handleViewCustomerOrders}
+        onAddNote={handleAddCustomerNote}
+        businessId={businessId}
       />
     </SafeAreaView>
   );
@@ -881,6 +1045,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#f9f9f9',
+    paddingHorizontal: 8,
   },
   customerInfo: {
     flexDirection: 'row',
@@ -891,7 +1059,9 @@ const styles = StyleSheet.create({
     color: '#424242',
     fontSize: 14,
     marginLeft: 8,
+    marginRight: 8,
     fontWeight: '500',
+    flex: 1,
   },
   contactButton: {
     padding: 8,
@@ -937,15 +1107,6 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,
-  },
-  confirmButton: {
-    backgroundColor: '#2196F3',
-  },
-  readyButton: {
-    backgroundColor: '#9C27B0',
-  },
-  completeButton: {
-    backgroundColor: '#4CAF50',
   },
   actionButtonText: {
     color: '#fff',

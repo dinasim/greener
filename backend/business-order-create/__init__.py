@@ -28,30 +28,7 @@ def generate_confirmation_number():
     random_part = ''.join(random.choices(string.ascii_uppercase + string.digits, k=4))
     return f"GRN{timestamp}{random_part}"
 
-async def create_order_conversation(business_id, customer_email, customer_name, order_id, confirmation_number):
-    """Create a conversation for order communication"""
-    try:
-        # This will integrate with the existing messaging system
-        conversation_data = {
-            "sender": customer_email,
-            "receiver": business_id,
-            "message": f"📦 New Order Created!\n\nOrder: #{confirmation_number}\nCustomer: {customer_name}\n\nYou can chat about this order here.",
-            "orderContext": {
-                "orderId": order_id,
-                "confirmationNumber": confirmation_number,
-                "type": "order_notification"
-            }
-        }
-        
-        # This would call the existing create-chat endpoint
-        # For now, we'll return the conversation data to be handled by the frontend
-        return conversation_data
-        
-    except Exception as e:
-        logging.error(f"Error creating order conversation: {str(e)}")
-        return None
-
-async def main(req: func.HttpRequest) -> func.HttpResponse:
+def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business order create function processed a request.')
     
     # Handle OPTIONS method for CORS preflight
@@ -97,7 +74,7 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
         items = request_body['items']
         customer_phone = request_body.get('customerPhone', '')
         notes = request_body.get('notes', '')
-        communication_preference = request_body.get('communicationPreference', 'messages')  # Default to messages
+        communication_preference = request_body.get('communicationPreference', 'messages')
         
         if not items or len(items) == 0:
             response = func.HttpResponse(
@@ -108,6 +85,7 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
             return add_cors_headers(response)
         
         logging.info(f"Creating order for business {business_id}, customer {customer_email}")
+        logging.info(f"Items requested: {[item.get('id') or item.get('inventoryId') for item in items]}")
         
         # Connect to marketplace database
         try:
@@ -124,29 +102,87 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
             database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
             orders_container = database.get_container_client("orders")
             inventory_container = database.get_container_client("inventory")
-            customers_container = database.get_container_client("business-customers")
+            customers_container = database.get_container_client("business_customers")
             
             # Validate inventory and calculate totals
             validated_items = []
             subtotal = 0
             
             for item in items:
-                if 'inventoryId' not in item or 'quantity' not in item:
+                # Handle both 'id' and 'inventoryId' fields
+                item_id = item.get('id') or item.get('inventoryId')
+                quantity = item.get('quantity')
+                
+                if not item_id or not quantity:
                     response = func.HttpResponse(
-                        json.dumps({"error": "Each item must have inventoryId and quantity"}),
+                        json.dumps({"error": "Each item must have id (or inventoryId) and quantity"}),
                         status_code=400,
                         mimetype="application/json"
                     )
                     return add_cors_headers(response)
                 
                 try:
-                    # Get inventory item
-                    inventory_item = inventory_container.read_item(
-                        item=item['inventoryId'], 
-                        partition_key=business_id
-                    )
+                    logging.info(f"Looking for inventory item {item_id} for business {business_id}")
                     
-                    requested_qty = int(item['quantity'])
+                    # FIXED: First try direct read with partition key
+                    try:
+                        inventory_item = inventory_container.read_item(
+                            item=item_id, 
+                            partition_key=business_id
+                        )
+                        logging.info(f"Found inventory item {item_id} via direct read")
+                    except Exception as direct_read_error:
+                        logging.warning(f"Direct read failed for {item_id}: {str(direct_read_error)}")
+                        
+                        # Fallback: Query for the item
+                        query = "SELECT * FROM c WHERE c.id = @itemId AND c.businessId = @businessId"
+                        parameters = [
+                            {"name": "@itemId", "value": item_id},
+                            {"name": "@businessId", "value": business_id}
+                        ]
+                        
+                        logging.info(f"Querying for item with query: {query}")
+                        logging.info(f"Parameters: {parameters}")
+                        
+                        items_found = list(inventory_container.query_items(
+                            query=query,
+                            parameters=parameters,
+                            enable_cross_partition_query=False  # Using partition key
+                        ))
+                        
+                        if not items_found:
+                            # Try cross-partition query as last resort
+                            logging.warning(f"Item {item_id} not found with partition key, trying cross-partition query")
+                            items_found = list(inventory_container.query_items(
+                                query="SELECT * FROM c WHERE c.id = @itemId",
+                                parameters=[{"name": "@itemId", "value": item_id}],
+                                enable_cross_partition_query=True
+                            ))
+                            
+                            if items_found:
+                                found_item = items_found[0]
+                                logging.error(f"Item {item_id} exists but belongs to business {found_item.get('businessId')} not {business_id}")
+                                response = func.HttpResponse(
+                                    json.dumps({"error": f"Item {item_id} does not belong to your business"}),
+                                    status_code=403,
+                                    mimetype="application/json"
+                                )
+                                return add_cors_headers(response)
+                        
+                        if not items_found:
+                            logging.error(f"Inventory item {item_id} not found for business {business_id}")
+                            response = func.HttpResponse(
+                                json.dumps({"error": f"Inventory item not found: {item_id}"}),
+                                status_code=404,
+                                mimetype="application/json"
+                            )
+                            return add_cors_headers(response)
+                        
+                        inventory_item = items_found[0]
+                        logging.info(f"Found inventory item {item_id} via query")
+                    
+                    # Validate quantity and stock
+                    requested_qty = int(quantity)
                     available_qty = inventory_item.get('quantity', 0)
                     
                     if requested_qty <= 0:
@@ -163,11 +199,22 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                         )
                         return add_cors_headers(response)
                     
+                    # Check if item is active
+                    if inventory_item.get('status') != 'active':
+                        response = func.HttpResponse(
+                            json.dumps({
+                                "error": f"Item {inventory_item.get('name', 'item')} is not available for sale"
+                            }),
+                            status_code=400,
+                            mimetype="application/json"
+                        )
+                        return add_cors_headers(response)
+                    
                     unit_price = inventory_item.get('finalPrice', inventory_item.get('price', 0))
                     item_total = unit_price * requested_qty
                     
                     validated_item = {
-                        "inventoryId": item['inventoryId'],
+                        "inventoryId": item_id,
                         "productId": inventory_item.get('productId', ''),
                         "name": inventory_item.get('name') or inventory_item.get('common_name') or inventory_item.get('productName'),
                         "productType": inventory_item.get('productType', 'unknown'),
@@ -181,10 +228,12 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                     validated_items.append(validated_item)
                     subtotal += item_total
                     
+                    logging.info(f"Validated item {item_id}: {validated_item['name']} x{requested_qty} = ${item_total}")
+                    
                 except Exception as inv_error:
-                    logging.error(f"Error validating inventory item {item['inventoryId']}: {str(inv_error)}")
+                    logging.error(f"Error validating inventory item {item_id}: {str(inv_error)}")
                     response = func.HttpResponse(
-                        json.dumps({"error": f"Invalid inventory item: {item['inventoryId']}"}),
+                        json.dumps({"error": f"Invalid inventory item: {item_id} - {str(inv_error)}"}),
                         status_code=400,
                         mimetype="application/json"
                     )
@@ -194,10 +243,10 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
             order_id = str(uuid.uuid4())
             confirmation_number = generate_confirmation_number()
             current_time = datetime.utcnow().isoformat()
-            pickup_available_date = (datetime.utcnow() + timedelta(hours=2)).isoformat()  # 2 hours from now
+            pickup_available_date = (datetime.utcnow() + timedelta(hours=2)).isoformat()
             
             # Calculate totals (no tax for pickup orders in this version)
-            tax = 0  # Can be calculated based on business location
+            tax = 0
             total = round(subtotal + tax, 2)
             
             new_order = {
@@ -209,8 +258,8 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                 "customerPhone": customer_phone,
                 "confirmationNumber": confirmation_number,
                 "orderDate": current_time,
-                "status": "pending",  # pending -> confirmed -> ready -> completed
-                "fulfillmentType": "pickup",  # Only pickup supported
+                "status": "pending",
+                "fulfillmentType": "pickup",
                 "items": validated_items,
                 "subtotal": round(subtotal, 2),
                 "tax": tax,
@@ -218,12 +267,12 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                 "notes": notes,
                 "pickupDetails": {
                     "availableFrom": pickup_available_date,
-                    "businessAddress": "",  # Will be filled from business profile
+                    "businessAddress": "",
                     "specialInstructions": ""
                 },
                 "communication": {
                     "preferredMethod": communication_preference,
-                    "conversationId": None,  # Will be set when conversation is created
+                    "conversationId": None,
                     "lastContactDate": None,
                     "customerResponsive": True
                 },
@@ -254,12 +303,14 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
             inventory_updates = []
             for item in validated_items:
                 try:
+                    # Re-read the inventory item to update it
                     inventory_item = inventory_container.read_item(
                         item=item['inventoryId'], 
                         partition_key=business_id
                     )
                     
                     # Reduce available quantity
+                    old_quantity = inventory_item['quantity']
                     inventory_item['quantity'] -= item['quantity']
                     inventory_item['soldCount'] = inventory_item.get('soldCount', 0) + item['quantity']
                     inventory_item['updatedAt'] = current_time
@@ -287,8 +338,11 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                         "inventoryId": item['inventoryId'],
                         "name": item['name'],
                         "quantityReduced": item['quantity'],
+                        "oldQuantity": old_quantity,
                         "newQuantity": inventory_item['quantity']
                     })
+                    
+                    logging.info(f"Updated inventory {item['inventoryId']}: {old_quantity} -> {inventory_item['quantity']}")
                     
                 except Exception as update_error:
                     logging.error(f"Error updating inventory {item['inventoryId']}: {str(update_error)}")
@@ -296,20 +350,24 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
             
             # Update or create customer record
             try:
-                customer_id = f"{business_id}_{customer_email}"
+                customer_id = f"{business_id}_{customer_email}".replace('@', '_').replace('.', '_')
                 
                 try:
                     # Try to get existing customer
                     customer_record = customers_container.read_item(
                         item=customer_id,
-                        partition_key=business_id
+                        partition_key=customer_id
                     )
                     
                     # Update existing customer
-                    customer_record['orderCount'] += 1
-                    customer_record['totalSpent'] += total
+                    customer_record['orderCount'] = customer_record.get('orderCount', 0) + 1
+                    customer_record['totalSpent'] = customer_record.get('totalSpent', 0) + total
                     customer_record['lastOrderDate'] = current_time
                     customer_record['lastConfirmationNumber'] = confirmation_number
+                    
+                    if 'orders' not in customer_record:
+                        customer_record['orders'] = []
+                    
                     customer_record['orders'].append({
                         "orderId": order_id,
                         "date": current_time,
@@ -318,7 +376,8 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                         "confirmationNumber": confirmation_number
                     })
                     
-                    # Update communication preference
+                    if 'preferences' not in customer_record:
+                        customer_record['preferences'] = {}
                     customer_record['preferences']['communicationPreference'] = communication_preference
                     customer_record['updatedAt'] = current_time
                     
@@ -348,16 +407,16 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                         "tags": ["new-customer"],
                         "preferences": {
                             "plantTypes": [],
-                            "communicationPreference": communication_preference,  # "messages", "email", "phone", "sms"
+                            "communicationPreference": communication_preference,
                             "newsletterSubscribed": False,
                             "marketingOptIn": True,
                             "orderReminders": True
                         },
                         "communication": {
                             "lastContactDate": None,
-                            "conversationIds": [],  # Will store message conversation IDs
+                            "conversationIds": [],
                             "preferredLanguage": "en",
-                            "responseRate": "new",  # "excellent", "good", "slow", "poor", "new"
+                            "responseRate": "new",
                             "lastResponseTime": None
                         },
                         "isSubscribedToNewsletter": False,
@@ -371,14 +430,6 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                 
             except Exception as customer_error:
                 logging.error(f"Error updating customer record: {str(customer_error)}")
-                # Continue even if customer update fails
-            
-            # Prepare conversation data for frontend to create
-            conversation_data = None
-            if communication_preference == 'messages':
-                conversation_data = await create_order_conversation(
-                    business_id, customer_email, customer_name, order_id, confirmation_number
-                )
             
             # Return success response
             response_data = {
@@ -400,19 +451,12 @@ async def main(req: func.HttpRequest) -> func.HttpResponse:
                     "createdAt": current_time
                 },
                 "inventoryUpdates": inventory_updates,
-                "conversationData": conversation_data,  # For frontend to create conversation
                 "nextSteps": [
                     "✅ Business will receive notification of new order",
                     "🔄 Business will confirm order and prepare items", 
                     "📱 Customer will receive pickup notification via " + communication_preference,
                     "📦 Customer picks up order with confirmation number: " + confirmation_number
-                ],
-                "communications": {
-                    "method": communication_preference,
-                    "messagingAvailable": True,
-                    "emailAvailable": True,
-                    "smsAvailable": bool(customer_phone)
-                }
+                ]
             }
             
             response = func.HttpResponse(

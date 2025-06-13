@@ -135,12 +135,15 @@ export default function BusinessDashboardCharts({
     },
   };
 
-  // Sales Chart Data
+  // Sales Chart Data - Add fallback values to prevent NaN or Infinity
   const salesChartData = {
     labels: salesData.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
     datasets: [
       {
-        data: salesData.values || [0, 0, 0, 0, 0, 0, 0],
+        data: (salesData.values || [0, 0, 0, 0, 0, 0, 0]).map(value => 
+          // Ensure we have valid numbers for the chart
+          isNaN(value) || !isFinite(value) ? 0 : value
+        ),
         color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})`,
         strokeWidth: 3,
       },
@@ -197,9 +200,25 @@ export default function BusinessDashboardCharts({
               data={salesChartData}
               width={chartWidth}
               height={220}
-              chartConfig={chartConfig}
+              chartConfig={{
+                ...chartConfig,
+                propsForDots: {
+                  r: "6",
+                  strokeWidth: "2",
+                  stroke: "#4CAF50",
+                },
+                // Use camelCase for web compatibility
+                style: {
+                  borderRadius: 16,
+                }
+              }}
               style={styles.chart}
               bezier
+              withDots={true}
+              withShadow={false}
+              withInnerLines={true}
+              withOuterLines={true}
+              fromZero={true}
             />
             <View style={styles.chartInsights}>
               <Text style={styles.insightText}>

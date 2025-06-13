@@ -1,3 +1,4 @@
+// components/PlantCard.js - Enhanced with Business Integration
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -7,7 +8,7 @@ import {
   TouchableOpacity,
   Platform,
 } from 'react-native';
-import { MaterialIcons, FontAwesome } from '@expo/vector-icons';
+import { MaterialIcons, FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { formatDistanceToNow } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -43,10 +44,29 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
   const handleSellerPress = (e) => {
     e.stopPropagation();
-    navigation.navigate('SellerProfile', {
-      sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
-      sellerData: plant.seller || { name: plant.sellerName || 'Unknown Seller' }
-    });
+    
+    // Check if seller is a business or individual
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
+    
+    if (isBusiness) {
+      // Navigate to business profile
+      navigation.navigate('BusinessSellerProfile', {
+        businessId: plant.seller?._id || plant.seller?.id || plant.sellerId || plant.businessId,
+        sellerData: plant.seller || { 
+          name: plant.sellerName || 'Business Seller',
+          isBusiness: true
+        }
+      });
+    } else {
+      // Navigate to individual seller profile
+      navigation.navigate('SellerProfile', {
+        sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
+        sellerData: plant.seller || { 
+          name: plant.sellerName || 'Individual Seller',
+          isBusiness: false
+        }
+      });
+    }
   };
 
   const toggleFavorite = async (e) => {
@@ -86,12 +106,15 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
   const handleContact = (e) => {
     e.stopPropagation();
-    const sellerName = plant.seller?.name || 'Plant Seller';
+    const sellerName = plant.seller?.name || plant.sellerName || 'Plant Seller';
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
+    
     navigation.navigate('Messages', {
       sellerId: plant.seller?._id || plant.sellerId,
       plantId: plant.id || plant._id,
       plantName: plant.title || plant.name,
-      sellerName
+      sellerName,
+      isBusiness
     });
   };
 
@@ -141,6 +164,9 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     });
   };
 
+  // Check if this is a business listing
+  const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
+
   // Render rating - now with "New Product" for zero ratings
   const renderRating = () => {
     const rating = plant.rating;
@@ -171,26 +197,37 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
     );
   };
 
-  // Render seller rating with "New Seller" for zero ratings
+  // Render seller rating with "New Seller" for zero ratings and business indicator
   const renderSellerRating = () => {
     const sellerRating = plant.seller?.rating;
     const reviewCount = plant.seller?.totalReviews || 0;
 
-    // Show "New Seller" for no ratings
-    if (!sellerRating || sellerRating === 0) {
-      return (
-        <Text style={styles.newSellerText}>New Seller</Text>
-      );
-    }
-
-    // Show star rating
     return (
-      <View style={styles.sellerRatingContainer}>
-        <FontAwesome name="star" size={12} color="#FFC107" />
-        <Text style={styles.sellerRatingText}>
-          {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
-          {reviewCount > 0 && ` (${reviewCount})`}
-        </Text>
+      <View style={styles.sellerInfoContainer}>
+        {/* Business/Individual Indicator */}
+        <View style={[styles.sellerTypeBadge, isBusiness ? styles.businessBadge : styles.individualBadge]}>
+          <MaterialCommunityIcons 
+            name={isBusiness ? 'store' : 'account'} 
+            size={10} 
+            color={isBusiness ? '#FF9800' : '#2196F3'} 
+          />
+          <Text style={[styles.sellerTypeText, isBusiness ? styles.businessText : styles.individualText]}>
+            {isBusiness ? 'Business' : 'Individual'}
+          </Text>
+        </View>
+
+        {/* Rating */}
+        {!sellerRating || sellerRating === 0 ? (
+          <Text style={styles.newSellerText}>New Seller</Text>
+        ) : (
+          <View style={styles.sellerRatingContainer}>
+            <FontAwesome name="star" size={10} color="#FFC107" />
+            <Text style={styles.sellerRatingText}>
+              {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
+              {reviewCount > 0 && ` (${reviewCount})`}
+            </Text>
+          </View>
+        )}
       </View>
     );
   };
@@ -204,6 +241,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
         styles.card,
         isList && styles.listCard,
         isOffline && styles.offlineCard,
+        isBusiness && styles.businessCard, // Add business styling
       ]}
       onPress={handlePress}
       activeOpacity={0.8}
@@ -214,11 +252,20 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
           style={isList ? styles.listImage : styles.image}
           resizeMode="contain"
         />
+        
+        {/* Business Indicator Overlay */}
+        {isBusiness && (
+          <View style={styles.businessIndicator}>
+            <MaterialCommunityIcons name="store" size={12} color="#fff" />
+          </View>
+        )}
+        
         {isOffline && (
           <View style={styles.offlineIndicator}>
             <MaterialIcons name="cloud-off" size={12} color="#fff" />
           </View>
         )}
+        
         <TouchableOpacity style={styles.favoriteButton} onPress={toggleFavorite}>
           <MaterialIcons
             name={isFavorite ? 'favorite' : 'favorite-border'}
@@ -250,14 +297,15 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 
         {!isList && <Text style={styles.category} numberOfLines={1}>{plant.category}</Text>}
 
-        <View style={styles.sellerRow}>
-          <TouchableOpacity onPress={handleSellerPress} style={styles.sellerInfoContainer}>
+        <TouchableOpacity onPress={handleSellerPress} style={styles.sellerRow}>
+          <View style={styles.sellerNameContainer}>
             <Text style={styles.sellerName} numberOfLines={1}>
-              {plant.seller?.name || plant.sellerName || 'Unknown Seller'}
+              {plant.seller?.name || plant.sellerName || (isBusiness ? 'Business Seller' : 'Individual Seller')}
             </Text>
-            {renderSellerRating()}
-          </TouchableOpacity>
-        </View>
+            <MaterialIcons name="chevron-right" size={14} color="#999" />
+          </View>
+          {renderSellerRating()}
+        </TouchableOpacity>
 
         <View style={styles.footer}>
           <Text style={styles.date}>
@@ -305,6 +353,10 @@ const styles = StyleSheet.create({
           },
         })),
   },
+  businessCard: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#FF9800',
+  },
   listCard: {
     flexDirection: 'row',
     maxWidth: '100%',
@@ -329,6 +381,15 @@ const styles = StyleSheet.create({
     height: 130,
     width: 130,
     backgroundColor: '#f0f0f0',
+  },
+  businessIndicator: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: '#FF9800',
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   offlineIndicator: {
     position: 'absolute',
@@ -425,34 +486,62 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sellerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     marginBottom: 8,
   },
-  sellerInfoContainer: {
-    flex: 1,
+  sellerNameContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
     justifyContent: 'space-between',
+    marginBottom: 4,
   },
   sellerName: {
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
+    flex: 1,
+  },
+  sellerInfoContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+  },
+  sellerTypeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+    marginRight: 8,
+  },
+  businessBadge: {
+    backgroundColor: '#FFF3E0',
+  },
+  individualBadge: {
+    backgroundColor: '#E3F2FD',
+  },
+  sellerTypeText: {
+    fontSize: 9,
+    fontWeight: '600',
+    marginLeft: 2,
+  },
+  businessText: {
+    color: '#FF9800',
+  },
+  individualText: {
+    color: '#2196F3',
   },
   sellerRatingContainer: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   sellerRatingText: {
-    marginLeft: 4,
-    fontSize: 12,
+    marginLeft: 2,
+    fontSize: 10,
     color: '#888',
   },
   newSellerText: {
-    fontSize: 12,
+    fontSize: 10,
     color: '#888',
     fontStyle: 'italic',
   },
