@@ -5,7 +5,7 @@ import azure.functions as func
 from azure.cosmos import CosmosClient
 import google.generativeai as genai
 
-# Config (You can use os.environ if you want to hide keys)
+# CONFIGURATION (ideally use environment variables in production)
 COSMOS_URI = "https://greener-database.documents.azure.com:443/"
 COSMOS_KEY = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
 DB_NAME = "GreenerDB"
@@ -66,7 +66,7 @@ def normalize_plant_data(raw):
         "family": clean(raw.get("family")),
     }
 
-# Setup Cosmos DB client
+# Cosmos DB setup
 client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
 db = client.get_database_client(DB_NAME)
 container = db.get_container_client(PLANTS_CONTAINER)
@@ -77,7 +77,10 @@ MODEL_NAME = "gemini-1.5-flash"
 model = genai.GenerativeModel(MODEL_NAME)
 
 def query_cosmos(plant_name):
-    """Get normalized plant data from DB or None if not found."""
+    """
+    Get normalized plant data from DB.
+    If the record is missing critical fields, call Gemini to fix/complete.
+    """
     try:
         query = "SELECT * FROM Plants p WHERE LOWER(p.common_name) = @name OR LOWER(p.scientific_name) = @name"
         params = [{"name": "@name", "value": plant_name.lower()}]
@@ -88,17 +91,40 @@ def query_cosmos(plant_name):
         ))
         if results:
             doc = results[0]
-            # If normalized (has 'schedule' as dict with 'water' etc. as object), use as is
-            sched = doc.get("schedule", {})
+            logging.info(f"Found existing DB entry for '{plant_name}'. Normalizing...")
             norm = normalize_plant_data(doc)
-            # Update DB if legacy or broken
-            if doc != norm:
+
+            # Check if critical info is missing (all dashes or None in care_info/schedule)
+            care_missing = all(
+                norm["care_info"].get(field) in [None, "—", "Unknown"]
+                for field in ["light", "humidity", "temperature_min_c", "temperature_max_c", "pets", "difficulty"]
+            )
+            schedule_missing = all(
+                norm["schedule"].get(k) is None
+                for k in ["water", "feed", "repot"]
+            )
+
+            if care_missing or schedule_missing:
+                logging.warning(
+                    f"DB entry for '{plant_name}' is incomplete. Querying Gemini to supplement..."
+                )
+                gemini_data = call_gemini(plant_name)
+                if gemini_data:
+                    gemini_data['id'] = doc.get('id', plant_name)
+                    container.upsert_item(gemini_data)
+                    logging.info(f"DB entry for '{plant_name}' updated from Gemini.")
+                    return gemini_data
+                else:
+                    logging.error(f"Gemini returned no usable data for '{plant_name}'.")
+            else:
+                logging.info(f"DB entry for '{plant_name}' normalized and complete.")
+                # Always upsert the normalized version to keep DB clean
                 norm['id'] = doc.get('id', plant_name)
                 container.upsert_item(norm)
-            return norm
+                return norm
         return None
     except Exception as e:
-        logging.error(f"Cosmos query failed: {e}")
+        logging.error(f"Cosmos query failed for '{plant_name}': {e}")
         return None
 
 def save_to_cosmos(plant_name, norm_data):
@@ -106,13 +132,15 @@ def save_to_cosmos(plant_name, norm_data):
     norm_data['id'] = plant_name.lower()
     try:
         container.upsert_item(norm_data)
+        logging.info(f"Inserted/upserted new plant '{plant_name}' into DB.")
     except Exception as e:
-        logging.error(f"Failed to upsert plant: {e}")
+        logging.error(f"Failed to upsert plant '{plant_name}': {e}")
 
 def call_gemini(plant_name):
     prompt = (
-        f"Give care info and schedule for the plant '{plant_name}'. "
-        "Return STRICTLY this JSON object (all keys, all fields, missing values as null or \"Unknown\"; no explanations):\n"
+        f"Give ONLY the structured care info and schedule for the plant '{plant_name}'.\n"
+        "Your reply MUST be a single valid JSON object with these fields only (missing values as null or \"Unknown\").\n"
+        "No explanation, no markdown, no comments. Output strictly this structure:\n"
         "{"
         "\"common_name\": str, \"scientific_name\": str, \"image_url\": str, "
         "\"care_info\": {"
@@ -125,10 +153,10 @@ def call_gemini(plant_name):
             "\"repot\": {\"amount\": int, \"unit\": str}"
         "}, "
         "\"care_tips\": str, \"family\": str"
-        "}\n"
-        "Do not explain. Only reply with a single JSON object, no markdown, no comments."
+        "}"
     )
     try:
+        logging.info(f"Calling Gemini for '{plant_name}'...")
         res = model.generate_content(prompt + f"\nPlant: {plant_name}")
         response_text = res.text.strip()
         json_start = response_text.find('{')
@@ -136,12 +164,13 @@ def call_gemini(plant_name):
         if json_start >= 0 and json_end > json_start:
             json_str = response_text[json_start:json_end]
             plant_json = json.loads(json_str)
+            logging.info(f"Gemini response for '{plant_name}': {plant_json}")
             return normalize_plant_data(plant_json)
         else:
-            logging.error(f"Could not extract JSON from Gemini: {response_text}")
+            logging.error(f"Could not extract JSON from Gemini for '{plant_name}': {response_text}")
             return None
     except Exception as e:
-        logging.error(f"Gemini call failed: {e}")
+        logging.error(f"Gemini call failed for '{plant_name}': {e}")
         return None
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
@@ -158,15 +187,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             plant_name = None
 
     if not plant_name:
+        logging.error("Missing plant name in request.")
         return func.HttpResponse(
             json.dumps({"error": "Missing plant name (use ?name=Plant or POST JSON {'name': ...})"}),
             status_code=400,
             headers={**_cors_headers(), "Content-Type": "application/json"}
         )
 
-    # Try DB first
+    # Try DB first (auto-normalize + repair)
     plant = query_cosmos(plant_name)
     if plant:
+        logging.info(f"Returning plant data for '{plant_name}' from DB (post-normalization).")
         return func.HttpResponse(
             json.dumps(plant),
             status_code=200,
@@ -177,12 +208,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     gemini_data = call_gemini(plant_name)
     if gemini_data:
         save_to_cosmos(plant_name, gemini_data)
+        logging.info(f"Returning plant data for '{plant_name}' from Gemini (new DB entry).")
         return func.HttpResponse(
             json.dumps(gemini_data),
             status_code=200,
             headers={**_cors_headers(), "Content-Type": "application/json"}
         )
 
+    logging.error(f"Could not find or generate data for plant '{plant_name}'.")
     return func.HttpResponse(
         json.dumps({"error": "Could not find or generate data for this plant"}),
         status_code=500,
