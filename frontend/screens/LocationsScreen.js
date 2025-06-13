@@ -163,7 +163,7 @@ const CARD_RADIUS = 18;
 const PLANT_CARD_WIDTH = (width - 60) / 2;
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#fff' },
+  safeArea: { flex: 1 },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

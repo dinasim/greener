@@ -101,8 +101,29 @@ export default function KidsAnimalsScreen({ navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupLocationReq")}
+          style={[
+            styles.nextButton,
+            (
+              !formData.kids || formData.kids === "" ||
+              !formData.animals || formData.animals === ""
+            ) && { backgroundColor: "#bdbdbd" }
+          ]}
+          onPress={() => {
+            if (
+              formData.kids && formData.kids !== "" &&
+              formData.animals && formData.animals !== ""
+            ) {
+              navigation.navigate("SignupLocationReq");
+            }
+          }}
+          activeOpacity={
+            (!formData.kids || formData.kids === "" ||
+            !formData.animals || formData.animals === "") ? 1 : 0.7
+          }
+          disabled={
+            !formData.kids || formData.kids === "" ||
+            !formData.animals || formData.animals === ""
+          }
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>
@@ -114,7 +135,6 @@ export default function KidsAnimalsScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   scrollView: {
     flex: 1,
@@ -184,7 +204,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: 20,
-    backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#e0e0e0",
   },

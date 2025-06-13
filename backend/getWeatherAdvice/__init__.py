@@ -1,47 +1,71 @@
 import logging
-import azure.functions as func
 import os
 import requests
 import json
-import urllib.parse
-import hmac
-import hashlib
-import base64
-import time
 from azure.cosmos import CosmosClient
-from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials, messaging
+import azure.functions as func
+
+logging.warning("🟡 [IMPORT] File started loading...")
+
+# Top-level import & setup with debugging/logging protection
+try:
+    logging.warning("🟢 [IMPORT] azure.functions OK")
+    logging.warning("🟢 [IMPORT] os OK")
+    logging.warning("🟢 [IMPORT] requests OK")
+    logging.warning("🟢 [IMPORT] json OK")
+    logging.warning("🟢 [IMPORT] CosmosClient OK")
+    logging.warning("🟢 [IMPORT] firebase_admin OK")
+    logging.warning("🟢 [IMPORT] firebase_admin.credentials, messaging OK")
+except Exception as e:
+    logging.error(f"❌ [IMPORT CRASHED] {e}")
+    raise
+
+# Setup & config (should NOT be indented)
+firebase_initialized = False
+
+def init_firebase():
+    global firebase_initialized
+    if not firebase_initialized:
+        logging.warning("⚙️ Initializing Firebase...")
+        cred = credentials.Certificate(os.path.join(os.path.dirname(__file__), 'serviceAccountKey.json'))
+        firebase_admin.initialize_app(cred)
+        firebase_initialized = True
+        logging.warning("✅ Firebase initialized.")
 
 # Load environment variables
-load_dotenv()
 AZURE_MAPS_KEY = os.getenv("AZURE_MAPS_KEY")
 COSMOS_URI = os.getenv("COSMOS_URI")
 COSMOS_KEY = os.getenv("COSMOS_KEY")
-NH_NAMESPACE = os.getenv("NH_NAMESPACE")
-HUB_NAME = os.getenv("HUB_NAME")
-NH_ACCESS_KEY = os.getenv("AZURE_NH_FULL_ACCESS_KEY")
+
+# Log keys for debugging (first 6 chars only for safety)
+logging.warning(f"🔑 [IMPORT] AZURE_MAPS_KEY: {str(AZURE_MAPS_KEY)[:6]}... (type={type(AZURE_MAPS_KEY)})")
+logging.warning(f"🔑 [IMPORT] COSMOS_URI: {str(COSMOS_URI)[:6]}... (type={type(COSMOS_URI)})")
+logging.warning(f"🔑 [IMPORT] COSMOS_KEY: {str(COSMOS_KEY)[:6]}... (type={type(COSMOS_KEY)})")
 
 # Cosmos setup
-client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
-database = client.get_database_client("GreenerDB")
-users_container = database.get_container_client("Users")
+try:
+    client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)
+    database = client.get_database_client("GreenerDB")
+    users_container = database.get_container_client("Users")
+except Exception as top_level_exc:
+    import sys
+    logging.error(f"🔥 [TOP-LEVEL ERROR] Import or setup failed: {top_level_exc}")
+    sys.exit(1)
 
-# Helper to generate SAS token
-def generate_sas_token(uri, key_name, key_value, expiry=3600):
-    ttl = int(time.time() + expiry)
-    encoded_uri = urllib.parse.quote_plus(uri)
-    sign_key = f"{encoded_uri}\n{ttl}"
-    signature = base64.b64encode(
-        hmac.new(
-            key_value.encode("utf-8"),
-            sign_key.encode("utf-8"),
-            hashlib.sha256
-        ).digest()
-    )
-    return f"SharedAccessSignature sr={encoded_uri}&sig={urllib.parse.quote_plus(signature)}&se={ttl}&skn={key_name}"
+# -------------------------------------------
+def main(mytimer: func.TimerRequest) -> None:
+    return  # 🚫 Function disabled: notifications will not be sent
+    if mytimer.past_due:
+        logging.warning('The timer is past due!')
+    logging.warning("🚀 getWeatherAdvice function started")
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info(f"🌐 NH Namespace: {NH_NAMESPACE}, Hub Name: {HUB_NAME}")
-    logging.info("✅ Weather notification function started.")
+    try:
+        init_firebase()
+    except Exception as e:
+        logging.error(f"🔥 Firebase initialization failed: {e}")
+        return
 
     try:
         users = list(users_container.read_all_items())
@@ -51,7 +75,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         for user in users:
             email = user.get("email", "[no email]")
             location = user.get("location")
-            token = user.get("webPushSubscription")
+            token = user.get("webPushSubscription") or user.get("fcmToken")
 
             logging.info(f"🔍 Processing user: {email}")
 
@@ -59,88 +83,93 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logging.warning(f"⚠️ Skipping {email} — invalid or missing location.")
                 continue
 
-            if not token or not isinstance(token, dict) or not token.get("endpoint"):
-                logging.warning(f"⚠️ Skipping {email} — invalid web push token.")
+            if not token:
+                logging.warning(f"⚠️ Skipping {email} — invalid push token.")
                 continue
 
-            # Geocode city
             city = location["city"]
-            geo_url = "https://atlas.microsoft.com/search/address/json"
-            geo_params = {
-                "api-version": "1.0",
-                "subscription-key": AZURE_MAPS_KEY,
-                "query": city,
-                "countrySet": "IL"
-            }
-            geo_res = requests.get(geo_url, params=geo_params)
-            geo_res.raise_for_status()
-            geo_data = geo_res.json()
+            logging.warning(f"🌆 [DEBUG] City: {city}")
+            logging.warning(f"🔑 [DEBUG] Azure Maps Key: {AZURE_MAPS_KEY[:6]}... (length={len(AZURE_MAPS_KEY) if AZURE_MAPS_KEY else 0})")
 
-            if not geo_data["results"]:
-                logging.warning(f"❌ Skipping {email} — failed to geocode city.")
+            logging.info(f"🌍 Attempting to geocode city: {city}")
+
+             # === AZURE MAPS API CALL: Geocoding (costs per API call) ===
+             """
+            try:
+                geo_url = "https://atlas.microsoft.com/search/address/json"
+                geo_params = {
+                    "api-version": "1.0",
+                    "subscription-key": AZURE_MAPS_KEY,
+                    "query": city,
+                    "countrySet": "IL"
+                }
+                geo_res = requests.get(geo_url, params=geo_params)
+                geo_res.raise_for_status()
+                geo_data = geo_res.json()
+                if not geo_data["results"]:
+                    logging.warning(f"❌ Skipping {email} — failed to geocode city.")
+                    continue
+                coords = geo_data["results"][0]["position"]
+                lat, lon = coords["lat"], coords["lon"]
+                logging.info(f"📍 {city} resolved to coordinates: {lat}, {lon}")
+            except Exception as geo_err:
+                logging.error(f"❌ Geocoding failed for {email}: {geo_err}")
                 continue
+            """
 
-            coords = geo_data["results"][0]["position"]
-            lat, lon = coords["lat"], coords["lon"]
-            logging.info(f"📍 City {city} resolved to {lat}, {lon}")
+            # === AZURE MAPS API CALL: Weather (costs per API call) ===
+            """
+            try:
+                weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
+                weather_params = {
+                    "api-version": "1.1",
+                    "query": f"{lat},{lon}",
+                    "subscription-key": AZURE_MAPS_KEY,
+                    "duration": 1,
+                    "unit": "metric"
+                }
+                res = requests.get(weather_url, params=weather_params)
+                res.raise_for_status()
+                forecast = res.json()["forecasts"][0]
+                temp = forecast["temperature"]["maximum"]["value"]
+                wind = forecast["day"]["wind"]["speed"]["value"]
+                rain = forecast["day"].get("precipitationProbability", 0)
+                logging.info(f"🌡️ Temp: {temp}°C, 💨 Wind: {wind} km/h, 🌧️ Rain Chance: {rain}%")
+                if rain > 50:
+                    message = "☔ Rain expected today — bring your plants inside."
+                elif wind > 20:
+                    message = "🌬️ Strong winds today — protect your plants!"
+                elif temp > 30:
+                    message = "🌡️ It's hot today — move your plants to the shade."
+                elif temp < 27:
+                    message = f"🧪 Test: It's {temp}°C today — sending test notification."
+                else:
+                    message = "✅ Weather looks great for your plants today!"
+            except Exception as weather_err:
+                logging.error(f"❌ Weather fetch failed for {email}: {weather_err}")
+                continue
+            """
 
-            # Fetch weather
-            weather_url = "https://atlas.microsoft.com/weather/forecast/daily/json"
-            weather_params = {
-                "api-version": "1.1",
-                "query": f"{lat},{lon}",
-                "subscription-key": AZURE_MAPS_KEY,
-                "duration": 1,
-                "unit": "metric"
-            }
-            res = requests.get(weather_url, params=weather_params)
-            res.raise_for_status()
-            forecast = res.json()["forecasts"][0]
 
-            temp = forecast["temperature"]["maximum"]["value"]
-            wind = forecast["day"]["wind"]["speed"]["value"]
-            rain = forecast["day"].get("precipitationProbability", 0)
+            # Send Firebase push
+            try:
+                firebase_message = messaging.Message(
+                    notification=messaging.Notification(
+                        title="🌱 Plant Weather Update",
+                        body=message
+                    ),
+                    token=token
+                )
+                response = messaging.send(firebase_message)
+                logging.info(f"✅ Notification sent to {email}: {response}")
+                sent_notifications.append(email)
+            except Exception as send_err:
+                logging.error(f"❌ Push send failed for {email}: {send_err}")
 
-            if rain > 50:
-                message = "☔ Rain expected today — bring your plants inside."
-            elif wind > 20:
-                message = "🌬️ Strong winds today — protect your plants!"
-            elif temp > 30:
-                message = "🌡️ It's hot today — move your plants to the shade."
-            else:
-                message = "✅ Weather looks great for your plants today!"
+        logging.info(f"✅ Weather advice notifications sent: {sent_notifications}")
 
-            # ✅ Send notification via Notification Hub
-            sb_uri = f"sb://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}"
-            send_uri = f"https://{NH_NAMESPACE}.servicebus.windows.net/{HUB_NAME}/messages/?api-version=2015-01"
-            sas_token = generate_sas_token(sb_uri, "RootManageSharedAccessKey", NH_ACCESS_KEY)
+    except Exception as outer_err:
+        logging.error("🔥 Unhandled error in main logic:")
+        logging.exception(outer_err)
+        # No return, just log
 
-            headers = {
-                "Authorization": sas_token,
-                "Content-Type": "application/json;charset=utf-8",
-                "ServiceBusNotification-Format": "webpush",
-                "ServiceBusNotification-Tags": f"user:{email}"  
-            }
-
-            payload = json.dumps({
-                "title": "🌱 Plant Weather Update",
-                "body": message,
-                "icon": "https://via.placeholder.com/128",
-                "vibrate": [200, 100, 200],
-                "requireInteraction": True
-            })
-
-            response = requests.post(send_uri, headers=headers, json=payload)
-            response.raise_for_status()
-            logging.info(f"✅ Notification sent to {email}")
-            sent_notifications.append(email)
-
-        return func.HttpResponse(
-            json.dumps({"status": "done", "notified_users": sent_notifications}),
-            mimetype="application/json"
-        )
-
-    except Exception as e:
-        logging.error("🔥 Error sending weather advice:")
-        logging.exception(e)
-        return func.HttpResponse(f"Server error: {str(e)}", status_code=500)

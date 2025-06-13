@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   SafeAreaView,
-  ImageBackground,
   ActivityIndicator,
   ScrollView,
   Dimensions,
@@ -23,13 +22,12 @@ import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
 
 // For web push
-import { initializeApp } from "firebase/app";
+import { getApps, initializeApp } from "firebase/app";
 import { getMessaging, getToken } from "firebase/messaging";
 
 // For mobile push
 import messaging from '@react-native-firebase/messaging';
 
-// Firebase web config and VAPID key
 const firebaseConfig = {
   apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
   authDomain: "greenerapp2025.firebaseapp.com",
@@ -45,40 +43,39 @@ WebBrowser.maybeCompleteAuthSession();
 
 const windowHeight = Dimensions.get("window").height;
 
+// -- These values must match your Google Cloud OAuth client IDs --
+const EXPO_GOOGLE_CLIENT_ID = "241318918547-apo19m563ah7q2ii68mv975l9fvbtpdv.apps.googleusercontent.com";
+const ANDROID_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.androidClientId;
+const IOS_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.iosClientId;
+const WEB_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.expoClientId;
+
+// Helper
+const isWeb = Platform.OS === "web";
+const isStandalone = Constants.appOwnership === 'standalone';
+
 export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  const webClientId = Constants.expoConfig.extra.expoClientId;
-  const androidClientId = Constants.expoConfig.extra.androidClientId;
-  const iosClientId = Constants.expoConfig.extra.iosClientId;
-
-  const isWeb = Platform.OS === 'web';
-  const isStandalone = Constants.appOwnership === 'standalone';
-
+  // Conditional proxy/redirect for cross-platform Google auth
+  const useProxy = isWeb ? true : !isStandalone;
   const redirectUri = AuthSession.makeRedirectUri({
-    useProxy: !isStandalone,
+    useProxy,
     native: 'greener://',
   });
 
-  const clientId = isWeb
-    ? webClientId
-    : Platform.OS === 'android'
-      ? androidClientId
-      : iosClientId;
-
   const [request, response, promptAsync] = Google.useAuthRequest(
     {
-      clientId,
-      webClientId,
-      iosClientId,
-      androidClientId,
+      expoClientId: EXPO_GOOGLE_CLIENT_ID, // for Expo Go (optional for production)
+      androidClientId: ANDROID_GOOGLE_CLIENT_ID,
+      iosClientId: IOS_GOOGLE_CLIENT_ID,
+      webClientId: WEB_GOOGLE_CLIENT_ID,
       redirectUri,
       scopes: ['openid', 'profile', 'email'],
     },
-    { useProxy: !isStandalone }
+    { useProxy }
   );
 
   useEffect(() => {
@@ -98,24 +95,22 @@ export default function SignInGoogleScreen({ navigation }) {
 
       if (access_token) {
         setMarketplaceToken(access_token);
-
         fetchUserInfoFromGoogle(access_token)
           .then(async (userInfo) => {
             if (userInfo) {
               updateFormData('email', userInfo.email);
               saveEmailForMarketplace(userInfo.email);
 
-              // --------- Register push token based on platform ---------
               let webPushToken = null;
               let fcmToken = null;
-              if (Platform.OS === "web") {
-                webPushToken = await getAndSaveWebPushToken(userInfo.email);
+              if (isWeb) {
+                webPushToken = await getWebPushToken();
+                console.log("📦 WebPushToken being sent:", webPushToken);
                 updateFormData('webPushSubscription', webPushToken);
               } else if (Platform.OS === "android" || Platform.OS === "ios") {
-                fcmToken = await getAndSaveFcmToken(userInfo.email);
-                updateFormData('fcmToken', fcmToken);
+                fcmToken = await getFcmToken();
+                // updateFormData('fcmToken', fcmToken);
               }
-              // -------------------------------------------------------
 
               const userData = {
                 email: userInfo.email,
@@ -125,14 +120,13 @@ export default function SignInGoogleScreen({ navigation }) {
                 intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
-                expoPushToken: null, // deprecated
+                expoPushToken: null,
                 webPushSubscription: webPushToken || formData.webPushSubscription || null,
-                fcmToken: fcmToken || formData.fcmToken || null,
+                fcmToken: fcmToken || null,
                 location: formData.userLocation,
               };
 
               console.log("📦 Sending user data:", userData);
-
               saveUserToBackend(userData);
             } else {
               setIsLoading(false);
@@ -151,7 +145,6 @@ export default function SignInGoogleScreen({ navigation }) {
       setIsLoading(false);
       setAuthError('Failed to authenticate with Google');
     }
-    // eslint-disable-next-line
   }, [response]);
 
   const setMarketplaceToken = async (token) => {
@@ -210,68 +203,37 @@ export default function SignInGoogleScreen({ navigation }) {
     }
   }
 
-  // --------- Web Push Helper Function ------------
-  async function getAndSaveWebPushToken(email) {
-    if (Platform.OS !== "web" || !email) return null;
+  async function getWebPushToken() {
     try {
-      await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      const app = initializeApp(firebaseConfig);
-      const messaging = getMessaging(app);
-      const token = await getToken(messaging, { vapidKey });
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return null;
 
-      // Save token to backend (update user with webPushSubscription)
-      await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          webPushSubscription: token,
-          platform: "web"
-        }),
-      });
-      return token;
+      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+      const messaging = getMessaging(app);
+      return await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
     } catch (err) {
+      console.error("❌ Error getting web push token:", err);
       return null;
     }
   }
-  // -----------------------------------------------
 
-  // --------- FCM (Mobile) Push Helper Function ------------
-  async function getAndSaveFcmToken(email) {
-    if ((Platform.OS !== "android" && Platform.OS !== "ios") || !email) return null;
+  async function getFcmToken() {
     try {
       const authStatus = await messaging().requestPermission();
       const enabled =
         authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      if (enabled) {
-        const token = await messaging().getToken();
-
-        // Save token to backend (update user with fcmToken)
-        await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            fcmToken: token,
-            platform: Platform.OS
-          }),
-        });
-        return token;
-      }
+      if (!enabled) return null;
+      return await messaging().getToken();
     } catch (err) {
+      console.error("❌ Error getting FCM token:", err);
       return null;
     }
   }
-  // --------------------------------------------------------
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ImageBackground
-        source={require("../assets/homescreen1.png")}
-        style={styles.background}
-        resizeMode="cover"
-      >
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
             <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
@@ -306,15 +268,14 @@ export default function SignInGoogleScreen({ navigation }) {
             </Animated.View>
           </ScrollView>
         </View>
-      </ImageBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1 },
   background: { flex: 1, width: "100%", height: "100%" },
-  overlay: { flex: 1, backgroundColor: "rgba(255,255,255,0.88)", justifyContent: "center" },
+  overlay: { flex: 1, backgroundColor: "transparent", justifyContent: "center" },
   scrollContent: { flexGrow: 1, justifyContent: "center", minHeight: windowHeight },
   contentContainer: { paddingHorizontal: 24, alignItems: "center" },
   title: { fontSize: 32, fontWeight: "bold", color: "#2e7d32", marginBottom: 10 },

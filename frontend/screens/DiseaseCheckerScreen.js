@@ -18,7 +18,6 @@ import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
-const ANIMATION_PLANT = require('../assets/lottie-plant.json'); // Place a plant lottie in assets!
 
 export default function DiseaseCheckerScreen({ navigation }) {
   const [imageUri, setImageUri] = useState(null);
@@ -186,7 +185,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f7f7fa' }}>
+    <View style={{ flex: 1 }}>
       {/* Header Row with Back Button */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -199,12 +198,6 @@ export default function DiseaseCheckerScreen({ navigation }) {
         {/* Animated Loading Indicator */}
         {loading && (
           <View style={{ alignItems: 'center', marginTop: 30 }}>
-            <LottieView
-              autoPlay
-              loop
-              style={{ width: 140, height: 140 }}
-              source={ANIMATION_PLANT}
-            />
             <Text style={{ fontSize: 16, color: "#333", marginTop: 12 }}>Analyzing your plant…</Text>
           </View>
         )}
@@ -236,12 +229,6 @@ export default function DiseaseCheckerScreen({ navigation }) {
             {/* Plant Not Detected */}
             {!isPlantDetected ? (
               <View style={styles.notFoundCard}>
-                <LottieView
-                  autoPlay
-                  loop
-                  style={{ width: 100, height: 100, marginBottom: 4 }}
-                  source={require('../assets/lottie-search.json')} // Place a "search not found" lottie
-                />
                 <Text style={{ fontSize: 22, fontWeight: "bold", marginBottom: 10 }}>😕 Plant Not Detected</Text>
                 <Text style={{ fontSize: 15, marginBottom: 7 }}>
                   We couldn't recognize the plant from your image.

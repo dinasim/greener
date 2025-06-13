@@ -35,3 +35,6 @@ local.settings.json
 # Compiled outputs
 *.dll
 *.pdb
+
+# Notifications
+plantSupportReminders/serviceAccountKey.json

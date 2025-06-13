@@ -4,7 +4,6 @@ import {
   View,
   Text,
   StyleSheet,
-  ImageBackground,
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
@@ -32,11 +31,6 @@ export default function LoginScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ImageBackground
-        source={require("../assets/homescreen1.png")}
-        style={styles.background}
-        resizeMode="cover"
-      >
         <View style={styles.overlay}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
@@ -60,7 +54,7 @@ export default function LoginScreen({ navigation }) {
               <View style={styles.bottomContainer}>
                 <Text style={styles.signInText}>Already a member? </Text>
                 <TouchableOpacity
-                  onPress={() => navigation.navigate("SignIn")}
+                  onPress={() => navigation.navigate("LoginUser")}
                   style={styles.signInButton}
                 >
                   <Text style={styles.signInLink}>Sign in here</Text>
@@ -69,7 +63,6 @@ export default function LoginScreen({ navigation }) {
             </View>
           </ScrollView>
         </View>
-      </ImageBackground>
     </SafeAreaView>
   );
 }
@@ -77,7 +70,6 @@ export default function LoginScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#fff",
   },
   background: {
     flex: 1,
@@ -86,7 +78,7 @@ const styles = StyleSheet.create({
   },
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(255,255,255,0.9)",
+    backgroundColor: "transparent",
   },
   scrollContent: {
     flexGrow: 1,

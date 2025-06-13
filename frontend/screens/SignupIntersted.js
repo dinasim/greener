@@ -103,8 +103,17 @@ export default function InterestPage({ navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity
-          style={styles.nextButton}
-          onPress={() => navigation.navigate("SignupAnimals")}
+          style={[
+            styles.nextButton,
+            (!formData.Intersted || formData.Intersted === "") && { backgroundColor: "#bdbdbd" }
+          ]}
+          onPress={() => {
+            if (formData.Intersted && formData.Intersted !== "") {
+              navigation.navigate("SignupAnimals");
+            }
+          }}
+          activeOpacity={(!formData.Intersted || formData.Intersted === "") ? 1 : 0.7}
+          disabled={!formData.Intersted || formData.Intersted === ""}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>
@@ -115,8 +124,7 @@ export default function InterestPage({ navigation }) {
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: "#fff",
+    flex: 1
   },
   scrollView: {
     flex: 1,
@@ -203,7 +211,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     padding: 20,
-    backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#e0e0e0",
   },
