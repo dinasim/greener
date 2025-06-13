@@ -41,6 +41,7 @@
           "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
+      "edgeToEdge": true,
       "permissions": ["RECORD_AUDIO"]
     },
     "web": {

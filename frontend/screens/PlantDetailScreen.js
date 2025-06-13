@@ -45,12 +45,6 @@ export default function PlantDetailScreen({ route, navigation }) {
   if (loading) {
     return (
       <SafeAreaView style={styles.center}>
-        <LottieView
-          autoPlay
-          loop
-          style={{ width: 110, height: 110, marginBottom: 14 }}
-          source={require('../assets/lottie-leaf.json')}
-        />
         <Text style={{ fontSize: 18, color: "#2e7d32", fontWeight: "bold" }}>Loading plant details…</Text>
       </SafeAreaView>
     );
@@ -59,12 +53,6 @@ export default function PlantDetailScreen({ route, navigation }) {
   if (!plant) {
     return (
       <SafeAreaView style={styles.center}>
-        <LottieView
-          autoPlay
-          loop
-          style={{ width: 120, height: 120, marginBottom: 10 }}
-          source={require('../assets/lottie-search.json')}
-        />
         <Ionicons name="alert-circle" size={70} color="#bdbdbd" style={{ marginBottom: 14 }} />
         <Text style={{ fontSize: 24, fontWeight: "bold", color: "#333", marginBottom: 10 }}>
           Plant Not Found

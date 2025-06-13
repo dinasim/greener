@@ -43,33 +43,40 @@ const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8b
 WebBrowser.maybeCompleteAuthSession();
 
 const windowHeight = Dimensions.get("window").height;
+
+// -- These values must match your Google Cloud OAuth client IDs --
 const EXPO_GOOGLE_CLIENT_ID = "241318918547-apo19m563ah7q2ii68mv975l9fvbtpdv.apps.googleusercontent.com";
 const ANDROID_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.androidClientId;
 const IOS_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.iosClientId;
 const WEB_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.expoClientId;
+
+// Helper
+const isWeb = Platform.OS === "web";
+const isStandalone = Constants.appOwnership === 'standalone';
 
 export default function SignInGoogleScreen({ navigation }) {
   const { formData, updateFormData } = useForm();
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const isStandalone = Constants.appOwnership === 'standalone';
 
+  // Conditional proxy/redirect for cross-platform Google auth
+  const useProxy = isWeb ? true : !isStandalone;
   const redirectUri = AuthSession.makeRedirectUri({
-    useProxy: !isStandalone,
+    useProxy,
     native: 'greener://',
   });
 
   const [request, response, promptAsync] = Google.useAuthRequest(
     {
-      expoClientId: EXPO_GOOGLE_CLIENT_ID,
+      expoClientId: EXPO_GOOGLE_CLIENT_ID, // for Expo Go (optional for production)
       androidClientId: ANDROID_GOOGLE_CLIENT_ID,
       iosClientId: IOS_GOOGLE_CLIENT_ID,
       webClientId: WEB_GOOGLE_CLIENT_ID,
       redirectUri,
       scopes: ['openid', 'profile', 'email'],
     },
-    { useProxy: !isStandalone }
+    { useProxy }
   );
 
   useEffect(() => {
@@ -97,13 +104,13 @@ export default function SignInGoogleScreen({ navigation }) {
 
               let webPushToken = null;
               let fcmToken = null;
-              if (Platform.OS === "web") {
+              if (isWeb) {
                 webPushToken = await getWebPushToken();
                 console.log("📦 WebPushToken being sent:", webPushToken);
                 updateFormData('webPushSubscription', webPushToken);
               } else if (Platform.OS === "android" || Platform.OS === "ios") {
                 fcmToken = await getFcmToken();
-                //updateFormData('fcmToken', fcmToken);
+                // updateFormData('fcmToken', fcmToken);
               }
 
               const userData = {
@@ -235,7 +242,7 @@ export default function SignInGoogleScreen({ navigation }) {
       >
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>  
+            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
               <Text style={styles.title}>Sign In</Text>
               <Text style={styles.subtitle}>Use your Google account to log in</Text>
 
