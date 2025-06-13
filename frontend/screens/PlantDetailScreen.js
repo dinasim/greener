@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, Image, StyleSheet, TouchableOpacity, Dimensions, SafeAreaView, Platform
 } from 'react-native';
-import { Ionicons, MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, FontAwesome5, Entypo, Feather } from '@expo/vector-icons';
 
 const PLANT_DETAIL_URL = 'https://usersfunctions.azurewebsites.net/api/plant_detail';
 const { width } = Dimensions.get('window');
@@ -118,6 +118,9 @@ export default function PlantDetailScreen({ route, navigation }) {
     },
   ];
 
+  // --- Common Problems section ---
+  const problems = Array.isArray(plant.common_problems) ? plant.common_problems : [];
+
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
@@ -180,6 +183,25 @@ export default function PlantDetailScreen({ route, navigation }) {
             {plant.family && plant.family.trim() !== "" ? plant.family : dash}
           </Text>
         </View>
+
+        {/* Common Problems */}
+        <View style={styles.sectionCard}>
+          <Text style={styles.sectionTitle}>
+            <Feather name="alert-triangle" size={22} color="#e68c29" /> Common Problems
+          </Text>
+          {problems.length === 0 ? (
+            <Text style={styles.sectionBody}>No common problems known for this plant.</Text>
+          ) : (
+            problems.map((problem, idx) => (
+              <View key={idx} style={styles.problemItem}>
+                <Text style={styles.problemName}>
+                  <Feather name="alert-circle" size={17} color="#e68c29" /> {problem.name}
+                </Text>
+                <Text style={styles.problemDesc}>{problem.description}</Text>
+              </View>
+            ))
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -209,7 +231,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10, color: '#3a4b37' },
+  sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10, color: '#3a4b37', flexDirection: 'row', alignItems: 'center' },
   infoRow: {
     flexDirection: 'row', alignItems: 'center', marginBottom: 6, paddingLeft: 4,
   },
@@ -226,4 +248,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center'
   },
   backText: { color: '#fff', fontWeight: "bold", fontSize: 17 },
+  // --- Problems section
+  problemItem: { marginBottom: 10, marginLeft: 6 },
+  problemName: { fontSize: 16, fontWeight: '600', color: '#be7d13', flexDirection: 'row', alignItems: 'center' },
+  problemDesc: { fontSize: 14, color: '#684e23', marginLeft: 6, marginTop: 2 },
 });
