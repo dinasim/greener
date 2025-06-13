@@ -1,16 +1,6 @@
-// screens/PlantDetailScreen.js
 import React, { useState, useEffect } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
-  Image,
-  StyleSheet,
-  ActivityIndicator,
-  TouchableOpacity,
-  Dimensions,
-  SafeAreaView,
-  Platform,
+  View, Text, ScrollView, Image, StyleSheet, TouchableOpacity, Dimensions, SafeAreaView, Platform
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5, Entypo } from '@expo/vector-icons';
 
@@ -68,7 +58,6 @@ export default function PlantDetailScreen({ route, navigation }) {
     );
   }
 
-  // Data helpers for nice formatting:
   const dash = '—';
   const care = plant.care_info || {};
   const schedule = plant.schedule || {};
@@ -95,8 +84,8 @@ export default function PlantDetailScreen({ route, navigation }) {
       icon: <MaterialIcons name="pets" size={22} color="#826C5E" />,
       label: 'Pets',
       value: care.pets === "poisonous" ? "❌ Poisonous" :
-             care.pets === "not poisonous" ? "✔️ Safe" :
-             dash,
+        care.pets === "not poisonous" ? "✔️ Safe" :
+        care.pets === "unknown" ? "Unknown" : dash,
     },
     {
       icon: <MaterialIcons name="fitness-center" size={22} color="#8663DC" />,
@@ -105,21 +94,27 @@ export default function PlantDetailScreen({ route, navigation }) {
     },
   ];
 
+  // Schedule uses {amount, unit} everywhere!
+  const formatSchedule = (item) =>
+    item && item.amount
+      ? `every ${item.amount} ${item.unit || ''}`.trim()
+      : dash;
+
   const scheduleInfo = [
     {
       icon: <MaterialIcons name="event" size={22} color="#4CAF50" />,
-      label: 'Water every',
-      value: schedule.water_days ? `every ${schedule.water_days} days` : dash,
+      label: 'Water',
+      value: formatSchedule(schedule.water),
     },
     {
       icon: <MaterialIcons name="local-florist" size={22} color="#7CB518" />,
       label: 'Feed',
-      value: schedule.feed_days ? `every ${schedule.feed_days} days` : dash,
+      value: formatSchedule(schedule.feed),
     },
     {
       icon: <MaterialIcons name="change-history" size={22} color="#8B5CF6" />,
       label: 'Repot',
-      value: schedule.repot_years ? `every ${schedule.repot_years} years` : dash,
+      value: formatSchedule(schedule.repot),
     },
   ];
 
@@ -133,7 +128,7 @@ export default function PlantDetailScreen({ route, navigation }) {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {plant.common_name || plant.scientific_name || 'Plant details'}
         </Text>
-        <View style={{ width: 36 }} /> {/* for symmetry */}
+        <View style={{ width: 36 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
@@ -149,7 +144,7 @@ export default function PlantDetailScreen({ route, navigation }) {
         {/* Care Info Section */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Care Info</Text>
-          {careInfo.map((item, idx) => (
+          {careInfo.map((item) => (
             <View style={styles.infoRow} key={item.label}>
               <View style={styles.infoIcon}>{item.icon}</View>
               <Text style={styles.infoLabel}>{item.label}:</Text>
@@ -161,7 +156,7 @@ export default function PlantDetailScreen({ route, navigation }) {
         {/* Schedule Section */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Schedule & Maintenance</Text>
-          {scheduleInfo.map((item, idx) => (
+          {scheduleInfo.map((item) => (
             <View style={styles.infoRow} key={item.label}>
               <View style={styles.infoIcon}>{item.icon}</View>
               <Text style={styles.infoLabel}>{item.label}:</Text>
@@ -232,4 +227,3 @@ const styles = StyleSheet.create({
   },
   backText: { color: '#fff', fontWeight: "bold", fontSize: 17 },
 });
-
