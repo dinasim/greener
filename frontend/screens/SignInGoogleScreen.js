@@ -6,7 +6,6 @@ import {
   Text,
   TouchableOpacity,
   SafeAreaView,
-  ImageBackground,
   ActivityIndicator,
   ScrollView,
   Dimensions,
@@ -235,11 +234,6 @@ export default function SignInGoogleScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ImageBackground
-        source={require("../assets/homescreen1.png")}
-        style={styles.background}
-        resizeMode="cover"
-      >
         <View style={styles.overlay}>
           <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
             <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
@@ -274,15 +268,14 @@ export default function SignInGoogleScreen({ navigation }) {
             </Animated.View>
           </ScrollView>
         </View>
-      </ImageBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1 },
   background: { flex: 1, width: "100%", height: "100%" },
-  overlay: { flex: 1, backgroundColor: "rgba(255,255,255,0.88)", justifyContent: "center" },
+  overlay: { flex: 1, backgroundColor: "transparent", justifyContent: "center" },
   scrollContent: { flexGrow: 1, justifyContent: "center", minHeight: windowHeight },
   contentContainer: { paddingHorizontal: 24, alignItems: "center" },
   title: { fontSize: 32, fontWeight: "bold", color: "#2e7d32", marginBottom: 10 },

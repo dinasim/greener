@@ -202,7 +202,7 @@ export default function HomeScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fdfdfd', padding: 20, paddingBottom: 90 },
+  container: { flex: 1, backgroundColor: 'transparent', padding: 20, paddingBottom: 90 },
   header: { marginTop: 10, marginBottom: 15 },
   greeting: { fontSize: 30, color: '#2e7d32', fontWeight: 'bold' },
   tabRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },

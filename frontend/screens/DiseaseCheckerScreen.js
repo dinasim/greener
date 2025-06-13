@@ -185,7 +185,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f7f7fa' }}>
+    <View style={{ flex: 1 }}>
       {/* Header Row with Back Button */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>

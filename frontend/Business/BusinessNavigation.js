@@ -16,7 +16,6 @@ import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import BusinessAnalyticsScreen from './BusinessScreens/BusinessAnalyticsScreen';
 import CustomerListScreen from './BusinessScreens/CustomerListScreen';
 import WateringChecklistScreen from './BusinessScreens/WateringChecklistScreen';
-import BarcodeScannerScreen from './BusinessScreens/BarcodeScannerScreen';
 import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';

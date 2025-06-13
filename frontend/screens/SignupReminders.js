@@ -152,7 +152,7 @@ export default function SignupReminders({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: "#fff" },
+  safeArea: { flex: 1},
   scrollView: { flex: 1 },
   container: { flex: 1, padding: 20 },
   header: { marginTop: 40, marginBottom: 30 },

@@ -22,6 +22,8 @@ import DiseaseChecker from '../screens/DiseaseCheckerScreen';
 import PlantReviewScreen from '../screens/PlantReviewScreen';
 import searchPlants from '../screens/SearchPlantScreen';
 import UserPlantDetails from '../screens/UserPlantDetails';
+import login from '../screens/loginUserScreen';
+import registration from '../screens/RegistrationScreen';
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
@@ -32,46 +34,61 @@ import BusinessNavigation from '../Business/BusinessNavigation';
 // Import Persona Selection
 import PersonaSelectionScreen from '../Business/BusinessScreens/PersonaSelectionScreen';
 
+// Import the global background wrapper
+import BackgroundWrapper from '../components/BackgroundWrapper';
+
 const Stack = createNativeStackNavigator();
+
+// Helper to wrap a screen with the background
+function withBackground(Component) {
+  return function(props) {
+    return (
+      <BackgroundWrapper>
+        <Component {...props} />
+      </BackgroundWrapper>
+    );
+  };
+}
 
 export default function AppNavigator() {
   return (
     <FormProvider>
-      <Stack.Navigator 
-        initialRouteName="PersonaSelection" 
-        screenOptions={{ 
+      <Stack.Navigator
+        initialRouteName="PersonaSelection"
+        screenOptions={{
           headerShown: false,
           animation: Platform.OS === 'web' ? 'none' : 'default',
           gestureEnabled: Platform.OS !== 'web'
         }}
       >
         {/* Persona Selection */}
-        <Stack.Screen name="PersonaSelection" component={PersonaSelectionScreen} />
+        <Stack.Screen name="PersonaSelection" component={withBackground(PersonaSelectionScreen)} />
         
         {/* Business Flow - using the updated BusinessNavigation */}
         <Stack.Screen 
           name="BusinessFlow" 
           component={BusinessNavigation}
           options={{
-            animation: 'none', // Disable animation for this transition to prevent rendering issues
+            animation: 'none', // No animation for this transition
           }} 
         />
         
         {/* Consumer/User Login and Signup screens */}
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="SignupPlantsLocation" component={PlantLocationScreen} />
-        <Stack.Screen name="SignupIntersted" component={SignupIntersted} />
-        <Stack.Screen name="SignupAnimals" component={SignupAnimals} />
-        <Stack.Screen name="SignupLocationReq" component={SignupLocationReq} />
-        <Stack.Screen name="SignupReminders" component={SignupReminders} />
-        <Stack.Screen name="SignInGoogleScreen" component={SignInGoogleScreen} />
-        <Stack.Screen name="SignIn" component={SignInGoogleScreen} />
-        
-        <Stack.Screen name="PlantReview" component={PlantReviewScreen} />
+        <Stack.Screen name="Login" component={withBackground(LoginScreen)} />
+        <Stack.Screen name="SignupPlantsLocation" component={withBackground(PlantLocationScreen)} />
+        <Stack.Screen name="SignupIntersted" component={withBackground(SignupIntersted)} />
+        <Stack.Screen name="SignupAnimals" component={withBackground(SignupAnimals)} />
+        <Stack.Screen name="SignupLocationReq" component={withBackground(SignupLocationReq)} />
+        <Stack.Screen name="SignupReminders" component={withBackground(SignupReminders)} />
+        <Stack.Screen name="SignInGoogleScreen" component={withBackground(SignInGoogleScreen)} />
+        <Stack.Screen name="SignIn" component={withBackground(SignInGoogleScreen)} />
+        <Stack.Screen name="Registration" component={withBackground(registration)} />
+        <Stack.Screen name="LoginUser" component={withBackground(login)} />
+        <Stack.Screen name="PlantReview" component={withBackground(PlantReviewScreen)} />
 
         {/* Consumer Home and Other Screens */}
-        <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="UserPlantDetail" component={UserPlantDetails} />
+        <Stack.Screen name="Home" component={withBackground(HomeScreen)} />
+        <Stack.Screen name="UserPlantDetail" component={withBackground(UserPlantDetails)} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen 
@@ -83,15 +100,15 @@ export default function AppNavigator() {
         />
 
         {/* Other consumer screens */}
-        <Stack.Screen name="Camera" component={CameraScreen} />
-        <Stack.Screen name="AddPlant" component={AddPlantScreen} />
-        <Stack.Screen name="SearchPlants" component={searchPlants} />
-        <Stack.Screen name="PlacePlantScreen" component={PlacePlantScreen} />
-        <Stack.Screen name="Locations" component={LocationsScreen} />
-        <Stack.Screen name="LocationPlants" component={LocationPlantsScreen} />
-        <Stack.Screen name="PlantDetail" component={PlantDetail} />
-        <Stack.Screen name="PlantLocationScreen" component={PlantLocationScreen} />
-        <Stack.Screen name="DiseaseChecker" component={DiseaseChecker} />
+        <Stack.Screen name="Camera" component={withBackground(CameraScreen)} />
+        <Stack.Screen name="AddPlant" component={withBackground(AddPlantScreen)} />
+        <Stack.Screen name="SearchPlants" component={withBackground(searchPlants)} />
+        <Stack.Screen name="PlacePlantScreen" component={withBackground(PlacePlantScreen)} />
+        <Stack.Screen name="Locations" component={withBackground(LocationsScreen)} />
+        <Stack.Screen name="LocationPlants" component={withBackground(LocationPlantsScreen)} />
+        <Stack.Screen name="PlantDetail" component={withBackground(PlantDetail)} />
+        <Stack.Screen name="PlantLocationScreen" component={withBackground(PlantLocationScreen)} />
+        <Stack.Screen name="DiseaseChecker" component={withBackground(DiseaseChecker)} />
       </Stack.Navigator>
     </FormProvider>
   );
