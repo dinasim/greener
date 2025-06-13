@@ -1,8 +1,8 @@
-// screens/MarketplaceScreen.js - FIXED VERSION (Removed duplicate filter)
+// screens/MarketplaceScreen.js - FIXED GRID LAYOUT
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, FlatList, ActivityIndicator, StyleSheet, Text, TouchableOpacity,
-  SafeAreaView, RefreshControl, Alert, Platform
+  SafeAreaView, RefreshControl, Alert, Platform, Dimensions
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -11,12 +11,12 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
-import MarketplaceFilterToggle from '../components/MarketplaceFilterToggle';
-import SortOptions from '../components/SortOptions';
-import MapToggle from '../components/MapToggle';
+import FilterSection from '../components/FilterSection';
 import { getAll, getNearbyProducts, geocodeAddress } from '../services/marketplaceApi';
 import syncService from '../services/SyncService';
 import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener, triggerUpdate } from '../services/MarketplaceUpdates';
+
+const { width } = Dimensions.get('window');
 
 const useMarketplaceUpdates = (callback) => {
   useEffect(() => {
@@ -40,7 +40,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [sellerType, setSellerType] = useState('all'); // 'all', 'individual', 'business'
+  const [sellerType, setSellerType] = useState('all');
   const [priceRange, setPriceRange] = useState({ min: 0, max: 1000 });
   const [sortOption, setSortOption] = useState('recent');
   const [viewMode, setViewMode] = useState('grid');
@@ -57,7 +57,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
     individual: 0,
     business: 0
   });
-  const [userType, setUserType] = useState('individual'); // Track current user type
+  const [userType, setUserType] = useState('individual');
   const plantsRef = useRef(plants);
   const loadPlantsRef = useRef(null);
 
@@ -104,24 +104,45 @@ const MarketplaceScreen = ({ navigation, route }) => {
     }
   }, [navigation]);
 
+  // FIXED: Normalize plant seller info with proper names
   const normalizePlantSellerInfo = (plantsArray) => {
     return plantsArray.map(plant => {
-      if (plant.seller && plant.seller.name && plant.seller.name !== 'Unknown Seller') {
-        return plant;
+      // Determine if this is a business product
+      const isBusiness = plant.seller?.isBusiness || plant.isBusinessListing || plant.sellerType === 'business';
+      
+      // Get proper seller name based on type
+      let sellerName;
+      if (isBusiness) {
+        sellerName = plant.seller?.businessName || plant.seller?.name || plant.sellerName || 'Business';
+      } else {
+        sellerName = plant.seller?.name || plant.sellerName || 'Plant Enthusiast';
       }
+      
+      // Ensure we don't show "Unknown Seller"
+      if (sellerName === 'Unknown Seller') {
+        sellerName = isBusiness ? 'Business' : 'Plant Enthusiast';
+      }
+
       return {
         ...plant,
         seller: {
-          name: plant.sellerName || (plant.seller?.name && plant.seller.name !== 'Unknown Seller' ? plant.seller.name : 'Plant Enthusiast'),
+          name: sellerName,
           _id: plant.sellerId || plant.seller?._id || 'unknown',
-          isBusiness: plant.sellerType === 'business' || plant.isBusinessListing || false,
+          isBusiness: isBusiness,
+          businessName: isBusiness ? sellerName : undefined,
+          avatar: plant.seller?.avatar || plant.seller?.logo,
+          rating: plant.seller?.rating,
+          totalReviews: plant.seller?.totalReviews,
           ...(plant.seller || {})
-        }
+        },
+        sellerName: sellerName, // Keep for backward compatibility
+        sellerType: isBusiness ? 'business' : 'individual',
+        isBusinessListing: isBusiness
       };
     });
   };
 
-  const loadPlants = useCallback(async (pageNum = 1, resetData = false) => {
+  const loadPlants = useCallback(async (pageNum = 1, resetData = false, overrideSellerType = null) => {
     if (!hasMorePages && pageNum > 1 && !resetData) return;
     try {
       setError(null);
@@ -150,6 +171,11 @@ const MarketplaceScreen = ({ navigation, route }) => {
         }
       }
 
+      // FIXED: Use override value if provided, otherwise use current state
+      const currentSellerType = overrideSellerType !== null ? overrideSellerType : sellerType;
+      console.log('📞 [CALLING API] with sellerType:', currentSellerType, 'override:', overrideSellerType, 'state:', sellerType);
+
+      // ENHANCED API CALL with all filter options
       const data = await getAll(
         pageNum,
         selectedCategory === 'All' ? null : selectedCategory,
@@ -158,7 +184,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
           minPrice: priceRange.min, 
           maxPrice: priceRange.max,
           sortBy: sortOption,
-          sellerType: sellerType === 'all' ? null : sellerType
+          sellerType: currentSellerType === 'all' ? null : currentSellerType
         }
       );
       
@@ -172,8 +198,12 @@ const MarketplaceScreen = ({ navigation, route }) => {
         setPage(pageNum);
         setHasMorePages(data.pages > pageNum);
         
-        // Calculate seller type counts
-        calculateSellerTypeCounts(normalizedProducts);
+        // Calculate seller type counts from API response or calculate locally
+        if (data.sellerTypeCounts) {
+          setSellerTypeCounts(data.sellerTypeCounts);
+        } else {
+          calculateSellerTypeCounts(normalizedProducts);
+        }
         
         await syncService.cacheData('marketplace_plants', normalizedProducts);
       }
@@ -315,9 +345,10 @@ const MarketplaceScreen = ({ navigation, route }) => {
 
   useMarketplaceUpdates(handleMarketplaceUpdate);
 
+  // FIXED: Pass current sellerType to ensure consistency
   const onRefresh = async () => {
     setIsRefreshing(true);
-    await loadPlants(1, true);
+    await loadPlants(1, true, sellerType);
   };
 
   const applyFilters = () => {
@@ -397,25 +428,39 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const handleSearch = (query) => {
     setSearchQuery(query);
     if (query !== searchQuery) {
-      loadPlants(1, true);
+      loadPlants(1, true, sellerType);
     }
+  };
+
+  const handleSubmitSearch = () => {
+    loadPlants(1, true, sellerType);
   };
 
   const handleCategorySelect = (categoryId) => {
     setSelectedCategory(categoryId);
     if (categoryId !== selectedCategory) {
-      loadPlants(1, true);
+      loadPlants(1, true, sellerType);
     }
   };
 
-  const handleSellerTypeChange = (type) => {
-    setSellerType(type);
+  // FIXED: Most important - handleSellerTypeChange function with immediate new value
+  const handleSellerTypeChange = (newSellerType) => {
+    console.log(`[MarketplaceScreen] Changing seller type from ${sellerType} to ${newSellerType}`);
+    setSellerType(newSellerType);
     setPage(1);
-    loadPlants(1, true);
+    setHasMorePages(true);
+    // Clear current plants and reload with new filter
+    setPlants([]);
+    setFilteredPlants([]);
+    // FIXED: Pass the new value directly to avoid state timing issues
+    loadPlants(1, true, newSellerType);
   };
 
   const handlePriceRangeChange = (range) => {
+    console.log(`[MarketplaceScreen] Price range changed:`, range);
     setPriceRange(range);
+    // Apply filters immediately when price changes
+    applyFilters();
   };
 
   const handleSortChange = (option) => {
@@ -439,6 +484,70 @@ const MarketplaceScreen = ({ navigation, route }) => {
     }
   };
 
+  const handleRemoveFilter = (filterId) => {
+    setActiveFilters(prev => prev.filter(f => f.id !== filterId));
+  };
+
+  const handleResetFilters = () => {
+    setSellerType('all');
+    setSelectedCategory('All');
+    setSearchQuery('');
+    setPriceRange({ min: 0, max: 1000 });
+    setActiveFilters([]);
+    // FIXED: Pass 'all' directly to avoid state timing
+    loadPlants(1, true, 'all');
+  };
+
+  // FIXED: Handle contact seller for PlantCard
+  const handleContactSeller = (plant) => {
+    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business';
+    const sellerId = plant.sellerId || plant.seller?._id;
+    const sellerName = plant.seller?.name || plant.sellerName;
+    
+    if (!sellerId) {
+      Alert.alert('Error', 'Seller information is not available.');
+      return;
+    }
+
+    const messageParams = {
+      sellerId: sellerId,
+      plantId: plant.id || plant._id,
+      plantName: plant.title || plant.name,
+      sellerName: sellerName,
+      isBusiness: isBusiness
+    };
+
+    // For business products, add automatic message
+    if (isBusiness) {
+      messageParams.autoMessage = `Hello, I would like to buy ${plant.title || plant.name}. Is it still available?`;
+    }
+
+    navigateToMessages(messageParams);
+  };
+
+  // FIXED: Handle order for business products
+  const handleOrderPlant = (plant) => {
+    // Same as contact but with order-specific message
+    const sellerId = plant.sellerId || plant.seller?._id;
+    const sellerName = plant.seller?.name || plant.sellerName;
+    
+    if (!sellerId) {
+      Alert.alert('Error', 'Seller information is not available.');
+      return;
+    }
+
+    const messageParams = {
+      sellerId: sellerId,
+      plantId: plant.id || plant._id,
+      plantName: plant.title || plant.name,
+      sellerName: sellerName,
+      isBusiness: true,
+      autoMessage: `Hello, I would like to order ${plant.title || plant.name}. What is the pickup process?`
+    };
+
+    navigateToMessages(messageParams);
+  };
+
   const renderEmptyList = () => {
     if (isLoading) {
       return (
@@ -453,7 +562,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         <View style={styles.centerContainer}>
           <MaterialIcons name="error-outline" size={48} color="#f44336" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => loadPlants(1, true)}>
+          <TouchableOpacity style={styles.retryButton} onPress={() => loadPlants(1, true, sellerType)}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -472,13 +581,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
       <View style={styles.centerContainer}>
         <MaterialIcons name="eco" size={48} color="#aaa" />
         <Text style={styles.noResultsText}>No plants found matching your criteria</Text>
-        <TouchableOpacity style={styles.resetButton} onPress={() => {
-          setSellerType('all');
-          setSelectedCategory('All');
-          setSearchQuery('');
-          setPriceRange({ min: 0, max: 1000 });
-          loadPlants(1, true);
-        }}>
+        <TouchableOpacity style={styles.resetButton} onPress={handleResetFilters}>
           <Text style={styles.resetButtonText}>Reset Filters</Text>
         </TouchableOpacity>
       </View>
@@ -491,6 +594,21 @@ const MarketplaceScreen = ({ navigation, route }) => {
       <View style={styles.footerContainer}>
         <ActivityIndicator size="small" color="#4CAF50" />
         <Text style={styles.footerText}>Loading more plants...</Text>
+      </View>
+    );
+  };
+
+  // FIXED: Simplified renderItem - removed complex grid logic
+  const renderPlantItem = ({ item, index }) => {
+    return (
+      <View style={viewMode === 'grid' ? styles.gridItemWrapper : styles.listItemWrapper}>
+        <PlantCard 
+          plant={item} 
+          showActions={true} 
+          layout={viewMode}
+          onContactPress={() => handleContactSeller(item)}
+          onOrderPress={() => handleOrderPlant(item)}
+        />
       </View>
     );
   };
@@ -524,7 +642,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         <View style={styles.centerContainer}>
           <MaterialIcons name="error-outline" size={48} color="#f44336" />
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => loadPlants(1, true)}>
+          <TouchableOpacity style={styles.retryButton} onPress={() => loadPlants(1, true, sellerType)}>
             <Text style={styles.retryText}>Retry</Text>
           </TouchableOpacity>
         </View>
@@ -544,14 +662,9 @@ const MarketplaceScreen = ({ navigation, route }) => {
       <SearchBar
         value={searchQuery}
         onChangeText={handleSearch}
-        onSubmit={() => loadPlants(1, true)}
-        style={styles.searchBarContainer}
-      />
-      
-      <MarketplaceFilterToggle
+        onSubmit={handleSubmitSearch}
         sellerType={sellerType}
-        onSellerTypeChange={handleSellerTypeChange}
-        counts={sellerTypeCounts}
+        style={styles.searchBarContainer}
       />
       
       <CategoryFilter
@@ -559,33 +672,32 @@ const MarketplaceScreen = ({ navigation, route }) => {
         onSelect={handleCategorySelect}
       />
       
-      {/* SIMPLIFIED FILTER ROW - Only Sort and Map Toggle */}
-      <View style={styles.filterRow}>
-        <SortOptions 
-          selectedOption={sortOption}
-          onSelectOption={handleSortChange}
-        />
-        
-        <View style={styles.spacer} />
-        
-        <MapToggle 
-          viewMode={viewMode} 
-          onViewModeChange={handleViewModeChange} 
-        />
-      </View>
+      <FilterSection
+        sortOption={sortOption}
+        onSortChange={handleSortChange}
+        priceRange={priceRange}
+        onPriceChange={handlePriceRangeChange}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+        category={selectedCategory}
+        onCategoryChange={handleCategorySelect}
+        sellerType={sellerType}
+        onSellerTypeChange={handleSellerTypeChange}
+        activeFilters={activeFilters}
+        onRemoveFilter={handleRemoveFilter}
+        onResetFilters={handleResetFilters}
+        businessCounts={sellerTypeCounts}
+      />
       
       <FlatList
         data={filteredPlants}
-        renderItem={({ item }) => (
-          <PlantCard plant={item} showActions={true} layout={viewMode} />
-        )}
-        numColumns={viewMode === 'grid' ? (Platform.OS === 'web' ? 3 : 2) : 1}
+        renderItem={renderPlantItem}
+        numColumns={viewMode === 'grid' ? 2 : 1}
         key={`${viewMode}-${Platform.OS}`}
         keyExtractor={(item) => (item.id?.toString() || item._id?.toString() || Math.random().toString())}
         contentContainerStyle={[
           styles.listContainer,
-          filteredPlants.length === 0 && styles.emptyListContainer,
-          viewMode === 'list' && styles.listViewContainer
+          filteredPlants.length === 0 && styles.emptyListContainer
         ]}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.5}
@@ -594,6 +706,9 @@ const MarketplaceScreen = ({ navigation, route }) => {
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
         }
+        // FIXED: Clean grid spacing
+        columnWrapperStyle={viewMode === 'grid' ? styles.gridRow : null}
+        ItemSeparatorComponent={viewMode === 'list' ? () => <View style={styles.listSeparator} /> : null}
       />
       
       {/* Only show Add button for individual users, not businesses */}
@@ -628,20 +743,22 @@ const styles = StyleSheet.create({
   emptyListContainer: { 
     flexGrow: 1 
   },
-  listViewContainer: { 
-    paddingHorizontal: 16 
+  // FIXED: Clean grid layout styles
+  gridRow: {
+    justifyContent: 'flex-start', // Changed from 'space-between'
+    paddingHorizontal: 8,
   },
-  filterRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+  gridItemWrapper: {
+    width: (width - 24) / 2, // Clean calculation: screen width minus padding, divided by 2
+    marginHorizontal: 4,
+    marginVertical: 4,
   },
-  spacer: {
-    flex: 1,
+  listItemWrapper: {
+    marginHorizontal: 8,
+    marginVertical: 4,
+  },
+  listSeparator: {
+    height: 8,
   },
   centerContainer: { 
     flex: 1, 

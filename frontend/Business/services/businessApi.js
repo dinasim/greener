@@ -1,4 +1,4 @@
-// Business/services/businessApi.js - ENHANCED VERSION WITH MAP FEATURES
+// Business/services/businessApi.js - ENHANCED VERSION WITH IMAGE SUPPORT
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
@@ -154,7 +154,7 @@ export const getBusinessDashboard = async () => {
 };
 
 /**
- * Get Business Inventory
+ * Get Business Inventory - ENHANCED with image support
  */
 export const getBusinessInventory = async (businessId) => {
   try {
@@ -169,7 +169,7 @@ export const getBusinessInventory = async (businessId) => {
       headers,
     }, 3, 'Business Inventory');
     
-    // Process the inventory data
+    // Process the inventory data with enhanced image handling
     const inventory = response.inventory || response.items || response.data || [];
     
     return {
@@ -179,17 +179,45 @@ export const getBusinessInventory = async (businessId) => {
         ...item,
         isLowStock: (item.quantity || 0) <= (item.minThreshold || 5),
         finalPrice: item.finalPrice || (item.price - (item.price * (item.discount || 0) / 100)),
-        lastUpdated: item.updatedAt || item.dateAdded || new Date().toISOString()
+        lastUpdated: item.updatedAt || item.dateAdded || new Date().toISOString(),
+        
+        // ENHANCED: Better image handling
+        mainImage: item.mainImage || item.image || (item.images && item.images[0]) || item.imageUrls?.[0],
+        images: item.images || item.imageUrls || (item.mainImage ? [item.mainImage] : []),
+        hasImages: !!(item.mainImage || item.image || (item.images && item.images.length > 0) || (item.imageUrls && item.imageUrls.length > 0)),
+        
+        // Enhanced display info
+        displayName: item.name || item.common_name || 'Business Product',
+        categoryDisplay: item.category || 'Products',
+        stockStatus: (item.quantity || 0) > 0 ? 'In Stock' : 'Out of Stock',
+        stockLevel: getStockLevel(item.quantity, item.minThreshold),
       })),
-      totalItems: response.totalItems || inventory.length,
-      activeItems: response.activeItems || inventory.filter(i => i.status === 'active').length,
-      lowStockItems: response.lowStockItems || inventory.filter(i => (i.quantity || 0) <= (i.minThreshold || 5)).length,
+      summary: {
+        totalItems: response.totalItems || inventory.length,
+        activeItems: response.activeItems || inventory.filter(i => i.status === 'active').length,
+        lowStockItems: response.lowStockItems || inventory.filter(i => (i.quantity || 0) <= (i.minThreshold || 5)).length,
+        totalValue: inventory.reduce((sum, item) => sum + ((item.price || 0) * (item.quantity || 0)), 0),
+        itemsWithImages: inventory.filter(i => i.mainImage || i.image || (i.images && i.images.length > 0)).length,
+      },
       lastRefreshed: new Date().toISOString()
     };
   } catch (error) {
     console.error('❌ Inventory error:', error);
     throw error;
   }
+};
+
+/**
+ * HELPER: Get stock level indicator
+ */
+const getStockLevel = (quantity, minThreshold = 5) => {
+  const qty = quantity || 0;
+  const threshold = minThreshold || 5;
+  
+  if (qty === 0) return 'out';
+  if (qty <= threshold) return 'low';
+  if (qty <= threshold * 2) return 'medium';
+  return 'good';
 };
 
 /**
@@ -222,7 +250,9 @@ export const searchPlants = async (query, options = {}) => {
         searchScore: plant.searchScore || 1,
         careComplexity: plant.difficulty ? 
           (plant.difficulty > 7 ? 'Advanced' : plant.difficulty > 4 ? 'Intermediate' : 'Beginner') : 
-          'Unknown'
+          'Unknown',
+        // Add image placeholders for plants from database
+        suggestedImages: getSuggestedPlantImages(plant.common_name),
       })),
       count: response.count || plants.length,
       total: response.total || plants.length
@@ -234,11 +264,23 @@ export const searchPlants = async (query, options = {}) => {
 };
 
 /**
- * Create Inventory Item
+ * HELPER: Get suggested images for common plants
+ */
+const getSuggestedPlantImages = (plantName) => {
+  // This could be expanded with a database of plant images
+  const suggestions = [];
+  if (plantName) {
+    suggestions.push(`Please add photos of your ${plantName}`);
+  }
+  return suggestions;
+};
+
+/**
+ * Create Inventory Item - ENHANCED with image support
  */
 export const createInventoryItem = async (inventoryData) => {
   try {
-    console.log('➕ Creating inventory item:', inventoryData);
+    console.log('➕ Creating inventory item with images:', inventoryData);
     
     // Client-side validation
     const errors = [];
@@ -246,13 +288,18 @@ export const createInventoryItem = async (inventoryData) => {
     if (!inventoryData.quantity || inventoryData.quantity <= 0) errors.push('Valid quantity is required');
     if (!inventoryData.price || inventoryData.price <= 0) errors.push('Valid price is required');
     
+    // NEW: Image validation
+    if (!inventoryData.mainImage && (!inventoryData.images || inventoryData.images.length === 0)) {
+      errors.push('At least one product image is required');
+    }
+    
     if (errors.length > 0) {
       throw new ApiError(`Validation failed: ${errors.join(', ')}`);
     }
     
     const headers = await getEnhancedHeaders();
     
-    // Enhance the data before sending
+    // Enhance the data before sending with better image handling
     const enhancedData = {
       ...inventoryData,
       dateAdded: new Date().toISOString(),
@@ -260,7 +307,25 @@ export const createInventoryItem = async (inventoryData) => {
       status: inventoryData.status || 'active',
       minThreshold: inventoryData.minThreshold || 5,
       discount: inventoryData.discount || 0,
-      finalPrice: inventoryData.price - (inventoryData.price * (inventoryData.discount || 0) / 100)
+      finalPrice: inventoryData.price - (inventoryData.price * (inventoryData.discount || 0) / 100),
+      
+      // ENHANCED: Comprehensive image handling
+      mainImage: inventoryData.mainImage || (inventoryData.images && inventoryData.images[0]),
+      images: inventoryData.images || [],
+      imageUrls: inventoryData.imageUrls || inventoryData.images || [],
+      hasImages: !!(inventoryData.mainImage || (inventoryData.images && inventoryData.images.length > 0)),
+      imageCount: (inventoryData.images && inventoryData.images.length) || (inventoryData.mainImage ? 1 : 0),
+      
+      // Enhanced metadata for marketplace display
+      marketplaceReady: true,
+      displayData: {
+        name: inventoryData.plantData.common_name,
+        scientificName: inventoryData.plantData.scientific_name,
+        category: inventoryData.category || 'Plants',
+        description: `${inventoryData.plantData.common_name} - Professional quality from business inventory`,
+        images: inventoryData.images || [],
+        mainImage: inventoryData.mainImage,
+      }
     };
     
     const url = `${API_BASE_URL}/business/inventory/create`;
@@ -268,9 +333,9 @@ export const createInventoryItem = async (inventoryData) => {
       method: 'POST',
       headers,
       body: JSON.stringify(enhancedData),
-    }, 3, 'Create Inventory');
+    }, 3, 'Create Inventory with Images');
     
-    console.log('✅ Inventory item created successfully');
+    console.log('✅ Inventory item created successfully with images');
     return response;
   } catch (error) {
     console.error('❌ Inventory creation error:', error);
@@ -279,11 +344,11 @@ export const createInventoryItem = async (inventoryData) => {
 };
 
 /**
- * Update Inventory Item
+ * Update Inventory Item - ENHANCED with image support
  */
 export const updateInventoryItem = async (inventoryId, updateData) => {
   try {
-    console.log('🔄 Updating inventory item:', inventoryId);
+    console.log('🔄 Updating inventory item with images:', inventoryId);
     const headers = await getEnhancedHeaders();
     
     const enhancedUpdateData = {
@@ -291,7 +356,25 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
       lastUpdated: new Date().toISOString(),
       finalPrice: updateData.price ? 
         updateData.price - (updateData.price * (updateData.discount || 0) / 100) : 
-        undefined
+        undefined,
+      
+      // ENHANCED: Handle image updates
+      ...(updateData.images && {
+        images: updateData.images,
+        imageUrls: updateData.images,
+        mainImage: updateData.mainImage || updateData.images[0],
+        hasImages: updateData.images.length > 0,
+        imageCount: updateData.images.length,
+      }),
+      
+      // Update marketplace display data if images changed
+      ...(updateData.images && {
+        displayData: {
+          ...updateData.displayData,
+          images: updateData.images,
+          mainImage: updateData.mainImage || updateData.images[0],
+        }
+      })
     };
     
     const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
@@ -299,9 +382,9 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
       method: 'PATCH',
       headers,
       body: JSON.stringify(enhancedUpdateData),
-    }, 3, 'Update Inventory Item');
+    }, 3, 'Update Inventory Item with Images');
     
-    console.log('✅ Inventory item updated successfully');
+    console.log('✅ Inventory item updated successfully with images');
     return response;
   } catch (error) {
     console.error('❌ Inventory update error:', error);
@@ -332,21 +415,29 @@ export const deleteInventoryItem = async (inventoryId) => {
 };
 
 /**
- * Publish Inventory to Marketplace
+ * Publish Inventory to Marketplace - ENHANCED for images
  */
 export const publishInventoryToMarketplace = async (inventoryIds) => {
   try {
-    console.log('📢 Publishing inventory to marketplace:', inventoryIds);
+    console.log('📢 Publishing inventory to marketplace with images:', inventoryIds);
     const headers = await getEnhancedHeaders();
     
     const url = `${API_BASE_URL}/business/inventory/publish`;
     const response = await apiRequest(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ inventoryIds }),
-    }, 3, 'Publish to Marketplace');
+      body: JSON.stringify({ 
+        inventoryIds,
+        includeImages: true, // NEW: Explicitly request image inclusion
+        marketplaceOptions: {
+          enhanceImages: true,
+          generateThumbnails: true,
+          optimizeForMobile: true,
+        }
+      }),
+    }, 3, 'Publish to Marketplace with Images');
     
-    console.log('✅ Inventory published to marketplace');
+    console.log('✅ Inventory published to marketplace with images');
     return response;
   } catch (error) {
     console.error('❌ Publish to marketplace error:', error);
@@ -355,7 +446,7 @@ export const publishInventoryToMarketplace = async (inventoryIds) => {
 };
 
 /**
- * Create/Update Business Profile
+ * Create/Update Business Profile - ENHANCED with image support
  */
 export const createBusinessProfile = async (businessData) => {
   try {
@@ -365,7 +456,18 @@ export const createBusinessProfile = async (businessData) => {
     const enhancedBusinessData = {
       ...businessData,
       lastUpdated: new Date().toISOString(),
-      id: businessData.email || headers['X-User-Email']
+      id: businessData.email || headers['X-User-Email'],
+      
+      // ENHANCED: Handle business images (logo, gallery, etc.)
+      ...(businessData.logo && {
+        logo: businessData.logo,
+        hasLogo: true,
+      }),
+      
+      ...(businessData.galleryImages && {
+        galleryImages: businessData.galleryImages,
+        hasGallery: businessData.galleryImages.length > 0,
+      }),
     };
     
     const url = `${API_BASE_URL}/business/profile`;
@@ -405,30 +507,47 @@ export const getBusinessProfile = async (businessId) => {
 };
 
 /**
- * Fetch Business Profile with Inventory (For Map Display)
+ * Fetch Business Profile with Inventory (For Map Display) - ENHANCED with images
  */
 export const fetchBusinessProfile = async (businessId) => {
   try {
-    console.log('🏢 Fetching complete business profile for map:', businessId);
+    console.log('🏢 Fetching complete business profile for map with images:', businessId);
     const headers = await getEnhancedHeaders();
     
     const url = `${API_BASE_URL}/marketplace/business-profile/${encodeURIComponent(businessId)}`;
     const response = await apiRequest(url, {
       method: 'GET',
-      headers,
-    }, 3, 'Fetch Business Profile for Map');
+      headers: {
+        ...headers,
+        'X-Include-Images': 'true', // NEW: Request image inclusion
+        'X-Image-Size': 'marketplace', // NEW: Request optimized image sizes
+      },
+    }, 3, 'Fetch Business Profile for Map with Images');
+    
+    // ENHANCED: Process business profile with better image handling
+    const businessProfile = response.business || response;
+    if (businessProfile.inventory) {
+      businessProfile.inventory = businessProfile.inventory.map(item => ({
+        ...item,
+        // Ensure images are properly formatted for marketplace display
+        mainImage: item.mainImage || item.image || (item.images && item.images[0]),
+        images: item.images || item.imageUrls || [],
+        hasImages: !!(item.mainImage || item.image || (item.images && item.images.length > 0)),
+        displayImage: item.mainImage || item.image || (item.images && item.images[0]) || null,
+      }));
+    }
     
     // Cache business profile
     try {
       await AsyncStorage.setItem(`cached_business_profile_${businessId}`, JSON.stringify({
-        data: response,
+        data: businessProfile,
         timestamp: Date.now()
       }));
     } catch (cacheError) {
       console.warn('⚠️ Failed to cache business profile:', cacheError);
     }
     
-    return response;
+    return businessProfile;
   } catch (error) {
     console.error('❌ Fetch business profile error:', error);
     
@@ -453,7 +572,7 @@ export const fetchBusinessProfile = async (businessId) => {
 };
 
 /**
- * Get Nearby Businesses (For Map Feature)
+ * ENHANCED: Get Nearby Businesses with image support
  */
 export const getNearbyBusinesses = async (latitude, longitude, radius = 10, businessType = null) => {
   try {
@@ -461,26 +580,46 @@ export const getNearbyBusinesses = async (latitude, longitude, radius = 10, busi
       throw new ApiError('Valid coordinates required');
     }
     
-    console.log('🗺️ Getting nearby businesses:', { latitude, longitude, radius, businessType });
+    console.log('🗺️ Getting nearby businesses with images:', { latitude, longitude, radius, businessType });
     const headers = await getEnhancedHeaders();
     
     let queryParams = `lat=${latitude}&lon=${longitude}&radius=${radius}`;
     if (businessType && businessType !== 'all') {
       queryParams += `&businessType=${encodeURIComponent(businessType)}`;
     }
+    // NEW: Request images for businesses
+    queryParams += '&includeImages=true&includeInventoryImages=true';
     
     const url = `${API_BASE_URL}/marketplace/nearby-businesses?${queryParams}`;
     const response = await apiRequest(url, {
       method: 'GET',
-      headers,
-    }, 3, 'Get Nearby Businesses');
+      headers: {
+        ...headers,
+        'X-Include-Images': 'true',
+        'X-Image-Size': 'thumbnail',
+      },
+    }, 3, 'Get Nearby Businesses with Images');
     
-    // Process and enhance business data
+    // Process and enhance business data with better image handling
     const businesses = (response.businesses || []).map(business => ({
       ...business,
       distance: business.distance || 0,
       isBusiness: true,
-      // Ensure consistent data structure for map display
+      
+      // ENHANCED: Better image handling for businesses
+      logo: business.logo || business.businessImage || business.avatar,
+      hasLogo: !!(business.logo || business.businessImage || business.avatar),
+      
+      // Enhanced inventory with images
+      inventory: (business.inventory || []).map(item => ({
+        ...item,
+        mainImage: item.mainImage || item.image || (item.images && item.images[0]),
+        images: item.images || item.imageUrls || [],
+        hasImages: !!(item.mainImage || item.image || (item.images && item.images.length > 0)),
+        displayImage: item.mainImage || item.image || (item.images && item.images[0]) || null,
+      })),
+      
+      // Enhanced location info
       location: business.location || {
         latitude: business.address?.latitude,
         longitude: business.address?.longitude,
@@ -619,9 +758,8 @@ export const checkApiHealth = async () => {
   }
 };
 
-// Export all functions
+// Default export with all enhanced functions
 export default {
-  // Existing functions
   getBusinessDashboard,
   getBusinessInventory,
   searchPlants,
@@ -632,8 +770,6 @@ export default {
   createBusinessProfile,
   getBusinessProfile,
   checkApiHealth,
-  
-  // New map-related functions
   fetchBusinessProfile,
   getNearbyBusinesses,
   getBusinessHoursStatus,

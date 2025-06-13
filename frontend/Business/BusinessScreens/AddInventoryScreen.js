@@ -1,4 +1,4 @@
-// Business/BusinessScreens/AddInventoryScreen.js - ENHANCED WITH COMPONENTS
+// Business/BusinessScreens/AddInventoryScreen.js - ENHANCED WITH IMAGE SUPPORT
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -17,10 +17,30 @@ import {
   Dimensions,
   RefreshControl,
   StatusBar,
+  Image,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
-import { searchPlants, createInventoryItem, getBusinessInventory, updateInventoryItem } from '../services/businessApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Safe ImagePicker import with web compatibility
+let ImagePicker;
+try {
+  ImagePicker = require('expo-image-picker');
+} catch (error) {
+  console.warn('expo-image-picker not available:', error);
+  // Mock ImagePicker for web compatibility
+  ImagePicker = {
+    launchImageLibraryAsync: () => Promise.resolve({ canceled: true }),
+    launchCameraAsync: () => Promise.resolve({ canceled: true }),
+    requestMediaLibraryPermissionsAsync: () => Promise.resolve({ status: 'denied' }),
+    requestCameraPermissionsAsync: () => Promise.resolve({ status: 'denied' }),
+    getMediaLibraryPermissionsAsync: () => Promise.resolve({ status: 'denied' }),
+    MediaTypeOptions: { Images: 'images' }
+  };
+}
+
+import { searchPlants, createInventoryItem, getBusinessInventory, updateInventoryItem } from '../services/businessApi';
+import { uploadImage } from '../../marketplace/services/marketplaceApi'; // Import image upload function
 import SpeechToTextComponent from '../../marketplace/components/SpeechToTextComponent';
 
 // Import Business Components
@@ -56,6 +76,11 @@ export default function AddInventoryScreen({ navigation, route }) {
   const [productToEdit, setProductToEdit] = useState(null);
   const [lowStockItems, setLowStockItems] = useState([]);
   
+  // NEW: Image upload state
+  const [images, setImages] = useState([]);
+  const [isImageLoading, setIsImageLoading] = useState(false);
+  const webFileInputRef = useRef(null);
+  
   // KPI state
   const [kpiData, setKpiData] = useState({
     totalItems: 0,
@@ -88,7 +113,7 @@ export default function AddInventoryScreen({ navigation, route }) {
   const debounceTimeout = useRef(null);
   const isMounted = useRef(true);
   const searchInputRef = useRef(null);
-  
+
   // Enhanced initialization with proper business ID setup
   useEffect(() => {
     const initializeScreen = async () => {
@@ -373,6 +398,9 @@ export default function AddInventoryScreen({ navigation, route }) {
     setShowSearchHistory(false);
     setErrors({});
     
+    // Clear images when selecting a new plant
+    setImages([]);
+    
     // Animate header height reduction
     Animated.timing(headerHeightAnim, {
       toValue: 85,
@@ -397,6 +425,218 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
+  // NEW: Web file picker handler
+  const handleWebFilePick = async (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    try {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        Alert.alert('Error', 'Please select an image file');
+        return;
+      }
+      
+      // Validate file size (5MB limit)
+      const maxSize = 5 * 1024 * 1024; // 5MB
+      if (file.size > maxSize) {
+        Alert.alert('Error', 'Image size must be less than 5MB');
+        return;
+      }
+      
+      // Create object URL for preview
+      const imageUrl = URL.createObjectURL(file);
+      setImages(prev => [...prev, imageUrl]);
+      
+      // Clear error if images were required
+      if (errors.images) {
+        setErrors(prev => ({ ...prev, images: null }));
+      }
+      
+      // Reset input
+      event.target.value = '';
+      
+    } catch (error) {
+      console.error('Web image pick error:', error);
+      Alert.alert('Error', 'Failed to select image');
+    }
+  };
+
+  // NEW: Mobile image picker
+  const pickImageMobile = async () => {
+    try {
+      // Check permissions first
+      if (ImagePicker.getMediaLibraryPermissionsAsync) {
+        const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+        if (status !== 'granted') {
+          const { status: newStatus } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (newStatus !== 'granted') {
+            Alert.alert('Permission Required', 'Please allow access to your photo library to upload images.');
+            return;
+          }
+        }
+      }
+
+      // Check if we have too many images
+      if (images.length >= 5) {
+        Alert.alert('Too Many Images', 'You can only upload up to 5 images per product');
+        return;
+      }
+
+      // Launch image picker with fallback options
+      let result;
+      try {
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions?.Images || 'images',
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+          base64: false,
+        });
+      } catch (primaryError) {
+        console.log('Primary image picker failed, trying fallback...');
+        // Fallback with string format
+        result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: 'images',
+          allowsEditing: true,
+          aspect: [4, 3],
+          quality: 0.8,
+        });
+      }
+      
+      console.log('ImagePicker result:', result);
+      
+      if (!result.canceled) {
+        if (result.assets && result.assets.length > 0) {
+          const selectedImage = result.assets[0];
+          console.log('Image selected:', selectedImage.uri);
+          setImages(prev => [...prev, selectedImage.uri]);
+          
+          // Clear error if images were required
+          if (errors.images) {
+            setErrors(prev => ({ ...prev, images: null }));
+          }
+        } else if (result.uri) {
+          // Fallback for older versions
+          console.log('Image selected (fallback):', result.uri);
+          setImages(prev => [...prev, result.uri]);
+          
+          // Clear error if images were required
+          if (errors.images) {
+            setErrors(prev => ({ ...prev, images: null }));
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Could not select image. Please try again.');
+    }
+  };
+
+  // NEW: Camera handler
+  const takePhoto = async () => {
+    try {
+      setIsImageLoading(true);
+      
+      // Special handling for web platform
+      if (Platform.OS === 'web') {
+        // Check if the browser supports the MediaDevices API
+        if (!navigator?.mediaDevices?.getUserMedia) {
+          Alert.alert('Not Supported', 'Your browser does not support camera access. Please use the gallery option instead.');
+          setIsImageLoading(false);
+          return;
+        }
+        
+        try {
+          // Request camera permissions via browser API
+          await navigator.mediaDevices.getUserMedia({ video: true });
+          
+          // If we get here, permission was granted. Now use ImagePicker
+          const result = await ImagePicker.launchCameraAsync({
+            mediaTypes: ImagePicker.MediaTypeOptions.Images,
+            allowsEditing: true,
+            aspect: [4, 3],
+            quality: 0.8,
+          });
+          
+          if (result.canceled) {
+            setIsImageLoading(false);
+            return;
+          }
+          
+          const selectedAsset = result.assets?.[0] || { uri: result.uri };
+          if (selectedAsset?.uri) {
+            setImages(prev => [...prev, selectedAsset.uri]);
+            if (errors.images) {
+              setErrors(prev => ({ ...prev, images: null }));
+            }
+          }
+        } catch (err) {
+          console.error('Camera access error:', err);
+          Alert.alert('Camera Access Error', 'Could not access your camera. Please check your browser permissions or use the gallery option instead.');
+        }
+        setIsImageLoading(false);
+        return;
+      }
+      
+      // Original code for native platforms
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert('Permission Required', 'We need camera permission to take photos');
+        setIsImageLoading(false);
+        return;
+      }
+      
+      if (images.length >= 5) {
+        Alert.alert('Too Many Images', 'You can only upload up to 5 images per product');
+        setIsImageLoading(false);
+        return;
+      }
+      
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+      
+      if (result.canceled) {
+        setIsImageLoading(false);
+        return;
+      }
+      
+      const selectedAsset = result.assets?.[0] || { uri: result.uri };
+      if (selectedAsset?.uri) {
+        setImages(prev => [...prev, selectedAsset.uri]);
+        if (errors.images) {
+          setErrors(prev => ({ ...prev, images: null }));
+        }
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo. Please try again later.');
+    } finally {
+      setIsImageLoading(false);
+    }
+  };
+
+  // NEW: Unified image picker function
+  const pickImage = async () => {
+    if (Platform.OS === 'web') {
+      // Trigger web file input
+      webFileInputRef.current?.click();
+    } else {
+      // Use mobile image picker
+      await pickImageMobile();
+    }
+  };
+
+  // NEW: Image removal handler
+  const removeImage = (index) => {
+    const newImages = [...images];
+    newImages.splice(index, 1);
+    setImages(newImages);
+  };
+
   // Enhanced form validation
   const validateForm = () => {
     const newErrors = {};
@@ -415,11 +655,31 @@ export default function AddInventoryScreen({ navigation, route }) {
       newErrors.price = 'Please enter a valid price';
     }
     
+    // NEW: Image validation
+    if (images.length === 0) {
+      newErrors.images = 'Please add at least one product image';
+    }
+    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // Enhanced save with success feedback
+  // NEW: Upload images to server
+  const prepareImageData = async () => {
+    try {
+      const uploaded = [];
+      for (const uri of images) {
+        const result = await uploadImage(uri, 'business-product');
+        if (result?.url) uploaded.push(result.url);
+      }
+      return uploaded;
+    } catch (error) {
+      console.error('Error uploading images:', error);
+      throw new Error('Image upload failed. Please try again.');
+    }
+  };
+
+  // Enhanced save with success feedback and image upload
   const handleSave = async () => {
     if (!validateForm()) return;
     
@@ -427,6 +687,9 @@ export default function AddInventoryScreen({ navigation, route }) {
     setNetworkStatus('loading');
     
     try {
+      // Upload images first
+      const imageData = await prepareImageData();
+      
       const inventoryItem = {
         productType: 'plant',
         plantData: {
@@ -450,15 +713,20 @@ export default function AddInventoryScreen({ navigation, route }) {
         discount: parseFloat(formData.discount) || 0,
         notes: formData.notes,
         status: 'active',
+        
+        // NEW: Include image data
+        mainImage: imageData[0], // First image as main
+        images: imageData, // All images
+        imageUrls: imageData, // Alternative field name for compatibility
       };
       
-      console.log('💾 Creating inventory item:', inventoryItem);
+      console.log('💾 Creating inventory item with images:', inventoryItem);
       const result = await createInventoryItem(inventoryItem);
       console.log('✅ Item created successfully:', result);
       
       Alert.alert(
         '🌱 Success!',
-        `${selectedPlant?.common_name || 'Plant'} has been added to your inventory!`,
+        `${selectedPlant?.common_name || 'Plant'} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
         [
           {
             text: 'Add Another',
@@ -488,7 +756,8 @@ export default function AddInventoryScreen({ navigation, route }) {
       setLastSavedItem({
         name: selectedPlant?.common_name || 'Item',
         quantity: formData.quantity,
-        price: formData.price
+        price: formData.price,
+        imageCount: images.length
       });
       
       // Auto-reload inventory
@@ -508,6 +777,7 @@ export default function AddInventoryScreen({ navigation, route }) {
   const resetForm = () => {
     setSelectedPlant(null);
     setSearchQuery('');
+    setImages([]); // NEW: Reset images
     setFormData({
       quantity: '',
       price: '',
@@ -577,6 +847,85 @@ export default function AddInventoryScreen({ navigation, route }) {
         setShowInventory(true);
     }
   };
+
+  // NEW: Image picker component
+  const renderImagePicker = () => (
+    <View style={styles.imageSection}>
+      <Text style={styles.sectionTitle}>
+        <MaterialCommunityIcons name="camera" size={20} color="#4CAF50" />
+        {' '}Product Images *
+      </Text>
+      
+      {/* Hidden file input for web */}
+      {Platform.OS === 'web' && (
+        <input
+          ref={webFileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={handleWebFilePick}
+        />
+      )}
+      
+      {/* Image grid */}
+      <View style={styles.imageGrid}>
+        {images.map((image, index) => (
+          <View key={index} style={styles.imageContainer}>
+            <Image source={{ uri: image }} style={styles.selectedImage} />
+            <TouchableOpacity
+              style={styles.removeImageButton}
+              onPress={() => removeImage(index)}
+            >
+              <MaterialIcons name="close" size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        ))}
+        
+        {/* Add image buttons */}
+        {images.length < 5 && (
+          <View style={styles.addImageButtons}>
+            <TouchableOpacity
+              style={styles.addImageButton}
+              onPress={pickImage}
+              disabled={isImageLoading}
+            >
+              {isImageLoading ? (
+                <ActivityIndicator size="small" color="#4CAF50" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="image-plus" size={32} color="#4CAF50" />
+                  <Text style={styles.addImageButtonText}>Gallery</Text>
+                </>
+              )}
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={styles.addImageButton}
+              onPress={takePhoto}
+              disabled={isImageLoading}
+            >
+              {isImageLoading ? (
+                <ActivityIndicator size="small" color="#4CAF50" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="camera" size={32} color="#4CAF50" />
+                  <Text style={styles.addImageButtonText}>Camera</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+      </View>
+      
+      <Text style={styles.imageHint}>
+        Add up to 5 high-quality images of your product. First image will be the main display image.
+      </Text>
+      
+      {errors.images && (
+        <Text style={styles.errorText}>{errors.images}</Text>
+      )}
+    </View>
+  );
 
   // Render search result
   const renderSearchResult = ({ item, index }) => (
@@ -839,6 +1188,9 @@ export default function AddInventoryScreen({ navigation, route }) {
                   {' '}Selected: {selectedPlant.common_name}
                 </Text>
                 
+                {/* NEW: Image Picker Section */}
+                {renderImagePicker()}
+                
                 {/* Form fields */}
                 <View style={styles.formContainer}>
                   <View style={styles.inputGroup}>
@@ -957,6 +1309,11 @@ export default function AddInventoryScreen({ navigation, route }) {
           >
             <MaterialCommunityIcons name="check-circle" size={64} color="#4CAF50" />
             <Text style={styles.successText}>Plant Added!</Text>
+            {lastSavedItem?.imageCount && (
+              <Text style={styles.successSubtext}>
+                With {lastSavedItem.imageCount} image{lastSavedItem.imageCount > 1 ? 's' : ''}
+              </Text>
+            )}
           </Animated.View>
         )}
       </KeyboardAvoidingView>
@@ -1128,6 +1485,73 @@ const styles = StyleSheet.create({
   selectedPlantSection: {
     marginTop: 20,
   },
+  
+  // NEW: Image picker styles
+  imageSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  imageGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginVertical: 12,
+  },
+  imageContainer: {
+    position: 'relative',
+  },
+  selectedImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#f44336',
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  addImageButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  addImageButton: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f9f3',
+  },
+  addImageButtonText: {
+    fontSize: 10,
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  imageHint: {
+    fontSize: 12,
+    color: '#666',
+    fontStyle: 'italic',
+    textAlign: 'center',
+  },
+  
   formContainer: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -1225,5 +1649,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     marginTop: 16,
+  },
+  successSubtext: {
+    fontSize: 14,
+    color: '#fff',
+    marginTop: 8,
+    opacity: 0.8,
   },
 });

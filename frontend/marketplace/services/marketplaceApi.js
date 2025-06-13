@@ -1,4 +1,4 @@
-// services/marketplaceApi.js - ENHANCED WITH BUSINESS PRODUCTS
+// services/marketplaceApi.js - ENHANCED PRODUCTION VERSION WITH IMPROVED IMAGE HANDLING
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import config from './config';
@@ -6,25 +6,40 @@ import config from './config';
 // Base URL for API requests
 const API_BASE_URL = config.API_BASE_URL || 'https://usersfunctions.azurewebsites.net/api';
 
+// Cache for business data to avoid repeated API calls
+const businessCache = new Map();
+const cacheTimeout = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Set authentication token for API requests
+ */
+export const setAuthToken = async (token) => {
+  try {
+    if (token) {
+      await AsyncStorage.setItem('googleAuthToken', token);
+    } else {
+      await AsyncStorage.removeItem('googleAuthToken');
+    }
+    return true;
+  } catch (error) {
+    console.error('❌ Error saving auth token:', error);
+    return false;
+  }
+};
+
 /**
  * Helper function to handle API requests with proper error handling
- * @param {string} endpoint - API endpoint to call
- * @param {Object} options - Fetch options
- * @returns {Promise<Object>} - Response data
  */
 const apiRequest = async (endpoint, options = {}) => {
   try {
-    // Get authentication token and user email
     const token = await AsyncStorage.getItem('googleAuthToken');
     const userEmail = await AsyncStorage.getItem('userEmail');
     
-    // Default headers with authentication
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,
     };
     
-    // Add authentication headers if available
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
@@ -33,93 +48,450 @@ const apiRequest = async (endpoint, options = {}) => {
       headers['X-User-Email'] = userEmail;
     }
     
-    // Full URL with endpoint
     const url = `${API_BASE_URL}${endpoint.startsWith('/') ? endpoint : '/' + endpoint}`;
     
-    // Make the request
     const response = await fetch(url, {
       ...options,
       headers,
     });
     
-    // Parse response
     let data;
     try {
       data = await response.json();
     } catch (e) {
-      console.warn('Error parsing JSON response:', e);
       data = { error: 'Invalid response format' };
     }
     
-    // Check for errors
     if (!response.ok) {
       throw new Error(data.error || data.message || `Request failed with status ${response.status}`);
     }
     
     return data;
   } catch (error) {
-    console.error(`API request failed (${endpoint}):`, error);
+    console.error(`❌ API request failed (${endpoint}):`, error);
     throw error;
   }
 };
 
+// ==========================================
+// ENHANCED IMAGE PROCESSING FUNCTIONS
+// ==========================================
+
 /**
- * Get all marketplace products WITH BUSINESS PRODUCTS
- * @param {number} page - Page number
- * @param {string} category - Category filter
- * @param {string} search - Search query
- * @param {Object} options - Additional options (minPrice, maxPrice, sortBy, sellerType)
- * @returns {Promise<Object>} - Response with products array and pagination info
+ * Process business product images for marketplace display
+ */
+const processBusinessProductImages = (item, business) => {
+  // Collect all possible image sources
+  const allImageSources = [];
+  
+  // Primary image sources
+  if (item.mainImage) allImageSources.push(item.mainImage);
+  if (item.image && item.image !== item.mainImage) allImageSources.push(item.image);
+  
+  // Additional images
+  if (item.images && Array.isArray(item.images)) {
+    item.images.forEach(img => {
+      if (img && !allImageSources.includes(img)) {
+        allImageSources.push(img);
+      }
+    });
+  }
+  
+  // Alternative image field names
+  if (item.imageUrls && Array.isArray(item.imageUrls)) {
+    item.imageUrls.forEach(img => {
+      if (img && !allImageSources.includes(img)) {
+        allImageSources.push(img);
+      }
+    });
+  }
+  
+  // Filter out empty/null images and ensure they're valid URLs
+  const validImages = allImageSources.filter(img => {
+    if (!img || typeof img !== 'string') return false;
+    // Basic URL validation and exclude malformed URLs
+    if (img.startsWith('http') && img.length > 20) {
+      // Exclude obvious malformed URLs
+      if (img.includes('FFFFFF') || img.includes('500') || img.match(/^[A-F0-9]{1,6}$/i)) {
+        return false;
+      }
+      return true;
+    }
+    return img.startsWith('data:') || img.startsWith('/');
+  });
+  
+  // Process images for different display needs
+  const mainImage = validImages[0] || null;
+  const additionalImages = validImages.slice(1);
+  const allImages = validImages;
+  
+  // Create different image sizes for optimization
+  const thumbnails = validImages.map(url => createThumbnailUrl(url));
+  const highRes = validImages.map(url => createHighResUrl(url));
+  
+  return {
+    mainImage,
+    additionalImages,
+    allImages,
+    hasImages: validImages.length > 0,
+    imageCount: validImages.length,
+    thumbnails,
+    highRes,
+  };
+};
+
+/**
+ * Create thumbnail URL
+ */
+const createThumbnailUrl = (originalUrl) => {
+  if (!originalUrl) return null;
+  
+  // In a real implementation, this would integrate with an image processing service
+  if (originalUrl.includes('?')) {
+    return `${originalUrl}&thumbnail=true`;
+  }
+  return `${originalUrl}?thumbnail=true`;
+};
+
+/**
+ * Create high-res URL
+ */
+const createHighResUrl = (originalUrl) => {
+  if (!originalUrl) return null;
+  
+  // In a real implementation, this would ensure high quality
+  if (originalUrl.includes('?')) {
+    return `${originalUrl}&quality=high`;
+  }
+  return `${originalUrl}?quality=high`;
+};
+
+/**
+ * Get difficulty text for plants
+ */
+const getDifficultyText = (difficulty) => {
+  if (!difficulty) return 'Unknown';
+  
+  const level = parseInt(difficulty);
+  if (level <= 3) return 'Beginner-friendly';
+  if (level <= 6) return 'Moderate care';
+  if (level <= 8) return 'Advanced care';
+  return 'Expert level';
+};
+
+/**
+ * Get business location display text
+ */
+const getBusinessLocationDisplay = (business) => {
+  const location = business.address || business.location || {};
+  
+  if (location.city && location.address) {
+    return `${location.address}, ${location.city}`;
+  } else if (location.city) {
+    return location.city;
+  } else if (location.address) {
+    return location.address;
+  } else if (business.businessName) {
+    return `${business.businessName} - Contact for pickup`;
+  } else {
+    return 'Contact seller for pickup location';
+  }
+};
+
+/**
+ * Get formatted address
+ */
+const getFormattedAddress = (location) => {
+  if (!location) return '';
+  
+  const parts = [];
+  if (location.address || location.street) parts.push(location.address || location.street);
+  if (location.city) parts.push(location.city);
+  if (location.country) parts.push(location.country);
+  
+  return parts.join(', ') || '';
+};
+
+/**
+ * Get pickup information
+ */
+const getPickupInfo = (business) => {
+  const location = business.address || business.location || {};
+  
+  return {
+    available: true, // Business products are always pickup
+    location: getBusinessLocationDisplay(business),
+    businessName: business.businessName || business.name || 'Business',
+    businessType: business.businessType || 'Business',
+    phone: business.phone || business.contactPhone || '',
+    email: business.email || business.contactEmail || '',
+    hours: business.businessHours || [],
+    instructions: business.pickupInstructions || 'Contact business for pickup details',
+    logo: business.logo || business.businessImage || business.avatar,
+  };
+};
+
+/**
+ * ENHANCED: Convert inventory to products with comprehensive image handling
+ */
+const convertInventoryToMarketplaceProductsFast = (inventory, business, category, search) => {
+  return inventory
+    .filter(item => {
+      // Basic active/stock filter
+      if (item.status !== 'active' || (item.quantity || 0) <= 0) return false;
+      
+      // Category filter
+      if (category && category !== 'All') {
+        if (item.category?.toLowerCase() !== category.toLowerCase()) return false;
+      }
+      
+      // Search filter
+      if (search) {
+        const searchLower = search.toLowerCase();
+        const itemName = (item.name || item.common_name || '').toLowerCase();
+        const itemDesc = (item.description || '').toLowerCase();
+        const businessName = (business.businessName || business.name || '').toLowerCase();
+        const businessType = (business.businessType || '').toLowerCase();
+        
+        if (!itemName.includes(searchLower) && 
+            !itemDesc.includes(searchLower) && 
+            !businessName.includes(searchLower) &&
+            !businessType.includes(searchLower)) return false;
+      }
+      
+      return true;
+    })
+    .map(item => {
+      // ENHANCED: Process images properly for marketplace display
+      const processedImages = processBusinessProductImages(item, business);
+      
+      // ENHANCED: Better business location handling
+      const businessLocation = business.address || business.location || {};
+      const locationDisplay = getBusinessLocationDisplay(business);
+      
+      return {
+        id: item.id,
+        _id: item.id,
+        title: item.name || item.common_name || 'Business Product',
+        name: item.name || item.common_name || 'Business Product',
+        common_name: item.common_name,
+        scientific_name: item.scientific_name || item.scientificName,
+        description: item.description || `${item.name || item.common_name} from ${business.businessName || business.name}`,
+        price: item.finalPrice || item.price || 0,
+        originalPrice: item.price || 0,
+        discount: item.discount || 0,
+        category: item.category || 'Plants',
+        productType: item.productType || 'plant',
+        
+        // ENHANCED: Proper image handling for PlantCard component
+        image: processedImages.mainImage, // Main image for PlantCard
+        mainImage: processedImages.mainImage,
+        images: processedImages.allImages, // All images array
+        imageUrls: processedImages.allImages, // Alternative field name
+        hasImages: processedImages.hasImages,
+        imageCount: processedImages.imageCount,
+        
+        // Enhanced image metadata for better display
+        imageInfo: {
+          main: processedImages.mainImage,
+          additional: processedImages.additionalImages,
+          count: processedImages.imageCount,
+          hasImages: processedImages.hasImages,
+          thumbnails: processedImages.thumbnails,
+          highRes: processedImages.highRes,
+        },
+        
+        businessId: business.id || business.email,
+        sellerId: business.id || business.email,
+        sellerType: 'business',
+        isBusinessListing: true,
+        inventoryId: item.id,
+        
+        // ENHANCED: Better seller info
+        seller: {
+          _id: business.id || business.email,
+          name: business.businessName || business.name || 'Business',
+          email: business.email || business.id,
+          isBusiness: true,
+          businessName: business.businessName || business.name,
+          businessType: business.businessType || 'Business',
+          logo: business.logo || business.businessImage || business.avatar,
+          hasLogo: !!(business.logo || business.businessImage || business.avatar),
+          rating: business.rating || 0,
+          reviewCount: business.reviewCount || 0,
+          description: business.description || '',
+          phone: business.phone || business.contactPhone || '',
+          
+          location: {
+            address: businessLocation.address || businessLocation.street || '',
+            city: businessLocation.city || 'Unknown location',
+            country: businessLocation.country || '',
+            latitude: businessLocation.latitude,
+            longitude: businessLocation.longitude,
+            formattedAddress: getFormattedAddress(businessLocation)
+          }
+        },
+        
+        // ENHANCED: Better availability display
+        availability: {
+          inStock: (item.quantity || 0) > 0,
+          quantity: item.quantity || 0,
+          showQuantity: true,
+          pickupLocation: locationDisplay,
+          businessType: business.businessType || 'Business',
+          pickupOnly: true,
+          deliveryOptions: [],
+        },
+        
+        // ENHANCED: Location for product display
+        location: {
+          city: businessLocation.city || 'Unknown location',
+          address: businessLocation.address || businessLocation.street || '',
+          latitude: businessLocation.latitude,
+          longitude: businessLocation.longitude,
+          formattedAddress: getFormattedAddress(businessLocation),
+          displayText: locationDisplay,
+          isBusinessLocation: true,
+        },
+        
+        addedAt: item.addedAt || item.dateAdded || new Date().toISOString(),
+        listedDate: item.addedAt || item.dateAdded || new Date().toISOString(),
+        lastUpdated: item.updatedAt || item.lastUpdated,
+        
+        stats: {
+          views: item.viewCount || 0,
+          wishlistCount: 0,
+          messageCount: 0
+        },
+        
+        source: 'business_inventory',
+        
+        // Business-specific display info
+        businessInfo: {
+          type: business.businessType || 'Business',
+          name: business.businessName || business.name || 'Business',
+          verified: business.verificationStatus === 'verified' || business.isVerified || false,
+          description: business.description || '',
+          logo: business.logo || business.businessImage || business.avatar,
+          hasLogo: !!(business.logo || business.businessImage || business.avatar),
+          pickupInfo: getPickupInfo(business),
+          galleryImages: business.galleryImages || [],
+          hasGallery: !!(business.galleryImages && business.galleryImages.length > 0),
+        },
+        
+        // Enhanced care information for plants
+        careInfo: item.plantData ? {
+          watering: item.plantData.water_days ? `Every ${item.plantData.water_days} days` : 'Standard watering',
+          light: item.plantData.light || 'Bright indirect light',
+          humidity: item.plantData.humidity || 'Average humidity',
+          temperature: item.plantData.temperature || 'Room temperature',
+          difficulty: item.plantData.difficulty || 5,
+          difficultyText: getDifficultyText(item.plantData.difficulty),
+          pets: item.plantData.pets || 'Unknown pet safety',
+          repot: item.plantData.repot || 'As needed',
+          feed: item.plantData.feed || 'Monthly during growing season',
+          commonProblems: item.plantData.common_problems || [],
+        } : null,
+        
+        // Marketplace optimization flags
+        marketplaceOptimized: true,
+        displayReady: true,
+        searchable: true,
+        imagesProcessed: true,
+      };
+    });
+};
+
+// ==========================================
+// CORE MARKETPLACE FUNCTIONS
+// ==========================================
+
+/**
+ * OPTIMIZED: Get marketplace products - Fast and reliable
  */
 export const getAll = async (page = 1, category = null, search = null, options = {}) => {
+  console.log('🛒 [FAST] Loading marketplace...', { 
+    sellerType: options.sellerType, 
+    page,
+    category,
+    search,
+    options 
+  });
+  
   try {
-    console.log('🛒 Loading marketplace with business products...', { page, category, search, options });
+    // Quick seller type counts (from cache if available)
+    const counts = await getSellerTypeCountsFast();
     
-    let allProducts = [];
-    let sellerTypeCounts = { all: 0, individual: 0, business: 0 };
+    let products = [];
+    let paginationInfo = { page: 1, pages: 1, count: 0 };
     
-    // 1. Get Individual Products (existing marketplace)
-    if (!options.sellerType || options.sellerType === 'all' || options.sellerType === 'individual') {
-      try {
-        const individualResponse = await getIndividualProducts(page, category, search, options);
-        const individualProducts = (individualResponse.products || []).map(product => ({
-          ...product,
-          sellerType: 'individual',
-          isBusinessListing: false,
-          seller: {
-            ...product.seller,
-            isBusiness: false
-          }
-        }));
-        allProducts.push(...individualProducts);
-        sellerTypeCounts.individual = individualProducts.length;
-      } catch (error) {
-        console.warn('⚠️ Failed to load individual products:', error.message);
-      }
+    // DEBUG: Log the actual sellerType value
+    console.log('🔍 [DEBUG] sellerType value:', `"${options.sellerType}"`, 'type:', typeof options.sellerType);
+    
+    // Branch by seller type for maximum efficiency
+    if (options.sellerType === 'individual') {
+      // INDIVIDUAL ONLY - Direct API call
+      console.log('👤 [FAST] Individual only...');
+      const data = await getIndividualProducts(page, category, search, options);
+      
+      products = (data.products || []).map(product => ({
+        ...product,
+        sellerType: 'individual',
+        isBusinessListing: false,
+        seller: { ...product.seller, isBusiness: false }
+      }));
+      
+      paginationInfo = {
+        page: data.page || page,
+        pages: data.pages || 1,
+        count: data.count || products.length
+      };
+      
+    } else if (options.sellerType === 'business') {
+      // BUSINESS ONLY - Optimized business loading
+      console.log('🏢 [FAST] Business only...');
+      const businessProducts = await getBusinessProductsFast(category, search, options);
+      
+      // Simple pagination for business products
+      const pageSize = 20;
+      const totalItems = businessProducts.length;
+      const startIndex = (page - 1) * pageSize;
+      products = businessProducts.slice(startIndex, startIndex + pageSize);
+      
+      paginationInfo = {
+        page: page,
+        pages: Math.ceil(totalItems / pageSize),
+        count: totalItems
+      };
+      
+    } else {
+      // ALL - Load both types efficiently
+      console.log('👥 [FAST] All types...');
+      
+      // Load individual products (primary)
+      const individualData = await getIndividualProducts(page, category, search, options);
+      const individualProducts = (individualData.products || []).map(product => ({
+        ...product,
+        sellerType: 'individual',
+        isBusinessListing: false,
+        seller: { ...product.seller, isBusiness: false }
+      }));
+      
+      // Load business products (additional)
+      const businessProducts = await getBusinessProductsFast(category, search, options);
+      
+      products = [...individualProducts, ...businessProducts];
+      paginationInfo = {
+        page: individualData.page || page,
+        pages: Math.max(individualData.pages || 1, Math.ceil(products.length / 20)),
+        count: products.length
+      };
     }
-
-    // 2. Get Business Products (from inventory)
-    if (!options.sellerType || options.sellerType === 'all' || options.sellerType === 'business') {
-      try {
-        const businessProducts = await getBusinessProducts(category, search, options);
-        allProducts.push(...businessProducts);
-        sellerTypeCounts.business = businessProducts.length;
-      } catch (error) {
-        console.warn('⚠️ Failed to load business products:', error.message);
-      }
-    }
-
-    // 3. Apply filters and sorting
-    let filteredProducts = allProducts;
-
-    // Filter by seller type
-    if (options.sellerType && options.sellerType !== 'all') {
-      filteredProducts = allProducts.filter(product => 
-        product.sellerType === options.sellerType
-      );
-    }
-
-    // Apply price filters
+    
+    // Apply final filters
+    let filteredProducts = products;
+    
+    // Price filter
     if (options.minPrice !== undefined || options.maxPrice !== undefined) {
       filteredProducts = filteredProducts.filter(product => {
         const price = parseFloat(product.price || 0);
@@ -128,46 +500,251 @@ export const getAll = async (page = 1, category = null, search = null, options =
         return true;
       });
     }
-
-    // Apply sorting
+    
+    // Sorting
     if (options.sortBy) {
       filteredProducts = sortProducts(filteredProducts, options.sortBy);
     } else {
-      // Default: newest first
       filteredProducts.sort((a, b) => 
         new Date(b.addedAt || b.listedDate || 0) - new Date(a.addedAt || a.listedDate || 0)
       );
     }
-
-    // 4. Pagination
-    const pageSize = 20;
-    const totalItems = filteredProducts.length;
-    const totalPages = Math.ceil(totalItems / pageSize);
-    const startIndex = (page - 1) * pageSize;
-    const paginatedProducts = filteredProducts.slice(startIndex, startIndex + pageSize);
-
-    // Update total counts
-    sellerTypeCounts.all = allProducts.length;
-
-    console.log(`✅ Loaded ${allProducts.length} total products (${sellerTypeCounts.individual} individual, ${sellerTypeCounts.business} business)`);
-
+    
+    console.log(`✅ [FAST] Returning ${filteredProducts.length} products`);
+    
     return {
-      products: paginatedProducts,
-      page: page,
-      pages: totalPages,
-      count: totalItems,
+      products: filteredProducts,
+      page: paginationInfo.page,
+      pages: paginationInfo.pages,
+      count: paginationInfo.count,
       currentPage: page,
-      filters: {
-        category,
-        search,
-        ...options
-      },
-      sellerTypeCounts
+      filters: { category, search, ...options },
+      sellerTypeCounts: counts
     };
-
+    
   } catch (error) {
-    console.error('❌ Enhanced marketplace load error:', error);
-    throw error;
+    console.error('❌ [FAST] Marketplace error:', error);
+    
+    // Fallback to individual products only
+    try {
+      const fallbackData = await getIndividualProducts(1, null, null, {});
+      return {
+        products: fallbackData.products || [],
+        page: 1,
+        pages: fallbackData.pages || 1,
+        count: fallbackData.count || 0,
+        currentPage: 1,
+        filters: { fallback: true },
+        sellerTypeCounts: { all: 0, individual: 0, business: 0 },
+        fromFallback: true
+      };
+    } catch (fallbackError) {
+      throw error;
+    }
+  }
+};
+
+/**
+ * FAST: Get seller type counts with caching
+ */
+const getSellerTypeCountsFast = async () => {
+  const cacheKey = 'seller_counts';
+  const cached = businessCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+    return cached.data;
+  }
+  
+  try {
+    // Get counts in parallel for speed
+    const [individualCount, businessCount] = await Promise.all([
+      getIndividualProducts(1, null, null, {})
+        .then(data => data.count || 0)
+        .catch(() => 0),
+      getBusinessCountFast()
+    ]);
+    
+    const counts = {
+      all: individualCount + businessCount,
+      individual: individualCount,
+      business: businessCount
+    };
+    
+    // Cache the result
+    businessCache.set(cacheKey, {
+      data: counts,
+      timestamp: Date.now()
+    });
+    
+    return counts;
+  } catch (error) {
+    return { all: 0, individual: 0, business: 0 };
+  }
+};
+
+/**
+ * FAST: Get business count only
+ */
+const getBusinessCountFast = async () => {
+  const cacheKey = 'business_count';
+  const cached = businessCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+    return cached.data;
+  }
+  
+  try {
+    const businesses = await getAllBusinessesFast();
+    let totalCount = 0;
+    
+    // Process up to 3 businesses in parallel for speed
+    const businessPromises = businesses.slice(0, 3).map(async business => {
+      try {
+        const response = await apiRequest(`marketplace/business-profile/${business.id || business.email}`);
+        const inventory = response.business?.inventory || response.inventory || [];
+        return inventory.filter(item => item.status === 'active' && (item.quantity || 0) > 0).length;
+      } catch (e) {
+        return 0;
+      }
+    });
+    
+    const counts = await Promise.all(businessPromises);
+    totalCount = counts.reduce((sum, count) => sum + count, 0);
+    
+    // Cache the result
+    businessCache.set(cacheKey, {
+      data: totalCount,
+      timestamp: Date.now()
+    });
+    
+    return totalCount;
+  } catch (error) {
+    return 0;
+  }
+};
+
+/**
+ * ENHANCED: Get business products with comprehensive image support
+ */
+const getBusinessProductsFast = async (category, search, options) => {
+  const cacheKey = `business_products_${category || 'all'}_${search || 'none'}_${options.includeImages ? 'with_images' : 'no_images'}`;
+  const cached = businessCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+    console.log('🚀 [CACHE] Using cached business products with images');
+    return cached.data;
+  }
+  
+  try {
+    const businesses = await getAllBusinessesFast();
+    
+    if (businesses.length === 0) {
+      return [];
+    }
+    
+    // Process businesses in parallel for speed (max 5 for better image loading)
+    const businessPromises = businesses.slice(0, 5).map(async business => {
+      try {
+        const response = await apiRequest(`marketplace/business-profile/${business.id || business.email}`, {
+          headers: {
+            'X-Include-Images': 'true',
+            'X-Image-Quality': 'marketplace',
+            'X-Generate-Thumbnails': 'true',
+          }
+        });
+        
+        const businessProfile = response.business || response;
+        const inventory = businessProfile.inventory || [];
+        
+        return convertInventoryToMarketplaceProductsFast(inventory, businessProfile, category, search);
+      } catch (error) {
+        console.warn(`Business ${business.id} failed (images):`, error.message);
+        return [];
+      }
+    });
+    
+    const businessProductArrays = await Promise.all(businessPromises);
+    const allBusinessProducts = businessProductArrays.flat();
+    
+    // ENHANCED: Validate that products have proper image data
+    const validatedProducts = allBusinessProducts.map(product => ({
+      ...product,
+      // Ensure image fields are properly set for PlantCard component
+      image: product.image || product.mainImage || null,
+      images: product.images || product.allImages || [],
+      hasValidImages: !!(product.image || product.mainImage),
+      
+      // Add marketplace display metadata
+      displayMetadata: {
+        hasImages: !!(product.image || product.mainImage),
+        imageCount: (product.images || []).length + (product.image ? 1 : 0),
+        businessName: product.seller?.businessName || 'Business',
+        businessType: product.seller?.businessType || 'Business',
+        pickupLocation: product.location?.displayText || 'Contact for pickup',
+        verified: product.businessInfo?.verified || false,
+      }
+    }));
+    
+    // Cache the result with image metadata
+    businessCache.set(cacheKey, {
+      data: validatedProducts,
+      timestamp: Date.now(),
+      metadata: {
+        totalProducts: validatedProducts.length,
+        productsWithImages: validatedProducts.filter(p => p.hasValidImages).length,
+        businesses: businesses.length,
+      }
+    });
+    
+    console.log(`✅ [FAST] Loaded ${validatedProducts.length} business products with images`);
+    console.log(`📸 [IMAGES] ${validatedProducts.filter(p => p.hasValidImages).length} products have images`);
+    
+    return validatedProducts;
+    
+  } catch (error) {
+    console.error('❌ Business products with images failed:', error);
+    return [];
+  }
+};
+
+/**
+ * FAST: Get businesses with caching
+ */
+const getAllBusinessesFast = async () => {
+  const cacheKey = 'all_businesses';
+  const cached = businessCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+    return cached.data;
+  }
+  
+  try {
+    const response = await apiRequest('marketplace/businesses');
+    const businesses = response.businesses || [];
+    
+    // Cache the result
+    businessCache.set(cacheKey, {
+      data: businesses,
+      timestamp: Date.now()
+    });
+    
+    return businesses;
+  } catch (error) {
+    // Fallback to test business
+    const fallback = [{
+      id: 'dina2@mail.tau.ac.il',
+      email: 'dina2@mail.tau.ac.il',
+      businessName: 'Dina\'s Plant Shop',
+      name: 'Dina\'s Plant Shop'
+    }];
+    
+    // Cache fallback too
+    businessCache.set(cacheKey, {
+      data: fallback,
+      timestamp: Date.now()
+    });
+    
+    return fallback;
   }
 };
 
@@ -178,7 +755,7 @@ const getIndividualProducts = async (page, category, search, options) => {
   const queryParams = new URLSearchParams();
   
   queryParams.append('page', page);
-  if (category) queryParams.append('category', category);
+  if (category && category !== 'All') queryParams.append('category', category);
   if (search) queryParams.append('search', search);
   if (options.minPrice !== undefined) queryParams.append('minPrice', options.minPrice);
   if (options.maxPrice !== undefined) queryParams.append('maxPrice', options.maxPrice);
@@ -186,176 +763,6 @@ const getIndividualProducts = async (page, category, search, options) => {
   
   const endpoint = `marketplace/products?${queryParams.toString()}`;
   return apiRequest(endpoint);
-};
-
-/**
- * Get business products from all business inventories using existing endpoints
- */
-const getBusinessProducts = async (category, search, options) => {
-  try {
-    console.log('🏢 Loading business products...');
-    
-    // Get list of all businesses using your existing endpoint
-    const businesses = await getAllBusinesses();
-    console.log(`📋 Found ${businesses.length} businesses`);
-    
-    let allBusinessProducts = [];
-    
-    // Get inventory for each business using your existing business profile endpoint
-    for (const business of businesses) {
-      try {
-        // Use your existing endpoint that gets business profile + inventory
-        const response = await apiRequest(`marketplace/business-profile/${business.id || business.email}`);
-        const businessProfile = response.business || response;
-        const inventory = businessProfile.inventory || [];
-        
-        console.log(`📦 Business ${business.businessName}: ${inventory.length} items`);
-        
-        const businessProducts = convertInventoryToMarketplaceProducts(inventory, businessProfile);
-        
-        // Apply filters to business products
-        let filteredBusinessProducts = businessProducts;
-        
-        // Category filter
-        if (category && category !== 'All') {
-          filteredBusinessProducts = filteredBusinessProducts.filter(product =>
-            product.category?.toLowerCase() === category.toLowerCase()
-          );
-        }
-        
-        // Search filter
-        if (search) {
-          const searchLower = search.toLowerCase();
-          filteredBusinessProducts = filteredBusinessProducts.filter(product =>
-            product.title?.toLowerCase().includes(searchLower) ||
-            product.name?.toLowerCase().includes(searchLower) ||
-            product.description?.toLowerCase().includes(searchLower) ||
-            product.seller?.name?.toLowerCase().includes(searchLower)
-          );
-        }
-        
-        allBusinessProducts.push(...filteredBusinessProducts);
-        
-      } catch (inventoryError) {
-        console.warn(`⚠️ Failed to load inventory for business ${business.id}:`, inventoryError.message);
-      }
-    }
-    
-    console.log(`✅ Loaded ${allBusinessProducts.length} business products`);
-    return allBusinessProducts;
-    
-  } catch (error) {
-    console.error('❌ Error loading business products:', error);
-    return [];
-  }
-};
-
-/**
- * Get all businesses using your existing endpoint
- */
-const getAllBusinesses = async () => {
-  try {
-    const response = await apiRequest('marketplace/businesses');
-    return response.businesses || [];
-  } catch (error) {
-    console.warn('⚠️ Businesses endpoint not available, using fallback');
-    
-    // Fallback: return known test businesses
-    return [
-      { 
-        id: 'dina2@mail.tau.ac.il', 
-        email: 'dina2@mail.tau.ac.il',
-        businessName: 'Dina\'s Plant Shop',
-        name: 'Dina\'s Plant Shop'
-      }
-    ];
-  }
-};
-
-/**
- * Convert business inventory items to marketplace product format
- */
-const convertInventoryToMarketplaceProducts = (inventory, business) => {
-  return inventory
-    .filter(item => {
-      // Only include active items with stock
-      return item.status === 'active' && (item.quantity || 0) > 0;
-    })
-    .map(item => ({
-      // Product identifiers
-      id: item.id,
-      _id: item.id,
-      
-      // Product info
-      title: item.name || item.common_name || 'Business Product',
-      name: item.name || item.common_name || 'Business Product',
-      common_name: item.common_name,
-      scientific_name: item.scientific_name || item.scientificName,
-      description: item.description || `${item.name || item.common_name} available at ${business.businessName || business.name}`,
-      
-      // Pricing
-      price: item.finalPrice || item.price || 0,
-      originalPrice: item.price || 0,
-      discount: item.discount || 0,
-      
-      // Category and type
-      category: item.category || 'Plants',
-      productType: item.productType || 'plant',
-      
-      // Images
-      images: item.images || [],
-      mainImage: item.mainImage,
-      
-      // Business-specific fields
-      businessId: business.id || business.email,
-      sellerId: business.id || business.email,
-      sellerType: 'business',
-      isBusinessListing: true,
-      inventoryId: item.id, // Link back to inventory
-      
-      // Seller information
-      seller: {
-        _id: business.id || business.email,
-        name: business.businessName || business.name || 'Business',
-        email: business.email || business.id,
-        isBusiness: true,
-        businessName: business.businessName || business.name,
-        logo: business.logo,
-        rating: business.rating || 0,
-        reviewCount: business.reviewCount || 0,
-        totalReviews: business.reviewCount || 0
-      },
-      
-      // Availability
-      availability: {
-        inStock: (item.quantity || 0) > 0,
-        quantity: item.quantity || 0,
-        showQuantity: true
-      },
-      
-      // Location from business
-      location: business.address ? {
-        city: business.address.city,
-        latitude: business.address.latitude,
-        longitude: business.address.longitude,
-        formattedAddress: business.address.formattedAddress
-      } : {},
-      
-      // Timestamps
-      addedAt: item.addedAt || item.dateAdded || new Date().toISOString(),
-      listedDate: item.addedAt || item.dateAdded || new Date().toISOString(),
-      lastUpdated: item.updatedAt || item.lastUpdated,
-      
-      // Stats
-      stats: {
-        views: item.viewCount || 0,
-        wishlistCount: 0,
-        messageCount: 0
-      },
-      
-      // Make it clear this is from business inventory
-      source: 'business_inventory'
-    }));
 };
 
 /**
@@ -381,54 +788,17 @@ const sortProducts = (products, sortBy) => {
 };
 
 /**
- * Process business product purchase - Uses existing order creation endpoint
+ * Clear cache when needed (call this on logout or data changes)
  */
-export const purchaseBusinessProduct = async (productId, businessId, quantity = 1, customerInfo) => {
-  try {
-    console.log('🛒 Processing business product purchase:', { productId, businessId, quantity });
-    
-    // Use your existing order creation endpoint
-    const response = await apiRequest('business/orders/create', {
-      method: 'POST',
-      body: JSON.stringify({
-        businessId: businessId,
-        customerEmail: customerInfo.email,
-        customerName: customerInfo.name,
-        customerPhone: customerInfo.phone,
-        items: [{
-          id: productId,
-          quantity: quantity
-        }],
-        notes: customerInfo.notes || '',
-        communicationPreference: 'messages'
-      })
-    });
-    
-    console.log('✅ Purchase successful:', response);
-    
-    return {
-      success: true,
-      orderId: response.order?.orderId,
-      confirmationNumber: response.order?.confirmationNumber,
-      message: 'Order placed successfully! You can pick up your plant at the business location.',
-      ...response
-    };
-    
-  } catch (error) {
-    console.error('❌ Purchase error:', error);
-    throw error;
-  }
+export const clearMarketplaceCache = () => {
+  businessCache.clear();
+  console.log('🧹 Marketplace cache cleared');
 };
 
 // ==========================================
-// ALL EXISTING FUNCTIONS REMAIN THE SAME
+// PRODUCT MANAGEMENT FUNCTIONS
 // ==========================================
 
-/**
- * Get specific product details by ID
- * @param {string} id - Product ID
- * @returns {Promise<Object>} - Product details
- */
 export const getSpecific = async (id) => {
   if (!id) {
     throw new Error('Product ID is required');
@@ -439,11 +809,6 @@ export const getSpecific = async (id) => {
   return apiRequest(endpoint);
 };
 
-/**
- * Add or remove product from wishlist
- * @param {string} productId - Product ID to toggle
- * @returns {Promise<Object>} - Response with updated wishlist status
- */
 export const wishProduct = async (productId) => {
   if (!productId) {
     throw new Error('Product ID is required');
@@ -456,11 +821,6 @@ export const wishProduct = async (productId) => {
   });
 };
 
-/**
- * Create new product listing
- * @param {Object} productData - Product data to create
- * @returns {Promise<Object>} - Response with created product info
- */
 export const createProduct = async (productData) => {
   const endpoint = 'marketplace/products/create';
   
@@ -470,12 +830,10 @@ export const createProduct = async (productData) => {
   });
 };
 
-/**
- * Update existing product
- * @param {string} productId - Product ID to update
- * @param {Object} productData - Updated product data
- * @returns {Promise<Object>} - Response with updated product
- */
+export const createPlant = async (plantData) => {
+  return createProduct(plantData);
+};
+
 export const updateProduct = async (productId, productData) => {
   const endpoint = `marketplace/products/${productId}`;
   
@@ -485,11 +843,6 @@ export const updateProduct = async (productId, productData) => {
   });
 };
 
-/**
- * Delete product
- * @param {string} productId - Product ID to delete
- * @returns {Promise<Object>} - Response with deletion status
- */
 export const deleteProduct = async (productId) => {
   const endpoint = `marketplace/products/${productId}`;
   
@@ -498,12 +851,6 @@ export const deleteProduct = async (productId) => {
   });
 };
 
-/**
- * Mark product as sold
- * @param {string} productId - Product ID to mark as sold
- * @param {Object} data - Optional data with buyer info
- * @returns {Promise<Object>} - Response with updated status
- */
 export const markAsSold = async (productId, data = {}) => {
   const endpoint = `marketplace/products/${productId}/sold`;
   
@@ -513,11 +860,10 @@ export const markAsSold = async (productId, data = {}) => {
   });
 };
 
-/**
- * Get user profile by ID
- * @param {string} userId - User ID to fetch
- * @returns {Promise<Object>} - User profile data
- */
+// ==========================================
+// USER PROFILE FUNCTIONS
+// ==========================================
+
 export const fetchUserProfile = async (userId) => {
   if (!userId) {
     throw new Error('User ID is required');
@@ -528,29 +874,16 @@ export const fetchUserProfile = async (userId) => {
   return apiRequest(endpoint);
 };
 
-/**
- * Get business profile with inventory (for business seller profile) - Uses existing endpoint
- */
 export const fetchBusinessProfile = async (businessId) => {
   try {
-    console.log('🏢 Fetching business profile:', businessId);
-    
-    // Use your existing endpoint that gets business profile + inventory
     const response = await apiRequest(`marketplace/business-profile/${businessId}`);
     return response;
-    
   } catch (error) {
     console.error('❌ Error fetching business profile:', error);
     throw error;
   }
 };
 
-/**
- * Update user profile
- * @param {string} userId - User ID to update
- * @param {Object} profileData - Updated profile data
- * @returns {Promise<Object>} - Response with updated profile
- */
 export const updateUserProfile = async (userId, profileData) => {
   const endpoint = `marketplace/users/${userId}`;
   
@@ -560,35 +893,22 @@ export const updateUserProfile = async (userId, profileData) => {
   });
 };
 
-/**
- * Get user's listings
- * @param {string} userId - User ID
- * @param {string} status - Filter by status (active, sold, all)
- * @returns {Promise<Object>} - Response with user's listings
- */
 export const getUserListings = async (userId, status = 'all') => {
   const endpoint = `marketplace/users/${userId}/listings?status=${status}`;
   
   return apiRequest(endpoint);
 };
 
-/**
- * Get user's wishlist
- * @param {string} userId - User ID
- * @returns {Promise<Object>} - Response with user's wishlist
- */
 export const getUserWishlist = async (userId) => {
   const endpoint = `marketplace/users/${userId}/wishlist`;
   
   return apiRequest(endpoint);
 };
 
-/**
- * Upload an image and get URL
- * @param {string|Blob} imageData - Image data (URI or Blob)
- * @param {string} type - Image type (plant, user, etc.)
- * @returns {Promise<Object>} - Response with image URL
- */
+// ==========================================
+// IMAGE UPLOAD FUNCTIONS
+// ==========================================
+
 export const uploadImage = async (imageData, type = 'plant') => {
   if (!imageData) {
     throw new Error('Image data is required');
@@ -596,10 +916,8 @@ export const uploadImage = async (imageData, type = 'plant') => {
   
   const endpoint = 'marketplace/uploadImage';
   
-  // Handle different image formats based on platform
   if (Platform.OS === 'web') {
     if (imageData instanceof Blob) {
-      // For web with Blob/File
       const formData = new FormData();
       formData.append('file', imageData);
       formData.append('type', type);
@@ -607,10 +925,9 @@ export const uploadImage = async (imageData, type = 'plant') => {
       return apiRequest(endpoint, {
         method: 'POST',
         body: formData,
-        headers: {}, // Let browser set content-type with boundary
+        headers: {},
       });
     } else if (imageData.startsWith('data:')) {
-      // For web with data URI
       return apiRequest(endpoint, {
         method: 'POST',
         body: JSON.stringify({ image: imageData, type }),
@@ -618,8 +935,6 @@ export const uploadImage = async (imageData, type = 'plant') => {
     }
   }
   
-  // For React Native with local URI
-  // Create form data for file upload
   const formData = new FormData();
   formData.append('file', {
     uri: imageData,
@@ -636,6 +951,46 @@ export const uploadImage = async (imageData, type = 'plant') => {
     },
   });
 };
+
+// ==========================================
+// BUSINESS PURCHASE FUNCTIONS
+// ==========================================
+
+export const purchaseBusinessProduct = async (productId, businessId, quantity = 1, customerInfo) => {
+  try {
+    const response = await apiRequest('business/orders/create', {
+      method: 'POST',
+      body: JSON.stringify({
+        businessId: businessId,
+        customerEmail: customerInfo.email,
+        customerName: customerInfo.name,
+        customerPhone: customerInfo.phone,
+        items: [{
+          id: productId,
+          quantity: quantity
+        }],
+        notes: customerInfo.notes || '',
+        communicationPreference: 'messages'
+      })
+    });
+    
+    return {
+      success: true,
+      orderId: response.order?.orderId,
+      confirmationNumber: response.order?.confirmationNumber,
+      message: 'Order placed successfully! You can pick up your plant at the business location.',
+      ...response
+    };
+    
+  } catch (error) {
+    console.error('❌ Purchase error:', error);
+    throw error;
+  }
+};
+
+// ==========================================
+// LOCATION FUNCTIONS
+// ==========================================
 
 export const getNearbyProducts = async (latitude, longitude, radius = 10, category = null) => {
   try {
@@ -669,6 +1024,86 @@ export const getNearbyProducts = async (latitude, longitude, radius = 10, catego
     return await response.json();
   } catch (error) {
     console.error('Error fetching nearby products:', error);
+    throw error;
+  }
+};
+
+export const getNearbyBusinesses = async (latitude, longitude, radius = 10, businessType = null) => {
+  try {
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      throw new Error('Valid coordinates required');
+    }
+    
+    console.log('🗺️ Getting nearby businesses:', { latitude, longitude, radius, businessType });
+    
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+    
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+    }
+    
+    let queryParams = `lat=${latitude}&lon=${longitude}&radius=${radius}`;
+    if (businessType && businessType !== 'all') {
+      queryParams += `&businessType=${encodeURIComponent(businessType)}`;
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/marketplace/nearby-businesses?${queryParams}`, {
+      method: 'GET',
+      headers: headers,
+    });
+    
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    // Process and enhance business data
+    const businesses = (data.businesses || []).map(business => ({
+      ...business,
+      distance: business.distance || 0,
+      isBusiness: true,
+      location: business.location || {
+        latitude: business.address?.latitude,
+        longitude: business.address?.longitude,
+        city: business.address?.city || 'Unknown location'
+      }
+    }));
+    
+    // Cache nearby businesses
+    try {
+      const cacheKey = `nearby_businesses_${latitude}_${longitude}_${radius}`;
+      businessCache.set(cacheKey, {
+        data: { ...data, businesses },
+        timestamp: Date.now()
+      });
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to cache nearby businesses:', cacheError);
+    }
+    
+    return {
+      ...data,
+      businesses,
+      count: businesses.length
+    };
+  } catch (error) {
+    console.error('❌ Get nearby businesses error:', error);
+    
+    // Try to return cached businesses on error
+    try {
+      const cacheKey = `nearby_businesses_${latitude}_${longitude}_${radius}`;
+      const cached = businessCache.get(cacheKey);
+      if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+        console.log('📱 Returning cached nearby businesses');
+        return { ...cached.data, fromCache: true };
+      }
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to load cached nearby businesses:', cacheError);
+    }
+    
     throw error;
   }
 };
@@ -721,6 +1156,10 @@ export const reverseGeocode = async (latitude, longitude) => {
   }
 };
 
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
+
 export const speechToText = async (audioUrl, language = 'en-US') => {
   if (!audioUrl) {
     throw new Error('Audio URL is required');
@@ -736,7 +1175,6 @@ export const speechToText = async (audioUrl, language = 'en-US') => {
 
     const text = response.text;
 
-    // Clean up the transcription text
     const cleanupTranscriptionText = (text) => {
       return typeof text === 'string'
         ? text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim()
@@ -788,10 +1226,6 @@ export const getAzureMapsKey = async () => {
 // MESSAGING FUNCTIONALITY
 // ==========================================
 
-/**
- * Get SignalR negotiate token for real-time messaging
- * @returns {Promise<Object>} - SignalR connection info
- */
 export const getNegotiateToken = async () => {
   const userEmail = await AsyncStorage.getItem('userEmail');
   
@@ -807,11 +1241,6 @@ export const getNegotiateToken = async () => {
   });
 };
 
-/**
- * Get user conversations (chat rooms)
- * @param {string} userId - User ID
- * @returns {Promise<Array>} - List of conversations
- */
 export const fetchConversations = async (userId) => {
   if (!userId) {
     throw new Error('User ID is required');
@@ -822,12 +1251,6 @@ export const fetchConversations = async (userId) => {
   return apiRequest(endpoint);
 };
 
-/**
- * Get messages for a specific conversation
- * @param {string} chatId - Conversation ID
- * @param {string} userId - User ID
- * @returns {Promise<Object>} - Response with messages
- */
 export const fetchMessages = async (chatId, userId) => {
   if (!chatId) {
     throw new Error('Chat ID is required');
@@ -838,13 +1261,6 @@ export const fetchMessages = async (chatId, userId) => {
   return apiRequest(endpoint);
 };
 
-/**
- * Send a message in an existing conversation
- * @param {string} chatId - Conversation ID
- * @param {string} message - Message text
- * @param {string} senderId - Sender ID
- * @returns {Promise<Object>} - Response with sent message info
- */
 export const sendMessage = async (chatId, message, senderId) => {
   if (!chatId || !message) {
     throw new Error('Chat ID and message are required');
@@ -862,14 +1278,6 @@ export const sendMessage = async (chatId, message, senderId) => {
   });
 };
 
-/**
- * Start a new conversation
- * @param {string} sellerId - Seller ID
- * @param {string} plantId - Plant ID
- * @param {string} message - Initial message
- * @param {string} sender - Sender ID (current user)
- * @returns {Promise<Object>} - Response with new conversation info
- */
 export const startConversation = async (sellerId, plantId, message, sender) => {
   if (!sellerId || !message || !sender) {
     throw new Error('Seller ID, message, and sender are required');
@@ -888,12 +1296,6 @@ export const startConversation = async (sellerId, plantId, message, sender) => {
   });
 };
 
-/**
- * Mark messages as read
- * @param {string} conversationId - Conversation ID
- * @param {Array} messageIds - Optional specific message IDs to mark as read
- * @returns {Promise<Object>} - Response with updated read status
- */
 export const markMessagesAsRead = async (conversationId, messageIds = []) => {
   if (!conversationId) {
     throw new Error('Conversation ID is required');
@@ -910,12 +1312,6 @@ export const markMessagesAsRead = async (conversationId, messageIds = []) => {
   });
 };
 
-/**
- * Send typing indicator to other user
- * @param {string} conversationId - Conversation ID
- * @param {boolean} isTyping - Whether user is typing
- * @returns {Promise<Object>} - Response with status
- */
 export const sendTypingIndicator = async (conversationId, isTyping) => {
   if (!conversationId) {
     throw new Error('Conversation ID is required');
@@ -936,12 +1332,6 @@ export const sendTypingIndicator = async (conversationId, isTyping) => {
 // REVIEWS FUNCTIONALITY
 // ==========================================
 
-/**
- * Fetch reviews for a seller or product
- * @param {string} targetType - Target type ('seller' or 'product')
- * @param {string} targetId - Target ID
- * @returns {Promise<Object>} - Response with reviews
- */
 export const fetchReviews = async (targetType, targetId) => {
   if (!targetType || !targetId) {
     throw new Error('Target type and ID are required');
@@ -952,13 +1342,6 @@ export const fetchReviews = async (targetType, targetId) => {
   return apiRequest(endpoint);
 };
 
-/**
- * Submit a review for a seller or product
- * @param {string} targetId - Target ID
- * @param {string} targetType - Target type ('seller' or 'product')
- * @param {Object} reviewData - Review data {rating, text}
- * @returns {Promise<Object>} - Response with submitted review
- */
 export const submitReview = async (targetId, targetType, reviewData) => {
   if (!targetId || !targetType || !reviewData) {
     throw new Error('Target ID, type, and review data are required');
@@ -976,13 +1359,6 @@ export const submitReview = async (targetId, targetType, reviewData) => {
   });
 };
 
-/**
- * Delete a review
- * @param {string} targetType - Target type ('seller' or 'product')
- * @param {string} targetId - Target ID
- * @param {string} reviewId - Review ID to delete
- * @returns {Promise<Object>} - Response with deletion status
- */
 export const deleteReview = async (targetType, targetId, reviewId) => {
   if (!targetType || !targetId || !reviewId) {
     throw new Error('Target type, target ID, and review ID are required');
@@ -995,12 +1371,16 @@ export const deleteReview = async (targetType, targetId, reviewId) => {
   });
 };
 
-// Export all functions
+// ==========================================
+// EXPORT ALL FUNCTIONS
+// ==========================================
+
 export default {
   getAll,
   getSpecific,
   wishProduct,
   createProduct,
+  createPlant,
   updateProduct,
   deleteProduct,
   markAsSold,
@@ -1011,6 +1391,7 @@ export default {
   getUserWishlist,
   uploadImage,
   getNearbyProducts,
+  getNearbyBusinesses, 
   geocodeAddress,
   reverseGeocode,
   speechToText,
@@ -1025,7 +1406,7 @@ export default {
   fetchReviews,
   submitReview,
   deleteReview,
-  
-  // New business functions
-  purchaseBusinessProduct
+  purchaseBusinessProduct,
+  setAuthToken,
+  clearMarketplaceCache
 };

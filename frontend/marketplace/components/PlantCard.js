@@ -1,331 +1,369 @@
-// components/PlantCard.js - Enhanced with Business Integration
-import React, { useState, useEffect, useRef } from 'react';
+// components/PlantCard.js - FIXED: Clean Grid Layout
+import React, { useState, useCallback } from 'react';
 import {
-  View,
-  Text,
-  Image,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
+  View, Text, TouchableOpacity, StyleSheet, Image, Alert, Platform, Dimensions
 } from 'react-native';
-import { MaterialIcons, FontAwesome, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { formatDistanceToNow } from 'date-fns';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
 import { wishProduct } from '../services/marketplaceApi';
 import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
-const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = false }) => {
+// Get screen dimensions for responsive design
+const { width: screenWidth } = Dimensions.get('window');
+const isWeb = Platform.OS === 'web';
+
+const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
   const navigation = useNavigation();
-  const cardRef = useRef(null);
-  const [isFavorite, setIsFavorite] = useState(plant.isFavorite || plant.isWished || false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isWished, setIsWished] = useState(plant.isFavorite || plant.isWished || false);
+  const [isWishing, setIsWishing] = useState(false);
 
-  useEffect(() => {
-    setIsFavorite(plant.isFavorite || plant.isWished || false);
-  }, [plant.isFavorite, plant.isWished]);
-
-  useEffect(() => {
-    return () => {
-      if (
-        typeof document !== 'undefined' &&
-        document.activeElement &&
-        cardRef.current?.contains(document.activeElement)
-      ) {
-        document.activeElement.blur();
-      }
-    };
-  }, []);
-
-  const handlePress = () => {
-    navigation.navigate('PlantDetail', { plantId: plant.id || plant._id });
-  };
-
-  const handleSellerPress = (e) => {
-    e.stopPropagation();
-    
-    // Check if seller is a business or individual
-    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
-    
-    if (isBusiness) {
-      // Navigate to business profile
-      navigation.navigate('BusinessSellerProfile', {
-        businessId: plant.seller?._id || plant.seller?.id || plant.sellerId || plant.businessId,
-        sellerData: plant.seller || { 
-          name: plant.sellerName || 'Business Seller',
-          isBusiness: true
-        }
-      });
-    } else {
-      // Navigate to individual seller profile
-      navigation.navigate('SellerProfile', {
-        sellerId: plant.seller?._id || plant.seller?.id || plant.sellerId || 'unknown',
-        sellerData: plant.seller || { 
-          name: plant.sellerName || 'Individual Seller',
-          isBusiness: false
-        }
-      });
-    }
-  };
-
-  const toggleFavorite = async (e) => {
-    e.stopPropagation();
-    if (isSubmitting) return;
-
+  // FIXED: Better navigation with error handling
+  const navigateToDetails = useCallback(() => {
     try {
-      setIsSubmitting(true);
-      const newFavoriteState = !isFavorite;
-      setIsFavorite(newFavoriteState);
-
-      const result = await wishProduct(plant.id || plant._id);
-      if (result && 'isWished' in result) {
-        setIsFavorite(result.isWished);
+      console.log('🔍 Navigating to plant details:', plant.id);
+      
+      // Try different navigation approaches
+      if (navigation.navigate) {
+        // Try PlantDetails first
+        try {
+          navigation.navigate('PlantDetails', { 
+            plant: plant,
+            plantId: plant.id || plant._id 
+          });
+        } catch (detailsError) {
+          console.log('PlantDetails not found, trying ProductDetails');
+          // Try ProductDetails as fallback
+          navigation.navigate('ProductDetails', { 
+            product: plant,
+            productId: plant.id || plant._id 
+          });
+        }
+      } else {
+        console.error('Navigation not available');
+        Alert.alert('Error', 'Cannot navigate to product details');
       }
-
-      AsyncStorage.setItem('WISHLIST_UPDATED', Date.now().toString())
-        .then(() => {
-          triggerUpdate(UPDATE_TYPES.WISHLIST, {
-            plantId: plant.id || plant._id,
-            isFavorite: newFavoriteState,
-            timestamp: Date.now()
-          }).catch(e => console.warn('Failed to trigger update:', e));
-        })
-        .catch(err => console.warn('Failed to set wishlist update flag:', err));
-    } catch (err) {
-      setIsFavorite(isFavorite);
-      console.error('Error updating favorites:', err);
-    } finally {
-      setIsSubmitting(false);
+    } catch (error) {
+      console.error('❌ Navigation error:', error);
+      Alert.alert('Navigation Error', 'Could not open product details. Please try again.');
     }
-  };
+  }, [navigation, plant]);
 
-  const handleShare = (e) => {
-    e.stopPropagation();
-  };
-
-  const handleContact = (e) => {
-    e.stopPropagation();
-    const sellerName = plant.seller?.name || plant.sellerName || 'Plant Seller';
-    const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
-    
-    navigation.navigate('Messages', {
-      sellerId: plant.seller?._id || plant.sellerId,
-      plantId: plant.id || plant._id,
-      plantName: plant.title || plant.name,
-      sellerName,
-      isBusiness
-    });
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return 'Recently';
+  // FIXED: Enhanced contact navigation with better error handling
+  const handleContact = useCallback(async () => {
     try {
-      const date = new Date(dateString);
-      return formatDistanceToNow(date, { addSuffix: true });
-    } catch (e) {
-      return 'Recently';
-    }
-  };
-
-  const getLocationText = () => {
-    if (typeof plant.location === 'string') {
-      return plant.location;
-    } else if (plant.location && typeof plant.location === 'object') {
-      if (plant.location.city) return plant.location.city;
-      if (plant.location.latitude && plant.location.longitude) {
-        return `Location: ${plant.location.latitude.toFixed(2)}, ${plant.location.longitude.toFixed(2)}`;
+      console.log('💬 Starting contact with seller:', plant.sellerId || plant.seller?._id);
+      
+      const sellerId = plant.sellerId || plant.seller?._id || plant.seller?.email;
+      const sellerName = plant.seller?.name || plant.sellerName || 'Seller';
+      const plantId = plant.id || plant._id;
+      const plantName = plant.title || plant.name || plant.common_name || 'Plant';
+      
+      if (!sellerId) {
+        Alert.alert('Error', 'Seller information not available');
+        return;
       }
-      return 'Local pickup';
-    } else if (plant.city) {
-      return plant.city;
+
+      // Create auto message
+      const autoMessage = `Hi! I'm interested in your ${plantName}. Is it still available?`;
+      
+      const messageParams = {
+        sellerId: sellerId,
+        plantId: plantId,
+        plantName: plantName,
+        sellerName: sellerName,
+        autoMessage: autoMessage,
+        isBusiness: plant.seller?.isBusiness || plant.sellerType === 'business'
+      };
+
+      console.log('📱 Navigating to messages with params:', messageParams);
+
+      // FIXED: Better navigation strategy without canNavigate
+      const navigateToMessages = () => {
+        try {
+          // Try MainTabs first (most common)
+          navigation.navigate('MainTabs', {
+            screen: 'Messages',
+            params: messageParams
+          });
+        } catch (mainTabsError) {
+          try {
+            // Try MarketplaceTabs
+            navigation.navigate('MarketplaceTabs', {
+              screen: 'Messages',
+              params: messageParams
+            });
+          } catch (marketplaceTabsError) {
+            try {
+              // Try direct Messages navigation
+              navigation.navigate('Messages', messageParams);
+            } catch (directError) {
+              console.error('All navigation attempts failed:', {
+                mainTabsError,
+                marketplaceTabsError,
+                directError
+              });
+              Alert.alert(
+                'Navigation Error', 
+                'Could not open messages. Please go to the Messages tab manually.',
+                [{ text: 'OK' }]
+              );
+            }
+          }
+        }
+      };
+
+      navigateToMessages();
+
+    } catch (error) {
+      console.error('❌ Contact error:', error);
+      Alert.alert('Error', 'Could not start conversation. Please try again.');
     }
-    return 'Local pickup';
-  };
+  }, [navigation, plant]);
 
-  const hasLocationCoordinates = () => {
-    return (
-      plant.location &&
-      typeof plant.location === 'object' &&
-      plant.location.latitude &&
-      plant.location.longitude
-    );
-  };
-
-  const handleOpenMap = (e) => {
-    e.stopPropagation();
-    if (!hasLocationCoordinates()) return;
-    navigation.navigate('MapView', {
-      products: [plant],
-      initialLocation: {
-        latitude: plant.location.latitude,
-        longitude: plant.location.longitude
+  // FIXED: Order confirmation popup before starting conversation
+  const handleOrder = useCallback(async () => {
+    try {
+      const sellerId = plant.sellerId || plant.seller?._id || plant.seller?.email;
+      const sellerName = plant.seller?.name || plant.sellerName || 'Seller';
+      const plantId = plant.id || plant._id;
+      const plantName = plant.title || plant.name || plant.common_name || 'Plant';
+      const price = plant.price || plant.finalPrice || 0;
+      const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business';
+      
+      if (!sellerId) {
+        Alert.alert('Error', 'Seller information not available');
+        return;
       }
-    });
-  };
 
-  // Check if this is a business listing
-  const isBusiness = plant.seller?.isBusiness || plant.sellerType === 'business' || plant.isBusinessListing;
+      // FIXED: Show confirmation popup before starting conversation
+      Alert.alert(
+        'Confirm Order Interest',
+        `Would you like to inquire about ordering "${plantName}" for $${price}?${isBusiness ? '\n\nThis is a business listing - you can arrange pickup directly with the seller.' : ''}`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Yes, Inquire',
+            onPress: () => {
+              // Create order inquiry message
+              const orderMessage = isBusiness 
+                ? `Hi! I would like to order "${plantName}" ($${price}). Could you please provide details about pickup arrangements and availability?`
+                : `Hi! I'm interested in purchasing your "${plantName}" for $${price}. Is it still available?`;
+              
+              const messageParams = {
+                sellerId: sellerId,
+                plantId: plantId,
+                plantName: plantName,
+                sellerName: sellerName,
+                autoMessage: orderMessage,
+                isBusiness: isBusiness,
+                isOrderInquiry: true
+              };
 
-  // Render rating - now with "New Product" for zero ratings
-  const renderRating = () => {
-    const rating = plant.rating;
-    
-    // Show "New Product" text for no ratings
-    if (!rating || rating === 0) {
-      return (
-        <Text style={styles.newProductText}>New Product</Text>
+              console.log('🛒 Starting order inquiry with params:', messageParams);
+
+              // Navigate to messages with order inquiry
+              try {
+                navigation.navigate('MainTabs', {
+                  screen: 'Messages',
+                  params: messageParams
+                });
+              } catch (mainTabsError) {
+                try {
+                  navigation.navigate('MarketplaceTabs', {
+                    screen: 'Messages',
+                    params: messageParams
+                  });
+                } catch (marketplaceTabsError) {
+                  try {
+                    navigation.navigate('Messages', messageParams);
+                  } catch (directError) {
+                    console.error('Order navigation failed:', {
+                      mainTabsError,
+                      marketplaceTabsError,
+                      directError
+                    });
+                    Alert.alert(
+                      'Navigation Error', 
+                      'Could not open messages for order inquiry. Please go to Messages manually.',
+                      [{ text: 'OK' }]
+                    );
+                  }
+                }
+              }
+            }
+          }
+        ]
       );
+
+    } catch (error) {
+      console.error('❌ Order error:', error);
+      Alert.alert('Error', 'Could not process order inquiry. Please try again.');
     }
+  }, [navigation, plant]);
 
-    // Show star rating
-    return (
-      <View style={styles.productRatingContainer}>
-        {[1, 2, 3, 4, 5].map((star) => (
-          <FontAwesome
-            key={`rating-${star}`}
-            name={star <= Math.round(rating) ? 'star' : 'star-o'}
-            size={14}
-            color="#FFD700"
-            style={{ marginRight: 2 }}
-          />
-        ))}
-        {plant.reviewCount > 0 && (
-          <Text style={styles.reviewCount}>({plant.reviewCount})</Text>
-        )}
-      </View>
-    );
+  const handleWishToggle = useCallback(async () => {
+    if (isWishing) return;
+    
+    try {
+      setIsWishing(true);
+      const plantId = plant.id || plant._id;
+      
+      const result = await wishProduct(plantId);
+      
+      if (result) {
+        const newWishState = !isWished;
+        setIsWished(newWishState);
+        
+        // Trigger update
+        triggerUpdate(UPDATE_TYPES.WISHLIST, {
+          plantId: plantId,
+          isFavorite: newWishState,
+          timestamp: Date.now()
+        });
+      }
+    } catch (error) {
+      console.error('Error toggling wishlist:', error);
+      Alert.alert('Error', 'Failed to update wishlist. Please try again.');
+    } finally {
+      setIsWishing(false);
+    }
+  }, [plant, isWished, isWishing]);
+
+  const formatPrice = (price) => {
+    const numPrice = parseFloat(price);
+    return isNaN(numPrice) ? '0' : numPrice.toFixed(0);
   };
 
-  // Render seller rating with "New Seller" for zero ratings and business indicator
-  const renderSellerRating = () => {
-    const sellerRating = plant.seller?.rating;
-    const reviewCount = plant.seller?.totalReviews || 0;
-
-    return (
-      <View style={styles.sellerInfoContainer}>
-        {/* Business/Individual Indicator */}
-        <View style={[styles.sellerTypeBadge, isBusiness ? styles.businessBadge : styles.individualBadge]}>
-          <MaterialCommunityIcons 
-            name={isBusiness ? 'store' : 'account'} 
-            size={10} 
-            color={isBusiness ? '#FF9800' : '#2196F3'} 
-          />
-          <Text style={[styles.sellerTypeText, isBusiness ? styles.businessText : styles.individualText]}>
-            {isBusiness ? 'Business' : 'Individual'}
-          </Text>
-        </View>
-
-        {/* Rating */}
-        {!sellerRating || sellerRating === 0 ? (
-          <Text style={styles.newSellerText}>New Seller</Text>
-        ) : (
-          <View style={styles.sellerRatingContainer}>
-            <FontAwesome name="star" size={10} color="#FFC107" />
-            <Text style={styles.sellerRatingText}>
-              {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
-              {reviewCount > 0 && ` (${reviewCount})`}
-            </Text>
-          </View>
-        )}
-      </View>
-    );
+  const getPlantImage = () => {
+    // Try different image sources
+    const imageUrl = plant.image || 
+                    plant.mainImage || 
+                    (plant.images && plant.images[0]) || 
+                    plant.imageUrl;
+    
+    if (imageUrl && imageUrl.startsWith('http')) {
+      return { uri: imageUrl };
+    }
+    
+    // Fallback placeholder - use a better placeholder service
+    return { 
+      uri: `https://picsum.photos/300/200?random=${plant.id || Math.random()}` 
+    };
   };
 
-  const isList = layout === 'list';
+  const renderSellerInfo = () => {
+    const seller = plant.seller || {};
+    const sellerName = seller.name || plant.sellerName || 'Plant Seller';
+    const isBusiness = seller.isBusiness || plant.sellerType === 'business';
+    const location = plant.location?.city || plant.city || 'Location not specified';
 
-  return (
-    <TouchableOpacity
-      ref={cardRef}
-      style={[
-        styles.card,
-        isList && styles.listCard,
-        isOffline && styles.offlineCard,
-        isBusiness && styles.businessCard, // Add business styling
-      ]}
-      onPress={handlePress}
-      activeOpacity={0.8}
-    >
-      <View style={[styles.imageContainer, isList && styles.listImageContainer]}>
-        <Image
-          source={{ uri: plant.image || plant.imageUrl || 'https://via.placeholder.com/150?text=Plant' }}
-          style={isList ? styles.listImage : styles.image}
-          resizeMode="contain"
-        />
-        
-        {/* Business Indicator Overlay */}
-        {isBusiness && (
-          <View style={styles.businessIndicator}>
-            <MaterialCommunityIcons name="store" size={12} color="#fff" />
-          </View>
-        )}
-        
-        {isOffline && (
-          <View style={styles.offlineIndicator}>
-            <MaterialIcons name="cloud-off" size={12} color="#fff" />
-          </View>
-        )}
-        
-        <TouchableOpacity style={styles.favoriteButton} onPress={toggleFavorite}>
-          <MaterialIcons
-            name={isFavorite ? 'favorite' : 'favorite-border'}
-            size={18}
-            color={isFavorite ? '#f44336' : '#fff'}
-          />
-        </TouchableOpacity>
-      </View>
-
-      <View style={isList ? styles.listInfoContainer : styles.infoContainer}>
-        <View style={styles.titleRow}>
-          <Text style={[styles.name, isList && styles.listName]} numberOfLines={isList ? 2 : 1}>
-            {plant.title || plant.name}
+    return (
+      <View style={styles.sellerContainer}>
+        <View style={styles.sellerInfo}>
+          <Text style={styles.sellerName} numberOfLines={1}>
+            {sellerName}
           </Text>
-          <Text style={styles.price}>${parseFloat(plant.price).toFixed(2)}</Text>
-        </View>
-
-        {renderRating()}
-
-        <View style={styles.locationRow}>
-          <MaterialIcons name="location-on" size={12} color="#666" />
-          <Text style={styles.locationText} numberOfLines={1}>{getLocationText()}</Text>
-          {hasLocationCoordinates() && (
-            <TouchableOpacity style={styles.mapButton} onPress={handleOpenMap}>
-              <MaterialIcons name="map" size={16} color="#fff" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {!isList && <Text style={styles.category} numberOfLines={1}>{plant.category}</Text>}
-
-        <TouchableOpacity onPress={handleSellerPress} style={styles.sellerRow}>
-          <View style={styles.sellerNameContainer}>
-            <Text style={styles.sellerName} numberOfLines={1}>
-              {plant.seller?.name || plant.sellerName || (isBusiness ? 'Business Seller' : 'Individual Seller')}
-            </Text>
-            <MaterialIcons name="chevron-right" size={14} color="#999" />
-          </View>
-          {renderSellerRating()}
-        </TouchableOpacity>
-
-        <View style={styles.footer}>
-          <Text style={styles.date}>
-            {formatDate(plant.addedAt || plant.listedDate)}
-          </Text>
-          {showActions && (
-            <View style={styles.actionButtons}>
-              <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
-                <MaterialIcons name="share" size={14} color="#4CAF50" />
-                <Text style={styles.actionText}>Share</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.actionButton} onPress={handleContact}>
-                <MaterialIcons name="chat" size={14} color="#4CAF50" />
-                <Text style={[styles.actionText, isSubmitting && styles.disabledText]}>
-                  Contact
-                </Text>
-              </TouchableOpacity>
+          {isBusiness && (
+            <View style={styles.businessBadge}>
+              <MaterialIcons name="store" size={10} color="#FF9800" />
+              <Text style={styles.businessText}>Business</Text>
             </View>
           )}
         </View>
+        <Text style={styles.location} numberOfLines={1}>
+          📍 {location}
+        </Text>
+      </View>
+    );
+  };
+
+  // FIXED: Clean card style that works with wrapper
+  const cardStyle = [
+    styles.card,
+    layout === 'list' && styles.listCard,
+    isWeb && styles.webCard,
+    style // Apply any external styles
+  ];
+
+  return (
+    <TouchableOpacity style={cardStyle} onPress={navigateToDetails} activeOpacity={0.8}>
+      {/* Plant Image */}
+      <View style={styles.imageContainer}>
+        <Image
+          source={getPlantImage()}
+          style={[
+            styles.image,
+            layout === 'list' && styles.listImage
+          ]}
+          resizeMode="cover"
+          onError={(e) => {
+            console.log('Image load error:', e.nativeEvent.error);
+          }}
+        />
+        
+        {/* Wishlist Button */}
+        {showActions && (
+          <TouchableOpacity
+            style={styles.wishButton}
+            onPress={handleWishToggle}
+            disabled={isWishing}
+          >
+            <MaterialIcons
+              name={isWished ? 'favorite' : 'favorite-border'}
+              size={20}
+              color={isWished ? '#ff4444' : '#666'}
+            />
+          </TouchableOpacity>
+        )}
+
+        {/* Business Badge on Image */}
+        {(plant.seller?.isBusiness || plant.sellerType === 'business') && (
+          <View style={styles.businessImageBadge}>
+            <MaterialIcons name="store" size={12} color="#fff" />
+            <Text style={styles.businessImageText}>Business</Text>
+          </View>
+        )}
+      </View>
+
+      {/* Content */}
+      <View style={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.name} numberOfLines={2}>
+            {plant.title || plant.name || plant.common_name || 'Unnamed Plant'}
+          </Text>
+          <Text style={styles.price}>
+            ${formatPrice(plant.price || plant.finalPrice || 0)}
+          </Text>
+        </View>
+
+        {plant.description && (
+          <Text style={styles.description} numberOfLines={2}>
+            {plant.description}
+          </Text>
+        )}
+
+        {renderSellerInfo()}
+
+        {/* Action Buttons */}
+        {showActions && (
+          <View style={styles.actions}>
+            <TouchableOpacity style={styles.contactButton} onPress={handleContact}>
+              <MaterialIcons name="chat" size={16} color="#4CAF50" />
+              <Text style={styles.contactText}>Contact</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.orderButton} onPress={handleOrder}>
+              <MaterialIcons name="shopping-cart" size={16} color="#fff" />
+              <Text style={styles.orderText}>
+                {plant.seller?.isBusiness || plant.sellerType === 'business' ? 'Order' : 'Buy'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -334,246 +372,164 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', isOffline = fal
 const styles = StyleSheet.create({
   card: {
     backgroundColor: '#fff',
-    borderRadius: 8,
-    margin: 8,
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
     overflow: 'hidden',
-    flex: 1,
-    maxWidth: Platform.OS === 'web' ? '31%' : '47%',
-    ...(Platform.OS === 'web'
-      ? { boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }
-      : Platform.select({
-          ios: {
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-          },
-          android: {
-            elevation: 2,
-          },
-        })),
-  },
-  businessCard: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#FF9800',
+    // FIXED: Remove fixed width - let wrapper control it
   },
   listCard: {
     flexDirection: 'row',
-    maxWidth: '100%',
-    height: 130,
   },
-  offlineCard: {
-    opacity: 0.9,
-    ...(Platform.OS === 'android' ? { elevation: 1 } : {}),
+  webCard: {
+    // Enhanced shadow for web
+    boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+    transition: 'transform 0.2s ease-in-out',
   },
   imageContainer: {
     position: 'relative',
   },
-  listImageContainer: {
-    width: 130,
-  },
   image: {
-    height: 180,
+    // FIXED: Use flex instead of fixed dimensions
     width: '100%',
-    backgroundColor: '#f0f0f0',
+    height: 180,
+    backgroundColor: '#f5f5f5',
   },
   listImage: {
-    height: 130,
-    width: 130,
-    backgroundColor: '#f0f0f0',
+    width: 120,
+    height: 120,
+    borderRadius: 8,
+    margin: 12,
   },
-  businessIndicator: {
-    position: 'absolute',
-    top: 8,
-    left: 8,
-    backgroundColor: '#FF9800',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-  },
-  offlineIndicator: {
-    position: 'absolute',
-    bottom: 8,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    borderRadius: 12,
-    padding: 4,
-  },
-  favoriteButton: {
+  wishButton: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    borderRadius: 16,
-    width: 32,
-    height: 32,
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    padding: 6,
+    zIndex: 1,
   },
-  infoContainer: {
-    padding: 12,
-  },
-  listInfoContainer: {
-    flex: 1,
-    padding: 12,
-  },
-  titleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 4,
-  },
-  name: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    flex: 1,
-    marginRight: 8,
-    color: '#333',
-  },
-  listName: {
-    fontSize: 17,
-  },
-  price: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  productRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  reviewCount: {
-    fontSize: 12,
-    color: '#888',
-    marginLeft: 4,
-  },
-  newProductText: {
-    fontSize: 12,
-    color: '#888',
-    fontStyle: 'italic',
-    marginBottom: 6,
-  },
-  locationRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  locationText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-    flex: 1,
-  },
-  mapButton: {
-    backgroundColor: '#388E3C',
-    borderRadius: 6,
-    paddingVertical: 6,
+  businessImageBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(255, 152, 0, 0.9)',
+    borderRadius: 12,
     paddingHorizontal: 8,
-    marginLeft: 8,
-    ...Platform.select({
-      web: {
-        boxShadow: '0 2px 4px rgba(0,0,0,0.15)',
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
-  category: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 8,
-  },
-  sellerRow: {
-    marginBottom: 8,
-  },
-  sellerNameContainer: {
+    paddingVertical: 4,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 4,
+    zIndex: 1,
   },
-  sellerName: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-    flex: 1,
-  },
-  sellerInfoContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-  },
-  sellerTypeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    marginRight: 8,
-  },
-  businessBadge: {
-    backgroundColor: '#FFF3E0',
-  },
-  individualBadge: {
-    backgroundColor: '#E3F2FD',
-  },
-  sellerTypeText: {
-    fontSize: 9,
+  businessImageText: {
+    color: '#fff',
+    fontSize: 10,
     fontWeight: '600',
     marginLeft: 2,
   },
-  businessText: {
-    color: '#FF9800',
+  content: {
+    padding: 12,
+    flex: 1,
   },
-  individualText: {
-    color: '#2196F3',
-  },
-  sellerRatingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sellerRatingText: {
-    marginLeft: 2,
-    fontSize: 10,
-    color: '#888',
-  },
-  newSellerText: {
-    fontSize: 10,
-    color: '#888',
-    fontStyle: 'italic',
-  },
-  footer: {
+  header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: 4,
+    alignItems: 'flex-start',
+    marginBottom: 6,
   },
-  date: {
+  name: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
+  },
+  price: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#4CAF50',
+  },
+  description: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  sellerContainer: {
+    marginVertical: 6,
+  },
+  sellerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  sellerName: {
+    fontSize: 13,
+    color: '#333',
+    fontWeight: '500',
+    flex: 1,
+  },
+  businessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff3e0',
+    borderRadius: 8,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    marginLeft: 6,
+  },
+  businessText: {
+    fontSize: 9,
+    color: '#FF9800',
+    fontWeight: '600',
+    marginLeft: 2,
+  },
+  location: {
     fontSize: 12,
     color: '#999',
   },
-  actionButtons: {
+  actions: {
     flexDirection: 'row',
+    marginTop: 10,
+    gap: 8,
   },
-  actionButton: {
+  contactButton: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f0f9f0',
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    borderRadius: 4,
-    marginLeft: 8,
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    backgroundColor: '#f9fff9',
   },
-  actionText: {
-    fontSize: 12,
+  contactText: {
     color: '#4CAF50',
+    fontSize: 13,
+    fontWeight: '600',
     marginLeft: 4,
   },
-  disabledText: {
-    color: '#aaa',
+  orderButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+  },
+  orderText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 4,
   },
 });
 

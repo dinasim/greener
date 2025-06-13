@@ -1,17 +1,43 @@
-// components/PlantDetailScreen-parts/ImageGallery.js
+// components/PlantDetailScreen-parts/ImageGallery.js - FIXED: Use PlaceholderService
 import React, { useState } from 'react';
 import { View, Image, ScrollView, StyleSheet, Dimensions, TouchableOpacity } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import PlaceholderService from '../../services/placeholderService';
 
 const { width } = Dimensions.get('window');
 
-const ImageGallery = ({ images, onFavoritePress, onSharePress, isFavorite }) => {
+const ImageGallery = ({ images, onFavoritePress, onSharePress, isFavorite, plant = null }) => {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [failedImages, setFailedImages] = useState(new Set());
   
-  // Use placeholder if no images are provided
-  const imageUrls = images && images.length > 0 
-    ? images 
-    : ['https://via.placeholder.com/400?text=Plant'];
+  // FIXED: Use PlaceholderService to process images safely
+  const getProcessedImages = () => {
+    if (images && Array.isArray(images) && images.length > 0) {
+      // Process the images array to ensure all URLs are valid
+      const validImages = PlaceholderService.processImageArray(images, plant?.category);
+      return validImages;
+    }
+    
+    // Fallback to category-specific placeholder
+    const category = plant?.category || 'Plants';
+    return [PlaceholderService.getCategoryPlaceholder(category, 400, 300)];
+  };
+
+  const imageUrls = getProcessedImages();
+
+  const handleImageError = (index, imageUrl) => {
+    console.log(`Image ${index} failed to load:`, imageUrl);
+    setFailedImages(prev => new Set([...prev, index]));
+  };
+
+  const getImageUrl = (imageUrl, index) => {
+    if (failedImages.has(index)) {
+      // Return category placeholder if this image failed
+      const category = plant?.category || 'Plants';
+      return PlaceholderService.getCategoryPlaceholder(category, 400, 300);
+    }
+    return imageUrl;
+  };
 
   return (
     <View style={styles.imageContainer}>
@@ -25,7 +51,23 @@ const ImageGallery = ({ images, onFavoritePress, onSharePress, isFavorite }) => 
         }}
       >
         {imageUrls.map((image, index) => (
-          <Image key={index} source={{ uri: image }} style={styles.image} resizeMode="contain" />
+          <Image 
+            key={`${index}-${image}`}
+            source={{ uri: getImageUrl(image, index) }} 
+            style={styles.image} 
+            resizeMode="cover" 
+            onError={() => handleImageError(index, image)}
+            onLoad={() => {
+              // Remove from failed images if it loads successfully
+              if (failedImages.has(index)) {
+                setFailedImages(prev => {
+                  const newSet = new Set(prev);
+                  newSet.delete(index);
+                  return newSet;
+                });
+              }
+            }}
+          />
         ))}
       </ScrollView>
       

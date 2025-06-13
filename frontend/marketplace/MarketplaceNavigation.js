@@ -1,4 +1,4 @@
-// MarketplaceNavigation.js
+// MarketplaceNavigation.js - COMPLETE FIXED VERSION
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -30,6 +30,8 @@ const MarketplaceNavigation = () => {
     <Stack.Navigator initialRouteName="MarketplaceTabs" screenOptions={{ headerShown: false, contentStyle: { backgroundColor: '#fff' }, animation: 'slide_from_right' }}>
       <Stack.Screen name="MarketplaceTabs" component={MarketplaceTabs} />
       <Stack.Screen name="PlantDetail" component={PlantDetailScreen} />
+      {/* FIXED: Add both PlantDetail and PlantDetails to prevent navigation errors */}
+      <Stack.Screen name="PlantDetails" component={PlantDetailScreen} />
       <Stack.Screen name="AddPlant" component={AddPlantScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="SellerProfile" component={SellerProfileScreen} />

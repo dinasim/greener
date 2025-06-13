@@ -1,4 +1,4 @@
-// components/PlantDetailScreen-parts/ActionButtons.js
+// components/PlantDetailScreen-parts/ActionButtons.js - FIXED FOR BUSINESS/INDIVIDUAL
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -8,7 +8,9 @@ const ActionButtons = ({
   onFavoritePress, 
   onContactPress, 
   onReviewPress,
-  isSending = false 
+  isSending = false,
+  isBusiness = false,
+  plantName = 'this plant'
 }) => {
   return (
     <View style={styles.container}>
@@ -21,23 +23,47 @@ const ActionButtons = ({
           />
           <Text style={styles.actionButtonText}>{isFavorite ? 'Favorited' : 'Favorite'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity 
-          style={styles.contactButton} 
-          onPress={onContactPress}
-          disabled={isSending}
-          accessible={true}
-          accessibilityLabel="Message Seller"
-          accessibilityRole="button"
-        >
-          {isSending ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <MaterialIcons name="chat" size={24} color="#fff" />
-              <Text style={styles.contactButtonText}>Message Seller</Text>
-            </>
-          )}
-        </TouchableOpacity>
+        
+        {/* Different buttons for business vs individual */}
+        {isBusiness ? (
+          // Business products: Only Order button (opens chat with auto message)
+          <TouchableOpacity 
+            style={styles.orderButton} 
+            onPress={onContactPress}
+            disabled={isSending}
+            accessible={true}
+            accessibilityLabel="Order Product"
+            accessibilityRole="button"
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <MaterialIcons name="shopping-cart" size={24} color="#fff" />
+                <Text style={styles.orderButtonText}>Order Now</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        ) : (
+          // Individual products: Only Contact button (no duplicate)
+          <TouchableOpacity 
+            style={styles.contactButton} 
+            onPress={onContactPress}
+            disabled={isSending}
+            accessible={true}
+            accessibilityLabel="Contact Seller"
+            accessibilityRole="button"
+          >
+            {isSending ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <MaterialIcons name="chat" size={24} color="#fff" />
+                <Text style={styles.contactButtonText}>Contact Seller</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
       </View>
       
       <TouchableOpacity 
@@ -48,16 +74,32 @@ const ActionButtons = ({
         accessibilityRole="button"
       >
         <MaterialIcons name="rate-review" size={24} color="#4CAF50" />
-        <Text style={styles.reviewButtonText}>Write a Review</Text>
+        <Text style={styles.reviewButtonText}>
+          Write a Review {isBusiness ? 'for Business' : 'for Seller'}
+        </Text>
       </TouchableOpacity>
       
       <View style={styles.safetyContainer}>
         <MaterialIcons name="shield" size={20} color="#4CAF50" />
         <Text style={styles.safetyText}>
           <Text style={styles.safetyBold}>Safety Tips: </Text>
-          Meet in a public place and inspect the plant before purchasing
+          {isBusiness 
+            ? 'Visit the business location and verify the product before purchase'
+            : 'Meet in a public place and inspect the plant before purchasing'
+          }
         </Text>
       </View>
+      
+      {/* Business-specific pickup info */}
+      {isBusiness && (
+        <View style={styles.pickupContainer}>
+          <MaterialIcons name="store" size={20} color="#4CAF50" />
+          <Text style={styles.pickupText}>
+            <Text style={styles.pickupBold}>Pickup: </Text>
+            Contact business for pickup arrangements and location details
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -102,6 +144,20 @@ const styles = StyleSheet.create({
     fontWeight: '600', 
     fontSize: 16 
   },
+  orderButton: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#FF9800', 
+    borderRadius: 8, 
+    paddingVertical: 12, 
+    paddingHorizontal: 16 
+  },
+  orderButtonText: { 
+    color: '#fff', 
+    marginLeft: 8, 
+    fontWeight: '600', 
+    fontSize: 16 
+  },
   reviewButton: { 
     flexDirection: 'row', 
     alignItems: 'center',
@@ -135,6 +191,24 @@ const styles = StyleSheet.create({
     flex: 1 
   },
   safetyBold: { 
+    fontWeight: 'bold', 
+    color: '#333' 
+  },
+  pickupContainer: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#fff3e0', 
+    padding: 12, 
+    borderRadius: 8, 
+    marginBottom: 16 
+  },
+  pickupText: { 
+    fontSize: 14, 
+    marginLeft: 8, 
+    color: '#555', 
+    flex: 1 
+  },
+  pickupBold: { 
     fontWeight: 'bold', 
     color: '#333' 
   },

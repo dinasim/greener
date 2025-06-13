@@ -1,3 +1,4 @@
+// screens/MessagesScreen.js - FIXED: Profile Fetching and Navigation
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, FlatList, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image,
@@ -17,30 +18,34 @@ const MessagesScreen = () => {
   const plantId = route.params?.plantId;
   const plantName = route.params?.plantName;
   const sellerName = route.params?.sellerName;
-  const isBusiness = route.params?.isBusiness || false;
+  const autoMessage = route.params?.autoMessage;
+  
   const [activeTab, setActiveTab] = useState(sellerId ? 'chat' : 'conversations');
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [newMessage, setNewMessage] = useState(autoMessage || '');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentUserEmail, setCurrentUserEmail] = useState('');
   const [userType, setUserType] = useState('individual');
   const flatListRef = useRef(null);
   
-  // Check user type on mount
+  // Load current user info
   useEffect(() => {
-    const checkUserType = async () => {
+    const loadUserInfo = async () => {
       try {
+        const userEmail = await AsyncStorage.getItem('userEmail');
         const storedUserType = await AsyncStorage.getItem('userType');
+        setCurrentUserEmail(userEmail || '');
         setUserType(storedUserType || 'individual');
       } catch (error) {
-        console.error('Error checking user type:', error);
+        console.error('Error loading user info:', error);
       }
     };
-    checkUserType();
+    loadUserInfo();
   }, []);
   
   useEffect(() => {
@@ -54,9 +59,9 @@ const MessagesScreen = () => {
   }, [selectedConversation]);
 
   useEffect(() => {
-    // If we have sellerId and plantId from route params, initialize a new conversation
+    // Initialize new conversation if coming from product
     if (sellerId && plantId && !selectedConversation) {
-      findExistingConversation();
+      findOrCreateConversation();
     }
   }, [sellerId, plantId, conversations]);
   
@@ -64,36 +69,186 @@ const MessagesScreen = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      console.log('🔄 Loading conversations for user:', userEmail);
+      
       const data = await fetchConversations(userEmail);
+      console.log('📨 Raw conversations data:', data);
+      
+      // Process conversations data
+      let conversationsList = [];
       if (Array.isArray(data)) {
-        setConversations(data);
+        conversationsList = data;
       } else if (data && Array.isArray(data.conversations)) {
-        setConversations(data.conversations);
-      } else {
-        console.warn('Unexpected conversation data format:', data);
-        setConversations([]);
+        conversationsList = data.conversations;
       }
+      
+      console.log('📋 Processing', conversationsList.length, 'conversations');
+      
+      // Process conversations to get proper user info
+      const processedConversations = await Promise.all(
+        conversationsList.map(async (conv) => {
+          console.log('🔍 Processing conversation:', conv);
+          
+          // FIXED: Better email extraction
+          const otherUserEmail = conv.otherUserEmail || 
+                                conv.sellerId || 
+                                conv.buyerId || 
+                                conv.participants?.find(p => p !== userEmail);
+          
+          console.log('👤 Looking up profile for:', otherUserEmail);
+          const otherUserProfile = await getUserProfile(otherUserEmail);
+          console.log('✅ Profile loaded:', otherUserProfile);
+          
+          return {
+            ...conv,
+            otherUserName: otherUserProfile?.name || 
+                          otherUserProfile?.displayName || 
+                          otherUserProfile?.businessName ||
+                          conv.otherUserName || 
+                          conv.sellerName ||
+                          otherUserEmail?.split('@')[0] || 
+                          'User',
+            otherUserAvatar: otherUserProfile?.profileImage || 
+                           otherUserProfile?.avatar || 
+                           otherUserProfile?.picture ||
+                           otherUserProfile?.logo ||
+                           null,
+            isBusiness: otherUserProfile?.userType === 'business' || 
+                       otherUserProfile?.isBusiness || 
+                       false,
+            businessName: otherUserProfile?.businessName || null,
+            otherUserEmail: otherUserEmail,
+          };
+        })
+      );
+      
+      console.log('✅ Processed conversations:', processedConversations);
+      setConversations(processedConversations);
       setIsLoading(false);
       setRefreshing(false);
     } catch (err) {
-      console.error('Error fetching conversations:', err);
+      console.error('❌ Error fetching conversations:', err);
       setError('Failed to load conversations. Please try again later.');
       setIsLoading(false);
       setRefreshing(false);
     }
   };
 
-  const findExistingConversation = async () => {
+  // FIXED: Simplified getUserProfile using correct backend endpoints and field names
+  const getUserProfile = async (userEmail) => {
+    if (!userEmail) {
+      console.log('⚠️ No user email provided');
+      return null;
+    }
+    
+    try {
+      const currentUserEmail = await AsyncStorage.getItem('userEmail');
+      const token = await AsyncStorage.getItem('googleAuthToken');
+      
+      const headers = {
+        'Content-Type': 'application/json',
+      };
+      
+      if (currentUserEmail) {
+        headers['X-User-Email'] = currentUserEmail;
+      }
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      console.log('🔍 Fetching profile for:', userEmail);
+
+      // FIXED: Try individual user profile first - using correct backend endpoint
+      try {
+        const userResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/users/${userEmail}`, {
+          method: 'GET',
+          headers,
+        });
+        
+        console.log('👤 User profile response status:', userResponse.status);
+        
+        if (userResponse.ok) {
+          const userData = await userResponse.json();
+          console.log('👤 User profile data:', userData);
+          
+          // FIXED: Extract from correct backend structure: {user: {...}}
+          const user = userData.user;
+          
+          if (user && user.name) {
+            return {
+              name: user.name,
+              email: user.email,
+              profileImage: user.avatar || user.profileImage || null,
+              userType: 'individual',
+              isBusiness: false,
+              businessName: null,
+            };
+          }
+        }
+      } catch (userError) {
+        console.log('⚠️ User profile request failed:', userError.message);
+      }
+
+      // FIXED: Try business profile - using correct backend endpoint and field names
+      try {
+        const businessResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/business-profile/${userEmail}`, {
+          method: 'GET',
+          headers,
+        });
+        
+        console.log('🏢 Business profile response status:', businessResponse.status);
+        
+        if (businessResponse.ok) {
+          const businessData = await businessResponse.json();
+          console.log('🏢 Business profile data:', businessData);
+          
+          // FIXED: Extract from correct backend structure: {business: {...}}
+          const business = businessData.business;
+          
+          if (business && (business.businessName || business.name)) {
+            return {
+              name: business.businessName || business.name,
+              email: business.email || business.contactEmail,
+              profileImage: business.logo || null,
+              userType: 'business',
+              isBusiness: true,
+              businessName: business.businessName || business.name,
+              businessType: business.businessType,
+            };
+          }
+        }
+      } catch (businessError) {
+        console.log('⚠️ Business profile request failed:', businessError.message);
+      }
+
+    } catch (error) {
+      console.error('❌ Error in getUserProfile:', error);
+    }
+    
+    console.log('⚠️ No profile found, returning fallback for:', userEmail);
+    // FIXED: Better fallback with email-based name
+    const fallbackName = userEmail?.split('@')[0];
+    return {
+      name: fallbackName?.charAt(0).toUpperCase() + fallbackName?.slice(1) || 'User',
+      email: userEmail,
+      profileImage: null,
+      userType: 'individual',
+      isBusiness: false,
+      businessName: null,
+    };
+  };
+
+  const findOrCreateConversation = async () => {
     try {
       if (conversations.length === 0) {
         await loadConversations();
       }
       
-      // Look for an existing conversation with this seller for this plant
+      // Look for existing conversation with this seller about this plant
       const existingConversation = conversations.find(
-        conv => (conv.sellerId === sellerId || conv.otherUserEmail === sellerId) && 
-               (conv.plantId === plantId || conv.productId === plantId)
+        conv => conv.otherUserEmail === sellerId && conv.plantId === plantId
       );
       
       if (existingConversation) {
@@ -101,32 +256,55 @@ const MessagesScreen = () => {
         setSelectedConversation(existingConversation);
         setActiveTab('chat');
       } else {
-        // If no existing conversation found, we'll create one when the user sends a message
-        console.log('No existing conversation found. Ready for new message.');
+        // Create temporary conversation object for new chats
+        const sellerProfile = await getUserProfile(sellerId);
+        const tempConversation = {
+          id: null, // Will be set after first message
+          otherUserName: sellerProfile?.name || sellerName || 'Seller',
+          otherUserEmail: sellerId,
+          otherUserAvatar: sellerProfile?.profileImage || null,
+          plantName: plantName || 'Plant',
+          plantId: plantId,
+          sellerId: sellerId,
+          isBusiness: sellerProfile?.isBusiness || false,
+          businessName: sellerProfile?.businessName || null,
+        };
+        setSelectedConversation(tempConversation);
         setActiveTab('chat');
+        console.log('Created temporary conversation for new chat');
       }
     } catch (error) {
-      console.error('Error finding existing conversation:', error);
+      console.error('Error finding/creating conversation:', error);
     }
   };
   
   const loadMessages = async (conversationId) => {
+    if (!conversationId) {
+      // New conversation, no messages to load
+      setMessages([]);
+      setIsLoading(false);
+      return;
+    }
+    
     try {
       setIsLoading(true);
       setError(null);
       const userEmail = await AsyncStorage.getItem('userEmail') || 'default@example.com';
       const data = await fetchMessages(conversationId, userEmail);
+      
+      let messagesList = [];
       if (data && Array.isArray(data.messages)) {
-        setMessages(data.messages);
+        messagesList = data.messages;
       } else if (Array.isArray(data)) {
-        setMessages(data);
-      } else {
-        console.warn('Unexpected messages data format:', data);
-        setMessages([]);
+        messagesList = data;
       }
+      
+      setMessages(messagesList);
       setIsLoading(false);
+      
+      // Scroll to bottom
       setTimeout(() => {
-        if (flatListRef.current) {
+        if (flatListRef.current && messagesList.length > 0) {
           flatListRef.current.scrollToEnd({ animated: false });
         }
       }, 100);
@@ -150,8 +328,10 @@ const MessagesScreen = () => {
         id: tempId,
         senderId: userEmail,
         text: messageText,
+        message: messageText,
         timestamp: new Date().toISOString(),
-        pending: true
+        pending: true,
+        isFromCurrentUser: true
       };
   
       setMessages(prevMessages => [...prevMessages, tempMessage]);
@@ -163,21 +343,27 @@ const MessagesScreen = () => {
         }
       }, 100);
   
-      if (selectedConversation) {
+      if (selectedConversation?.id) {
+        // Existing conversation
         await sendMessage(selectedConversation.id, messageText, userEmail);
       } else if (sellerId && plantId) {
         // Create new conversation
         console.log('Starting new conversation with:', sellerId, 'about plant:', plantId);
         const result = await startConversation(sellerId, plantId, messageText, userEmail);
+        
         if (result?.messageId || result?.conversationId) {
-          setSelectedConversation({
-            id: result.conversationId || result.messageId,
+          const newConversationId = result.conversationId || result.messageId;
+          
+          // Update the selected conversation with the real ID
+          setSelectedConversation(prev => ({
+            ...prev,
+            id: newConversationId,
             otherUserName: sellerName || result.sellerName || 'Seller',
             plantName: plantName || 'Plant',
             plantId: plantId,
             sellerId: sellerId,
-            isBusiness: isBusiness
-          });
+          }));
+          
           setTimeout(() => loadConversations(), 500);
         } else {
           throw new Error('Failed to create conversation');
@@ -186,13 +372,14 @@ const MessagesScreen = () => {
         throw new Error('Missing required information to send message');
       }
   
+      // Remove pending status from message
       setMessages(prevMessages =>
         prevMessages.map(msg =>
           msg.id === tempId ? { ...msg, pending: false } : msg
         )
       );
       
-      // Trigger FCM notification for the other user
+      // Trigger update notification
       triggerUpdate(UPDATE_TYPES.MESSAGE, {
         type: 'NEW_MESSAGE',
         conversationId: selectedConversation?.id,
@@ -219,7 +406,7 @@ const MessagesScreen = () => {
     setRefreshing(true);
     if (activeTab === 'conversations') {
       loadConversations();
-    } else if (selectedConversation) {
+    } else if (selectedConversation?.id) {
       loadMessages(selectedConversation.id);
     } else {
       setRefreshing(false);
@@ -254,17 +441,46 @@ const MessagesScreen = () => {
     }
   };
 
-  // Get avatar URL with fallback to ui-avatars service
-  const getAvatarUrl = (user) => {
-    // If the user has a valid avatar URL, use it
-    if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('http')) {
-      return user.avatar;
+  // FIXED: Enhanced avatar rendering with better fallback
+  const renderAvatar = (avatarUrl, name = 'User', isBusiness = false, size = 52) => {
+    if (avatarUrl && avatarUrl.startsWith('http')) {
+      return (
+        <Image 
+          source={{ uri: avatarUrl }} 
+          style={[styles.avatar, { width: size, height: size, borderRadius: size / 2 }]}
+          onError={(e) => {
+            console.log('❌ Error loading avatar:', avatarUrl, e.nativeEvent.error);
+          }}
+        />
+      );
     }
     
-    // Create avatar URL from user's name with better fallback
-    const name = user.otherUserName || user.name || 'User';
-    const initial = name.charAt(0).toUpperCase();
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&background=4CAF50&color=fff&size=100`;
+    // Fallback to initials with better name processing
+    const displayName = name || 'User';
+    const initials = displayName
+      .split(' ')
+      .map(word => word.charAt(0))
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() || 'U';
+    
+    const backgroundColor = isBusiness ? '#FF9800' : '#4CAF50';
+    
+    return (
+      <View style={[
+        styles.avatarFallback, 
+        { 
+          width: size, 
+          height: size, 
+          borderRadius: size / 2, 
+          backgroundColor 
+        }
+      ]}>
+        <Text style={[styles.avatarText, { fontSize: size * 0.35 }]}>
+          {initials}
+        </Text>
+      </View>
+    );
   };
   
   const renderConversationsList = () => {
@@ -276,6 +492,7 @@ const MessagesScreen = () => {
         </View>
       );
     }
+    
     if (error) {
       return (
         <View style={styles.centerContainer}>
@@ -287,6 +504,7 @@ const MessagesScreen = () => {
         </View>
       );
     }
+    
     if (conversations.length === 0) {
       return (
         <View style={styles.centerContainer}>
@@ -299,34 +517,41 @@ const MessagesScreen = () => {
             }
           </Text>
           {userType !== 'business' && (
-            <TouchableOpacity style={styles.browseButton} onPress={() => navigation.navigate('MarketplaceHome')}>
+            <TouchableOpacity 
+              style={styles.browseButton} 
+              onPress={() => {
+                // FIXED: Better navigation without canNavigate
+                try {
+                  navigation.navigate('MarketplaceHome');
+                } catch (error) {
+                  console.error('Navigation error:', error);
+                  // Try alternative navigation
+                  navigation.goBack();
+                }
+              }}
+            >
               <Text style={styles.browseButtonText}>Browse Plants</Text>
             </TouchableOpacity>
           )}
         </View>
       );
     }
+    
     return (
       <FlatList
         data={conversations}
         renderItem={({ item }) => (
           <TouchableOpacity style={styles.conversationItem} onPress={() => handleSelectConversation(item)}>
-            <Image 
-              source={{ uri: getAvatarUrl(item) }} 
-              style={styles.avatar}
-              onError={(e) => {
-                console.log('Error loading avatar:', e.nativeEvent.error);
-              }}
-            />
+            {renderAvatar(item.otherUserAvatar, item.otherUserName, item.isBusiness)}
             <View style={styles.conversationInfo}>
               <View style={styles.conversationHeader}>
                 <View style={styles.userNameContainer}>
                   <Text style={styles.userName} numberOfLines={1}>
-                    {item.otherUserName || 'User'}
+                    {item.otherUserName}
                   </Text>
                   {item.isBusiness && (
                     <View style={styles.businessBadge}>
-                      <MaterialIcons name="store" size={12} color="#4CAF50" />
+                      <MaterialIcons name="store" size={12} color="#FF9800" />
                       <Text style={styles.businessBadgeText}>Business</Text>
                     </View>
                   )}
@@ -354,27 +579,21 @@ const MessagesScreen = () => {
   };
   
   const renderChatScreen = () => {
-    const isNewConversation = !selectedConversation && sellerId && plantId;
+    const isNewConversation = !selectedConversation?.id && sellerId && plantId;
+    
     const renderMessageItem = ({ item }) => {
-      // Determine if message is from current user
-      const userEmail = AsyncStorage.getItem('userEmail');
-      const isOwnMessage = item.senderId === userEmail || 
+      const isOwnMessage = item.senderId === currentUserEmail || 
                           item.senderId === 'currentUser' || 
-                          item.isFromCurrentUser;
+                          item.isFromCurrentUser ||
+                          item.senderId === currentUserEmail;
       
       return (
         <View style={[styles.messageContainer, isOwnMessage ? styles.ownMessageContainer : styles.otherMessageContainer]}>
-          {!isOwnMessage && (
-            <Image 
-              source={{ 
-                uri: selectedConversation?.otherUserAvatar || 
-                      getAvatarUrl({otherUserName: selectedConversation?.otherUserName || sellerName}) 
-              }}
-              style={styles.messageAvatar}
-              onError={(e) => {
-                console.log('Error loading message avatar:', e.nativeEvent.error);
-              }}
-            />
+          {!isOwnMessage && renderAvatar(
+            selectedConversation?.otherUserAvatar, 
+            selectedConversation?.otherUserName, 
+            selectedConversation?.isBusiness,
+            32
           )}
           <View style={[styles.messageBubble, isOwnMessage ? styles.ownMessageBubble : styles.otherMessageBubble,
               item.pending && styles.pendingMessageBubble]}>
@@ -402,9 +621,9 @@ const MessagesScreen = () => {
                 <Text style={styles.chatHeaderName} numberOfLines={1}>
                   {selectedConversation?.otherUserName || sellerName || 'New Message'}
                 </Text>
-                {(selectedConversation?.isBusiness || isBusiness) && (
+                {selectedConversation?.isBusiness && (
                   <View style={styles.businessBadge}>
-                    <MaterialIcons name="store" size={14} color="#4CAF50" />
+                    <MaterialIcons name="store" size={14} color="#FF9800" />
                   </View>
                 )}
               </View>
@@ -413,6 +632,7 @@ const MessagesScreen = () => {
               </Text>
             </View>
           </View>
+          
           {isLoading && messages.length === 0 ? (
             <View style={styles.centerContainer}>
               <ActivityIndicator size="large" color="#4CAF50" />
@@ -443,8 +663,12 @@ const MessagesScreen = () => {
                       <Text style={styles.emptyChatText}>New Conversation</Text>
                       <Text style={styles.emptyChatSubtext}>
                         Send a message about {plantName || 'this plant'}
-                        {isBusiness && ' to this business'}
                       </Text>
+                      {autoMessage && (
+                        <Text style={styles.autoMessageHint}>
+                          💡 We've prepared a message for you below
+                        </Text>
+                      )}
                     </>
                   ) : (
                     <>
@@ -458,17 +682,21 @@ const MessagesScreen = () => {
             />
           )}
         </KeyboardAvoidingView>
+        
         <View style={styles.inputContainer}>
           <TextInput
             style={styles.input}
-            placeholder={`Message ${isBusiness ? 'business' : 'seller'}...`}
+            placeholder={`Message ${selectedConversation?.isBusiness ? 'business' : 'seller'}...`}
             value={newMessage}
             onChangeText={setNewMessage}
             multiline
             maxLength={500}
           />
-          <TouchableOpacity style={[styles.sendButton, (!newMessage.trim() || isSending) && styles.disabledSendButton]}
-            onPress={handleSendMessage} disabled={!newMessage.trim() || isSending}>
+          <TouchableOpacity 
+            style={[styles.sendButton, (!newMessage.trim() || isSending) && styles.disabledSendButton]}
+            onPress={handleSendMessage} 
+            disabled={!newMessage.trim() || isSending}
+          >
             {isSending ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
@@ -478,23 +706,38 @@ const MessagesScreen = () => {
         </View>
       </View>
     );
-  }
+  };
     
   return (
     <SafeAreaView style={styles.container}>
-      <MarketplaceHeader title="Messages" showBackButton={true} onBackPress={() => navigation.goBack()} showNotifications={false} />
+      <MarketplaceHeader 
+        title="Messages" 
+        showBackButton={true} 
+        onBackPress={() => navigation.goBack()} 
+        showNotifications={false} 
+      />
+      
       <View style={styles.tabContainer}>
-        <TouchableOpacity style={[styles.tabButton, activeTab === 'conversations' && styles.activeTabButton]}
-          onPress={() => setActiveTab('conversations')}>
-          <Text style={[styles.tabText, activeTab === 'conversations' && styles.activeTabText]}>Conversations</Text>
+        <TouchableOpacity 
+          style={[styles.tabButton, activeTab === 'conversations' && styles.activeTabButton]}
+          onPress={() => setActiveTab('conversations')}
+        >
+          <Text style={[styles.tabText, activeTab === 'conversations' && styles.activeTabText]}>
+            Conversations
+          </Text>
         </TouchableOpacity>
         {(selectedConversation || (sellerId && plantId)) && (
-          <TouchableOpacity style={[styles.tabButton, activeTab === 'chat' && styles.activeTabButton]}
-            onPress={() => setActiveTab('chat')}>
-            <Text style={[styles.tabText, activeTab === 'chat' && styles.activeTabText]}>Chat</Text>
+          <TouchableOpacity 
+            style={[styles.tabButton, activeTab === 'chat' && styles.activeTabButton]}
+            onPress={() => setActiveTab('chat')}
+          >
+            <Text style={[styles.tabText, activeTab === 'chat' && styles.activeTabText]}>
+              Chat
+            </Text>
           </TouchableOpacity>
         )}
       </View>
+      
       {activeTab === 'conversations' ? renderConversationsList() : renderChatScreen()}
     </SafeAreaView>
   );
@@ -504,21 +747,23 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#F9FAFB' },
   tabContainer: { flexDirection: 'row', backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
   tabButton: { flex: 1, paddingVertical: 14, alignItems: 'center' },
-  activeTabButton: { borderBottomWidth: 3, borderBottomColor: '#388E3C' },
+  activeTabButton: { borderBottomWidth: 3, borderBottomColor: '#4CAF50' },
   tabText: { fontSize: 16, color: '#888' },
-  activeTabText: { color: '#388E3C', fontWeight: '700' },
+  activeTabText: { color: '#4CAF50', fontWeight: '700' },
   centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   loadingText: { marginTop: 10, fontSize: 16, color: '#888' },
   errorText: { marginTop: 10, fontSize: 16, color: '#D32F2F', textAlign: 'center' },
-  retryButton: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#388E3C', borderRadius: 8 },
+  retryButton: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#4CAF50', borderRadius: 8 },
   retryText: { color: '#fff', fontWeight: '600' },
   noConversationsText: { marginTop: 10, fontSize: 18, fontWeight: '700', color: '#333', textAlign: 'center' },
   startConversationText: { marginTop: 8, fontSize: 14, color: '#777', textAlign: 'center', paddingHorizontal: 32 },
-  browseButton: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#388E3C', borderRadius: 8 },
+  browseButton: { marginTop: 16, paddingVertical: 10, paddingHorizontal: 20, backgroundColor: '#4CAF50', borderRadius: 8 },
   browseButtonText: { color: '#fff', fontWeight: '600' },
   conversationsList: { flexGrow: 1, paddingVertical: 4 },
   conversationItem: { flexDirection: 'row', padding: 14, borderBottomWidth: 1, borderBottomColor: '#eee', backgroundColor: '#fff' },
-  avatar: { width: 52, height: 52, borderRadius: 26, marginRight: 14, backgroundColor: '#e0e0e0' },
+  avatar: { marginRight: 14, backgroundColor: '#e0e0e0' },
+  avatarFallback: { marginRight: 14, justifyContent: 'center', alignItems: 'center' },
+  avatarText: { color: '#fff', fontWeight: '600' },
   conversationInfo: { flex: 1 },
   conversationHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 2 },
   userNameContainer: { flexDirection: 'row', alignItems: 'center', flex: 1 },
@@ -526,20 +771,27 @@ const styles = StyleSheet.create({
   businessBadge: { 
     flexDirection: 'row', 
     alignItems: 'center', 
-    backgroundColor: '#e8f5e8', 
+    backgroundColor: '#fff3e0', 
     paddingHorizontal: 6, 
     paddingVertical: 2, 
     borderRadius: 8,
     marginLeft: 8
   },
-  businessBadgeText: { fontSize: 10, color: '#4CAF50', marginLeft: 2, fontWeight: '600' },
+  businessBadgeText: { fontSize: 10, color: '#FF9800', marginLeft: 2, fontWeight: '600' },
   timeStamp: { fontSize: 12, color: '#999' },
   messagePreviewContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   messagePreview: { fontSize: 14, color: '#757575', flex: 1 },
-  unreadBadge: { backgroundColor: '#388E3C', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
+  unreadBadge: { backgroundColor: '#4CAF50', borderRadius: 10, minWidth: 20, height: 20, justifyContent: 'center', alignItems: 'center', marginLeft: 6 },
   unreadCount: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  plantName: { fontSize: 12, color: '#66BB6A' },
-  chatHeader: { flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: '#ffffff', borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  plantName: { fontSize: 12, color: '#4CAF50' },
+  chatHeader: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    padding: 12, 
+    backgroundColor: '#ffffff', 
+    borderBottomWidth: 1, 
+    borderBottomColor: '#e0e0e0' 
+  },
   backButton: { padding: 4 },
   chatHeaderInfo: { flex: 1, marginLeft: 12 },
   chatHeaderNameContainer: { flexDirection: 'row', alignItems: 'center' },
@@ -549,7 +801,6 @@ const styles = StyleSheet.create({
   messageContainer: { flexDirection: 'row', marginBottom: 14, maxWidth: '80%' },
   ownMessageContainer: { alignSelf: 'flex-end' },
   otherMessageContainer: { alignSelf: 'flex-start' },
-  messageAvatar: { width: 32, height: 32, borderRadius: 16, marginRight: 8, alignSelf: 'flex-end' },
   messageBubble: { padding: 12, borderRadius: 16, maxWidth: '100%' },
   ownMessageBubble: { backgroundColor: '#4CAF50', borderBottomRightRadius: 4 },
   otherMessageBubble: { backgroundColor: '#fff', borderBottomLeftRadius: 4 },
@@ -560,13 +811,60 @@ const styles = StyleSheet.create({
   messageTime: { fontSize: 10, marginTop: 4, alignSelf: 'flex-end' },
   ownMessageTime: { color: 'rgba(255, 255, 255, 0.7)' },
   otherMessageTime: { color: '#999' },
-  inputContainer: { flexDirection: 'row', padding: 10, backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e0e0e0' },
-  input: { flex: 1, backgroundColor: '#F1F3F4', borderRadius: 24, paddingHorizontal: 16, paddingVertical: 10, fontSize: 15, maxHeight: 100 },
-  sendButton: { backgroundColor: '#4CAF50', borderRadius: 20, width: 42, height: 42, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
+  inputContainer: { 
+    flexDirection: 'row', 
+    padding: 10, 
+    backgroundColor: '#fff', 
+    borderTopWidth: 1, 
+    borderTopColor: '#e0e0e0' 
+  },
+  input: { 
+    flex: 1, 
+    backgroundColor: '#F1F3F4', 
+    borderRadius: 24, 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    fontSize: 15, 
+    maxHeight: 100 
+  },
+  sendButton: { 
+    backgroundColor: '#4CAF50', 
+    borderRadius: 20, 
+    width: 42, 
+    height: 42, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    marginLeft: 10 
+  },
   disabledSendButton: { backgroundColor: '#bdbdbd' },
-  emptyChatContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, height: 300 },
-  emptyChatText: { marginTop: 10, fontSize: 18, fontWeight: '700', color: '#333', textAlign: 'center' },
-  emptyChatSubtext: { marginTop: 8, fontSize: 14, color: '#777', textAlign: 'center', paddingHorizontal: 32 },
+  emptyChatContainer: { 
+    flex: 1, 
+    justifyContent: 'center', 
+    alignItems: 'center', 
+    padding: 20, 
+    height: 300 
+  },
+  emptyChatText: { 
+    marginTop: 10, 
+    fontSize: 18, 
+    fontWeight: '700', 
+    color: '#333', 
+    textAlign: 'center' 
+  },
+  emptyChatSubtext: { 
+    marginTop: 8, 
+    fontSize: 14, 
+    color: '#777', 
+    textAlign: 'center', 
+    paddingHorizontal: 32 
+  },
+  autoMessageHint: {
+    marginTop: 12,
+    fontSize: 14,
+    color: '#4CAF50',
+    textAlign: 'center',
+    fontStyle: 'italic',
+  },
   emptyList: { flex: 1, justifyContent: 'center' },
 });
 
