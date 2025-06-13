@@ -20,7 +20,6 @@ def _cors_headers():
     }
 
 def parse_schedule(val, fallback_unit="days"):
-    # Ensures schedule fields are always {amount, unit} or None
     if isinstance(val, dict):
         amt = val.get("amount")
         unit = val.get("unit") or fallback_unit
@@ -35,15 +34,23 @@ def parse_schedule(val, fallback_unit="days"):
     return None
 
 def normalize_plant_data(raw):
-    """
-    Ensures all fields (including nested ones) are present, consistent, and
-    in the constant format expected by the frontend.
-    """
     care = raw.get("care_info", {})
     sched = raw.get("schedule", {})
 
     def clean(x, fallback="—"):
         return x if x not in [None, "null", "", [], {}] else fallback
+
+    # --- Normalize common_problems ---
+    problems = raw.get("common_problems")
+    if not isinstance(problems, list):
+        problems = []
+    # Each problem must have "name" and "description"
+    normalized_problems = []
+    for p in problems:
+        if isinstance(p, dict) and "name" in p and "description" in p:
+            normalized_problems.append({"name": str(p["name"]), "description": str(p["description"])})
+        elif isinstance(p, str):
+            normalized_problems.append({"name": p, "description": ""})
 
     return {
         "common_name": clean(raw.get("common_name") or raw.get("name")),
@@ -64,6 +71,7 @@ def normalize_plant_data(raw):
         },
         "care_tips": clean(raw.get("care_tips")),
         "family": clean(raw.get("family")),
+        "common_problems": normalized_problems
     }
 
 # Cosmos DB setup
@@ -77,10 +85,6 @@ MODEL_NAME = "gemini-1.5-flash"
 model = genai.GenerativeModel(MODEL_NAME)
 
 def query_cosmos(plant_name):
-    """
-    Get normalized plant data from DB.
-    If the record is missing critical fields, call Gemini to fix/complete.
-    """
     try:
         query = "SELECT * FROM Plants p WHERE LOWER(p.common_name) = @name OR LOWER(p.scientific_name) = @name"
         params = [{"name": "@name", "value": plant_name.lower()}]
@@ -93,8 +97,6 @@ def query_cosmos(plant_name):
             doc = results[0]
             logging.info(f"Found existing DB entry for '{plant_name}'. Normalizing...")
             norm = normalize_plant_data(doc)
-
-            # Check if critical info is missing (all dashes or None in care_info/schedule)
             care_missing = all(
                 norm["care_info"].get(field) in [None, "—", "Unknown"]
                 for field in ["light", "humidity", "temperature_min_c", "temperature_max_c", "pets", "difficulty"]
@@ -103,11 +105,9 @@ def query_cosmos(plant_name):
                 norm["schedule"].get(k) is None
                 for k in ["water", "feed", "repot"]
             )
-
-            if care_missing or schedule_missing:
-                logging.warning(
-                    f"DB entry for '{plant_name}' is incomplete. Querying Gemini to supplement..."
-                )
+            problems_missing = (not isinstance(norm.get("common_problems"), list)) or (len(norm["common_problems"]) == 0)
+            if care_missing or schedule_missing or problems_missing:
+                logging.warning(f"DB entry for '{plant_name}' is incomplete. Querying Gemini to supplement...")
                 gemini_data = call_gemini(plant_name)
                 if gemini_data:
                     gemini_data['id'] = doc.get('id', plant_name)
@@ -118,7 +118,6 @@ def query_cosmos(plant_name):
                     logging.error(f"Gemini returned no usable data for '{plant_name}'.")
             else:
                 logging.info(f"DB entry for '{plant_name}' normalized and complete.")
-                # Always upsert the normalized version to keep DB clean
                 norm['id'] = doc.get('id', plant_name)
                 container.upsert_item(norm)
                 return norm
@@ -128,7 +127,6 @@ def query_cosmos(plant_name):
         return None
 
 def save_to_cosmos(plant_name, norm_data):
-    """Save/Upsert normalized plant data."""
     norm_data['id'] = plant_name.lower()
     try:
         container.upsert_item(norm_data)
@@ -138,7 +136,7 @@ def save_to_cosmos(plant_name, norm_data):
 
 def call_gemini(plant_name):
     prompt = (
-        f"Give ONLY the structured care info and schedule for the plant '{plant_name}'.\n"
+        f"Give ONLY the structured care info, schedule, and common problems for the plant '{plant_name}'.\n"
         "Your reply MUST be a single valid JSON object with these fields only (missing values as null or \"Unknown\").\n"
         "No explanation, no markdown, no comments. Output strictly this structure:\n"
         "{"
@@ -152,7 +150,10 @@ def call_gemini(plant_name):
             "\"feed\": {\"amount\": int, \"unit\": str}, "
             "\"repot\": {\"amount\": int, \"unit\": str}"
         "}, "
-        "\"care_tips\": str, \"family\": str"
+        "\"care_tips\": str, \"family\": str, "
+        "\"common_problems\": ["
+          "{\"name\": str, \"description\": str}, ..."
+        "]"
         "}"
     )
     try:
@@ -194,7 +195,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             headers={**_cors_headers(), "Content-Type": "application/json"}
         )
 
-    # Try DB first (auto-normalize + repair)
     plant = query_cosmos(plant_name)
     if plant:
         logging.info(f"Returning plant data for '{plant_name}' from DB (post-normalization).")
@@ -204,7 +204,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             headers={**_cors_headers(), "Content-Type": "application/json"}
         )
 
-    # Else: ask Gemini, normalize, save, and return
     gemini_data = call_gemini(plant_name)
     if gemini_data:
         save_to_cosmos(plant_name, gemini_data)
