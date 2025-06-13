@@ -2,10 +2,10 @@ import os
 import json
 import logging
 import azure.functions as func
-from azure.cosmos import CosmosClient, exceptions
+from azure.cosmos import CosmosClient
 import google.generativeai as genai
 
-# Config
+# Config (You can use os.environ if you want to hide keys)
 COSMOS_URI = "https://greener-database.documents.azure.com:443/"
 COSMOS_KEY = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
 DB_NAME = "GreenerDB"
@@ -19,58 +19,51 @@ def _cors_headers():
         "Access-Control-Allow-Headers": "Content-Type"
     }
 
+def parse_schedule(val, fallback_unit="days"):
+    # Ensures schedule fields are always {amount, unit} or None
+    if isinstance(val, dict):
+        amt = val.get("amount")
+        unit = val.get("unit") or fallback_unit
+        if amt is not None and unit:
+            return {"amount": amt, "unit": unit}
+    if isinstance(val, int):
+        return {"amount": val, "unit": fallback_unit}
+    if isinstance(val, str):
+        for part in val.split():
+            if part.isdigit():
+                return {"amount": int(part), "unit": fallback_unit}
+    return None
+
 def normalize_plant_data(raw):
     """
-    Returns data in the constant, normalized format expected by the frontend.
-    Handles various field names/values from legacy, web, Gemini, etc.
+    Ensures all fields (including nested ones) are present, consistent, and
+    in the constant format expected by the frontend.
     """
-    # Helper: Coerce water/repot/feed fields to integer days/years, pets to str
-    def to_int(val, default):
-        try:
-            if isinstance(val, int):
-                return val
-            if isinstance(val, str) and val.strip().isdigit():
-                return int(val.strip())
-            # try to parse things like '7 days'
-            if isinstance(val, str):
-                for word in val.split():
-                    if word.isdigit():
-                        return int(word)
-            return default
-        except Exception:
-            return default
+    care = raw.get("care_info", {})
+    sched = raw.get("schedule", {})
 
-    # Helper: detect poison status
-    def parse_pets(val):
-        if not val:
-            return "unknown"
-        s = str(val).lower()
-        if "poison" in s or "toxic" in s:
-            return "poisonous"
-        elif "safe" in s or "non-toxic" in s or "not poisonous" in s:
-            return "not poisonous"
-        return s
+    def clean(x, fallback="—"):
+        return x if x not in [None, "null", "", [], {}] else fallback
 
-    # Try to use best available values; default to placeholder
     return {
-        "common_name": raw.get("common_name") or raw.get("name") or raw.get("title") or "",
-        "scientific_name": raw.get("scientific_name") or raw.get("latin_name") or raw.get("botanical_name") or "",
-        "image_url": (raw.get("image_url") or raw.get("image") or (raw.get("image_urls") or [None])[0]),
+        "common_name": clean(raw.get("common_name") or raw.get("name")),
+        "scientific_name": clean(raw.get("scientific_name") or raw.get("latin_name")),
+        "image_url": clean(raw.get("image_url") or (raw.get("image_urls") or [None])[0]),
         "care_info": {
-            "light": raw.get("light") or raw.get("shade") or raw.get("sunlight") or "—",
-            "humidity": raw.get("humidity") or raw.get("moisture") or "—",
-            "temperature_min_c": to_int(raw.get("temperature_min_c") or raw.get("temperature", {}).get("min"), None),
-            "temperature_max_c": to_int(raw.get("temperature_max_c") or raw.get("temperature", {}).get("max"), None),
-            "pets": parse_pets(raw.get("pets") or raw.get("pet_safe") or raw.get("poisonous")),
-            "difficulty": to_int(raw.get("difficulty") or raw.get("care_difficulty"), None)
+            "light": clean(care.get("light") or raw.get("light")),
+            "humidity": clean(care.get("humidity") or raw.get("humidity")),
+            "temperature_min_c": care.get("temperature_min_c") if care.get("temperature_min_c") is not None else None,
+            "temperature_max_c": care.get("temperature_max_c") if care.get("temperature_max_c") is not None else None,
+            "pets": (care.get("pets") or "unknown"),
+            "difficulty": care.get("difficulty") if care.get("difficulty") is not None else None,
         },
         "schedule": {
-            "water_days": to_int(raw.get("water_days") or raw.get("watering_interval") or raw.get("water_every") or raw.get("water") or raw.get("watering"), None),
-            "feed_days": to_int(raw.get("feed_days") or raw.get("feed_interval") or raw.get("feed_every") or raw.get("feed"), None),
-            "repot_years": to_int(raw.get("repot_years") or raw.get("repot_interval") or raw.get("repot_every") or raw.get("repot"), None)
+            "water": parse_schedule(sched.get("water") or raw.get("water")),
+            "feed": parse_schedule(sched.get("feed") or raw.get("feed")),
+            "repot": parse_schedule(sched.get("repot") or raw.get("repot"), "years"),
         },
-        "care_tips": raw.get("care_tips") or raw.get("tips") or raw.get("care") or "",
-        "family": raw.get("family_common_name") or raw.get("family") or "",
+        "care_tips": clean(raw.get("care_tips")),
+        "family": clean(raw.get("family")),
     }
 
 # Setup Cosmos DB client
@@ -94,16 +87,15 @@ def query_cosmos(plant_name):
             enable_cross_partition_query=True
         ))
         if results:
-            # Check if already normalized (has the 'care_info' and 'schedule' keys)
             doc = results[0]
-            if all(x in doc for x in ["care_info", "schedule"]):
-                return doc
-            else:
-                # Need to normalize and update
-                norm = normalize_plant_data(doc)
-                norm['id'] = doc.get('id', plant_name)  # keep document ID
+            # If normalized (has 'schedule' as dict with 'water' etc. as object), use as is
+            sched = doc.get("schedule", {})
+            norm = normalize_plant_data(doc)
+            # Update DB if legacy or broken
+            if doc != norm:
+                norm['id'] = doc.get('id', plant_name)
                 container.upsert_item(norm)
-                return norm
+            return norm
         return None
     except Exception as e:
         logging.error(f"Cosmos query failed: {e}")
@@ -120,7 +112,7 @@ def save_to_cosmos(plant_name, norm_data):
 def call_gemini(plant_name):
     prompt = (
         f"Give care info and schedule for the plant '{plant_name}'. "
-        "Return STRICTLY this JSON (keys, order and all fields, missing values as null):\n"
+        "Return STRICTLY this JSON object (all keys, all fields, missing values as null or \"Unknown\"; no explanations):\n"
         "{"
         "\"common_name\": str, \"scientific_name\": str, \"image_url\": str, "
         "\"care_info\": {"
@@ -128,7 +120,9 @@ def call_gemini(plant_name):
             "\"pets\": \"poisonous|not poisonous|unknown\", \"difficulty\": int"
         "}, "
         "\"schedule\": {"
-            "\"water_days\": int, \"feed_days\": int, \"repot_years\": int"
+            "\"water\": {\"amount\": int, \"unit\": str}, "
+            "\"feed\": {\"amount\": int, \"unit\": str}, "
+            "\"repot\": {\"amount\": int, \"unit\": str}"
         "}, "
         "\"care_tips\": str, \"family\": str"
         "}\n"
@@ -136,7 +130,6 @@ def call_gemini(plant_name):
     )
     try:
         res = model.generate_content(prompt + f"\nPlant: {plant_name}")
-        # Try to extract only the JSON from the response
         response_text = res.text.strip()
         json_start = response_text.find('{')
         json_end = response_text.rfind('}') + 1
@@ -156,7 +149,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse(status_code=204, headers=_cors_headers())
 
-    plant_name = req.params.get("name") or (req.get_json().get("name") if req.method == "POST" else None)
+    plant_name = req.params.get("name")
+    if not plant_name and req.method in ("POST", "post"):
+        try:
+            body = req.get_json()
+            plant_name = body.get("name")
+        except Exception:
+            plant_name = None
+
     if not plant_name:
         return func.HttpResponse(
             json.dumps({"error": "Missing plant name (use ?name=Plant or POST JSON {'name': ...})"}),
