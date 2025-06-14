@@ -531,16 +531,6 @@ const ProfileScreen = () => {
           {renderTabContent()}
         </View>
       </ScrollView>
-      
-      <TouchableOpacity 
-        style={styles.addPlantButton} 
-        onPress={() => navigation.navigate('AddPlant')}
-        accessible={true}
-        accessibilityLabel="Add a new plant"
-        accessibilityRole="button"
-      >
-        <MaterialIcons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -754,21 +744,6 @@ const styles = StyleSheet.create({
   actionButtonText: { 
     color: '#fff', 
     fontWeight: '600' 
-  },
-  addPlantButton: {
-    position: 'absolute', 
-    bottom: 16, 
-    right: 16, 
-    backgroundColor: '#4CAF50',
-    width: 60, 
-    height: 60, 
-    borderRadius: 30, 
-    padding: 16, 
-    elevation: 4, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.2, 
-    shadowRadius: 4,
   },
 });
 

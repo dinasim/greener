@@ -1,5 +1,5 @@
-// frontend/Business/BusinessScreens/BusinessSignUpScreen.js
-import React, { useState, useRef } from 'react';
+// frontend/Business/BusinessScreens/BusinessSignUpScreen.js - OPTIMAL VERSION
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -20,13 +20,12 @@ import LocationPicker from '../../marketplace/components/LocationPicker';
 import { useForm } from '../../context/FormContext';
 import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
 
-// Safe ImagePicker import with web compatibility
+// Safe ImagePicker import
 let ImagePicker;
 try {
   ImagePicker = require('expo-image-picker');
 } catch (error) {
   console.warn('expo-image-picker not available:', error);
-  // Mock ImagePicker for web compatibility
   ImagePicker = {
     launchImageLibraryAsync: () => Promise.resolve({ canceled: true }),
     requestMediaLibraryPermissionsAsync: () => Promise.resolve({ status: 'denied' }),
@@ -35,8 +34,44 @@ try {
   };
 }
 
+// OPTIMAL: Only import the enhanced API functions we need
+import { 
+  createBusinessProfile, 
+  onBusinessRefresh,
+  checkApiHealth,
+  getBusinessProfile 
+} from '../services/businessApi';
+
 // API Configuration
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+
+// Toast notification function
+const showToast = (message, type = 'info') => {
+  if (Platform.OS === 'web') {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      padding: 12px 20px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 500;
+      z-index: 10000;
+      max-width: 300px;
+      word-wrap: break-word;
+      background-color: ${type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196f3'};
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 4000);
+  } else {
+    Alert.alert(
+      type === 'error' ? 'Error' : type === 'success' ? 'Success' : 'Info',
+      message
+    );
+  }
+};
 
 export default function BusinessSignUpScreen({ navigation }) {
   const { updateFormData } = useForm();
@@ -67,7 +102,7 @@ export default function BusinessSignUpScreen({ navigation }) {
     'Other'
   ]);
   
-  // Add Firebase notifications hook
+  // Firebase notifications hook
   const {
     isInitialized,
     hasPermission,
@@ -75,6 +110,18 @@ export default function BusinessSignUpScreen({ navigation }) {
     initialize,
     registerForWateringNotifications
   } = useBusinessFirebaseNotifications(formData.email);
+
+  // OPTIMAL: Set up auto-refresh listener
+  useEffect(() => {
+    const unsubscribe = onBusinessRefresh((data) => {
+      if (data.type === 'created') {
+        console.log('✅ Business profile created, auto-refreshing UI');
+        showInventoryChoiceDialog();
+      }
+    });
+
+    return unsubscribe; // Cleanup on unmount
+  }, []);
 
   const handleChange = (key, value) => {
     setFormData({
@@ -91,42 +138,34 @@ export default function BusinessSignUpScreen({ navigation }) {
     }
   };
   
-  // Web file picker handler
+  // Image picker functions (same as before)
   const handleWebFilePick = async (event) => {
     const file = event.target.files[0];
     if (!file) return;
     
     try {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         Alert.alert('Error', 'Please select an image file');
         return;
       }
       
-      // Validate file size (2MB limit)
       const maxSize = 2 * 1024 * 1024; // 2MB
       if (file.size > maxSize) {
         Alert.alert('Error', 'Image size must be less than 2MB');
         return;
       }
       
-      // Create object URL for preview
       const imageUrl = URL.createObjectURL(file);
       handleChange('logo', imageUrl);
-      
-      // Reset input
       event.target.value = '';
-      
     } catch (error) {
       console.error('Web image pick error:', error);
       Alert.alert('Error', 'Failed to select image');
     }
   };
   
-  // Mobile image picker
   const pickImageMobile = async () => {
     try {
-      // Check permissions first
       if (ImagePicker.getMediaLibraryPermissionsAsync) {
         const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -138,7 +177,6 @@ export default function BusinessSignUpScreen({ navigation }) {
         }
       }
 
-      // Launch image picker with fallback options
       let result;
       try {
         result = await ImagePicker.launchImageLibraryAsync({
@@ -149,8 +187,6 @@ export default function BusinessSignUpScreen({ navigation }) {
           base64: false,
         });
       } catch (primaryError) {
-        console.log('Primary image picker failed, trying fallback...');
-        // Fallback with string format
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: 'images',
           allowsEditing: true,
@@ -159,16 +195,10 @@ export default function BusinessSignUpScreen({ navigation }) {
         });
       }
       
-      console.log('ImagePicker result:', result);
-      
       if (!result.canceled) {
         if (result.assets && result.assets.length > 0) {
-          const selectedImage = result.assets[0];
-          console.log('Image selected:', selectedImage.uri);
-          handleChange('logo', selectedImage.uri);
+          handleChange('logo', result.assets[0].uri);
         } else if (result.uri) {
-          // Fallback for older versions
-          console.log('Image selected (fallback):', result.uri);
           handleChange('logo', result.uri);
         }
       }
@@ -178,13 +208,10 @@ export default function BusinessSignUpScreen({ navigation }) {
     }
   };
   
-  // Unified image picker function
   const pickImage = async () => {
     if (Platform.OS === 'web') {
-      // Trigger web file input
       webFileInputRef.current?.click();
     } else {
-      // Use mobile image picker
       await pickImageMobile();
     }
   };
@@ -207,18 +234,14 @@ export default function BusinessSignUpScreen({ navigation }) {
       else if (formData.password !== formData.confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
       
       if (!formData.businessName) newErrors.businessName = 'Business name is required';
-      
       if (!formData.contactName) newErrors.contactName = 'Contact name is required';
     }
     
     if (step === 2) {
       if (!formData.phone) newErrors.phone = 'Phone number is required';
-      
       if (!formData.businessType) newErrors.businessType = 'Business type is required';
-      
       if (!formData.description) newErrors.description = 'Description is required';
       else if (formData.description.length < 20) newErrors.description = 'Description should be at least 20 characters';
-      
       if (!formData.location) newErrors.location = 'Business location is required';
     }
     
@@ -226,8 +249,79 @@ export default function BusinessSignUpScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
   
-  const handleNext = () => {
-    if (validateStep(currentStep)) {
+  // OPTIMAL: Simplified existing business check using enhanced API
+  const checkExistingBusinessAccount = async (email) => {
+    try {
+      console.log('🔍 Checking for existing business account via enhanced API:', email);
+      
+      // Temporarily set user email for the API call
+      await AsyncStorage.setItem('userEmail', email);
+      
+      const existingProfile = await getBusinessProfile(email);
+      
+      if (existingProfile && existingProfile.profile) {
+        return {
+          exists: true,
+          businessName: existingProfile.profile.businessName,
+          businessType: existingProfile.profile.category || existingProfile.profile.businessType,
+          registrationDate: existingProfile.profile.createdAt
+        };
+      }
+      
+      return { exists: false };
+    } catch (error) {
+      // 404 means no existing business - which is what we want for new signups
+      if (error.message.includes('404') || error.message.includes('not found')) {
+        console.log('✅ No existing business found - can proceed');
+        return { exists: false };
+      }
+      
+      console.warn('⚠️ Error checking existing business, proceeding:', error.message);
+      return { exists: false };
+    }
+  };
+
+  const handleNext = async () => {
+    if (!validateStep(currentStep)) return;
+    
+    if (currentStep === 1 && formData.email) {
+      setIsLoading(true);
+      try {
+        const existingAccount = await checkExistingBusinessAccount(formData.email);
+        
+        if (existingAccount.exists) {
+          setIsLoading(false);
+          showToast(
+            `A business account already exists for ${formData.email}. Business: "${existingAccount.businessName}". Please use a different email or sign in to your existing account.`,
+            'error'
+          );
+          
+          Alert.alert(
+            'Business Account Already Exists',
+            `A business account for "${existingAccount.businessName}" is already registered with this email address.\n\nRegistered: ${new Date(existingAccount.registrationDate).toLocaleDateString()}\nType: ${existingAccount.businessType}`,
+            [
+              {
+                text: 'Use Different Email',
+                style: 'default',
+                onPress: () => handleChange('email', '')
+              },
+              {
+                text: 'Sign In Instead',
+                style: 'default',
+                onPress: () => navigation.navigate('BusinessSignInScreen')
+              }
+            ]
+          );
+          return;
+        }
+        
+        setIsLoading(false);
+        setCurrentStep(currentStep + 1);
+      } catch (error) {
+        setIsLoading(false);
+        showToast(error.message, 'error');
+      }
+    } else {
       setCurrentStep(currentStep + 1);
     }
   };
@@ -236,101 +330,25 @@ export default function BusinessSignUpScreen({ navigation }) {
     setCurrentStep(currentStep - 1);
   };
   
+  // OPTIMAL: Simplified single-step signup using enhanced API
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return;
     
     setIsLoading(true);
     
     try {
-      // Initialize Firebase notifications during signup
+      // Initialize Firebase notifications
       console.log('🔔 Setting up Firebase notifications...');
       await initialize(formData.email);
       
-      // Prepare notification data
-      const notificationData = {
-        fcmToken: token || null,
-        platform: Platform.OS,
-        notificationSettings: {
-          enabled: hasPermission,
-          wateringReminders: hasPermission,
-          platform: Platform.OS
-        }
-      };
+      // STEP 1: Create basic user account first (still needed for main user table)
+      await createUserAccount();
       
-      // Prepare user data
-      const userData = {
-        email: formData.email,
-        type: 'business',
-        name: formData.contactName,
-        businessType: 'business',
-        // Add Firebase notification token if available
-        fcmToken: token || null,
-        platform: Platform.OS,
-        notificationSettings: {
-          enabled: hasPermission,
-          wateringReminders: hasPermission,
-          platform: Platform.OS
-        }
-      };
+      // STEP 2: Create comprehensive business profile using enhanced API
+      const businessData = prepareBusinessData();
+      console.log('🏢 Creating business profile with enhanced API');
       
-      // Prepare business data with ALL form fields
-      const businessData = {
-        id: formData.email,
-        email: formData.email,
-        name: formData.contactName,
-        businessName: formData.businessName,
-        businessType: formData.businessType,
-        description: formData.description,
-        contactPhone: formData.phone,
-        contactEmail: formData.email,
-        phone: formData.phone, // Add phone field
-        logo: null, // Will be updated after logo upload
-        address: {
-          street: formData.location?.street || '',
-          city: formData.location?.city || '',
-          postalCode: formData.location?.postalCode || '',
-          country: formData.location?.country || 'Israel',
-          latitude: formData.location?.latitude || null,
-          longitude: formData.location?.longitude || null,
-          formattedAddress: formData.location?.formattedAddress || ''
-        },
-        location: {
-          latitude: formData.location?.latitude || null,
-          longitude: formData.location?.longitude || null,
-          address: formData.location?.formattedAddress || '',
-          city: formData.location?.city || '',
-          country: formData.location?.country || 'Israel'
-        },
-        registrationDate: new Date().toISOString(),
-        lastUpdated: new Date().toISOString(),
-        status: 'active',
-        verificationStatus: 'pending',
-        businessHours: [], // Can be set later
-        paymentMethods: ['cash', 'pickup'],
-        socialMedia: {},
-        settings: {
-          notifications: true,
-          messages: true,
-          lowStockThreshold: 5,
-        },
-        stats: {
-          productsCount: 0,
-          salesCount: 0,
-          rating: 0,
-          reviewCount: 0
-        },
-        rating: 0,
-        reviewCount: 0,
-        isVerified: false
-      };
-      
-      console.log('Creating business with data:', businessData);
-      
-      // First, create a normal user account
-      await saveUserToBackend(userData);
-      
-      // Then create a business account (without logo first)
-      const businessResult = await saveBusinessToBackend(businessData);
+      const result = await createBusinessProfile(businessData);
       
       // Set up notifications if permission is granted
       if (hasPermission && token) {
@@ -339,60 +357,61 @@ export default function BusinessSignUpScreen({ navigation }) {
           await registerForWateringNotifications('07:00');
           console.log('✅ Business notifications configured');
         } catch (notificationError) {
-          console.warn('⚠️ Failed to setup notifications, but continuing with signup:', notificationError);
-          // Don't fail the entire signup if notifications fail
+          console.warn('⚠️ Failed to setup notifications:', notificationError);
         }
       }
       
-      // If we have a logo, upload it and update the business profile
-      let logoUrl = null;
-      if (formData.logo) {
-        try {
-          logoUrl = await uploadLogo(formData.logo, formData.email);
-          
-          // Update business profile with logo
-          if (logoUrl) {
-            const updatedBusinessData = { ...businessData, logo: logoUrl };
-            await updateBusinessProfile(updatedBusinessData);
-          }
-        } catch (logoError) {
-          console.warn('Logo upload failed, but continuing with signup:', logoError);
-          // Don't fail the entire signup if logo upload fails
-        }
-      }
-      
-      // Update form context for global state
+      // Update storage
       updateFormData('email', formData.email);
       updateFormData('businessId', formData.email);
       
-      // Save email for marketplace
       await AsyncStorage.setItem('userEmail', formData.email);
       await AsyncStorage.setItem('userType', 'business');
       await AsyncStorage.setItem('businessId', formData.email);
       
       setIsLoading(false);
+      console.log('✅ Business signup completed successfully with enhanced API');
       
-      console.log('Business signup completed successfully');
-      
-      // Navigate to inventory screen
-      navigation.navigate('BusinessInventoryScreen');
+      // Note: showInventoryChoiceDialog() will be called automatically via auto-refresh
       
     } catch (error) {
-      console.error('Error during signup:', error);
+      console.error('❌ Error during signup:', error);
       setIsLoading(false);
-      Alert.alert('Sign Up Failed', `Could not create your business account: ${error.message}`);
+      
+      let errorMessage = 'Could not create your business account.';
+      if (error.message.includes('Business creation failed')) {
+        errorMessage = 'Failed to create business profile. Please try again.';
+      } else if (error.message.includes('User creation failed')) {
+        errorMessage = 'Failed to create user account. Please try again.';
+      } else if (error.message.includes('timeout')) {
+        errorMessage = 'Request timeout. Please check your connection and try again.';
+      }
+      
+      Alert.alert('Sign Up Failed', `${errorMessage}\n\nError: ${error.message}`);
     }
   };
-  
-  // ACTUAL API IMPLEMENTATION - Replace placeholder functions
-  const saveUserToBackend = async (userData) => {
+
+  // OPTIMAL: Simplified user creation (only what's needed for main user table)
+  const createUserAccount = async () => {
     try {
-      console.log('Creating user account:', userData);
+      console.log('👤 Creating basic user account');
+      
+      const userData = {
+        email: formData.email,
+        type: 'business',
+        name: formData.contactName,
+        businessName: formData.businessName,
+        businessType: formData.businessType,
+        fcmToken: token || null,
+        platform: Platform.OS,
+      };
       
       const response = await fetch(`${API_BASE_URL}/saveUser`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-User-Email': formData.email,
+          'X-User-Type': 'business',
         },
         body: JSON.stringify(userData)
       });
@@ -403,161 +422,70 @@ export default function BusinessSignUpScreen({ navigation }) {
       }
 
       const result = await response.json();
-      console.log('User created successfully:', result);
+      console.log('✅ Basic user account created');
       return result;
     } catch (error) {
-      console.error('Error creating user:', error);
+      console.error('❌ Error creating user account:', error);
       throw error;
     }
   };
-  
-  const saveBusinessToBackend = async (businessData) => {
-    try {
-      console.log('Creating business profile:', businessData);
-      
-      const response = await fetch(`${API_BASE_URL}/business/profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Email': businessData.email
-        },
-        body: JSON.stringify(businessData)
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Business creation failed: ${response.status} - ${errorText}`);
+  // OPTIMAL: Prepare data specifically for enhanced createBusinessProfile API
+  const prepareBusinessData = () => {
+    return {
+      businessName: formData.businessName,
+      description: formData.description,
+      address: formData.location?.formattedAddress || '',
+      phone: formData.phone,
+      website: '',
+      category: formData.businessType,
+      logo: formData.logo || '',
+      openingHours: {
+        monday: '9:00-18:00',
+        tuesday: '9:00-18:00',
+        wednesday: '9:00-18:00',
+        thursday: '9:00-18:00',
+        friday: '9:00-18:00',
+        saturday: '10:00-16:00',
+        sunday: 'Closed'
+      },
+      socialMedia: {
+        facebook: '',
+        instagram: '',
+        twitter: ''
       }
-
-      const result = await response.json();
-      console.log('Business profile created successfully:', result);
-      return result;
-    } catch (error) {
-      console.error('Error creating business profile:', error);
-      throw error;
-    }
+    };
   };
 
-  const updateBusinessProfile = async (businessData) => {
-    try {
-      console.log('Updating business profile with logo:', businessData.logo);
-      
-      const response = await fetch(`${API_BASE_URL}/business/profile`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Email': businessData.email
+  const showInventoryChoiceDialog = () => {
+    Alert.alert(
+      '🎉 Welcome to Greener!',
+      `Your business "${formData.businessName}" has been created successfully!\n\nWould you like to add your plant inventory now?`,
+      [
+        {
+          text: 'Add Inventory Now',
+          style: 'default',
+          onPress: () => {
+            navigation.navigate('AddInventoryScreen', {
+              businessId: formData.email,
+              showInventory: false,
+              isNewBusiness: true
+            });
+          }
         },
-        body: JSON.stringify({ logo: businessData.logo })
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.warn(`Business profile update failed: ${response.status} - ${errorText}`);
-        return null;
-      }
-
-      const result = await response.json();
-      console.log('Business profile updated with logo successfully');
-      return result;
-    } catch (error) {
-      console.error('Error updating business profile:', error);
-      throw error;
-    }
-  };
-  
-  const uploadLogo = async (logoUri, businessId) => {
-    try {
-      console.log('Uploading logo:', logoUri.substring(0, 50) + '...');
-      
-      let imageData;
-      let contentType = 'image/jpeg';
-      
-      if (Platform.OS === 'web') {
-        // For web, convert blob URL to base64
-        if (logoUri.startsWith('blob:')) {
-          const response = await fetch(logoUri);
-          const blob = await response.blob();
-          
-          return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = async () => {
-              try {
-                const base64 = reader.result;
-                
-                const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'X-User-Email': businessId
-                  },
-                  body: JSON.stringify({
-                    image: base64,
-                    type: 'user',
-                    filename: `business_logo_${businessId.replace('@', '_').replace('.', '_')}_${Date.now()}.jpg`
-                  })
-                });
-
-                if (!uploadResponse.ok) {
-                  const errorText = await uploadResponse.text();
-                  throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
-                }
-
-                const result = await uploadResponse.json();
-                console.log('Logo uploaded successfully:', result.url);
-                resolve(result.url);
-              } catch (error) {
-                reject(error);
-              }
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          });
+        {
+          text: 'Do It Later',
+          style: 'cancel',
+          onPress: () => {
+            navigation.navigate('BusinessHomeScreen', {
+              businessId: formData.email,
+              isNewUser: true
+            });
+          }
         }
-      } else {
-        // For mobile, convert file URI to base64
-        const response = await fetch(logoUri);
-        const blob = await response.blob();
-        
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            try {
-              const base64 = reader.result;
-              
-              const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-User-Email': businessId
-                },
-                body: JSON.stringify({
-                  image: base64,
-                  type: 'user',
-                  filename: `business_logo_${businessId.replace('@', '_').replace('.', '_')}_${Date.now()}.jpg`
-                })
-              });
-
-              if (!uploadResponse.ok) {
-                const errorText = await uploadResponse.text();
-                throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
-              }
-
-              const result = await uploadResponse.json();
-              console.log('Logo uploaded successfully:', result.url);
-              resolve(result.url);
-            } catch (error) {
-              reject(error);
-            }
-          };
-          reader.onerror = reject;
-          reader.readAsDataURL(blob);
-        });
-      }
-    } catch (error) {
-      console.error('Error uploading logo:', error);
-      throw error;
-    }
+      ],
+      { cancelable: false }
+    );
   };
   
   const renderStep1 = () => (
@@ -691,7 +619,6 @@ export default function BusinessSignUpScreen({ navigation }) {
       
       <View style={styles.inputGroup}>
         <Text style={styles.label}>Business Logo</Text>
-        {/* Hidden file input for web */}
         {Platform.OS === 'web' && (
           <input
             ref={webFileInputRef}
@@ -748,7 +675,7 @@ export default function BusinessSignUpScreen({ navigation }) {
       </View>
     </View>
   );
-  
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView

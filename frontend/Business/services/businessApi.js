@@ -1,7 +1,27 @@
-// Business/services/businessApi.js - PROPERLY RESTORED WITH ALL ORIGINAL FUNCTIONALITY
+// Business/services/businessApi.js - UPDATED WITH FIXES AND AUTO-REFRESH
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+
+// AUTO-REFRESH FUNCTIONALITY - Global refresh callbacks
+const refreshCallbacks = new Set();
+
+// Register callback for auto-refresh
+export const onBusinessRefresh = (callback) => {
+  refreshCallbacks.add(callback);
+  return () => refreshCallbacks.delete(callback); // Return unsubscribe function
+};
+
+// Notify all registered callbacks
+const notifyRefresh = (data) => {
+  refreshCallbacks.forEach(callback => {
+    try {
+      callback(data);
+    } catch (error) {
+      console.error('Error in refresh callback:', error);
+    }
+  });
+};
 
 // Enhanced error handling
 class ApiError extends Error {
@@ -13,14 +33,14 @@ class ApiError extends Error {
   }
 }
 
-// Get enhanced headers with all business context
+// FIXED: Get enhanced headers with all business context
 const getEnhancedHeaders = async () => {
   try {
     const [userEmail, userType, businessId, authToken] = await Promise.all([
       AsyncStorage.getItem('userEmail'),
       AsyncStorage.getItem('userType'),
       AsyncStorage.getItem('businessId'),
-      AsyncStorage.getItem('googleAuthToken') // FIXED: Use correct token key
+      AsyncStorage.getItem('googleAuthToken')
     ]);
 
     const headers = {
@@ -29,7 +49,11 @@ const getEnhancedHeaders = async () => {
       'X-Client': 'greener-mobile'
     };
 
-    if (userEmail) headers['X-User-Email'] = userEmail;
+    // FIXED: Always include X-User-Email for business profile operations
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+      headers['X-Business-ID'] = userEmail; // Use email as business ID
+    }
     if (userType) headers['X-User-Type'] = userType;
     if (businessId) headers['X-Business-ID'] = businessId;
     if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
@@ -116,6 +140,266 @@ const getStockLevel = (quantity, minThreshold) => {
   return 'high-stock';
 };
 
+// Helper function for loyalty level calculation
+const getLoyaltyLevel = (orderCount, totalSpent) => {
+  if (!orderCount || orderCount === 0) return 'new';
+  if (orderCount >= 10 && totalSpent >= 1000) return 'vip';
+  if (orderCount >= 5 && totalSpent >= 500) return 'loyal';
+  if (orderCount >= 2) return 'returning';
+  return 'new';
+};
+
+/**
+ * FIXED: Create Business Profile with correct database configuration
+ */
+export const createBusinessProfile = async (businessData) => {
+  try {
+    console.log('🏢 Creating business profile with enhanced error handling');
+    
+    // Validate required fields
+    const requiredFields = ['businessName', 'description', 'address'];
+    const missingFields = requiredFields.filter(field => !businessData[field]);
+    
+    if (missingFields.length > 0) {
+      throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+    }
+
+    const headers = await getEnhancedHeaders();
+    
+    // Ensure user email is available
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    if (!userEmail) {
+      throw new Error('User email is required. Please login first.');
+    }
+
+    // FIXED: Enhanced business data with all required fields for GreenerMarketplace database
+    const enhancedBusinessData = {
+      id: userEmail, // Use email as ID
+      email: userEmail,
+      businessName: businessData.businessName || 'My Business',
+      description: businessData.description || '',
+      address: businessData.address || '',
+      phone: businessData.phone || '',
+      website: businessData.website || '',
+      category: businessData.category || 'Plant Nursery',
+      logo: businessData.logo || '',
+      openingHours: businessData.openingHours || {
+        monday: '9:00-18:00',
+        tuesday: '9:00-18:00',
+        wednesday: '9:00-18:00',
+        thursday: '9:00-18:00',
+        friday: '9:00-18:00',
+        saturday: '10:00-16:00',
+        sunday: 'Closed'
+      },
+      socialMedia: businessData.socialMedia || {
+        facebook: '',
+        instagram: '',
+        twitter: ''
+      },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: 'active',
+      type: 'business',
+      verified: false,
+      rating: 0.0,
+      reviewCount: 0
+    };
+
+    // FIXED: Use correct endpoint that matches backend route
+    const url = `${API_BASE_URL}/business-profile`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(enhancedBusinessData),
+    }, 3, 'Create Business Profile');
+
+    // Cache the created profile
+    await AsyncStorage.setItem('businessProfile', JSON.stringify(response.profile));
+    await AsyncStorage.setItem('isBusinessUser', 'true');
+    await AsyncStorage.setItem('businessCreatedAt', new Date().toISOString());
+
+    // Notify components about the new profile
+    notifyRefresh({ 
+      type: 'created', 
+      profile: response.profile,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('✅ Business profile created successfully');
+    return response;
+  } catch (error) {
+    console.error('❌ Create business profile error:', error);
+    throw new Error(`Business creation failed: ${error.message}`);
+  }
+};
+
+/**
+ * FIXED: Get Business Profile with Enhanced Caching and Auto-Refresh
+ */
+export const getBusinessProfile = async (businessId = null) => {
+  try {
+    console.log('🏢 Getting business profile with enhanced features');
+    const headers = await getEnhancedHeaders();
+
+    // If no businessId provided, use current user
+    if (!businessId) {
+      businessId = await AsyncStorage.getItem('userEmail');
+    }
+
+    if (!businessId) {
+      throw new Error('Business ID is required');
+    }
+
+    // Add business ID to headers if different from current user
+    const currentUser = await AsyncStorage.getItem('userEmail');
+    if (businessId !== currentUser) {
+      headers['X-Business-ID'] = businessId;
+    }
+
+    const url = `${API_BASE_URL}/business-profile`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Get Business Profile');
+
+    // Cache own profile data
+    if (businessId === currentUser) {
+      await AsyncStorage.setItem('businessProfile', JSON.stringify(response.profile));
+      await AsyncStorage.setItem('profileLastFetched', new Date().toISOString());
+    }
+
+    // Notify components about profile fetch
+    notifyRefresh({ 
+      type: 'fetched', 
+      profile: response.profile,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('✅ Business profile retrieved successfully');
+    return response;
+  } catch (error) {
+    console.error('❌ Get business profile error:', error);
+    
+    // Try to return cached profile for own business
+    if (!businessId || businessId === await AsyncStorage.getItem('userEmail')) {
+      try {
+        const cachedProfile = await AsyncStorage.getItem('businessProfile');
+        if (cachedProfile) {
+          console.log('📱 Using cached business profile');
+          return { profile: JSON.parse(cachedProfile), fromCache: true };
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ Error accessing cached profile:', cacheError);
+      }
+    }
+    
+    throw error;
+  }
+};
+
+/**
+ * FIXED: Update Business Profile with Auto-Refresh
+ */
+export const updateBusinessProfile = async (updateData) => {
+  try {
+    console.log('🏢 Updating business profile with auto-refresh');
+    const headers = await getEnhancedHeaders();
+
+    const enhancedUpdateData = {
+      ...updateData,
+      updatedAt: new Date().toISOString()
+    };
+
+    const url = `${API_BASE_URL}/business-profile`;
+    const response = await apiRequest(url, {
+      method: 'PUT', // Use PUT to match backend expectations
+      headers,
+      body: JSON.stringify(enhancedUpdateData),
+    }, 3, 'Update Business Profile');
+
+    // Update cached profile data
+    await AsyncStorage.setItem('businessProfile', JSON.stringify(response.profile));
+    await AsyncStorage.setItem('profileLastUpdated', new Date().toISOString());
+
+    // Notify components about the profile update
+    notifyRefresh({ 
+      type: 'updated', 
+      profile: response.profile,
+      updateData: enhancedUpdateData,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('✅ Business profile updated successfully');
+    return response;
+  } catch (error) {
+    console.error('❌ Update business profile error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Enhanced: Fetch Business Profile with Auto-Refresh Check
+ */
+export const fetchBusinessProfile = async (businessId) => {
+  try {
+    console.log('🏢 Fetching complete business profile for map:', businessId);
+
+    // Check if we should auto-refresh
+    const shouldRefresh = await checkIfShouldRefresh();
+    if (shouldRefresh) {
+      console.log('🔄 Auto-refreshing stale profile data');
+    }
+
+    const headers = await getEnhancedHeaders();
+
+    const url = `${API_BASE_URL}/business-profile`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Fetch Business Profile for Map');
+
+    // Cache business profile
+    try {
+      await AsyncStorage.setItem(`cached_business_profile_${businessId}`, JSON.stringify({
+        data: response,
+        timestamp: Date.now()
+      }));
+    } catch (cacheError) {
+      console.warn('⚠️ Failed to cache business profile:', cacheError);
+    }
+
+    // Notify about refresh
+    notifyRefresh({ 
+      type: 'fetched_for_map', 
+      profile: response.profile,
+      businessId: businessId,
+      timestamp: new Date().toISOString()
+    });
+
+    return response;
+  } catch (error) {
+    console.error('❌ Fetch business profile error:', error);
+
+    // Try to return cached profile on error
+    try {
+      const cached = await AsyncStorage.getItem(`cached_business_profile_${businessId}`);
+      if (cached) {
+        const { data, timestamp } = JSON.parse(cached);
+        // Use cache if less than 1 hour old
+        if (Date.now() - timestamp < 3600000) {
+          console.log('📱 Using cached business profile');
+          return data;
+        }
+      }
+    } catch (cacheError) {
+      console.warn('⚠️ Error accessing cached profile:', cacheError);
+    }
+
+    throw error;
+  }
+};
+
 /**
  * Get Business Dashboard Data - ENHANCED with comprehensive caching
  */
@@ -124,7 +408,7 @@ export const getBusinessDashboard = async () => {
     console.log('📊 Loading business dashboard...');
     const headers = await getEnhancedHeaders();
     
-    const url = `${API_BASE_URL}/business/dashboard`;
+    const url = `${API_BASE_URL}/business-dashboard`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
@@ -139,6 +423,13 @@ export const getBusinessDashboard = async () => {
     } catch (cacheError) {
       console.warn('⚠️ Failed to cache dashboard data:', cacheError);
     }
+
+    // Notify about dashboard data
+    notifyRefresh({ 
+      type: 'dashboard_loaded', 
+      data: response,
+      timestamp: new Date().toISOString()
+    });
 
     return response;
   } catch (error) {
@@ -164,30 +455,6 @@ export const getBusinessDashboard = async () => {
 };
 
 /**
- * FIXED: Get Business Profile with corrected endpoint
- */
-export const getBusinessProfile = async (businessId) => {
-  try {
-    console.log('👤 Loading business profile for:', businessId);
-    const headers = await getEnhancedHeaders();
-    
-    // FIXED: Use the corrected endpoint that matches the backend
-    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/profile`;
-    console.log('👤 Calling profile URL:', url);
-    
-    const response = await apiRequest(url, {
-      method: 'GET',
-      headers,
-    }, 3, 'Business Profile');
-
-    return response;
-  } catch (error) {
-    console.error('❌ Business profile error:', error);
-    throw error;
-  }
-};
-
-/**
  * FIXED: Get Business Inventory with enhanced image support and corrected endpoint
  */
 export const getBusinessInventory = async (businessId) => {
@@ -196,7 +463,7 @@ export const getBusinessInventory = async (businessId) => {
     const headers = await getEnhancedHeaders();
     
     // FIXED: Use the corrected endpoint that matches the backend
-    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/inventory`;
+    const url = `${API_BASE_URL}/business-inventory`;
     console.log('📦 Calling inventory URL:', url);
     
     const response = await apiRequest(url, {
@@ -206,6 +473,17 @@ export const getBusinessInventory = async (businessId) => {
 
     // Process the inventory data with enhanced image handling
     const inventory = response.inventory || response.items || response.data || [];
+    
+    // Cache inventory data
+    await AsyncStorage.setItem('businessInventory', JSON.stringify(response));
+    await AsyncStorage.setItem('inventoryLastFetched', new Date().toISOString());
+
+    // Notify about inventory update
+    notifyRefresh({ 
+      type: 'inventory_loaded', 
+      data: response,
+      timestamp: new Date().toISOString()
+    });
     
     return {
       success: true,
@@ -269,12 +547,19 @@ export const createInventoryItem = async (inventoryData) => {
       mainImage: inventoryData.mainImage || inventoryData.imageUrls?.[0] || inventoryData.images?.[0],
     };
 
-    const url = `${API_BASE_URL}/business/inventory`;
+    const url = `${API_BASE_URL}/business-inventory`;
     const response = await apiRequest(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(enhancedData),
     }, 3, 'Create Inventory Item');
+
+    // Notify about new inventory item
+    notifyRefresh({ 
+      type: 'inventory_item_created', 
+      item: response,
+      timestamp: new Date().toISOString()
+    });
 
     console.log('✅ Inventory item created successfully');
     return response;
@@ -306,17 +591,84 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
       mainImage: updateData.mainImage || updateData.imageUrls?.[0] || updateData.images?.[0],
     };
 
-    const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
+    const url = `${API_BASE_URL}/business-inventory/${encodeURIComponent(inventoryId)}`;
     const response = await apiRequest(url, {
-      method: 'PATCH',
+      method: 'PUT',
       headers,
       body: JSON.stringify(enhancedUpdateData),
     }, 3, 'Update Inventory Item');
+
+    // Notify about inventory item update
+    notifyRefresh({ 
+      type: 'inventory_item_updated', 
+      itemId: inventoryId,
+      item: response,
+      timestamp: new Date().toISOString()
+    });
 
     console.log('✅ Inventory item updated successfully');
     return response;
   } catch (error) {
     console.error('❌ Inventory update error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete Inventory Item
+ */
+export const deleteInventoryItem = async (inventoryId) => {
+  try {
+    console.log('🗑️ Deleting inventory item:', inventoryId);
+    const headers = await getEnhancedHeaders();
+
+    const url = `${API_BASE_URL}/business-inventory/${encodeURIComponent(inventoryId)}`;
+    const response = await apiRequest(url, {
+      method: 'DELETE',
+      headers,
+    }, 3, 'Delete Inventory Item');
+
+    // Notify about deletion
+    notifyRefresh({ 
+      type: 'inventory_item_deleted', 
+      itemId: inventoryId,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('✅ Inventory item deleted successfully');
+    return response;
+  } catch (error) {
+    console.error('❌ Delete inventory item error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Bulk Update Inventory Items
+ */
+export const bulkUpdateInventory = async (updates) => {
+  try {
+    console.log('📦 Bulk updating inventory items:', updates.length);
+    const headers = await getEnhancedHeaders();
+
+    const url = `${API_BASE_URL}/business-inventory/bulk`;
+    const response = await apiRequest(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ updates }),
+    }, 3, 'Bulk Update Inventory');
+
+    // Notify about bulk update
+    notifyRefresh({ 
+      type: 'inventory_bulk_updated', 
+      updates: updates,
+      timestamp: new Date().toISOString()
+    });
+
+    console.log('✅ Bulk inventory update completed');
+    return response;
+  } catch (error) {
+    console.error('❌ Bulk inventory update error:', error);
     throw error;
   }
 };
@@ -333,7 +685,7 @@ export const getBusinessOrders = async (status = 'all', limit = 50) => {
     if (status !== 'all') queryParams.append('status', status);
     queryParams.append('limit', limit.toString());
 
-    const url = `${API_BASE_URL}/business/orders?${queryParams.toString()}`;
+    const url = `${API_BASE_URL}/business-orders?${queryParams.toString()}`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
@@ -341,6 +693,13 @@ export const getBusinessOrders = async (status = 'all', limit = 50) => {
 
     // Enhanced order processing
     const orders = response.orders || response.data || [];
+    
+    // Notify about orders loaded
+    notifyRefresh({ 
+      type: 'orders_loaded', 
+      orders: orders,
+      timestamp: new Date().toISOString()
+    });
     
     return {
       success: true,
@@ -373,7 +732,7 @@ export const getBusinessCustomers = async () => {
     console.log('👥 Loading business customers with analytics');
     const headers = await getEnhancedHeaders();
 
-    const url = `${API_BASE_URL}/business/customers`;
+    const url = `${API_BASE_URL}/business-customers`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
@@ -381,6 +740,13 @@ export const getBusinessCustomers = async () => {
 
     // Enhanced customer processing
     const customers = response.customers || response.data || [];
+
+    // Notify about customers loaded
+    notifyRefresh({ 
+      type: 'customers_loaded', 
+      customers: customers,
+      timestamp: new Date().toISOString()
+    });
 
     return {
       success: true,
@@ -401,175 +767,6 @@ export const getBusinessCustomers = async () => {
     };
   } catch (error) {
     console.error('❌ Business customers error:', error);
-    throw error;
-  }
-};
-
-// Helper function for loyalty level calculation
-const getLoyaltyLevel = (orderCount, totalSpent) => {
-  if (!orderCount || orderCount === 0) return 'new';
-  if (orderCount >= 10 && totalSpent >= 1000) return 'vip';
-  if (orderCount >= 5 && totalSpent >= 500) return 'loyal';
-  if (orderCount >= 2) return 'returning';
-  return 'new';
-};
-
-/**
- * Create Business Profile - ENHANCED with validation
- */
-export const createBusinessProfile = async (businessData) => {
-  try {
-    console.log('👤 Creating business profile');
-    const headers = await getEnhancedHeaders();
-
-    const enhancedBusinessData = {
-      ...businessData,
-      dateJoined: new Date().toISOString(),
-      lastUpdated: new Date().toISOString(),
-      status: 'active',
-      settings: {
-        notifications: true,
-        publicProfile: true,
-        acceptOrders: true,
-        ...businessData.settings
-      },
-      // Ensure required fields have defaults
-      businessName: businessData.businessName || 'My Business',
-      businessType: businessData.businessType || 'General',
-      id: businessData.email || headers['X-User-Email']
-    };
-
-    const url = `${API_BASE_URL}/business/profile`;
-    const response = await apiRequest(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(enhancedBusinessData),
-    }, 3, 'Create Business Profile');
-
-    return response;
-  } catch (error) {
-    console.error('❌ Create business profile error:', error);
-    throw error;
-  }
-};
-
-/**
- * FIXED: Update Business Profile with proper endpoint
- */
-export const updateBusinessProfile = async (businessId, updateData) => {
-  try {
-    console.log('📝 Updating business profile:', businessId);
-    const headers = await getEnhancedHeaders();
-
-    const enhancedUpdateData = {
-      ...updateData,
-      lastUpdated: new Date().toISOString()
-    };
-
-    // FIXED: Use the corrected endpoint that matches the backend
-    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/profile`;
-    const response = await apiRequest(url, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify(enhancedUpdateData),
-    }, 3, 'Update Business Profile');
-
-    return response;
-  } catch (error) {
-    console.error('❌ Update business profile error:', error);
-    throw error;
-  }
-};
-
-/**
- * FIXED: Fetch Business Profile with Inventory for Map Display
- */
-export const fetchBusinessProfile = async (businessId) => {
-  try {
-    console.log('🏢 Fetching complete business profile for map:', businessId);
-    const headers = await getEnhancedHeaders();
-
-    // FIXED: Use the corrected endpoint that matches the backend
-    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/profile`;
-    const response = await apiRequest(url, {
-      method: 'GET',
-      headers,
-    }, 3, 'Fetch Business Profile for Map');
-
-    // Cache business profile
-    try {
-      await AsyncStorage.setItem(`cached_business_profile_${businessId}`, JSON.stringify({
-        data: response,
-        timestamp: Date.now()
-      }));
-    } catch (cacheError) {
-      console.warn('⚠️ Failed to cache business profile:', cacheError);
-    }
-
-    return response;
-  } catch (error) {
-    console.error('❌ Fetch business profile error:', error);
-
-    // Try to return cached profile on error
-    try {
-      const cached = await AsyncStorage.getItem(`cached_business_profile_${businessId}`);
-      if (cached) {
-        const { data, timestamp } = JSON.parse(cached);
-        // Use cache if less than 1 hour old
-        if (Date.now() - timestamp < 3600000) {
-          console.log('📱 Using cached business profile');
-          return data;
-        }
-      }
-    } catch (cacheError) {
-      console.warn('⚠️ Error accessing cached profile:', cacheError);
-    }
-
-    throw error;
-  }
-};
-
-/**
- * Delete Inventory Item
- */
-export const deleteInventoryItem = async (inventoryId) => {
-  try {
-    console.log('🗑️ Deleting inventory item:', inventoryId);
-    const headers = await getEnhancedHeaders();
-
-    const url = `${API_BASE_URL}/business/inventory/${encodeURIComponent(inventoryId)}`;
-    const response = await apiRequest(url, {
-      method: 'DELETE',
-      headers,
-    }, 3, 'Delete Inventory Item');
-
-    console.log('✅ Inventory item deleted successfully');
-    return response;
-  } catch (error) {
-    console.error('❌ Delete inventory item error:', error);
-    throw error;
-  }
-};
-
-/**
- * Bulk Update Inventory Items
- */
-export const bulkUpdateInventory = async (updates) => {
-  try {
-    console.log('📦 Bulk updating inventory items:', updates.length);
-    const headers = await getEnhancedHeaders();
-
-    const url = `${API_BASE_URL}/business/inventory/bulk`;
-    const response = await apiRequest(url, {
-      method: 'PATCH',
-      headers,
-      body: JSON.stringify({ updates }),
-    }, 3, 'Bulk Update Inventory');
-
-    console.log('✅ Bulk inventory update completed');
-    return response;
-  } catch (error) {
-    console.error('❌ Bulk inventory update error:', error);
     throw error;
   }
 };
@@ -609,6 +806,337 @@ export const uploadBusinessImages = async (images, businessId) => {
   }
 };
 
+/**
+ * Check API Health - Connection test for business services
+ */
+export const checkApiHealth = async () => {
+  try {
+    console.log('🏥 Checking business API health...');
+    const headers = await getEnhancedHeaders();
+    
+    // Use a lightweight endpoint to test connectivity
+    const url = `${API_BASE_URL}/business-dashboard`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 1, 'API Health Check'); // Only 1 retry for health check
+
+    return { 
+      healthy: true, 
+      status: 'connected',
+      timestamp: new Date().toISOString(),
+      ...response 
+    };
+  } catch (error) {
+    console.error('❌ Business API health check failed:', error);
+    return { 
+      healthy: false, 
+      status: 'disconnected',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    };
+  }
+};
+
+/**
+ * Get Business Analytics - NEW: Comprehensive business metrics
+ */
+export const getBusinessAnalytics = async (timeRange = '30d') => {
+  try {
+    console.log('📊 Loading business analytics for range:', timeRange);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-analytics?timeRange=${timeRange}`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Business Analytics');
+
+    return {
+      success: true,
+      analytics: {
+        revenue: response.revenue || 0,
+        orders: response.orders || 0,
+        customers: response.customers || 0,
+        inventory: response.inventory || 0,
+        growth: response.growth || {},
+        topProducts: response.topProducts || [],
+        customerInsights: response.customerInsights || {},
+        timeRange,
+        lastUpdated: new Date().toISOString()
+      }
+    };
+  } catch (error) {
+    console.error('❌ Business analytics error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get Business Reports - NEW: Generate detailed business reports
+ */
+export const getBusinessReports = async (reportType = 'sales', filters = {}) => {
+  try {
+    console.log('📈 Generating business report:', reportType);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-reports`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ reportType, filters }),
+    }, 3, 'Business Reports');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Business reports error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Search Plants for Business - NEW: Enhanced plant search for inventory
+ */
+export const searchPlantsForBusiness = async (query, filters = {}) => {
+  try {
+    console.log('🔍 Searching plants for business:', query);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-plant-search`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ query, filters }),
+    }, 3, 'Business Plant Search');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Business plant search error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get Business Weather Advice - NEW: Weather-based business insights
+ */
+export const getBusinessWeatherAdvice = async (location) => {
+  try {
+    console.log('🌤️ Getting business weather advice for:', location);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-weather-get`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ location }),
+    }, 3, 'Business Weather Advice');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Business weather advice error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Publish Inventory to Marketplace - NEW: Make inventory public
+ */
+export const publishInventoryToMarketplace = async (inventoryIds, publishSettings = {}) => {
+  try {
+    console.log('📢 Publishing inventory to marketplace:', inventoryIds.length);
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-inventory-publish`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ inventoryIds, publishSettings }),
+    }, 3, 'Publish Inventory');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Publish inventory error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Generate Plant Barcode - NEW: Create barcodes for products
+ */
+export const generatePlantBarcode = async (plantData) => {
+  try {
+    console.log('📊 Generating plant barcode');
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/generate_plant_barcode`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(plantData),
+    }, 3, 'Generate Plant Barcode');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Generate barcode error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get Business Notification Settings - NEW: Manage notification preferences
+ */
+export const getBusinessNotificationSettings = async () => {
+  try {
+    console.log('🔔 Loading business notification settings');
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-notification-settings`;
+    const response = await apiRequest(url, {
+      method: 'GET',
+      headers,
+    }, 3, 'Business Notification Settings');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Business notification settings error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update Business Notification Settings - NEW: Update notification preferences
+ */
+export const updateBusinessNotificationSettings = async (settings) => {
+  try {
+    console.log('🔔 Updating business notification settings');
+    const headers = await getEnhancedHeaders();
+    
+    const url = `${API_BASE_URL}/business-notification-settings`;
+    const response = await apiRequest(url, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify(settings),
+    }, 3, 'Update Business Notification Settings');
+
+    return response;
+  } catch (error) {
+    console.error('❌ Update notification settings error:', error);
+    throw error;
+  }
+};
+
+/**
+ * NEW AUTO-REFRESH FUNCTIONS
+ */
+
+// Auto-refresh profile if data is stale
+export const autoRefreshIfNeeded = async (maxAgeMinutes = 30) => {
+  try {
+    const lastFetched = await AsyncStorage.getItem('profileLastFetched');
+    if (!lastFetched) {
+      return await refreshBusinessProfile();
+    }
+
+    const lastFetchedDate = new Date(lastFetched);
+    const now = new Date();
+    const ageMinutes = (now - lastFetchedDate) / (1000 * 60);
+
+    if (ageMinutes > maxAgeMinutes) {
+      console.log(`Profile data is ${ageMinutes.toFixed(1)} minutes old, refreshing...`);
+      return await refreshBusinessProfile();
+    }
+
+    // Return cached data if not stale
+    const cached = await getCachedBusinessProfile();
+    return cached ? { profile: cached.profile } : null;
+  } catch (error) {
+    console.error('Error in auto-refresh:', error);
+    // Fall back to cached data if refresh fails
+    const cached = await getCachedBusinessProfile();
+    return cached ? { profile: cached.profile } : null;
+  }
+};
+
+// Refresh business profile data (force refresh from server)
+export const refreshBusinessProfile = async () => {
+  try {
+    console.log('🔄 Refreshing business profile from server...');
+    
+    // Clear cache first
+    await AsyncStorage.removeItem('businessProfile');
+    await AsyncStorage.removeItem('profileLastFetched');
+    
+    // Fetch fresh data
+    const result = await getBusinessProfile();
+    
+    // Notify about refresh
+    notifyRefresh({ 
+      type: 'refreshed', 
+      profile: result.profile,
+      timestamp: new Date().toISOString()
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('Error refreshing business profile:', error);
+    throw error;
+  }
+};
+
+// Get cached business profile from local storage
+export const getCachedBusinessProfile = async () => {
+  try {
+    const cachedProfile = await AsyncStorage.getItem('businessProfile');
+    if (cachedProfile) {
+      const profile = JSON.parse(cachedProfile);
+      const lastFetched = await AsyncStorage.getItem('profileLastFetched');
+      return {
+        profile,
+        lastFetched: lastFetched ? new Date(lastFetched) : null,
+        isCached: true
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting cached business profile:', error);
+    return null;
+  }
+};
+
+// Check if profile should be refreshed
+const checkIfShouldRefresh = async (maxAgeMinutes = 30) => {
+  try {
+    const lastFetched = await AsyncStorage.getItem('profileLastFetched');
+    if (!lastFetched) return true;
+
+    const lastFetchedDate = new Date(lastFetched);
+    const now = new Date();
+    const ageMinutes = (now - lastFetchedDate) / (1000 * 60);
+
+    return ageMinutes > maxAgeMinutes;
+  } catch (error) {
+    return true; // Refresh on error
+  }
+};
+
+// Clear cached business profile data
+export const clearBusinessProfileCache = async () => {
+  try {
+    const keysToRemove = [
+      'businessProfile',
+      'isBusinessUser',
+      'businessCreatedAt',
+      'profileLastFetched',
+      'profileLastUpdated'
+    ];
+    
+    await AsyncStorage.multiRemove(keysToRemove);
+    console.log('Business profile cache cleared');
+  } catch (error) {
+    console.error('Error clearing business profile cache:', error);
+  }
+};
+
 // Export all business API functions with their original functionality preserved
 export default {
   getBusinessProfile,
@@ -624,6 +1152,22 @@ export default {
   updateBusinessProfile,
   fetchBusinessProfile,
   uploadBusinessImages,
+  checkApiHealth,
+  // NEW FUNCTIONS
+  getBusinessAnalytics,
+  getBusinessReports,
+  searchPlantsForBusiness,
+  getBusinessWeatherAdvice,
+  publishInventoryToMarketplace,
+  generatePlantBarcode,
+  getBusinessNotificationSettings,
+  updateBusinessNotificationSettings,
+  // AUTO-REFRESH FUNCTIONS
+  autoRefreshIfNeeded,
+  refreshBusinessProfile,
+  getCachedBusinessProfile,
+  clearBusinessProfileCache,
+  onBusinessRefresh,
   // Export utility functions
   ApiError,
   getStockLevel,

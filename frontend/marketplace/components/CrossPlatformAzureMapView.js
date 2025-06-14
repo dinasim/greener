@@ -77,15 +77,23 @@ const CrossPlatformAzureMapView = ({
     if (!mapReady || !searchRadius) return;
     
     const drawRadius = () => {
-      if (!initialRegion?.latitude || !initialRegion?.longitude) return;
+      // FIXED: Validate coordinates before using them
+      const lat = parseFloat(initialRegion?.latitude);
+      const lng = parseFloat(initialRegion?.longitude);
+      const radius = parseFloat(searchRadius);
       
-      console.log(`Drawing radius circle: ${searchRadius}km at [${initialRegion.latitude}, ${initialRegion.longitude}]`);
+      if (isNaN(lat) || isNaN(lng) || isNaN(radius) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.warn('Invalid coordinates or radius for drawing circle:', { lat, lng, radius });
+        return;
+      }
+      
+      console.log(`Drawing radius circle: ${radius}km at [${lat}, ${lng}]`);
       
       const msg = { 
         type: 'DRAW_RADIUS', 
-        latitude: initialRegion.latitude, 
-        longitude: initialRegion.longitude,
-        radius: searchRadius
+        latitude: lat, 
+        longitude: lng,
+        radius: radius
       };
       
       try {
@@ -115,12 +123,21 @@ const CrossPlatformAzureMapView = ({
     if (!mapReady || !showMyLocation || !myLocation?.latitude || !myLocation?.longitude) return;
     
     const showUserLocation = () => {
-      console.log(`Showing user location at: ${myLocation.latitude}, ${myLocation.longitude}`);
+      // FIXED: Validate location coordinates before using them
+      const lat = parseFloat(myLocation.latitude);
+      const lng = parseFloat(myLocation.longitude);
+      
+      if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        console.warn('Invalid user location coordinates:', { lat, lng });
+        return;
+      }
+      
+      console.log(`Showing user location at: ${lat}, ${lng}`);
       
       const msg = { 
         type: 'SHOW_MY_LOCATION', 
-        latitude: myLocation.latitude, 
-        longitude: myLocation.longitude
+        latitude: lat, 
+        longitude: lng
       };
       
       try {
@@ -428,23 +445,33 @@ const myLocationSvg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height
         const lat = p.location?.latitude;
         const lon = p.location?.longitude;
         
-        if (lat == null || lon == null) {
-          log("Product missing coordinates: " + (p.id || p._id || 'unknown'));
+        // FIXED: Validate coordinates are valid numbers before using them
+        if (lat == null || lon == null || isNaN(parseFloat(lat)) || isNaN(parseFloat(lon))) {
+          log("Product missing or invalid coordinates: " + (p.id || p._id || 'unknown') + " lat:" + lat + " lon:" + lon);
           return;
         }
         
-        // Add point to datasource
+        const validLat = parseFloat(lat);
+        const validLon = parseFloat(lon);
+        
+        // FIXED: Additional bounds checking for Azure Maps
+        if (validLat < -90 || validLat > 90 || validLon < -180 || validLon > 180) {
+          log("Product coordinates out of bounds: " + (p.id || p._id || 'unknown') + " lat:" + validLat + " lon:" + validLon);
+          return;
+        }
+        
+        // Add point to datasource with validated coordinates
         datasource.add(new atlas.data.Feature(
-          new atlas.data.Point([lon, lat]),
+          new atlas.data.Point([validLon, validLat]),
           {
             id: p.id || p._id || Math.random().toString(36).slice(2),
             title: p.title || p.name || 'Plant',
-            price: p.price || 0,
+            price: parseFloat(p.price) || 0,
             location: p.city || p.location?.city || '',
-            distance: p.distance || 0,
-            rating: p.rating || 0,
+            distance: parseFloat(p.distance) || 0,
+            rating: parseFloat(p.rating) || 0,
             sellerName: p.seller?.name || p.sellerName || 'Unknown Seller',
-            sellerRating: p.seller?.rating || 0
+            sellerRating: parseFloat(p.seller?.rating) || 0
           }
         ));
       });
