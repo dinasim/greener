@@ -37,6 +37,10 @@ const EditProfileScreen = () => {
     languages: '',
     fullAddress: '',
     birthDate: '',
+    // Marketplace-relevant user preferences
+    animals: '',
+    kids: '',
+    interests: '',
     socialMedia: {
       instagram: '',
       facebook: '',
@@ -87,6 +91,9 @@ const EditProfileScreen = () => {
           languages: data.user.languages || '',
           fullAddress: data.user.fullAddress || '',
           birthDate: data.user.birthDate || '',
+          animals: data.user.animals || '',
+          kids: data.user.kids || '',
+          interests: data.user.interests || '',
           socialMedia: data.user.socialMedia || {
             instagram: '',
             facebook: ''
@@ -226,6 +233,9 @@ const EditProfileScreen = () => {
         languages: profile.languages,
         fullAddress: profile.fullAddress,
         birthDate: profile.birthDate,
+        animals: profile.animals,
+        kids: profile.kids,
+        interests: profile.interests,
         socialMedia: profile.socialMedia,
         location: profile.location,
       };
@@ -409,6 +419,35 @@ const EditProfileScreen = () => {
               value={profile.socialMedia?.facebook || ''}
               onChangeText={(text) => handleChange('socialMedia.facebook', text)}
               placeholder="Your Facebook profile"
+            />
+          </View>
+          
+          <View style={styles.formSection}>
+            <Text style={styles.sectionTitle}>Marketplace Preferences</Text>
+            <Text style={styles.sectionSubtitle}>Set your preferences for a better experience</Text>
+            
+            <Text style={styles.label}>Animals</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.animals}
+              onChangeText={(text) => handleChange('animals', text)}
+              placeholder="Preferred animals (e.g., Dogs, Cats)"
+            />
+            
+            <Text style={styles.label}>Kids</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.kids}
+              onChangeText={(text) => handleChange('kids', text)}
+              placeholder="Do you have kids? (Yes/No)"
+            />
+            
+            <Text style={styles.label}>Interests</Text>
+            <TextInput
+              style={styles.input}
+              value={profile.interests}
+              onChangeText={(text) => handleChange('interests', text)}
+              placeholder="Your interests (e.g., Sports, Music)"
             />
           </View>
           

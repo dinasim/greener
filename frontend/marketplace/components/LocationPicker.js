@@ -485,7 +485,19 @@ const LocationPicker = ({
     </View>
     <View style={styles.mapContainer}>
       <CrossPlatformAzureMapView
-        products={[]} // No products
+        products={[{
+          id: 'selected-location',
+          title: 'Selected Location',
+          price: 0,
+          location: {
+            latitude: confirmedLocation.latitude,
+            longitude: confirmedLocation.longitude,
+            city: confirmedLocation.city || 'Selected Location'
+          },
+          // Custom styling for selected location
+          pinColor: '#4CAF50',
+          pinSize: 1.2
+        }]} // Show selected location as a product pin
         initialRegion={{
           latitude: confirmedLocation.latitude,
           longitude: confirmedLocation.longitude,
@@ -494,11 +506,7 @@ const LocationPicker = ({
         showControls={true}
         azureMapsKey={azureMapsKey}
         useCustomPin={true}
-        showMyLocation={true} // Show location pin
-        myLocation={{
-          latitude: confirmedLocation.latitude,
-          longitude: confirmedLocation.longitude,
-        }}
+        showMyLocation={false} // Don't show user's current location
         onSelectProduct={() => {}} // Empty function
         onMapPress={() => {}} // Empty function
       />

@@ -16,22 +16,16 @@ import {
   FlatList,
   Dimensions
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  MaterialIcons, 
-  FontAwesome5,
-  Ionicons,
-  MaterialCommunityIcons
-} from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 
-// FIXED: Import the corrected business API functions
+// FIXED: Import proper business services instead of manual API calls
 import { 
-  getBusinessDashboard, 
   getBusinessProfile, 
-  getBusinessInventory, 
-  getBusinessOrders, 
-  getBusinessCustomers 
+  getBusinessDashboard,
+  getBusinessCustomers,
+  getBusinessInventory,
+  getBusinessOrders 
 } from '../services/businessApi';
 
 const { width } = Dimensions.get('window');
@@ -517,7 +511,7 @@ export default function BusinessProfileScreen({ navigation, route }) {
             renderItem={({ item }) => (
               <View style={styles.activityItem}>
                 <View style={styles.activityIcon}>
-                  <MaterialIcons name="shopping-cart" size={20} color="#4CAF50" />
+                  <MaterialIcons name="cart" size={20} color="#4CAF50" />
                 </View>
                 <View style={styles.activityContent}>
                   <Text style={styles.activityTitle}>
@@ -761,21 +755,14 @@ export default function BusinessProfileScreen({ navigation, route }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f8f9fa" />
       
-      {/* Header */}
+      {/* Header with Back Button */}
       <View style={styles.header}>
-        <View style={styles.businessInfo}>
-          <Text style={styles.businessName}>
-            {profile?.businessName || profile?.name || 'My Business'}
-          </Text>
-          <Text style={styles.businessType}>
-            {profile?.businessType || 'Business'}
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => handleNavigation('BusinessSettingsScreen')}
-        >
-          <MaterialIcons name="settings" size={24} color="#216a94" />
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Business Profile</Text>
+        <TouchableOpacity style={styles.editButton} onPress={() => setIsEditing(!isEditing)}>
+          <MaterialIcons name={isEditing ? "save" : "edit"} size={24} color="#216a94" />
         </TouchableOpacity>
       </View>
 
@@ -842,6 +829,23 @@ const styles = StyleSheet.create({
         elevation: 3,
       },
     }),
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#216a94',
+    flex: 1,
+    textAlign: 'center',
+  },
+  editButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
   },
   businessInfo: {
     flex: 1,
