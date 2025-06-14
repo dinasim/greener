@@ -19,6 +19,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import LocationPicker from '../../marketplace/components/LocationPicker';
 import { useForm } from '../../context/FormContext';
 import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
+import ToastMessage from '../../marketplace/components/ToastMessage'; // ADD: Import proper ToastMessage
 
 // Safe ImagePicker import
 let ImagePicker;
@@ -45,37 +46,84 @@ import {
 // API Configuration
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-// Toast notification function
-const showToast = (message, type = 'info') => {
-  if (Platform.OS === 'web') {
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      padding: 12px 20px;
-      border-radius: 8px;
-      color: white;
-      font-weight: 500;
-      z-index: 10000;
-      max-width: 300px;
-      word-wrap: break-word;
-      background-color: ${type === 'error' ? '#f44336' : type === 'success' ? '#4caf50' : '#2196f3'};
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 4000);
-  } else {
-    Alert.alert(
-      type === 'error' ? 'Error' : type === 'success' ? 'Success' : 'Info',
-      message
-    );
+// ADDED: Missing helper functions for business check
+const getEnhancedHeaders = async () => {
+  try {
+    const [userEmail, userType, businessId, authToken] = await Promise.all([
+      AsyncStorage.getItem('userEmail'),
+      AsyncStorage.getItem('userType'),
+      AsyncStorage.getItem('businessId'),
+      AsyncStorage.getItem('googleAuthToken')
+    ]);
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-API-Version': '1.0',
+      'X-Client': 'greener-mobile'
+    };
+
+    // Always include X-User-Email for business profile operations
+    if (userEmail) {
+      headers['X-User-Email'] = userEmail;
+      headers['X-Business-ID'] = userEmail; // Use email as business ID
+    }
+    if (userType) headers['X-User-Type'] = userType;
+    if (businessId) headers['X-Business-ID'] = businessId;
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+
+    return headers;
+  } catch (error) {
+    console.error('❌ Error getting headers:', error);
+    return { 'Content-Type': 'application/json' };
+  }
+};
+
+// Simple single check function - no retries
+const checkBusinessExists = async (url, options = {}, context = 'Request') => {
+  try {
+    console.log(`🔍 Single check - ${context}: ${url}`);
+    const response = await fetch(url, {
+      timeout: 10000, // Shorter timeout for single check
+      ...options
+    });
+    
+    // Simple response handling - just check if it exists or not
+    if (response.status === 404) {
+      console.log('✅ Business profile not found - ready for signup');
+      return { exists: false };
+    }
+    
+    if (response.ok) {
+      const data = await response.json();
+      console.log('⚠️ Business profile already exists');
+      return { exists: true, data };
+    }
+    
+    // For other errors, log and assume doesn't exist (allow signup)
+    console.warn(`⚠️ Check failed with status ${response.status}, assuming business doesn't exist`);
+    return { exists: false };
+    
+  } catch (error) {
+    console.warn(`⚠️ Network error during check: ${error.message}, assuming business doesn't exist`);
+    return { exists: false }; // On error, allow signup to proceed
   }
 };
 
 export default function BusinessSignUpScreen({ navigation }) {
   const { updateFormData } = useForm();
   const webFileInputRef = useRef(null);
+  
+  // Add refs to track API calls and prevent loops
+  const checkingBusinessRef = useRef(false);
+  const lastCheckedEmailRef = useRef('');
+  const debounceTimeoutRef = useRef(null);
+  
+  // Toast state for proper ToastMessage component
+  const [toast, setToast] = useState({
+    visible: false,
+    message: '',
+    type: 'info'
+  });
   
   const [formData, setFormData] = useState({
     email: '',
@@ -111,6 +159,23 @@ export default function BusinessSignUpScreen({ navigation }) {
     registerForWateringNotifications
   } = useBusinessFirebaseNotifications(formData.email);
 
+  // Show toast message
+  const showToast = (message, type = 'info') => {
+    setToast({
+      visible: true,
+      message,
+      type
+    });
+  };
+  
+  // Hide toast message
+  const hideToast = () => {
+    setToast(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
+  
   // OPTIMAL: Set up auto-refresh listener
   useEffect(() => {
     const unsubscribe = onBusinessRefresh((data) => {
@@ -249,35 +314,48 @@ export default function BusinessSignUpScreen({ navigation }) {
     return Object.keys(newErrors).length === 0;
   };
   
-  // OPTIMAL: Simplified existing business check using enhanced API
+  // SIMPLIFIED: Single check for existing business - no retries, no loops
   const checkExistingBusinessAccount = async (email) => {
+    // Prevent multiple simultaneous checks for the same email
+    if (checkingBusinessRef.current || lastCheckedEmailRef.current === email) {
+      console.log('🔄 Business check already in progress or recently completed for:', email);
+      return { exists: false };
+    }
+    
     try {
-      console.log('🔍 Checking for existing business account via enhanced API:', email);
+      checkingBusinessRef.current = true;
+      lastCheckedEmailRef.current = email;
+      
+      console.log('🔍 Single check for existing business account:', email);
       
       // Temporarily set user email for the API call
       await AsyncStorage.setItem('userEmail', email);
+      const headers = await getEnhancedHeaders();
       
-      const existingProfile = await getBusinessProfile(email);
+      // Use the simple single check function instead of the retry-heavy getBusinessProfile
+      const url = `${API_BASE_URL}/business-profile`;
+      const result = await checkBusinessExists(url, {
+        method: 'GET',
+        headers,
+      }, 'Check Business Exists');
       
-      if (existingProfile && existingProfile.profile) {
+      if (result.exists && result.data) {
+        const profile = result.data.profile || result.data.business || result.data;
         return {
           exists: true,
-          businessName: existingProfile.profile.businessName,
-          businessType: existingProfile.profile.category || existingProfile.profile.businessType,
-          registrationDate: existingProfile.profile.createdAt
+          businessName: profile.businessName || 'Unknown Business',
+          businessType: profile.category || profile.businessType || 'Unknown Type',
+          registrationDate: profile.createdAt || profile.registrationDate || new Date().toISOString()
         };
       }
       
       return { exists: false };
     } catch (error) {
-      // 404 means no existing business - which is what we want for new signups
-      if (error.message.includes('404') || error.message.includes('not found')) {
-        console.log('✅ No existing business found - can proceed');
-        return { exists: false };
-      }
-      
-      console.warn('⚠️ Error checking existing business, proceeding:', error.message);
-      return { exists: false };
+      console.warn('⚠️ Business check failed:', error.message);
+      return { exists: false }; // On any error, allow signup to proceed
+    } finally {
+      // Reset the checking flag immediately since we're doing a single check
+      checkingBusinessRef.current = false;
     }
   };
 
@@ -285,42 +363,53 @@ export default function BusinessSignUpScreen({ navigation }) {
     if (!validateStep(currentStep)) return;
     
     if (currentStep === 1 && formData.email) {
-      setIsLoading(true);
-      try {
-        const existingAccount = await checkExistingBusinessAccount(formData.email);
-        
-        if (existingAccount.exists) {
-          setIsLoading(false);
-          showToast(
-            `A business account already exists for ${formData.email}. Business: "${existingAccount.businessName}". Please use a different email or sign in to your existing account.`,
-            'error'
-          );
-          
-          Alert.alert(
-            'Business Account Already Exists',
-            `A business account for "${existingAccount.businessName}" is already registered with this email address.\n\nRegistered: ${new Date(existingAccount.registrationDate).toLocaleDateString()}\nType: ${existingAccount.businessType}`,
-            [
-              {
-                text: 'Use Different Email',
-                style: 'default',
-                onPress: () => handleChange('email', '')
-              },
-              {
-                text: 'Sign In Instead',
-                style: 'default',
-                onPress: () => navigation.navigate('BusinessSignInScreen')
-              }
-            ]
-          );
-          return;
-        }
-        
-        setIsLoading(false);
-        setCurrentStep(currentStep + 1);
-      } catch (error) {
-        setIsLoading(false);
-        showToast(error.message, 'error');
+      // Clear any existing debounce timeout
+      if (debounceTimeoutRef.current) {
+        clearTimeout(debounceTimeoutRef.current);
       }
+      
+      setIsLoading(true);
+      
+      // Debounce the business check to prevent rapid successive calls
+      debounceTimeoutRef.current = setTimeout(async () => {
+        try {
+          const existingAccount = await checkExistingBusinessAccount(formData.email);
+          
+          if (existingAccount.exists) {
+            setIsLoading(false);
+            showToast(
+              `A business account already exists for ${formData.email}. Business: "${existingAccount.businessName}". Please use a different email or sign in to your existing account.`,
+              'error'
+            );
+            Alert.alert(
+              'Business Account Already Exists',
+              `A business account for "${existingAccount.businessName}" is already registered with this email address.\n\nRegistered: ${new Date(existingAccount.registrationDate).toLocaleDateString()}\nType: ${existingAccount.businessType}`,
+              [
+                {
+                  text: 'Use Different Email',
+                  style: 'default',
+                  onPress: () => {
+                    handleChange('email', '');
+                    lastCheckedEmailRef.current = ''; // Reset the last checked email
+                  }
+                },
+                {
+                  text: 'Sign In Instead',
+                  style: 'default',
+                  onPress: () => navigation.navigate('BusinessSignInScreen')
+                }
+              ]
+            );
+            return;
+          }
+          
+          setIsLoading(false);
+          setCurrentStep(currentStep + 1);
+        } catch (error) {
+          setIsLoading(false);
+          showToast(error.message || 'Error checking business account', 'error');
+        }
+      }, 500); // 500ms debounce
     } else {
       setCurrentStep(currentStep + 1);
     }
@@ -334,26 +423,44 @@ export default function BusinessSignUpScreen({ navigation }) {
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return;
     
+    // Prevent multiple submissions
+    if (isLoading) {
+      console.log('🔒 Business creation already in progress');
+      return;
+    }
+    
     setIsLoading(true);
+    showToast('Creating your business account. Please wait a moment while we set up your account.', 'info');
     
     try {
-      // Initialize Firebase notifications
-      console.log('🔔 Setting up Firebase notifications...');
-      await initialize(formData.email);
+      console.log('🚀 Starting business signup process...');
       
-      // STEP 1: Create basic user account first (still needed for main user table)
+      // STEP 1: Initialize Firebase notifications
+      showToast('Setting up notifications...', 'info');
+      try {
+        await initialize(formData.email);
+        console.log('✅ Firebase notifications initialized');
+      } catch (notifError) {
+        console.warn('⚠️ Firebase notifications failed:', notifError);
+      }
+      
+      // STEP 2: Create basic user account
+      showToast('Creating user account...', 'info');
       await createUserAccount();
+      console.log('✅ User account created');
       
-      // STEP 2: Create comprehensive business profile using enhanced API
+      // STEP 3: Create business profile (SINGLE CALL)
+      showToast('Creating business profile...', 'info');
       const businessData = prepareBusinessData();
-      console.log('🏢 Creating business profile with enhanced API');
+      console.log('🏢 Creating business profile - SINGLE ATTEMPT');
       
       const result = await createBusinessProfile(businessData);
+      console.log('✅ Business profile created:', result?.businessId || 'success');
       
-      // Set up notifications if permission is granted
+      // STEP 4: Set up notifications if available
       if (hasPermission && token) {
         try {
-          console.log('🔔 Setting up business notifications...');
+          showToast('Configuring notifications...', 'info');
           await registerForWateringNotifications('07:00');
           console.log('✅ Business notifications configured');
         } catch (notificationError) {
@@ -361,33 +468,62 @@ export default function BusinessSignUpScreen({ navigation }) {
         }
       }
       
-      // Update storage
+      // STEP 5: Update storage
+      console.log('💾 Updating local storage...');
       updateFormData('email', formData.email);
       updateFormData('businessId', formData.email);
       
       await AsyncStorage.setItem('userEmail', formData.email);
       await AsyncStorage.setItem('userType', 'business');
       await AsyncStorage.setItem('businessId', formData.email);
+      await AsyncStorage.setItem('isBusinessUser', 'true');
       
       setIsLoading(false);
-      console.log('✅ Business signup completed successfully with enhanced API');
+      console.log('✅ Business signup completed successfully');
       
-      // Note: showInventoryChoiceDialog() will be called automatically via auto-refresh
+      // IMMEDIATE success feedback
+      showToast('Business account created successfully!', 'success');
+      
+      // Show inventory choice dialog after successful creation
+      setTimeout(() => {
+        showInventoryChoiceDialog();
+      }, 1000);
       
     } catch (error) {
-      console.error('❌ Error during signup:', error);
+      console.error('❌ Error during business signup:', error);
       setIsLoading(false);
       
+      // Better error messages based on error type
       let errorMessage = 'Could not create your business account.';
+      let errorDetails = error.message;
+      
       if (error.message.includes('Business creation failed')) {
-        errorMessage = 'Failed to create business profile. Please try again.';
+        errorMessage = 'Failed to create business profile. This may be due to a network issue.';
       } else if (error.message.includes('User creation failed')) {
-        errorMessage = 'Failed to create user account. Please try again.';
-      } else if (error.message.includes('timeout')) {
-        errorMessage = 'Request timeout. Please check your connection and try again.';
+        errorMessage = 'Failed to create user account. Please check your information and try again.';
+      } else if (error.message.includes('timeout') || error.message.includes('network')) {
+        errorMessage = 'Network timeout. Please check your connection and try again.';
+      } else if (error.message.includes('already exists')) {
+        errorMessage = 'A business account with this email already exists.';
       }
       
-      Alert.alert('Sign Up Failed', `${errorMessage}\n\nError: ${error.message}`);
+      showToast(errorMessage, 'error');
+      
+      Alert.alert(
+        'Business Signup Failed', 
+        `${errorMessage}\n\nPlease try again. If the problem persists, contact support.\n\nTechnical details: ${errorDetails}`,
+        [
+          { text: 'OK', style: 'default' },
+          { 
+            text: 'Retry', 
+            style: 'default',
+            onPress: () => {
+              // Reset loading state and allow retry
+              setIsLoading(false);
+            }
+          }
+        ]
+      );
     }
   };
 
@@ -433,13 +569,52 @@ export default function BusinessSignUpScreen({ navigation }) {
   // OPTIMAL: Prepare data specifically for enhanced createBusinessProfile API
   const prepareBusinessData = () => {
     return {
+      // Core business information
       businessName: formData.businessName,
-      description: formData.description,
-      address: formData.location?.formattedAddress || '',
+      description: formData.description, // This was missing proper mapping
+      
+      // Contact information - properly map phone fields
       phone: formData.phone,
+      contactPhone: formData.phone, // Map to both fields for compatibility
+      
+      // Location data - properly structure the location object
+      address: formData.location ? {
+        street: formData.location.street || '',
+        city: formData.location.city || '',
+        postalCode: formData.location.postalCode || '',
+        country: formData.location.country || 'Israel',
+        latitude: formData.location.latitude || null,
+        longitude: formData.location.longitude || null,
+        formattedAddress: formData.location.formattedAddress || ''
+      } : {},
+      
+      location: formData.location ? {
+        street: formData.location.street || '',
+        city: formData.location.city || '',
+        postalCode: formData.location.postalCode || '',
+        country: formData.location.country || 'Israel',
+        latitude: formData.location.latitude || null,
+        longitude: formData.location.longitude || null,
+        formattedAddress: formData.location.formattedAddress || ''
+      } : {},
+      
+      // Business details
       website: '',
       category: formData.businessType,
+      businessType: formData.businessType, // Map to both fields
       logo: formData.logo || '',
+      
+      // Business hours with proper structure
+      businessHours: [
+        { day: 'monday', hours: '9:00-18:00', isOpen: true },
+        { day: 'tuesday', hours: '9:00-18:00', isOpen: true },
+        { day: 'wednesday', hours: '9:00-18:00', isOpen: true },
+        { day: 'thursday', hours: '9:00-18:00', isOpen: true },
+        { day: 'friday', hours: '9:00-18:00', isOpen: true },
+        { day: 'saturday', hours: '10:00-16:00', isOpen: true },
+        { day: 'sunday', hours: 'Closed', isOpen: false }
+      ],
+      
       openingHours: {
         monday: '9:00-18:00',
         tuesday: '9:00-18:00',
@@ -449,11 +624,20 @@ export default function BusinessSignUpScreen({ navigation }) {
         saturday: '10:00-16:00',
         sunday: 'Closed'
       },
+      
+      // Social media structure
       socialMedia: {
         facebook: '',
         instagram: '',
-        twitter: ''
-      }
+        twitter: '',
+        website: ''
+      },
+      
+      // Additional fields that might be expected by the backend
+      name: formData.contactName, // Contact person name
+      contactEmail: formData.email,
+      status: 'active',
+      type: 'business'
     };
   };
 
@@ -694,6 +878,13 @@ export default function BusinessSignUpScreen({ navigation }) {
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {currentStep === 1 ? renderStep1() : renderStep2()}
         </ScrollView>
+        
+        <ToastMessage 
+          visible={toast.visible} 
+          onDismiss={hideToast}
+          type={toast.type}
+          message={toast.message}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

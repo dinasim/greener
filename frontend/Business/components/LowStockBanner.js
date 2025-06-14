@@ -171,7 +171,7 @@ export default function LowStockBanner({
       >
         <View style={styles.bannerContent}>
           <View style={styles.iconContainer}>
-            <MaterialIcons name="warning" size={24} color="#FF9800" />
+            <MaterialIcons name="alert" size={24} color="#FF9800" />
           </View>
           
           <View style={styles.textContainer}>

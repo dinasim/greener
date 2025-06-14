@@ -35,17 +35,6 @@ import { smartNotifications } from '../components/SmartNotifications';
 
 // Import API services
 import { getBusinessDashboard } from '../services/businessApi';
-import PlantCareForumScreen from '../../screens/PlantCareForumScreen';
-import DiseaseCheckerScreen from '../../screens/DiseaseCheckerScreen';
-
-const MAIN_TABS = [
-  { key: 'home', label: 'Dashboard', icon: <MaterialIcons name="dashboard" size={20} color="#216a94" /> },
-  { key: 'inventory', label: 'Inventory', icon: <MaterialIcons name="inventory" size={20} color="#2196F3" /> },
-  { key: 'orders', label: 'Orders', icon: <MaterialIcons name="receipt" size={20} color="#FF9800" /> },
-  { key: 'disease', label: 'Disease', icon: <Ionicons name="medkit" size={20} color="#F44336" /> },
-  { key: 'forum', label: 'Forum', icon: <MaterialCommunityIcons name="forum" size={20} color="#4CAF50" /> },
-  { key: 'watering', label: 'Watering', icon: <MaterialCommunityIcons name="water" size={20} color="#9C27B0" /> },
-];
 
 export default function BusinessHomeScreen({ navigation }) {
   const [dashboardData, setDashboardData] = useState(null);
@@ -57,7 +46,6 @@ export default function BusinessHomeScreen({ navigation }) {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [showAIAssistant, setShowAIAssistant] = useState(false);
   const [selectedPlantForAI, setSelectedPlantForAI] = useState(null);
-  const [mainTab, setMainTab] = useState('home');
 
   // Notification manager
   const {
@@ -167,19 +155,19 @@ export default function BusinessHomeScreen({ navigation }) {
   };
   
   const handleCustomers = () => {
-    navigation.navigate('CustomerListScreen', { businessId });
+    navigation.navigate('BusinessCustomersScreen', { businessId });
   };
   
   const handleMarketplace = () => {
-    navigation.navigate('MainTabs');
+    navigation.navigate('MainTabs', { screen: 'Home' });
   };
 
   const handleSettings = () => {
-    navigation.navigate('BusinessSettingsScreen');
+    navigation.navigate('BusinessSettingsScreen', { businessId });
   };
 
   const handleProfile = () => {
-    navigation.navigate('BusinessProfileScreen');
+    navigation.navigate('BusinessProfileScreen', { businessId });
   };
 
   const handleAnalytics = () => {
@@ -188,6 +176,14 @@ export default function BusinessHomeScreen({ navigation }) {
 
   const handleWateringChecklist = () => {
     navigation.navigate('WateringChecklistScreen', { businessId });
+  };
+
+  const handleDiseaseChecker = () => {
+    navigation.navigate('DiseaseCheckerScreen');
+  };
+
+  const handleForum = () => {
+    navigation.navigate('PlantCareForumScreen');
   };
 
   // Order management handlers
@@ -283,8 +279,11 @@ export default function BusinessHomeScreen({ navigation }) {
   
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Enhanced Header */}
+      {/* Enhanced Header with Back Button */}
       <View style={styles.header}>
+        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+        </TouchableOpacity>
         <View style={styles.profileSection}>
           <Image 
             source={data.businessInfo.businessLogo ? 
@@ -317,340 +316,290 @@ export default function BusinessHomeScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Main Tabs */}
-      <View style={styles.mainTabsRow}>
-        {MAIN_TABS.map(tab => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[styles.mainTab, mainTab === tab.key && styles.activeMainTab]}
-            onPress={() => setMainTab(tab.key)}
-          >
-            {tab.icon}
-            <Text style={[styles.mainTabLabel, mainTab === tab.key && styles.activeMainTabLabel]}>{tab.label}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      
-      {/* Main Tab Content */}
-      {mainTab === 'home' && (
-        <ScrollView 
-          style={styles.scrollView} 
-          refreshControl={
-            <RefreshControl 
-              refreshing={refreshing} 
-              onRefresh={onRefresh}
-              colors={['#216a94']}
-              tintColor="#216a94"
-            />
-          }
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Low Stock Banner */}
-          <LowStockBanner
-            lowStockItems={data.lowStockDetails || []}
-            onManageStock={handleManageStock}
-            onRestock={handleRestock}
-            autoRefresh={true}
+      <ScrollView 
+        style={styles.scrollView} 
+        refreshControl={
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={onRefresh}
+            colors={['#216a94']}
+            tintColor="#216a94"
           />
+        }
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Low Stock Banner */}
+        <LowStockBanner
+          lowStockItems={data.lowStockDetails || []}
+          onManageStock={handleManageStock}
+          onRestock={handleRestock}
+          autoRefresh={true}
+        />
 
-          {/* Enhanced KPI Widgets */}
-          <View style={styles.kpiContainer}>
-            <KPIWidget
-              title="Total Revenue"
-              value={data.metrics.totalSales}
-              change={data.metrics.revenueGrowth}
-              icon="cash"
-              format="currency"
-              color="#216a94"
-              onPress={handleAnalytics}
-            />
-            
-            <KPIWidget
-              title="Today's Sales"
-              value={data.metrics.salesToday}
-              change={data.metrics.dailyGrowth}
-              icon="trending-up"
-              format="currency"
-              color="#4CAF50"
-              onPress={handleAnalytics}
-            />
-            
-            <KPIWidget
-              title="New Orders"
-              value={data.metrics.newOrders}
-              change={data.metrics.orderGrowth}
-              icon="shopping-cart"
-              format="number"
-              color="#FF9800"
-              onPress={handleOrders}
-              trend={data.metrics.newOrders > 0 ? 'up' : 'neutral'}
-            />
-            
-            <KPIWidget
-              title="Low Stock"
-              value={data.metrics.lowStockItems}
-              change={data.metrics.stockChange}
-              icon="warning"
-              format="number"
-              color={data.metrics.lowStockItems > 0 ? "#F44336" : "#9E9E9E"}
-              onPress={handleInventory}
-              trend={data.metrics.lowStockItems > 0 ? 'down' : 'neutral'}
-            />
-          </View>
-
-          {/* Additional Metrics Row */}
-          <View style={styles.additionalMetrics}>
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons name="package-variant" size={24} color="#2196F3" />
-              <Text style={styles.metricValue}>{data.metrics.totalInventory}</Text>
-              <Text style={styles.metricLabel}>Total Items</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons name="check-circle" size={24} color="#4CAF50" />
-              <Text style={styles.metricValue}>{data.metrics.activeInventory}</Text>
-              <Text style={styles.metricLabel}>Active Items</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons name="receipt" size={24} color="#9C27B0" />
-              <Text style={styles.metricValue}>{data.metrics.totalOrders}</Text>
-              <Text style={styles.metricLabel}>Total Orders</Text>
-            </View>
-            <View style={styles.metricItem}>
-              <MaterialCommunityIcons name="cash" size={24} color="#FF5722" />
-              <Text style={styles.metricValue}>${data.metrics.inventoryValue.toFixed(0)}</Text>
-              <Text style={styles.metricLabel}>Inventory Value</Text>
-            </View>
-          </View>
-          
-          {/* Charts Dashboard */}
-          <BusinessDashboardCharts
-            salesData={data.chartData?.sales || { labels: [], values: [], total: 0, average: 0 }}
-            ordersData={data.chartData?.orders || { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 }}
-            inventoryData={data.chartData?.inventory || { inStock: 0, lowStock: 0, outOfStock: 0 }}
-            onRefresh={loadDashboardData}
-            autoRefresh={true}
+        {/* Enhanced KPI Widgets */}
+        <View style={styles.kpiContainer}>
+          <KPIWidget
+            title="Total Revenue"
+            value={data.metrics.totalSales}
+            change={data.metrics.revenueGrowth}
+            icon="cash"
+            format="currency"
+            color="#216a94"
+            onPress={handleAnalytics}
           />
           
-          {/* Quick Actions */}
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          <View style={styles.quickActionsContainer}>
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleAddProduct}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#4CAF50' }]}>
-                <MaterialIcons name="add" size={24} color="#fff" />
-              </View>
-              <Text style={styles.actionText}>Add Product</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleInventory}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#2196F3' }]}>
-                <MaterialIcons name="inventory" size={24} color="#fff" />
-              </View>
-              <Text style={styles.actionText}>Inventory</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleOrders}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#FF9800' }]}>
-                <MaterialIcons name="receipt" size={24} color="#fff" />
-              </View>
-              <Text style={styles.actionText}>Orders</Text>
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.actionButton}
-              onPress={handleWateringChecklist}
-            >
-              <View style={[styles.actionIconContainer, { backgroundColor: '#9C27B0' }]}>
-                <MaterialCommunityIcons name="water" size={24} color="#fff" />
-              </View>
-              <Text style={styles.actionText}>Watering</Text>
-            </TouchableOpacity>
-          </View>
+          <KPIWidget
+            title="Today's Sales"
+            value={data.metrics.salesToday}
+            change={data.metrics.dailyGrowth}
+            icon="trending-up"
+            format="currency"
+            color="#4CAF50"
+            onPress={handleAnalytics}
+          />
+          
+          <KPIWidget
+            title="New Orders"
+            value={data.metrics.newOrders}
+            change={data.metrics.orderGrowth}
+            icon="cart"
+            format="number"
+            color="#FF9800"
+            onPress={handleOrders}
+            trend={data.metrics.newOrders > 0 ? 'up' : 'neutral'}
+          />
+          
+          <KPIWidget
+            title="Low Stock"
+            value={data.metrics.lowStockItems}
+            change={data.metrics.stockChange}
+            icon="alert-circle"
+            format="number"
+            color={data.metrics.lowStockItems > 0 ? "#F44336" : "#9E9E9E"}
+            onPress={handleInventory}
+            trend={data.metrics.lowStockItems > 0 ? 'down' : 'neutral'}
+          />
+        </View>
 
-          {/* Enhanced Marketplace Button */}
+        {/* Additional Metrics Row */}
+        <View style={styles.additionalMetrics}>
+          <View style={styles.metricItem}>
+            <MaterialCommunityIcons name="package-variant" size={24} color="#2196F3" />
+            <Text style={styles.metricValue}>{data.metrics.totalInventory}</Text>
+            <Text style={styles.metricLabel}>Total Items</Text>
+          </View>
+          <View style={styles.metricItem}>
+            <MaterialCommunityIcons name="check-circle" size={24} color="#4CAF50" />
+            <Text style={styles.metricValue}>{data.metrics.activeInventory}</Text>
+            <Text style={styles.metricLabel}>Active Items</Text>
+          </View>
+          <View style={styles.metricItem}>
+            <MaterialCommunityIcons name="receipt" size={24} color="#9C27B0" />
+            <Text style={styles.metricValue}>{data.metrics.totalOrders}</Text>
+            <Text style={styles.metricLabel}>Total Orders</Text>
+          </View>
+          <View style={styles.metricItem}>
+            <MaterialCommunityIcons name="cash" size={24} color="#FF5722" />
+            <Text style={styles.metricValue}>${data.metrics.inventoryValue.toFixed(0)}</Text>
+            <Text style={styles.metricLabel}>Inventory Value</Text>
+          </View>
+        </View>
+        
+        {/* Charts Dashboard */}
+        <BusinessDashboardCharts
+          salesData={data.chartData?.sales || { labels: [], values: [], total: 0, average: 0 }}
+          ordersData={data.chartData?.orders || { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 }}
+          inventoryData={data.chartData?.inventory || { inStock: 0, lowStock: 0, outOfStock: 0 }}
+          onRefresh={loadDashboardData}
+          autoRefresh={true}
+        />
+        
+        {/* Expanded Quick Actions */}
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.quickActionsGrid}>
           <TouchableOpacity 
-            style={styles.marketplaceButton}
-            onPress={handleMarketplace}
+            style={styles.actionButton}
+            onPress={handleAddProduct}
           >
-            <MaterialCommunityIcons name="storefront" size={24} color="#fff" />
-            <Text style={styles.marketplaceButtonText}>Browse Marketplace</Text>
-            <MaterialIcons name="arrow-forward" size={20} color="#fff" />
+            <View style={[styles.actionIconContainer, { backgroundColor: '#4CAF50' }]}>
+              <MaterialIcons name="add" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Add Product</Text>
           </TouchableOpacity>
-
-          {/* Top Selling Products */}
-          <TopSellingProductsList
-            businessId={businessId}
-            timeframe="month"
-            onProductPress={(product) => navigation.navigate('BusinessProductDetailScreen', { 
-              productId: product.id, 
-              businessId 
-            })}
-            limit={5}
-          />
           
-          {/* Recent Orders */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Orders</Text>
-            <TouchableOpacity style={styles.viewAllButton} onPress={handleOrders}>
-              <Text style={styles.viewAllText}>View All</Text>
-              <MaterialIcons name="arrow-forward" size={16} color="#216a94" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.ordersContainer}>
-            {data.recentOrders && data.recentOrders.length > 0 ? (
-              data.recentOrders.slice(0, 3).map((order) => (
-                <TouchableOpacity 
-                  key={order.id} 
-                  style={styles.orderItem}
-                  onPress={() => handleOrderPress(order)}
-                >
-                  <View style={styles.orderHeader}>
-                    <Text style={styles.orderConfirmation}>#{order.confirmationNumber}</Text>
-                    <View style={[styles.statusPill, { backgroundColor: getStatusColor(order.status) }]}>
-                      <Text style={styles.statusText}>{order.status}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.orderDetails}>
-                    <Text style={styles.orderCustomer}>{order.customerName}</Text>
-                    <Text style={styles.orderDate}>
-                      {order.date ? new Date(order.date).toLocaleDateString() : 'Recent'}
-                    </Text>
-                  </View>
-                  <View style={styles.orderInfo}>
-                    <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
-                    <Text style={styles.orderItems}>
-                      {order.items?.length || 0} items
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              ))
-            ) : (
-              <View style={styles.emptyState}>
-                <MaterialIcons name="receipt" size={48} color="#e0e0e0" />
-                <Text style={styles.emptyStateText}>No recent orders</Text>
-                <Text style={styles.emptyStateSubtext}>Orders will appear here when customers place them</Text>
-                <TouchableOpacity style={styles.createOrderButton} onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}>
-                  <MaterialIcons name="add" size={16} color="#216a94" />
-                  <Text style={styles.createOrderText}>Create Order</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-
-          {/* Business Info Card */}
-          <View style={styles.businessCard}>
-            <View style={styles.businessCardHeader}>
-              <MaterialCommunityIcons name="store" size={24} color="#216a94" />
-              <Text style={styles.businessCardTitle}>Business Information</Text>
-            </View>
-            <View style={styles.businessCardContent}>
-              <Text style={styles.businessCardItem}>
-                <Text style={styles.businessCardLabel}>Type: </Text>
-                {data.businessInfo.businessType}
-              </Text>
-              <Text style={styles.businessCardItem}>
-                <Text style={styles.businessCardLabel}>Email: </Text>
-                {data.businessInfo.email}
-              </Text>
-              {data.businessInfo.joinDate && (
-                <Text style={styles.businessCardItem}>
-                  <Text style={styles.businessCardLabel}>Member since: </Text>
-                  {new Date(data.businessInfo.joinDate).toLocaleDateString('en-US', { 
-                    year: 'numeric', 
-                    month: 'long' 
-                  })}
-                </Text>
-              )}
-            </View>
-            <TouchableOpacity style={styles.editBusinessButton} onPress={handleProfile}>
-              <MaterialIcons name="edit" size={16} color="#216a94" />
-              <Text style={styles.editBusinessText}>Edit Business Info</Text>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      )}
-      {mainTab === 'inventory' && (
-        <View style={styles.tabContent}>
           <TouchableOpacity 
-            style={styles.tabContentButton}
+            style={styles.actionButton}
             onPress={handleInventory}
           >
-            <MaterialIcons name="inventory" size={40} color="#2196F3" />
-            <Text style={styles.tabContentTitle}>Manage Inventory</Text>
-            <Text style={styles.tabContentDesc}>View and manage your product inventory</Text>
+            <View style={[styles.actionIconContainer, { backgroundColor: '#2196F3' }]}>
+              <MaterialIcons name="inventory" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Inventory</Text>
           </TouchableOpacity>
-        </View>
-      )}
-      {mainTab === 'orders' && (
-        <View style={styles.tabContent}>
+          
           <TouchableOpacity 
-            style={styles.tabContentButton}
+            style={styles.actionButton}
             onPress={handleOrders}
           >
-            <MaterialIcons name="receipt" size={40} color="#FF9800" />
-            <Text style={styles.tabContentTitle}>View Orders</Text>
-            <Text style={styles.tabContentDesc}>Check and manage customer orders</Text>
+            <View style={[styles.actionIconContainer, { backgroundColor: '#FF9800' }]}>
+              <MaterialIcons name="receipt" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Orders</Text>
           </TouchableOpacity>
-        </View>
-      )}
-      {mainTab === 'disease' && <DiseaseCheckerScreen navigation={navigation} />}
-      {mainTab === 'forum' && <PlantCareForumScreen navigation={navigation} />}
-      {mainTab === 'watering' && (
-        <View style={styles.tabContent}>
+          
           <TouchableOpacity 
-            style={styles.tabContentButton}
+            style={styles.actionButton}
             onPress={handleWateringChecklist}
           >
-            <MaterialCommunityIcons name="water" size={40} color="#9C27B0" />
-            <Text style={styles.tabContentTitle}>Watering Checklist</Text>
-            <Text style={styles.tabContentDesc}>Manage plant care and watering schedules</Text>
+            <View style={[styles.actionIconContainer, { backgroundColor: '#9C27B0' }]}>
+              <MaterialCommunityIcons name="water" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Watering</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={handleDiseaseChecker}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: '#F44336' }]}>
+              <Ionicons name="medkit" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Disease Check</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={handleForum}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: '#8BC34A' }]}>
+              <MaterialCommunityIcons name="forum" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Forum</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={handleCustomers}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: '#3F51B5' }]}>
+              <MaterialIcons name="people" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Customers</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={handleAnalytics}
+          >
+            <View style={[styles.actionIconContainer, { backgroundColor: '#795548' }]}>
+              <MaterialIcons name="analytics" size={24} color="#fff" />
+            </View>
+            <Text style={styles.actionText}>Analytics</Text>
           </TouchableOpacity>
         </View>
-      )}
-      
-      {/* Enhanced Bottom Navigation */}
-      <View style={styles.bottomNav}>
+
+        {/* Enhanced Marketplace Button */}
         <TouchableOpacity 
-          style={[styles.navItem, mainTab === 'home' && styles.activeNavItem]}
-          onPress={() => setMainTab('home')}
+          style={styles.marketplaceButton}
+          onPress={handleMarketplace}
         >
-          <MaterialIcons name="dashboard" size={24} color={mainTab === 'home' ? "#216a94" : "#757575"} />
-          <Text style={[styles.navText, mainTab === 'home' && styles.activeNavText]}>Dashboard</Text>
+          <MaterialCommunityIcons name="storefront" size={24} color="#fff" />
+          <Text style={styles.marketplaceButtonText}>Browse Marketplace</Text>
+          <MaterialIcons name="arrow-forward" size={20} color="#fff" />
         </TouchableOpacity>
+
+        {/* Top Selling Products */}
+        <TopSellingProductsList
+          businessId={businessId}
+          timeframe="month"
+          onProductPress={(product) => navigation.navigate('BusinessProductDetailScreen', { 
+            productId: product.id, 
+            businessId 
+          })}
+          limit={5}
+        />
         
-        <TouchableOpacity 
-          style={[styles.navItem, mainTab === 'inventory' && styles.activeNavItem]}
-          onPress={() => setMainTab('inventory')}
-        >
-          <MaterialIcons name="inventory" size={24} color={mainTab === 'inventory' ? "#216a94" : "#757575"} />
-          <Text style={[styles.navText, mainTab === 'inventory' && styles.activeNavText]}>Inventory</Text>
-        </TouchableOpacity>
+        {/* Recent Orders */}
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Recent Orders</Text>
+          <TouchableOpacity style={styles.viewAllButton} onPress={handleOrders}>
+            <Text style={styles.viewAllText}>View All</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#216a94" />
+          </TouchableOpacity>
+        </View>
         
-        <TouchableOpacity 
-          style={[styles.navItem, mainTab === 'orders' && styles.activeNavItem]}
-          onPress={() => setMainTab('orders')}
-        >
-          <MaterialIcons name="receipt" size={24} color={mainTab === 'orders' ? "#216a94" : "#757575"} />
-          <Text style={[styles.navText, mainTab === 'orders' && styles.activeNavText]}>Orders</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[styles.navItem, mainTab === 'forum' && styles.activeNavItem]}
-          onPress={() => setMainTab('forum')}
-        >
-          <MaterialCommunityIcons name="forum" size={24} color={mainTab === 'forum' ? "#216a94" : "#757575"} />
-          <Text style={[styles.navText, mainTab === 'forum' && styles.activeNavText]}>Forum</Text>
-        </TouchableOpacity>
-      </View>
+        <View style={styles.ordersContainer}>
+          {data.recentOrders && data.recentOrders.length > 0 ? (
+            data.recentOrders.slice(0, 3).map((order) => (
+              <TouchableOpacity 
+                key={order.id} 
+                style={styles.orderItem}
+                onPress={() => handleOrderPress(order)}
+              >
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderConfirmation}>#{order.confirmationNumber}</Text>
+                  <View style={[styles.statusPill, { backgroundColor: getStatusColor(order.status) }]}>
+                    <Text style={styles.statusText}>{order.status}</Text>
+                  </View>
+                </View>
+                <View style={styles.orderDetails}>
+                  <Text style={styles.orderCustomer}>{order.customerName}</Text>
+                  <Text style={styles.orderDate}>
+                    {order.date ? new Date(order.date).toLocaleDateString() : 'Recent'}
+                  </Text>
+                </View>
+                <View style={styles.orderInfo}>
+                  <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
+                  <Text style={styles.orderItems}>
+                    {order.items?.length || 0} items
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <View style={styles.emptyState}>
+              <MaterialIcons name="receipt" size={48} color="#e0e0e0" />
+              <Text style={styles.emptyStateText}>No recent orders</Text>
+              <Text style={styles.emptyStateSubtext}>Orders will appear here when customers place them</Text>
+              <TouchableOpacity style={styles.createOrderButton} onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}>
+                <MaterialIcons name="add" size={16} color="#216a94" />
+                <Text style={styles.createOrderText}>Create Order</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Business Info Card */}
+        <View style={styles.businessCard}>
+          <View style={styles.businessCardHeader}>
+            <MaterialCommunityIcons name="store" size={24} color="#216a94" />
+            <Text style={styles.businessCardTitle}>Business Information</Text>
+          </View>
+          <View style={styles.businessCardContent}>
+            <Text style={styles.businessCardItem}>
+              <Text style={styles.businessCardLabel}>Type: </Text>
+              {data.businessInfo.businessType}
+            </Text>
+            <Text style={styles.businessCardItem}>
+              <Text style={styles.businessCardLabel}>Email: </Text>
+              {data.businessInfo.email}
+            </Text>
+            {data.businessInfo.joinDate && (
+              <Text style={styles.businessCardItem}>
+                <Text style={styles.businessCardLabel}>Member since: </Text>
+                {new Date(data.businessInfo.joinDate).toLocaleDateString('en-US', { 
+                  year: 'numeric', 
+                  month: 'long' 
+                })}
+              </Text>
+            )}
+          </View>
+          <TouchableOpacity style={styles.editBusinessButton} onPress={handleProfile}>
+            <MaterialIcons name="edit" size={16} color="#216a94" />
+            <Text style={styles.editBusinessText}>Edit Business Info</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
 
       {/* Order Detail Modal */}
       <OrderDetailModal
@@ -736,6 +685,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
+  },
+  backButton: {
+    padding: 8,
   },
   profileSection: {
     flexDirection: 'row',
@@ -827,14 +779,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 8,
   },
-  quickActionsContainer: {
+  quickActionsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     marginBottom: 24,
   },
   actionButton: {
     alignItems: 'center',
+    width: '48%',
+    marginBottom: 16,
   },
   actionIconContainer: {
     width: 50,

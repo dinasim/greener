@@ -26,7 +26,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 
-// Import REAL API services - NO MOCK DATA
+// FIXED: Import proper business services instead of manual API calls
 import { 
   getBusinessProfile,
   createBusinessProfile,
@@ -1003,26 +1003,14 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           }
         ]}
       >
-        <TouchableOpacity 
-          onPress={() => navigation.goBack()}
-          style={styles.headerButton}
-        >
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-        
-        <View style={styles.headerCenter}>
+        {/* Header with Back Button */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+          </TouchableOpacity>
           <Text style={styles.headerTitle}>Business Settings</Text>
-          {hasUnsavedChanges && (
-            <Text style={styles.unsavedIndicator}>Unsaved changes</Text>
-          )}
+          <View style={styles.headerRight} />
         </View>
-        
-        <TouchableOpacity 
-          style={styles.headerButton}
-          onPress={handleResetSettings}
-        >
-          <MaterialIcons name="restore" size={24} color="#4CAF50" />
-        </TouchableOpacity>
       </Animated.View>
 
       {/* ===== NETWORK STATUS ===== */}
@@ -1167,20 +1155,20 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  headerButton: {
+  backButton: {
     padding: 8,
     borderRadius: 8,
     backgroundColor: '#f0f9f3',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 16,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: '700',
     color: '#333',
+    flex: 1,
+    textAlign: 'center',
+  },
+  headerRight: {
+    width: 48,
   },
   unsavedIndicator: {
     fontSize: 12,

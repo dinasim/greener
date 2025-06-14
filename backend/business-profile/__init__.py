@@ -219,7 +219,45 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 }, 201)
                 
             except exceptions.CosmosResourceExistsError:
-                return create_error_response("Business profile already exists. Use PUT to update.", 409)
+                # Check if this is actually a duplicate or a race condition
+                logging.warning(f"CosmosResourceExistsError for business {business_id} - checking if profile actually exists")
+                
+                try:
+                    # Try to read the existing profile
+                    existing_profile = business_container.read_item(item=business_id, partition_key=business_id)
+                    logging.info(f"Business profile actually exists: {business_id}")
+                    
+                    # Return the existing profile instead of an error
+                    return create_success_response({
+                        "message": "Business profile already exists - returning existing profile",
+                        "businessId": business_id,
+                        "business": existing_profile,
+                        "profile": existing_profile,
+                        "success": True,
+                        "existed": True
+                    }, 200)  # Return 200 instead of 409 for signup flow
+                    
+                except exceptions.CosmosResourceNotFoundError:
+                    # Profile doesn't actually exist, retry creation
+                    logging.warning(f"Race condition detected - profile doesn't exist, retrying creation for {business_id}")
+                    try:
+                        result = business_container.create_item(business_profile)
+                        logging.info(f"✅ Created business profile on retry: {business_id}")
+                        
+                        return create_success_response({
+                            "message": "Business profile created successfully",
+                            "businessId": business_id,
+                            "business": result,
+                            "profile": result,
+                            "success": True
+                        }, 201)
+                    except Exception as retry_error:
+                        logging.error(f"Failed to create business profile on retry: {str(retry_error)}")
+                        return create_error_response(f"Failed to create business profile: {str(retry_error)}", 500)
+                
+                except Exception as check_error:
+                    logging.error(f"Error checking existing profile: {str(check_error)}")
+                    return create_error_response(f"Error checking existing profile: {str(check_error)}", 500)
             except Exception as e:
                 logging.error(f"Error creating business profile: {str(e)}")
                 return create_error_response(f"Failed to create business profile: {str(e)}", 500)

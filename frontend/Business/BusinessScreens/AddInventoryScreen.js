@@ -65,6 +65,9 @@ export default function AddInventoryScreen({ navigation, route }) {
   const [refreshing, setRefreshing] = useState(false);
   const [currentBusinessId, setCurrentBusinessId] = useState(businessId);
   
+  // NEW: Product type state
+  const [productType, setProductType] = useState('plant'); // 'plant', 'tool', 'accessory'
+  
   // Enhanced state for better UX
   const [lastSavedItem, setLastSavedItem] = useState(null);
   const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
@@ -89,13 +92,25 @@ export default function AddInventoryScreen({ navigation, route }) {
     totalValue: 0
   });
   
-  // Form state
+  // Enhanced form state for different product types
   const [formData, setFormData] = useState({
+    // Common fields
+    name: '',
+    description: '',
     quantity: '',
     price: '',
     minThreshold: '5',
     discount: '0',
     notes: '',
+    category: '',
+    brand: '',
+    // Plant-specific fields
+    scientificName: '',
+    careInstructions: '',
+    // Tool/Accessory specific fields
+    material: '',
+    dimensions: '',
+    weight: '',
   });
   
   const [errors, setErrors] = useState({});
@@ -637,12 +652,33 @@ export default function AddInventoryScreen({ navigation, route }) {
     setImages(newImages);
   };
 
+  // NEW: Product type categories
+  const productCategories = {
+    plant: [
+      'Indoor Plants', 'Outdoor Plants', 'Succulents', 'Herbs', 'Flowering Plants',
+      'Trees & Shrubs', 'Aquatic Plants', 'Carnivorous Plants'
+    ],
+    tool: [
+      'Hand Tools', 'Power Tools', 'Watering Equipment', 'Pruning Tools',
+      'Soil Tools', 'Measuring Tools', 'Safety Equipment'
+    ],
+    accessory: [
+      'Pots & Planters', 'Fertilizers', 'Soil & Growing Media', 'Plant Supports',
+      'Decorative Items', 'Lighting', 'Irrigation Accessories', 'Plant Care Kits'
+    ]
+  };
+
   // Enhanced form validation
   const validateForm = () => {
     const newErrors = {};
     
-    if (!selectedPlant) {
+    // Common validations
+    if (productType === 'plant' && !selectedPlant) {
       newErrors.plant = 'Please select a plant from the search results';
+    }
+    
+    if (productType !== 'plant' && !formData.name.trim()) {
+      newErrors.name = 'Please enter a product name';
     }
     
     const quantity = parseInt(formData.quantity);
@@ -655,9 +691,20 @@ export default function AddInventoryScreen({ navigation, route }) {
       newErrors.price = 'Please enter a valid price';
     }
     
-    // NEW: Image validation
+    if (!formData.category) {
+      newErrors.category = 'Please select a category';
+    }
+    
+    // Image validation
     if (images.length === 0) {
       newErrors.images = 'Please add at least one product image';
+    }
+    
+    // Product-specific validations
+    if (productType === 'tool' || productType === 'accessory') {
+      if (!formData.description.trim()) {
+        newErrors.description = 'Please provide a product description';
+      }
     }
     
     setErrors(newErrors);
@@ -679,7 +726,7 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // Enhanced save with success feedback and image upload
+  // NEW: Enhanced save function for all product types
   const handleSave = async () => {
     if (!validateForm()) return;
     
@@ -690,43 +737,74 @@ export default function AddInventoryScreen({ navigation, route }) {
       // Upload images first
       const imageData = await prepareImageData();
       
-      const inventoryItem = {
-        productType: 'plant',
-        plantData: {
-          id: selectedPlant.id,
-          common_name: selectedPlant.common_name,
-          scientific_name: selectedPlant.scientific_name,
-          origin: selectedPlant.origin,
-          water_days: selectedPlant.water_days,
-          light: selectedPlant.light,
-          humidity: selectedPlant.humidity,
-          temperature: selectedPlant.temperature,
-          pets: selectedPlant.pets,
-          difficulty: selectedPlant.difficulty,
-          repot: selectedPlant.repot,
-          feed: selectedPlant.feed,
-          common_problems: selectedPlant.common_problems,
-        },
-        quantity: parseInt(formData.quantity),
-        price: parseFloat(formData.price),
-        minThreshold: parseInt(formData.minThreshold) || 5,
-        discount: parseFloat(formData.discount) || 0,
-        notes: formData.notes,
-        status: 'active',
-        
-        // NEW: Include image data
-        mainImage: imageData[0], // First image as main
-        images: imageData, // All images
-        imageUrls: imageData, // Alternative field name for compatibility
-      };
+      let inventoryItem;
       
-      console.log('💾 Creating inventory item with images:', inventoryItem);
+      if (productType === 'plant') {
+        inventoryItem = {
+          productType: 'plant',
+          plantData: {
+            id: selectedPlant.id,
+            common_name: selectedPlant.common_name,
+            scientific_name: selectedPlant.scientific_name,
+            origin: selectedPlant.origin,
+            water_days: selectedPlant.water_days,
+            light: selectedPlant.light,
+            humidity: selectedPlant.humidity,
+            temperature: selectedPlant.temperature,
+            pets: selectedPlant.pets,
+            difficulty: selectedPlant.difficulty,
+            repot: selectedPlant.repot,
+            feed: selectedPlant.feed,
+            common_problems: selectedPlant.common_problems,
+          },
+          name: selectedPlant.common_name,
+          description: formData.careInstructions || `${selectedPlant.common_name} - Beautiful indoor plant`,
+          quantity: parseInt(formData.quantity),
+          price: parseFloat(formData.price),
+          minThreshold: parseInt(formData.minThreshold) || 5,
+          discount: parseFloat(formData.discount) || 0,
+          notes: formData.notes,
+          category: formData.category || 'Indoor Plants',
+          status: 'active',
+          mainImage: imageData[0],
+          images: imageData,
+          imageUrls: imageData,
+        };
+      } else {
+        // For tools and accessories
+        inventoryItem = {
+          productType: productType,
+          name: formData.name,
+          description: formData.description,
+          category: formData.category,
+          brand: formData.brand,
+          quantity: parseInt(formData.quantity),
+          price: parseFloat(formData.price),
+          minThreshold: parseInt(formData.minThreshold) || 5,
+          discount: parseFloat(formData.discount) || 0,
+          notes: formData.notes,
+          status: 'active',
+          mainImage: imageData[0],
+          images: imageData,
+          imageUrls: imageData,
+          // Additional fields for tools/accessories
+          specifications: {
+            material: formData.material,
+            dimensions: formData.dimensions,
+            weight: formData.weight,
+          }
+        };
+      }
+      
+      console.log('💾 Creating inventory item:', inventoryItem);
       const result = await createInventoryItem(inventoryItem);
       console.log('✅ Item created successfully:', result);
       
+      const productName = productType === 'plant' ? selectedPlant?.common_name : formData.name;
+      
       Alert.alert(
-        '🌱 Success!',
-        `${selectedPlant?.common_name || 'Plant'} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
+        '✅ Success!',
+        `${productName} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
         [
           {
             text: 'Add Another',
@@ -734,7 +812,9 @@ export default function AddInventoryScreen({ navigation, route }) {
             onPress: () => {
               resetForm();
               setShowInventory(false);
-              searchInputRef.current?.focus();
+              if (productType === 'plant') {
+                searchInputRef.current?.focus();
+              }
             },
           },
           {
@@ -754,7 +834,7 @@ export default function AddInventoryScreen({ navigation, route }) {
       
       // Store last saved item
       setLastSavedItem({
-        name: selectedPlant?.common_name || 'Item',
+        name: productName || 'Item',
         quantity: formData.quantity,
         price: formData.price,
         imageCount: images.length
@@ -773,17 +853,26 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // Reset form helper
+  // NEW: Reset form for different product types
   const resetForm = () => {
     setSelectedPlant(null);
     setSearchQuery('');
-    setImages([]); // NEW: Reset images
+    setImages([]);
     setFormData({
+      name: '',
+      description: '',
       quantity: '',
       price: '',
       minThreshold: '5',
       discount: '0',
       notes: '',
+      category: '',
+      brand: '',
+      scientificName: '',
+      careInstructions: '',
+      material: '',
+      dimensions: '',
+      weight: '',
     });
     setErrors({});
     setShowSearchHistory(false);
@@ -795,6 +884,245 @@ export default function AddInventoryScreen({ navigation, route }) {
       useNativeDriver: false,
     }).start();
   };
+
+  // NEW: Product type selector component
+  const renderProductTypeSelector = () => (
+    <View style={styles.productTypeSection}>
+      <Text style={styles.sectionTitle}>Product Type</Text>
+      <View style={styles.productTypeContainer}>
+        {[{
+          key: 'plant',
+          label: 'Plants',
+          icon: 'leaf',
+          color: '#4CAF50'
+        },
+        {
+          key: 'tool',
+          label: 'Tools',
+          icon: 'hammer-wrench',
+          color: '#FF9800'
+        },
+        {
+          key: 'accessory',
+          label: 'Accessories',
+          icon: 'flower-pot',
+          color: '#9C27B0'
+        }].map((type) => (
+          <TouchableOpacity
+            key={type.key}
+            style={[
+              styles.productTypeButton,
+              productType === type.key && styles.productTypeButtonActive
+            ]}
+            onPress={() => {
+              setProductType(type.key);
+              resetForm(); // Reset form when changing type
+              setFormData(prev => ({ ...prev, category: '' })); // Reset category
+            }}
+          >
+            <View style={[
+              styles.productTypeIcon,
+              { backgroundColor: productType === type.key ? type.color : '#f5f5f5' }
+            ]}>
+              <MaterialCommunityIcons 
+                name={type.icon} 
+                size={24} 
+                color={productType === type.key ? '#fff' : type.color} 
+              />
+            </View>
+            <Text style={[
+              styles.productTypeLabel,
+              productType === type.key && { color: type.color, fontWeight: 'bold' }
+            ]}>
+              {type.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  // NEW: Manual product form for tools and accessories
+  const renderManualProductForm = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>
+        <MaterialCommunityIcons 
+          name={productType === 'tool' ? 'hammer-wrench' : 'flower-pot'} 
+          size={20} 
+          color="#4CAF50" 
+        />
+        {' '}Add {productType === 'tool' ? 'Tool' : 'Accessory'} Details
+      </Text>
+      
+      {renderImagePicker()}
+      
+      <View style={styles.formContainer}>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Product Name *</Text>
+          <TextInput
+            style={[styles.input, errors.name && styles.inputError]}
+            value={formData.name}
+            onChangeText={(text) => handleInputChange('name', text)}
+            placeholder={`Enter ${productType} name`}
+          />
+          {errors.name && (
+            <Text style={styles.errorText}>{errors.name}</Text>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Category *</Text>
+          <View style={styles.categoryContainer}>
+            {productCategories[productType].map((category) => (
+              <TouchableOpacity
+                key={category}
+                style={[
+                  styles.categoryChip,
+                  formData.category === category && styles.categoryChipActive
+                ]}
+                onPress={() => handleInputChange('category', category)}
+              >
+                <Text style={[
+                  styles.categoryChipText,
+                  formData.category === category && styles.categoryChipTextActive
+                ]}>
+                  {category}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {errors.category && (
+            <Text style={styles.errorText}>{errors.category}</Text>
+          )}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Description *</Text>
+          <TextInput
+            style={[styles.input, styles.textArea, errors.description && styles.inputError]}
+            value={formData.description}
+            onChangeText={(text) => handleInputChange('description', text)}
+            placeholder={`Describe the ${productType}...`}
+            multiline
+            numberOfLines={3}
+          />
+          {errors.description && (
+            <Text style={styles.errorText}>{errors.description}</Text>
+          )}
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Brand</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.brand}
+              onChangeText={(text) => handleInputChange('brand', text)}
+              placeholder="Brand name"
+            />
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Material</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.material}
+              onChangeText={(text) => handleInputChange('material', text)}
+              placeholder="e.g., Plastic, Metal"
+            />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Dimensions</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.dimensions}
+              onChangeText={(text) => handleInputChange('dimensions', text)}
+              placeholder="L x W x H"
+            />
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Weight</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.weight}
+              onChangeText={(text) => handleInputChange('weight', text)}
+              placeholder="e.g., 1.5 kg"
+            />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Quantity *</Text>
+            <TextInput
+              style={[styles.input, errors.quantity && styles.inputError]}
+              value={formData.quantity}
+              onChangeText={(text) => handleInputChange('quantity', text)}
+              placeholder="0"
+              keyboardType="numeric"
+            />
+            {errors.quantity && (
+              <Text style={styles.errorText}>{errors.quantity}</Text>
+            )}
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Price *</Text>
+            <TextInput
+              style={[styles.input, errors.price && styles.inputError]}
+              value={formData.price}
+              onChangeText={(text) => handleInputChange('price', text)}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+            />
+            {errors.price && (
+              <Text style={styles.errorText}>{errors.price}</Text>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Min. Threshold</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.minThreshold}
+              onChangeText={(text) => handleInputChange('minThreshold', text)}
+              placeholder="5"
+              keyboardType="numeric"
+            />
+          </View>
+
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Discount (%)</Text>
+            <TextInput
+              style={styles.input}
+              value={formData.discount}
+              onChangeText={(text) => handleInputChange('discount', text)}
+              placeholder="0"
+              keyboardType="decimal-pad"
+            />
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Notes (Optional)</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={formData.notes}
+            onChangeText={(text) => handleInputChange('notes', text)}
+            placeholder="Additional notes..."
+            multiline
+            numberOfLines={3}
+          />
+        </View>
+      </View>
+    </View>
+  );
 
   // Handle inventory item edit
   const handleEditInventoryItem = (item) => {
@@ -1655,5 +1983,73 @@ const styles = StyleSheet.create({
     color: '#fff',
     marginTop: 8,
     opacity: 0.8,
+  },
+  productTypeSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  productTypeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  productTypeButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginHorizontal: 4,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  productTypeButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#388E3C',
+  },
+  productTypeIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  productTypeLabel: {
+    fontSize: 14,
+    color: '#333',
+  },
+  categoryContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  categoryChip: {
+    backgroundColor: '#f0f9f3',
+    borderRadius: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  categoryChipActive: {
+    backgroundColor: '#4CAF50',
+  },
+  categoryChipText: {
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
+  categoryChipTextActive: {
+    color: '#fff',
+    fontWeight: '700',
   },
 });

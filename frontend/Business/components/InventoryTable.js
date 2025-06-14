@@ -456,7 +456,7 @@ export default function InventoryTable({
             {item.quantity || 0}
           </Text>
           {(item.quantity || 0) <= (item.minThreshold || 5) && (
-            <MaterialIcons name="warning" size={14} color="#FF9800" />
+            <MaterialIcons name="alert" size={14} color="#FF9800" />
           )}
         </View>
         <Text style={styles.thresholdText}>

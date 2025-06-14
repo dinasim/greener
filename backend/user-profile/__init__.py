@@ -172,6 +172,46 @@ def handle_get_user(req: func.HttpRequest) -> func.HttpResponse:
             user = marketplace_users[0]
             logging.info(f"Found user in marketplace DB: {user_id}")
             
+            # FIXED: Check if user profile is incomplete and needs updating from main DB
+            main_container = get_main_container("Users")
+            main_users = find_user(main_container, user_id)
+            
+            if main_users:
+                main_user = main_users[0]
+                user_updated = False
+                
+                # Copy missing fields from main DB to marketplace profile
+                fields_to_copy = [
+                    'animals', 'kids', 'location', 'plantLocations', 
+                    'interested', 'fullAddress', 'city'
+                ]
+                
+                for field in fields_to_copy:
+                    if field in main_user and (field not in user or not user[field]):
+                        user[field] = main_user[field]
+                        user_updated = True
+                        logging.info(f"Copied missing field '{field}' from main DB")
+                
+                # If location object exists in main DB but not in marketplace, copy it
+                if 'location' in main_user and isinstance(main_user['location'], dict):
+                    if 'location' not in user or not isinstance(user.get('location'), dict):
+                        user['location'] = main_user['location']
+                        user_updated = True
+                    else:
+                        # Merge location fields
+                        for loc_field in ['city', 'address', 'latitude', 'longitude']:
+                            if loc_field in main_user['location'] and loc_field not in user['location']:
+                                user['location'][loc_field] = main_user['location'][loc_field]
+                                user_updated = True
+                
+                # Update the marketplace profile if we made changes
+                if user_updated:
+                    try:
+                        marketplace_container.replace_item(item=user['id'], body=user)
+                        logging.info(f"Updated marketplace profile with missing fields from main DB")
+                    except Exception as update_error:
+                        logging.warning(f"Could not update marketplace profile: {str(update_error)}")
+            
             # Get user's listings
             active_listings, sold_listings = get_user_listings(user_id, user)
             
@@ -216,22 +256,39 @@ def handle_get_user(req: func.HttpRequest) -> func.HttpResponse:
             if 'id' not in user:
                 user['id'] = user_id
             
-            # Initialize stats if not present
-            if 'stats' not in user:
-                user['stats'] = {
+            # FIXED: Initialize marketplace-specific fields while preserving main DB fields
+            marketplace_fields = {
+                'bio': user.get('bio', ''),
+                'joinDate': user.get('joinDate', datetime.utcnow().isoformat()),
+                'stats': {
                     'plantsCount': 0,
                     'salesCount': 0,
                     'rating': 0,
                     'reviewCount': 0
-                }
+                },
+                'socialMedia': user.get('socialMedia', {}),
+                'avatar': user.get('avatar'),
+                'copiedAt': datetime.utcnow().isoformat()
+            }
             
-            # Mark when copied
-            user["copiedAt"] = datetime.utcnow().isoformat()
+            # Merge marketplace fields with existing user data
+            user.update(marketplace_fields)
+            
+            # Ensure important main DB fields are preserved
+            main_db_fields = [
+                'animals', 'kids', 'location', 'plantLocations', 
+                'interested', 'fullAddress', 'city', 'name', 'username'
+            ]
+            
+            original_user = main_users[0]
+            for field in main_db_fields:
+                if field in original_user:
+                    user[field] = original_user[field]
             
             # Create in marketplace DB
             try:
                 marketplace_container.create_item(body=user)
-                logging.info(f"User copied from main DB to marketplace DB: {user_id}")
+                logging.info(f"User copied from main DB to marketplace DB with all fields preserved: {user_id}")
                 
                 # Get user's listings
                 active_listings, sold_listings = get_user_listings(user_id, user)
@@ -296,7 +353,35 @@ def handle_patch_user(req: func.HttpRequest) -> func.HttpResponse:
             user = marketplace_users[0]
             logging.info(f"Updating existing user in marketplace DB: {user_id}")
             
-            # Update user fields
+            # FIXED: Ensure we also sync missing fields from main DB during updates
+            main_container = get_main_container("Users")
+            main_users = find_user(main_container, user_id)
+            
+            if main_users:
+                main_user = main_users[0]
+                
+                # Copy missing fields from main DB during update
+                fields_to_preserve = [
+                    'animals', 'kids', 'location', 'plantLocations', 
+                    'interested', 'fullAddress', 'city', 'username'
+                ]
+                
+                for field in fields_to_preserve:
+                    if field in main_user and (field not in user or not user[field]):
+                        user[field] = main_user[field]
+                        logging.info(f"Preserved missing field '{field}' during update")
+                
+                # Handle location object merging
+                if 'location' in main_user and isinstance(main_user['location'], dict):
+                    if 'location' not in user or not isinstance(user.get('location'), dict):
+                        user['location'] = main_user['location']
+                    else:
+                        # Merge location fields
+                        for loc_field in ['city', 'address', 'latitude', 'longitude']:
+                            if loc_field in main_user['location'] and loc_field not in user['location']:
+                                user['location'][loc_field] = main_user['location'][loc_field]
+            
+            # Update user fields from request
             for key, value in update_data.items():
                 if key not in ['id', 'email']:
                     user[key] = value
@@ -350,26 +435,43 @@ def handle_patch_user(req: func.HttpRequest) -> func.HttpResponse:
                 if 'id' not in user:
                     user['id'] = user_id
                 
-                # Initialize stats if not present
-                if 'stats' not in user:
-                    user['stats'] = {
+                # FIXED: Initialize marketplace-specific fields while preserving main DB fields
+                marketplace_fields = {
+                    'bio': user.get('bio', ''),
+                    'joinDate': user.get('joinDate', datetime.utcnow().isoformat()),
+                    'stats': {
                         'plantsCount': 0,
                         'salesCount': 0,
                         'rating': 0,
                         'reviewCount': 0
-                    }
+                    },
+                    'socialMedia': user.get('socialMedia', {}),
+                    'avatar': user.get('avatar'),
+                    'copiedAt': datetime.utcnow().isoformat()
+                }
                 
-                # Apply updates
+                # Merge marketplace fields with existing user data
+                user.update(marketplace_fields)
+                
+                # Ensure important main DB fields are preserved
+                main_db_fields = [
+                    'animals', 'kids', 'location', 'plantLocations', 
+                    'interested', 'fullAddress', 'city', 'name', 'username'
+                ]
+                
+                original_user = main_users[0]
+                for field in main_db_fields:
+                    if field in original_user:
+                        user[field] = original_user[field]
+                
+                # Apply updates from request
                 for key, value in update_data.items():
                     if key not in ['id', 'email']:
                         user[key] = value
                 
-                # Mark when copied
-                user["copiedAt"] = datetime.utcnow().isoformat()
-                
                 # Create in marketplace DB
                 marketplace_container.create_item(body=user)
-                logging.info(f"User copied from main DB to marketplace DB with updates: {user_id}")
+                logging.info(f"User copied from main DB to marketplace DB with all fields preserved and updates applied: {user_id}")
                 
                 # Get user's listings
                 active_listings, sold_listings = get_user_listings(user_id, user)
