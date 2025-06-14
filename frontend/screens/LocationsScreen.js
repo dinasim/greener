@@ -73,7 +73,13 @@ export default function LocationPlantsScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+        <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>My Plants</Text>
           <Text style={styles.headerSub}>
             {plants.length} plant • {locations.length} site
@@ -83,7 +89,7 @@ export default function LocationPlantsScreen() {
           style={styles.gearBtn}
           onPress={() => navigation.navigate('Settings')}
         >
-          <Ionicons name="settings-outline" size={30} color="#647264" />
+          <Ionicons name="settings-outline" size={24} color="#647264" />
         </TouchableOpacity>
       </View>
 
@@ -176,6 +182,16 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 36, fontWeight: 'bold', color: '#273d1a', marginBottom: 3 },
   headerSub: { color: '#657465', fontSize: 16, marginLeft: 2, marginBottom: 2 },
   gearBtn: { padding: 6, borderRadius: 99, backgroundColor: '#f3f3f5' },
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerCenter: {
+    flex: 1,
+    alignItems: 'flex-start',
+  },
 
   tabBar: {
     flexDirection: 'row',

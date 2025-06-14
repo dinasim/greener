@@ -3,14 +3,15 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, FlatList, 
-  ActivityIndicator, SafeAreaView, Alert, ScrollView
+  ActivityIndicator, SafeAreaView, Alert, ScrollView, Linking
 } from 'react-native';
-import { MaterialIcons, Feather } from '@expo/vector-icons';
+import { MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
+import RatingStars from '../components/RatingStars';
 import { fetchUserProfile } from '../services/marketplaceApi';
 import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener } from '../services/MarketplaceUpdates';
 
@@ -24,20 +25,165 @@ const ProfileScreen = () => {
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
-  // Set up update listener
-  useEffect(() => {
-    const listenerId = 'profile-screen';
-    const handleUpdate = (updateType, data) => {
-      console.log(`[ProfileScreen] Received update: ${updateType}`, data);
-      if ([UPDATE_TYPES.PROFILE, UPDATE_TYPES.WISHLIST, UPDATE_TYPES.PRODUCT, UPDATE_TYPES.REVIEW].includes(updateType)) {
-        loadUserProfile();
+  // Fetch user profile data from database - no local storage fallback
+  const loadUserProfile = async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      const currentUserId = await AsyncStorage.getItem('currentUserId');
+      
+      const userId = currentUserId || userEmail;
+      
+      if (!userId) {
+        throw new Error('No user ID found - please sign in again');
       }
-    };
-    addUpdateListener(listenerId, handleUpdate);
-    return () => {
-      removeUpdateListener(listenerId);
-    };
-  }, []);
+      
+      console.log('[ProfileScreen] Fetching user profile for:', userId);
+      
+      // Step 1: Try to fetch existing marketplace profile
+      try {
+        const marketplaceResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/user-profile?userId=${userId}`);
+        
+        if (marketplaceResponse.ok) {
+          const marketplaceData = await marketplaceResponse.json();
+          
+          if (marketplaceData && marketplaceData.id) {
+            console.log('[ProfileScreen] Found existing marketplace profile:', marketplaceData);
+            setUser({
+              id: marketplaceData.id || userId,
+              name: marketplaceData.name || marketplaceData.email?.split('@')[0] || 'User',
+              email: marketplaceData.email || userEmail,
+              joinDate: marketplaceData.joinDate || marketplaceData.created_at || new Date().toISOString(),
+              bio: marketplaceData.bio || '',
+              plants: marketplaceData.plants || [],
+              favorites: marketplaceData.favorites || [],
+              soldPlants: marketplaceData.soldPlants || [],
+              stats: marketplaceData.stats || { salesCount: 0 },
+              socialMedia: marketplaceData.socialMedia || {},
+              avatar: marketplaceData.avatar || null
+            });
+            return; // Profile found, we're done
+          }
+        }
+      } catch (marketplaceError) {
+        console.log('[ProfileScreen] Marketplace profile not found or error:', marketplaceError.message);
+      }
+      
+      // Step 2: Marketplace profile doesn't exist, try to get app signup data
+      console.log('[ProfileScreen] No marketplace profile found, checking app signup data');
+      
+      try {
+        // Try to fetch from the app's user registration data
+        const appUserResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/registeruser?email=${encodeURIComponent(userId)}`);
+        
+        if (appUserResponse.ok) {
+          const appUserData = await appUserResponse.json();
+          
+          if (appUserData && appUserData.name) {
+            console.log('[ProfileScreen] Found app signup data, creating marketplace profile:', appUserData);
+            
+            // Step 3: Create marketplace profile from app data
+            const newMarketplaceProfile = {
+              id: userId,
+              name: appUserData.name,
+              email: appUserData.email || userId,
+              joinDate: appUserData.created_at || new Date().toISOString(),
+              bio: '',
+              plants: [],
+              favorites: [],
+              soldPlants: [],
+              stats: { salesCount: 0 },
+              socialMedia: {},
+              avatar: null,
+              // Additional fields from app signup
+              plantLocations: appUserData.plantLocations || [],
+              interests: appUserData.intersted || [],
+              hasAnimals: appUserData.animals || false,
+              hasKids: appUserData.kids || false
+            };
+            
+            // Step 4: Save the new marketplace profile
+            try {
+              const createProfileResponse = await fetch('https://usersfunctions.azurewebsites.net/api/user-profile', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newMarketplaceProfile),
+              });
+              
+              if (createProfileResponse.ok) {
+                console.log('[ProfileScreen] Successfully created marketplace profile from app data');
+              } else {
+                console.warn('[ProfileScreen] Failed to save marketplace profile, but continuing with local data');
+              }
+            } catch (saveError) {
+              console.warn('[ProfileScreen] Error saving marketplace profile:', saveError);
+            }
+            
+            // Set the user data regardless of save success
+            setUser(newMarketplaceProfile);
+            return;
+          }
+        }
+      } catch (appDataError) {
+        console.log('[ProfileScreen] App signup data not found or error:', appDataError.message);
+      }
+      
+      // Step 5: If both failed, check local storage as last resort
+      console.log('[ProfileScreen] No database data found, checking local storage');
+      const userData = await AsyncStorage.getItem('userData');
+      
+      if (userData) {
+        try {
+          const storedUser = JSON.parse(userData);
+          console.log('[ProfileScreen] Using stored user data:', storedUser);
+          
+          const fallbackProfile = {
+            id: userId,
+            name: storedUser.name || userEmail?.split('@')[0] || 'User',
+            email: storedUser.email || userEmail || '',
+            joinDate: storedUser.joinDate || new Date().toISOString(),
+            bio: '',
+            plants: [],
+            favorites: [],
+            soldPlants: [],
+            stats: { salesCount: 0 },
+            socialMedia: {},
+            avatar: null
+          };
+          
+          setUser(fallbackProfile);
+          return;
+        } catch (parseError) {
+          console.error('[ProfileScreen] Error parsing stored user data:', parseError);
+        }
+      }
+      
+      // Step 6: If everything fails, create a minimal profile
+      console.log('[ProfileScreen] Creating minimal profile as fallback');
+      setUser({
+        id: userId,
+        name: userEmail?.split('@')[0] || 'User',
+        email: userEmail || '',
+        joinDate: new Date().toISOString(),
+        bio: '',
+        plants: [],
+        favorites: [],
+        soldPlants: [],
+        stats: { salesCount: 0 },
+        socialMedia: {},
+        avatar: null
+      });
+      
+    } catch (error) {
+      console.error('[ProfileScreen] Critical error loading user profile:', error);
+      setError(`Failed to load profile: ${error.message}`);
+      setUser(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Enhanced focus effect to check for updates and refresh
   useFocusEffect(
@@ -92,131 +238,31 @@ const ProfileScreen = () => {
     }, [navigation, route.params?.refresh])
   );
 
-  // Handle refresh param directly
-  useEffect(() => {
-    if (route.params?.refresh) {
-      console.log("[ProfileScreen] Refresh param detected");
-      loadUserProfile();
-      navigation.setParams({ refresh: undefined });
-    }
-  }, [route.params?.refresh]);
-
-  // Load user profile data
-  const loadUserProfile = async () => {
-    try {
-      setIsLoading(true);
-      console.log("[ProfileScreen] Loading user profile");
-      
-      const userEmail = await AsyncStorage.getItem('userEmail');
-      if (!userEmail) {
-        throw new Error('User email not found in storage');
-      }
-      
-      const data = await fetchUserProfile(userEmail);
-      
-      if (data && data.user) {
-        console.log("[ProfileScreen] User profile loaded successfully");
-        setUser(data.user);
-        
-        // Normalize listings data to ensure consistent structure
-        if (data.user.listings) {
-          data.user.listings.forEach(listing => {
-            if (!listing.seller) {
-              listing.seller = {
-                name: data.user.name,
-                _id: data.user.id || data.user.email,
-                email: data.user.email,
-                avatar: data.user.avatar
-              };
-            }
-          });
-        }
-      } else {
-        throw new Error('User data not found in API response');
-      }
-      
-      setIsLoading(false);
-    } catch (err) {
-      console.error('[ProfileScreen] Error loading profile:', err);
-      setError('Failed to load profile. Please try again later.');
-      setIsLoading(false);
-    }
+  // Retry loading profile
+  const handleRetry = () => {
+    loadUserProfile();
   };
 
-  // Handle review data updates
-  const handleReviewsLoaded = (data) => {
-    if (data && typeof data === 'object') {
-      setRatingData({
-        average: data.averageRating || 0,
-        count: data.count || 0
-      });
-    }
-  };
-
-  // Render empty state with action button
-  const renderEmptyState = (icon, message, buttonText, onPress) => (
-    <View style={styles.emptyStateContainer}>
-      <MaterialIcons name={icon} size={48} color="#ccc" />
-      <Text style={styles.emptyStateText}>{message}</Text>
-      {buttonText && (
-        <TouchableOpacity style={styles.actionButton} onPress={onPress}>
-          <Text style={styles.actionButtonText}>{buttonText}</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-
-  // Render plant list
-  const renderPlantList = (plants) => (
-    <FlatList
-      data={plants}
-      renderItem={({ item }) => <PlantCard plant={item} showActions={false} />}
-      keyExtractor={item => item.id || item._id || `plant-${Math.random()}`}
-      numColumns={2}
-      contentContainerStyle={styles.plantGrid}
-    />
-  );
-
-  // Render content based on active tab
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'myPlants': {
-        const activePlants = user.listings?.filter(plant => plant.status === 'active') || [];
-        return activePlants.length ? renderPlantList(activePlants) : 
-          renderEmptyState('eco', 'You don\'t have any active listings', 'Add a Plant', () => navigation.navigate('AddPlant'));
-      }
-      case 'favorites': {
-        return user.favorites?.length ? renderPlantList(user.favorites) :
-          renderEmptyState('favorite-border', 'You don\'t have any saved plants', 'Browse Plants', () => navigation.navigate('MarketplaceHome'));
-      }
-      case 'sold': {
-        const soldPlants = user.listings?.filter(plant => plant.status === 'sold') || [];
-        return soldPlants.length ? renderPlantList(soldPlants) :
-          renderEmptyState('local-offer', 'You haven\'t sold any plants yet');
-      }
-      case 'reviews': {
-        return (
-          <ReviewsList
-            targetType="seller"
-            targetId={user.email || user.id}
-            onReviewsLoaded={handleReviewsLoaded}
-            autoLoad={true}
-          />
-        );
-      }
-      default:
-        return null;
-    }
+  // Get avatar URL with null safety
+  const getAvatarUrl = () => {
+    if (!user) return `https://ui-avatars.com/api/?name=User&background=4CAF50&color=fff&size=80`;
+    return user?.avatar?.url || user?.avatar || 
+           `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=4CAF50&color=fff&size=80`;
   };
 
   // Loading state
-  if (isLoading && !user) {
+  if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <MarketplaceHeader title="My Profile" showBackButton onBackPress={() => navigation.goBack()} onNotificationsPress={() => navigation.navigate('Messages')} />
+        <MarketplaceHeader 
+          title="My Profile" 
+          showBackButton 
+          onBackPress={() => navigation.goBack()} 
+          onNotificationsPress={() => navigation.navigate('Messages')} 
+        />
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading profile...</Text>
+          <Text style={styles.loadingText}>Loading your profile...</Text>
         </View>
       </SafeAreaView>
     );
@@ -226,24 +272,158 @@ const ProfileScreen = () => {
   if (error && !user) {
     return (
       <SafeAreaView style={styles.container}>
-        <MarketplaceHeader title="My Profile" showBackButton onBackPress={() => navigation.goBack()} onNotificationsPress={() => navigation.navigate('Messages')} />
+        <MarketplaceHeader 
+          title="My Profile" 
+          showBackButton 
+          onBackPress={() => navigation.goBack()} 
+          onNotificationsPress={() => navigation.navigate('Messages')} 
+        />
         <View style={styles.centerContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#f44336" />
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadUserProfile}>
-            <Text style={styles.retryButtonText}>Retry</Text>
+          <MaterialIcons name="error-outline" size={64} color="#f44336" />
+          <Text style={styles.errorText}>Failed to load profile</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
+            <Text style={styles.retryButtonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
     );
   }
 
-  // Ensure we have a valid avatar URL
-  const getAvatarUrl = () => {
-    if (user.avatar && typeof user.avatar === 'string' && user.avatar.startsWith('http')) {
-      return user.avatar;
+  // Main render - only when user is loaded
+  if (!user) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <MarketplaceHeader 
+          title="My Profile" 
+          showBackButton 
+          onBackPress={() => navigation.goBack()} 
+          onNotificationsPress={() => navigation.navigate('Messages')} 
+        />
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>Profile not available</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // Render tab content
+  const renderTabContent = () => {
+    switch (activeTab) {
+      case 'myPlants':
+        return (
+          <View style={styles.plantGrid}>
+            {user?.plants?.length === 0 && !isLoading && (
+              <View style={styles.emptyStateContainer}>
+                <MaterialIcons name="eco" size={64} color="#ccc" />
+                <Text style={styles.emptyStateText}>
+                  No plants listed yet
+                </Text>
+                <TouchableOpacity 
+                  style={styles.actionButton}
+                  onPress={() => navigation.navigate('AddPlant')}
+                >
+                  <MaterialIcons name="add" size={20} color="#fff" />
+                  <Text style={styles.actionButtonText}>Add Your First Plant</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+            
+            <FlatList
+              data={user?.plants}
+              renderItem={({ item }) => <PlantCard plant={item} />}
+              keyExtractor={item => item.id}
+              numColumns={2}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 80 }}
+              ListEmptyComponent={() => isLoading ? (
+                <View style={styles.centerContainer}>
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                  <Text style={styles.loadingText}>Loading your plants...</Text>
+                </View>
+              ) : null}
+            />
+          </View>
+        );
+      
+      case 'favorites':
+        return (
+          <View style={styles.plantGrid}>
+            {user?.favorites?.length === 0 && !isLoading && (
+              <View style={styles.emptyStateContainer}>
+                <MaterialIcons name="favorite-border" size={64} color="#ccc" />
+                <Text style={styles.emptyStateText}>
+                  No favorites yet
+                </Text>
+                <Text style={styles.emptyStateTextSecondary}>
+                  Heart some plants to add them to your favorites!
+                </Text>
+              </View>
+            )}
+            
+            <FlatList
+              data={user?.favorites}
+              renderItem={({ item }) => <PlantCard plant={item} />}
+              keyExtractor={item => item.id}
+              numColumns={2}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 80 }}
+              ListEmptyComponent={() => isLoading ? (
+                <View style={styles.centerContainer}>
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                  <Text style={styles.loadingText}>Loading your favorites...</Text>
+                </View>
+              ) : null}
+            />
+          </View>
+        );
+      
+      case 'sold':
+        return (
+          <View style={styles.plantGrid}>
+            {user?.soldPlants?.length === 0 && !isLoading && (
+              <View style={styles.emptyStateContainer}>
+                <MaterialIcons name="local-offer" size={64} color="#ccc" />
+                <Text style={styles.emptyStateText}>
+                  No plants sold yet
+                </Text>
+                <Text style={styles.emptyStateTextSecondary}>
+                  Once you sell some plants, they'll appear here
+                </Text>
+              </View>
+            )}
+            
+            <FlatList
+              data={user?.soldPlants}
+              renderItem={({ item }) => <PlantCard plant={item} />}
+              keyExtractor={item => item.id}
+              numColumns={2}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: 80 }}
+              ListEmptyComponent={() => isLoading ? (
+                <View style={styles.centerContainer}>
+                  <ActivityIndicator size="large" color="#4CAF50" />
+                  <Text style={styles.loadingText}>Loading your sold plants...</Text>
+                </View>
+              ) : null}
+            />
+          </View>
+        );
+      
+      case 'reviews':
+        return (
+          <ReviewsList 
+            targetType="seller"
+            targetId={user?.id}
+            onAddReview={null} // No add review button for self
+            onReviewsLoaded={setRatingData}
+            autoLoad={true}
+            hideAddButton={true}
+          />
+        );
+      
+      default:
+        return null;
     }
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name?.charAt(0) || 'U')}&background=4CAF50&color=fff&size=200`;
   };
 
   // Main render
@@ -258,12 +438,49 @@ const ProfileScreen = () => {
       <ScrollView>
         <View style={styles.profileCard}>
           <Image source={{ uri: getAvatarUrl() }} style={styles.avatar} />
-          <Text style={styles.userName}>{user.name}</Text>
-          <Text style={styles.userEmail}>{user.email}</Text>
+          <Text style={styles.userName}>{user.name || 'Unknown User'}</Text>
+          <Text style={styles.userEmail}>{user.email || ''}</Text>
           <Text style={styles.joinDate}>
             Joined {user.joinDate ? new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}
           </Text>
           {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
+          
+          {/* Social Media Section - with null safety */}
+          {user.socialMedia && (user.socialMedia.instagram || user.socialMedia.facebook) && (
+            <View style={styles.socialMediaSection}>
+              <Text style={styles.socialMediaTitle}>Connect with me</Text>
+              <View style={styles.socialMediaButtons}>
+                {user.socialMedia.instagram && (
+                  <TouchableOpacity 
+                    style={styles.socialMediaButton}
+                    onPress={() => {
+                      const username = user.socialMedia.instagram.replace('@', '');
+                      Linking.openURL(`https://instagram.com/${username}`);
+                    }}
+                  >
+                    <MaterialCommunityIcons name="instagram" size={20} color="#E4405F" />
+                    <Text style={styles.socialMediaText}>Instagram</Text>
+                  </TouchableOpacity>
+                )}
+                
+                {user.socialMedia.facebook && (
+                  <TouchableOpacity 
+                    style={styles.socialMediaButton}
+                    onPress={() => {
+                      const profileUrl = user.socialMedia.facebook.startsWith('http') 
+                        ? user.socialMedia.facebook 
+                        : `https://facebook.com/${user.socialMedia.facebook}`;
+                      Linking.openURL(profileUrl);
+                    }}
+                  >
+                    <MaterialCommunityIcons name="facebook" size={20} color="#1877F2" />
+                    <Text style={styles.socialMediaText}>Facebook</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          )}
+          
           <TouchableOpacity 
             style={styles.editProfileButton} 
             onPress={() => navigation.navigate('EditProfile')}
@@ -275,7 +492,7 @@ const ProfileScreen = () => {
         
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{user.stats?.plantsCount || 0}</Text>
+            <Text style={styles.statValue}>{user.plants?.length || 0}</Text>
             <Text style={styles.statLabel}>Listings</Text>
           </View>
           <View style={styles.statBox}>
@@ -283,10 +500,11 @@ const ProfileScreen = () => {
             <Text style={styles.statLabel}>Sold</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>
-              {ratingData.average.toFixed(1) || user.stats?.rating?.toFixed?.(1) || '0.0'}
-            </Text>
-            <Text style={styles.statLabel}>Rating ({ratingData.count || 0})</Text>
+            <View style={{flexDirection:'row',alignItems:'center'}}>
+              <Text style={styles.statValue}>{(ratingData?.average ?? 0).toFixed(1)}</Text>
+              <RatingStars rating={ratingData?.average ?? 0} size={16} />
+            </View>
+            <Text style={styles.statLabel}>Rating ({ratingData?.count ?? 0})</Text>
           </View>
         </View>
         
@@ -373,7 +591,7 @@ const styles = StyleSheet.create({
   },
   avatar: { 
     width: 90, 
-    height: 90, 
+    height: 90,
     borderRadius: 45, 
     marginBottom: 12,
     backgroundColor: '#e0e0e0',
@@ -398,6 +616,41 @@ const styles = StyleSheet.create({
     fontSize: 14, 
     color: '#555', 
     textAlign: 'center' 
+  },
+  socialMediaSection: {
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  socialMediaTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  socialMediaButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  socialMediaButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowOffset: { width: 0, height: 1 },
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  socialMediaText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#333',
+    marginLeft: 6,
   },
   editProfileButton: {
     flexDirection: 'row', 
@@ -507,6 +760,8 @@ const styles = StyleSheet.create({
     bottom: 16, 
     right: 16, 
     backgroundColor: '#4CAF50',
+    width: 60, 
+    height: 60, 
     borderRadius: 30, 
     padding: 16, 
     elevation: 4, 

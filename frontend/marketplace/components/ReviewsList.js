@@ -13,6 +13,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import ReviewItem from './ReviewItem';
 import { fetchReviews } from '../services/marketplaceApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import RatingStars from './RatingStars';
 
 /**
  * Component to display a list of reviews
@@ -23,6 +24,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  * @param {Function} props.onAddReview - Callback when the add review button is pressed
  * @param {Function} props.onReviewsLoaded - Callback when reviews are loaded, passing the average rating
  * @param {boolean} props.autoLoad - Whether to load reviews automatically (default: true)
+ * @param {boolean} props.hideAddButton - Whether to hide the add review button (default: false)
  */
 const ReviewsList = ({
   targetType,
@@ -30,6 +32,7 @@ const ReviewsList = ({
   onAddReview,
   onReviewsLoaded,
   autoLoad = true,
+  hideAddButton = false,
 }) => {
   const [reviews, setReviews] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -168,16 +171,7 @@ const ReviewsList = ({
       <View style={styles.statsContainer}>
         <View style={styles.ratingContainer}>
           <Text style={styles.ratingValue}>{averageRating.toFixed(1)}</Text>
-          <View style={styles.starsContainer}>
-            {[1, 2, 3, 4, 5].map(star => (
-              <MaterialIcons
-                key={star}
-                name={star <= Math.round(averageRating) ? 'star' : 'star-border'}
-                size={18}
-                color="#FFD700"
-              />
-            ))}
-          </View>
+          <RatingStars rating={averageRating} size={18} />
         </View>
         <Text style={styles.reviewCount}>{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</Text>
       </View>
@@ -243,13 +237,15 @@ const ReviewsList = ({
       {/* Header section with stats and add button */}
       <View style={styles.header}>
         {renderReviewStats()}
-        <TouchableOpacity
-          style={styles.addButton}
-          onPress={onAddReview}
-        >
-          <MaterialIcons name="add" size={20} color="#fff" />
-          <Text style={styles.addButtonText}>Review</Text>
-        </TouchableOpacity>
+        {!hideAddButton && !(currentUser && ((targetType === 'seller' && currentUser === targetId) || (targetType === 'product' && reviews.some(r => r.userId === currentUser)))) && (
+          <TouchableOpacity
+            style={styles.addButton}
+            onPress={onAddReview}
+          >
+            <MaterialIcons name="add" size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Review</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Reviews list */}
@@ -303,9 +299,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     marginRight: 8,
     color: '#333',
-  },
-  starsContainer: {
-    flexDirection: 'row',
   },
   reviewCount: {
     fontSize: 14,

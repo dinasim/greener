@@ -1,4 +1,4 @@
-# watering_checklist/__init__.py
+# watering_checklist/__init__.py - FIXED VERSION (Barcode Removed)
 import logging
 import azure.functions as func
 import json
@@ -57,13 +57,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 def get_watering_checklist(container, business_id):
-    """Get list of plants that need watering"""
+    """Get list of plants that need watering (FIXED: Removed barcode functionality)"""
     try:
         # Get all plants that need watering or are close to needing it
         query = """
             SELECT * FROM c 
             WHERE c.businessId = @businessId 
             AND c.productType = 'plant' 
+            AND c.status = 'active'
             AND (c.wateringSchedule.needsWatering = true OR c.wateringSchedule.activeWaterDays <= 1)
         """
         
@@ -79,7 +80,7 @@ def get_watering_checklist(container, business_id):
             p.get('wateringSchedule', {}).get('activeWaterDays', 999)
         ))
         
-        # Map to a more frontend-friendly format
+        # Map to a more frontend-friendly format (FIXED: Removed barcode field)
         checklist = [{
             "id": plant['id'],
             "name": plant.get('name') or plant.get('common_name'),
@@ -88,10 +89,11 @@ def get_watering_checklist(container, business_id):
             "daysRemaining": plant.get('wateringSchedule', {}).get('activeWaterDays', 0),
             "location": plant.get('location', {}),
             "waterDays": plant.get('wateringSchedule', {}).get('waterDays', plant.get('water_days', 7)),
-            "barcode": plant.get('barcode', f"PLT-{plant['id']}"),
+            "plantIdentifier": f"PLT-{plant['id'][:8]}",  # FIXED: Simple identifier instead of barcode
             "lastWatered": plant.get('wateringSchedule', {}).get('lastWatered'),
             "quantity": plant.get('quantity', 1),
-            "image": plant.get('mainImage') or plant.get('images', [None])[0]
+            "image": plant.get('mainImage') or (plant.get('images', [None])[0] if plant.get('images') else None),
+            "priority": "high" if plant.get('wateringSchedule', {}).get('activeWaterDays', 0) <= 0 else "normal"
         } for plant in plants]
         
         return func.HttpResponse(
@@ -110,7 +112,7 @@ def get_watering_checklist(container, business_id):
         raise
 
 def mark_plant_as_watered(container, req, business_id):
-    """Mark a plant as watered"""
+    """Mark a plant as watered (FIXED: Removed barcode method validation)"""
     try:
         # Get request body
         req_body = req.get_json()
@@ -129,6 +131,14 @@ def mark_plant_as_watered(container, req, business_id):
         if not plant_id:
             return func.HttpResponse(
                 json.dumps({"error": "Plant ID is required"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        
+        # FIXED: Validate method (removed barcode validation)
+        if method not in ['manual', 'gps']:
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid watering method. Use 'manual' or 'gps'."}),
                 status_code=400,
                 mimetype="application/json"
             )

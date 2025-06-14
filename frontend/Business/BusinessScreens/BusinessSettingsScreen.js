@@ -79,7 +79,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       lowStockThreshold: 5,
       autoReorder: false,
       trackExpiry: true,
-      enableBarcode: true,
       autoUpdatePrices: false,
     },
     orders: {
@@ -286,7 +285,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           lowStockThreshold: profileData.settings?.lowStockThreshold || 5,
           autoReorder: false,
           trackExpiry: true,
-          enableBarcode: true,
           autoUpdatePrices: false,
         },
         orders: {
@@ -805,19 +803,19 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         <Text style={styles.inputHint}>Alert when stock falls below this number</Text>
       </View>
       
-      {Object.entries(settings.inventory).filter(([key]) => key !== 'lowStockThreshold').map(([key, value]) => (
+      {Object.entries(settings.inventory)
+        .filter(([key]) => key !== 'lowStockThreshold' && key !== 'enableBarcode') // Remove barcode toggle
+        .map(([key, value]) => (
         <View key={key} style={styles.settingItem}>
           <View style={styles.settingInfo}>
             <Text style={styles.settingLabel}>
               {key === 'autoReorder' && 'Auto Reorder'}
               {key === 'trackExpiry' && 'Track Expiry Dates'}
-              {key === 'enableBarcode' && 'Enable Barcode Scanning'}
               {key === 'autoUpdatePrices' && 'Auto Update Prices'}
             </Text>
             <Text style={styles.settingDescription}>
               {key === 'autoReorder' && 'Automatically create reorder suggestions'}
               {key === 'trackExpiry' && 'Monitor product expiration dates'}
-              {key === 'enableBarcode' && 'Use barcode scanning for inventory'}
               {key === 'autoUpdatePrices' && 'Update prices based on market data'}
             </Text>
           </View>

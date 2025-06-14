@@ -1,5 +1,4 @@
-
-// screens/MapScreen.js (Complete Business-Integrated Version)
+// screens/MapScreen.js - FIXED VERSION (Working User Location + Pins)
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View,
@@ -31,7 +30,7 @@ import { getNearbyBusinesses } from '../../Business/services/businessApi';
 import { getAzureMapsKey, reverseGeocode } from '../services/azureMapsService';
 
 /**
- * Enhanced MapScreen with Plants/Businesses toggle
+ * Enhanced MapScreen with Plants/Businesses toggle and FIXED user location
  */
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -39,7 +38,7 @@ const MapScreen = () => {
   const { products = [], initialLocation } = route.params || {};
 
   // State variables
-  const [mapMode, setMapMode] = useState('plants'); // 'plants' or 'businesses'
+  const [mapMode, setMapMode] = useState('plants');
   const [mapProducts, setMapProducts] = useState(products);
   const [mapBusinesses, setMapBusinesses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -51,7 +50,7 @@ const MapScreen = () => {
   const [nearbyProducts, setNearbyProducts] = useState([]);
   const [nearbyBusinesses, setNearbyBusinesses] = useState([]);
   const [sortOrder, setSortOrder] = useState('nearest');
-  const [viewMode, setViewMode] = useState('map'); // 'map' or 'list'
+  const [viewMode, setViewMode] = useState('map');
   const [showResults, setShowResults] = useState(false);
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -63,7 +62,9 @@ const MapScreen = () => {
   const [selectedProductData, setSelectedProductData] = useState(null);
   const [selectedBusinessData, setSelectedBusinessData] = useState(null);
   const [counts, setCounts] = useState({ plants: 0, businesses: 0 });
-  
+  const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
+
   // Refs
   const mapRef = useRef(null);
   const listRef = useRef(null);
@@ -84,17 +85,19 @@ const MapScreen = () => {
     }, [viewMode])
   );
 
-  // Load Azure Maps key when component mounts
+  // FIXED: Load Azure Maps key when component mounts
   useEffect(() => {
     const loadMapsKey = async () => {
       try {
         setIsKeyLoading(true);
+        console.log('🗺️ Loading Azure Maps key...');
         const key = await getAzureMapsKey();
+        console.log('✅ Azure Maps key loaded successfully');
         setAzureMapsKey(key);
         setIsKeyLoading(false);
       } catch (err) {
-        console.error('Error fetching Azure Maps key:', err);
-        setError('Failed to load map configuration. Please try again later.');
+        console.error('❌ Error fetching Azure Maps key:', err);
+        setError('Failed to load map configuration. Please check your internet connection.');
         setIsKeyLoading(false);
       }
     };
@@ -102,29 +105,45 @@ const MapScreen = () => {
     loadMapsKey();
   }, []);
 
-  // Initialize map with products if provided
+  // FIXED: Initialize user location on mount
+  useEffect(() => {
+    initializeUserLocation();
+  }, []);
+
+  // FIXED: Initialize map with products if provided
   useFocusEffect(
     useCallback(() => {
       if (products.length > 0) {
-        setMapProducts(products);
-        setCounts(prev => ({ ...prev, plants: products.length }));
+        console.log('📍 Processing', products.length, 'products for map');
         
-        if (products.length > 0 && !selectedLocation) {
-          const locationsWithCoords = products.filter(
-            p => p.location?.latitude && p.location?.longitude
-          );
-          
-          if (locationsWithCoords.length > 0) {
-            setSelectedLocation({
-              latitude: locationsWithCoords[0].location.latitude,
-              longitude: locationsWithCoords[0].location.longitude,
-              city: locationsWithCoords[0].location?.city || locationsWithCoords[0].city || 'Unknown location'
-            });
+        // Filter products with valid coordinates
+        const productsWithCoords = products.filter(p => {
+          const hasCoords = p.location?.latitude && p.location?.longitude;
+          if (!hasCoords) {
+            console.log('⚠️ Product missing coordinates:', p.id || p._id, p.title || p.name);
           }
+          return hasCoords;
+        });
+        
+        console.log('✅ Products with coordinates:', productsWithCoords.length);
+        
+        setMapProducts(productsWithCoords);
+        setCounts(prev => ({ ...prev, plants: productsWithCoords.length }));
+        
+        // Set initial location from first product if no location set
+        if (productsWithCoords.length > 0 && !selectedLocation) {
+          const firstProduct = productsWithCoords[0];
+          setSelectedLocation({
+            latitude: firstProduct.location.latitude,
+            longitude: firstProduct.location.longitude,
+            city: firstProduct.location?.city || firstProduct.city || 'Location'
+          });
+          console.log('📍 Set initial location from product:', firstProduct.location);
         }
       }
       
       if (initialLocation?.latitude && initialLocation?.longitude) {
+        console.log('📍 Using initial location:', initialLocation);
         setSelectedLocation(initialLocation);
         if (products.length === 0) {
           loadNearbyData(initialLocation, searchRadius);
@@ -133,8 +152,80 @@ const MapScreen = () => {
     }, [products, initialLocation])
   );
 
+  // FIXED: Initialize user location with better error handling
+  const initializeUserLocation = async () => {
+    try {
+      console.log('📱 Checking location permissions...');
+      
+      // Check current permission status
+      let { status } = await Location.getForegroundPermissionsAsync();
+      console.log('📱 Current permission status:', status);
+      
+      if (status !== 'granted') {
+        console.log('📱 Requesting location permission...');
+        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
+        status = newStatus;
+        console.log('📱 New permission status:', status);
+      }
+      
+      if (status === 'granted') {
+        setLocationPermissionGranted(true);
+        console.log('✅ Location permission granted');
+        
+        // Try to get current location
+        try {
+          console.log('📍 Getting current location...');
+          const location = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+            maximumAge: 30000, // 30 seconds
+            timeout: 10000 // 10 seconds
+          });
+          
+          const { latitude, longitude } = location.coords;
+          console.log('✅ Got current location:', latitude, longitude);
+          
+          setMyLocation({ latitude, longitude });
+          setShowMyLocation(true);
+          
+          // Set as selected location if none exists
+          if (!selectedLocation) {
+            try {
+              const addressData = await reverseGeocode(latitude, longitude);
+              const locationData = {
+                latitude,
+                longitude,
+                formattedAddress: addressData.formattedAddress,
+                city: addressData.city || 'Current Location',
+              };
+              setSelectedLocation(locationData);
+              console.log('✅ Set current location as selected:', locationData);
+            } catch (geocodeError) {
+              console.warn('⚠️ Geocoding failed, using coordinates only:', geocodeError);
+              setSelectedLocation({
+                latitude,
+                longitude,
+                formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+                city: 'Current Location',
+              });
+            }
+          }
+        } catch (locationError) {
+          console.warn('⚠️ Could not get current location:', locationError);
+          // Don't show error to user, just continue without location
+        }
+      } else {
+        console.log('⚠️ Location permission denied');
+        setLocationPermissionGranted(false);
+      }
+    } catch (error) {
+      console.error('❌ Error initializing user location:', error);
+      setLocationPermissionGranted(false);
+    }
+  };
+
   // Handle location selection
   const handleLocationSelect = (location) => {
+    console.log('📍 Location selected:', location);
     setSelectedLocation(location);
     if (location?.latitude && location?.longitude) {
       setRadiusVisible(true);
@@ -146,7 +237,7 @@ const MapScreen = () => {
   const handleRadiusChange = (radius) => {
     setSearchRadius(radius);
   };
-  
+
   // Apply radius change and reload data
   const handleApplyRadius = (radius) => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
@@ -166,7 +257,10 @@ const MapScreen = () => {
 
   // Load nearby data based on current map mode
   const loadNearbyData = async (location, radius) => {
-    if (!location?.latitude || !location?.longitude) return;
+    if (!location?.latitude || !location?.longitude) {
+      console.warn('⚠️ Invalid location for nearby data:', location);
+      return;
+    }
 
     try {
       setIsLoading(true);
@@ -175,14 +269,16 @@ const MapScreen = () => {
       setShowDetailCard(false);
       setRadiusVisible(true);
 
+      console.log(`🔍 Loading nearby ${mapMode} for:`, location, 'radius:', radius);
+
       if (mapMode === 'plants') {
         await loadNearbyProducts(location, radius);
       } else {
         await loadNearbyBusinesses(location, radius);
       }
     } catch (err) {
-      console.error('Error loading nearby data:', err);
-      setError('Failed to load data. Please try again.');
+      console.error('❌ Error loading nearby data:', err);
+      setError('Failed to load nearby data. Please try again.');
     } finally {
       setIsLoading(false);
       setSearchingLocation(false);
@@ -191,57 +287,90 @@ const MapScreen = () => {
 
   // Load nearby products
   const loadNearbyProducts = async (location, radius) => {
-    const result = await getNearbyProducts(
-      location.latitude,
-      location.longitude,
-      radius
-    );
+    try {
+      const result = await getNearbyProducts(
+        location.latitude,
+        location.longitude,
+        radius
+      );
 
-    if (result && result.products) {
-      const products = result.products.map(product => ({
-        ...product,
-        distance: product.distance || 0
-      }));
-      
-      const sortedProducts = sortProductsByDistance(products, sortOrder === 'nearest');
-      
-      setMapProducts(sortedProducts);
-      setNearbyProducts(sortedProducts);
-      setCounts(prev => ({ ...prev, plants: sortedProducts.length }));
-      setShowResults(true);
-    } else {
-      setMapProducts([]);
-      setNearbyProducts([]);
-      setCounts(prev => ({ ...prev, plants: 0 }));
-      setShowResults(true);
+      if (result && result.products) {
+        const products = result.products
+          .filter(product => product.location?.latitude && product.location?.longitude)
+          .map(product => ({
+            ...product,
+            distance: product.distance || 0
+          }));
+
+        console.log(`✅ Found ${products.length} nearby products`);
+        
+        const sortedProducts = sortProductsByDistance(products, sortOrder === 'nearest');
+        
+        setMapProducts(sortedProducts);
+        setNearbyProducts(sortedProducts);
+        setCounts(prev => ({ ...prev, plants: sortedProducts.length }));
+        setShowResults(true);
+      } else {
+        console.log('📭 No nearby products found');
+        setMapProducts([]);
+        setNearbyProducts([]);
+        setCounts(prev => ({ ...prev, plants: 0 }));
+        setShowResults(true);
+      }
+    } catch (error) {
+      console.error('❌ Error loading nearby products:', error);
+      throw error;
     }
   };
 
   // Load nearby businesses
   const loadNearbyBusinesses = async (location, radius) => {
-    const result = await getNearbyBusinesses(
-      location.latitude,
-      location.longitude,
-      radius
-    );
+    try {
+      const result = await getNearbyBusinesses(
+        location.latitude,
+        location.longitude,
+        radius
+      );
 
-    if (result && result.businesses) {
-      const businesses = result.businesses.map(business => ({
-        ...business,
-        distance: business.distance || 0
-      }));
-      
-      const sortedBusinesses = sortBusinessesByDistance(businesses, sortOrder === 'nearest');
-      
-      setMapBusinesses(sortedBusinesses);
-      setNearbyBusinesses(sortedBusinesses);
-      setCounts(prev => ({ ...prev, businesses: sortedBusinesses.length }));
-      setShowResults(true);
-    } else {
-      setMapBusinesses([]);
-      setNearbyBusinesses([]);
-      setCounts(prev => ({ ...prev, businesses: 0 }));
-      setShowResults(true);
+      if (result && result.businesses) {
+        const businesses = result.businesses
+          .filter(business => {
+            const hasCoords = business.location?.latitude && business.location?.longitude ||
+                              business.address?.latitude && business.address?.longitude;
+            if (!hasCoords) {
+              console.log('⚠️ Business missing coordinates:', business.id, business.businessName);
+            }
+            return hasCoords;
+          })
+          .map(business => ({
+            ...business,
+            distance: business.distance || 0,
+            // Ensure location data is properly structured
+            location: business.location || {
+              latitude: business.address?.latitude,
+              longitude: business.address?.longitude,
+              city: business.address?.city || 'Unknown location'
+            }
+          }));
+
+        console.log(`✅ Found ${businesses.length} nearby businesses`);
+        
+        const sortedBusinesses = sortBusinessesByDistance(businesses, sortOrder === 'nearest');
+        
+        setMapBusinesses(sortedBusinesses);
+        setNearbyBusinesses(sortedBusinesses);
+        setCounts(prev => ({ ...prev, businesses: sortedBusinesses.length }));
+        setShowResults(true);
+      } else {
+        console.log('📭 No nearby businesses found');
+        setMapBusinesses([]);
+        setNearbyBusinesses([]);
+        setCounts(prev => ({ ...prev, businesses: 0 }));
+        setShowResults(true);
+      }
+    } catch (error) {
+      console.error('❌ Error loading nearby businesses:', error);
+      throw error;
     }
   };
 
@@ -250,7 +379,7 @@ const MapScreen = () => {
     const product = mapProducts.find(p => p.id === productId || p._id === productId);
     
     if (product) {
-      console.log("Product selected:", product.title || product.name);
+      console.log("📦 Product selected:", product.title || product.name);
       setSelectedProduct(product);
       setSelectedProductData(product);
       setSelectedBusiness(null);
@@ -264,7 +393,7 @@ const MapScreen = () => {
     const business = mapBusinesses.find(b => b.id === businessId);
     
     if (business) {
-      console.log("Business selected:", business.businessName || business.name);
+      console.log("🏢 Business selected:", business.businessName || business.name);
       setSelectedBusiness(business);
       setSelectedBusinessData(business);
       setSelectedProduct(null);
@@ -272,12 +401,12 @@ const MapScreen = () => {
       setShowDetailCard(true);
     }
   };
-  
+
   // Handle closing the detail card
   const handleCloseDetailCard = () => {
     setShowDetailCard(false);
   };
-  
+
   // Handle view details button on mini cards
   const handleViewProductDetails = () => {
     if (selectedProductData) {
@@ -325,37 +454,48 @@ const MapScreen = () => {
     }
     
     Linking.openURL(url).catch(err => {
-      console.error('Error opening maps app:', err);
+      console.error('❌ Error opening maps app:', err);
       Alert.alert('Error', 'Could not open maps application');
     });
   };
 
-  // Get current location
+  // FIXED: Get current location with better UX
   const handleGetCurrentLocation = async () => {
+    if (isGettingLocation) return;
+
     try {
+      setIsGettingLocation(true);
       setIsLoading(true);
       setSearchingLocation(true);
       setShowDetailCard(false);
       setRadiusVisible(true);
 
-      let { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Denied', 'Location permission is required to use this feature.');
-        setIsLoading(false);
-        setSearchingLocation(false);
-        return;
+      console.log('📱 Getting current location...');
+
+      if (!locationPermissionGranted) {
+        console.log('📱 Requesting location permission...');
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert('Permission Required', 'Location permission is required to show your current position on the map.');
+          return;
+        }
+        setLocationPermissionGranted(true);
       }
 
+      // Get high-accuracy location
       const location = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Highest,
-        maximumAge: 10000,
-        timeout: 15000
+        accuracy: Location.Accuracy.High,
+        maximumAge: 10000, // 10 seconds
+        timeout: 15000 // 15 seconds
       });
 
       const { latitude, longitude } = location.coords;
+      console.log('✅ Got current location:', latitude, longitude);
+      
       setMyLocation({ latitude, longitude });
       setShowMyLocation(true);
 
+      // Try to get address information
       try {
         const addressData = await reverseGeocode(latitude, longitude);
         const locationData = {
@@ -365,10 +505,11 @@ const MapScreen = () => {
           city: addressData.city || 'Current Location',
         };
 
+        console.log('✅ Geocoded address:', addressData);
         setSelectedLocation(locationData);
         loadNearbyData(locationData, searchRadius);
       } catch (geocodeError) {
-        console.error('Geocoding error:', geocodeError);
+        console.warn('⚠️ Geocoding failed:', geocodeError);
         const locationData = {
           latitude,
           longitude,
@@ -380,9 +521,14 @@ const MapScreen = () => {
         loadNearbyData(locationData, searchRadius);
       }
     } catch (err) {
-      console.error('Error getting current location:', err);
-      Alert.alert('Location Error', 'Could not get your current location. Please try again later.');
+      console.error('❌ Error getting current location:', err);
+      Alert.alert(
+        'Location Error', 
+        'Could not get your current location. Please make sure location services are enabled and try again.',
+        [{ text: 'OK' }]
+      );
     } finally {
+      setIsGettingLocation(false);
       setIsLoading(false);
       setSearchingLocation(false);
     }
@@ -438,6 +584,7 @@ const MapScreen = () => {
     }
     
     if (coordinates?.latitude && coordinates?.longitude) {
+      console.log('📍 Map clicked at:', coordinates);
       setSelectedLocation({
         latitude: coordinates.latitude,
         longitude: coordinates.longitude,
@@ -454,9 +601,12 @@ const MapScreen = () => {
   const handleRetry = () => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
       loadNearbyData(selectedLocation, searchRadius);
+    } else {
+      // Try to get current location again
+      handleGetCurrentLocation();
     }
   };
-  
+
   // Custom back handler
   const handleBackPress = () => {
     if (viewMode === 'list') {
@@ -478,7 +628,8 @@ const MapScreen = () => {
         />
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading map configuration...</Text>
+          <Text style={styles.loadingText}>Loading map...</Text>
+          <Text style={styles.subText}>Please wait while we initialize the map</Text>
         </View>
       </SafeAreaView>
     );
@@ -513,6 +664,7 @@ const MapScreen = () => {
         {/* Map View */}
         {viewMode === 'map' && (
           <>
+            {/* Loading/Error Overlays */}
             {isLoading && searchingLocation ? (
               <View style={styles.searchingOverlay}>
                 <ActivityIndicator size="large" color="#4CAF50" />
@@ -533,6 +685,7 @@ const MapScreen = () => {
               </View>
             ) : null}
             
+            {/* Map Component */}
             <CrossPlatformAzureMapView
               ref={mapRef}
               products={mapMode === 'plants' ? mapProducts : []}
@@ -547,7 +700,17 @@ const MapScreen = () => {
                       longitude: selectedLocation.longitude,
                       zoom: 12,
                     }
-                  : undefined
+                  : myLocation
+                  ? {
+                      latitude: myLocation.latitude,
+                      longitude: myLocation.longitude,
+                      zoom: 12,
+                    }
+                  : {
+                      latitude: 32.0853,
+                      longitude: 34.7818,
+                      zoom: 10,
+                    }
               }
               showControls={true}
               azureMapsKey={azureMapsKey}
@@ -629,14 +792,21 @@ const MapScreen = () => {
 
         {/* Current Location Button */}
         <TouchableOpacity
-          style={styles.currentLocationButton}
+          style={[
+            styles.currentLocationButton,
+            isGettingLocation && styles.disabledButton
+          ]}
           onPress={handleGetCurrentLocation}
-          disabled={isLoading}
+          disabled={isGettingLocation}
         >
-          {isLoading && !searchingLocation ? (
+          {isGettingLocation ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <MaterialIcons name="my-location" size={24} color="#fff" />
+            <MaterialIcons 
+              name="my-location" 
+              size={24} 
+              color={showMyLocation ? "#4CAF50" : "#fff"}
+            />
           )}
         </TouchableOpacity>
 
@@ -687,18 +857,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
     marginTop: 12,
-    fontSize: 16,
-    color: '#555',
+    fontSize: 18,
+    color: '#4CAF50',
+    fontWeight: '600',
+  },
+  subText: {
+    marginTop: 8,
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
   searchingOverlay: {
     position: 'absolute',
     top: 60,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     padding: 16,
     alignItems: 'center',
     zIndex: 5,
@@ -706,60 +884,76 @@ const styles = StyleSheet.create({
     margin: 16,
     flexDirection: 'row',
     justifyContent: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   searchingText: {
     marginLeft: 12,
     fontSize: 16,
-    color: '#555',
+    color: '#4CAF50',
+    fontWeight: '500',
   },
   errorOverlay: {
     position: 'absolute',
     top: 60,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: 'rgba(255,255,255,0.95)',
     padding: 16,
     alignItems: 'center',
     zIndex: 5,
     borderRadius: 8,
     margin: 16,
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
   errorText: {
     color: '#f44336',
     textAlign: 'center',
     padding: 12,
     fontSize: 16,
+    marginBottom: 8,
   },
   retryButton: {
-    marginTop: 8,
     backgroundColor: '#4CAF50',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 6,
+    elevation: 2,
   },
   retryButtonText: {
     color: '#fff',
     fontWeight: '600',
+    fontSize: 16,
   },
   currentLocationButton: {
     position: 'absolute',
-    right: 10,
+    right: 16,
     bottom: Platform.OS === 'ios' ? 450 : 420,
     backgroundColor: '#4CAF50',
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
+    elevation: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+  },
+  disabledButton: {
+    opacity: 0.7,
   },
   viewToggleButton: {
     position: 'absolute',
-    right: 70,
+    right: 80,
     bottom: Platform.OS === 'ios' ? 450 : 420,
     backgroundColor: '#2196F3',
     paddingHorizontal: 16,

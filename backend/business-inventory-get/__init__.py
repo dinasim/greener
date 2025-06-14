@@ -1,33 +1,18 @@
-# backend/business-inventory-get/__init__.py
+# backend/business-inventory-get/__init__.py - FIXED VERSION
 import logging
 import json
 import azure.functions as func
 from azure.cosmos import CosmosClient
 import os
 
+# Import standardized helpers
+import sys
+sys.path.append('..')
+from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response
+
 # Database connection details for marketplace
 MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
-
-def add_cors_headers(response):
-    """Add CORS headers to response"""
-    response.headers.update({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email'
-    })
-    return response
-
-def get_user_id_from_request(req):
-    """Extract user ID from request headers or route params"""
-    # Try to get from headers first
-    user_id = req.headers.get('X-User-Email')
-    
-    if not user_id:
-        # Try to get from route parameters
-        user_id = req.route_params.get('businessId')
-    
-    return user_id
+MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business inventory get function processed a request.')
@@ -38,16 +23,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(response)
     
     try:
-        # Get business ID from route params or headers
+        # FIXED: Get business ID from route params first, then fallback to headers
         business_id = req.route_params.get('businessId') or get_user_id_from_request(req)
         
         if not business_id:
-            response = func.HttpResponse(
-                json.dumps({"error": "Business ID is required"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-            return add_cors_headers(response)
+            return create_error_response("Business ID is required", 400)
         
         logging.info(f"Getting inventory for business: {business_id}")
         
@@ -83,9 +63,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             logging.info(f"Found {len(items)} inventory items for business {business_id}")
             
-            # Format items for frontend
+            # FIXED: Format items for frontend with all required fields
             formatted_items = []
             for item in items:
+                # Process images
+                images = []
+                if item.get('mainImage'):
+                    images.append(item['mainImage'])
+                if item.get('images') and isinstance(item['images'], list):
+                    for img in item['images']:
+                        if img and img not in images:
+                            images.append(img)
+                if item.get('imageUrls') and isinstance(item['imageUrls'], list):
+                    for img in item['imageUrls']:
+                        if img and img not in images:
+                            images.append(img)
+                
                 formatted_item = {
                     "id": item.get("id"),
                     "businessId": item.get("businessId"),
@@ -94,23 +87,36 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "common_name": item.get("common_name"),
                     "scientific_name": item.get("scientific_name"),
                     "productName": item.get("productName"),
+                    "description": item.get("description") or item.get("notes") or "",
                     "plantInfo": item.get("plantInfo", {}),
                     "quantity": item.get("quantity", 0),
                     "originalQuantity": item.get("originalQuantity", 0),
                     "price": item.get("price", 0),
-                    "finalPrice": item.get("finalPrice", 0),
+                    "finalPrice": item.get("finalPrice", item.get("price", 0)),
                     "minThreshold": item.get("minThreshold", 5),
                     "discount": item.get("discount", 0),
                     "status": item.get("status", "active"),
                     "notes": item.get("notes", ""),
+                    "location": item.get("location", {}),
                     "addedAt": item.get("addedAt"),
                     "updatedAt": item.get("updatedAt"),
+                    "lastUpdated": item.get("lastUpdated"),
                     "soldCount": item.get("soldCount", 0),
-                    "viewCount": item.get("viewCount", 0)
+                    "viewCount": item.get("viewCount", 0),
+                    # FIXED: Image handling
+                    "mainImage": images[0] if images else None,
+                    "image": images[0] if images else None,
+                    "images": images,
+                    "imageUrls": images,
+                    "hasImages": len(images) > 0,
+                    # Watering schedule if it's a plant
+                    "wateringSchedule": item.get("wateringSchedule", {}),
+                    # Category
+                    "category": item.get("category") or item.get("productType", "Plants")
                 }
                 formatted_items.append(formatted_item)
             
-            # Return inventory data
+            # FIXED: Return inventory data with consistent structure
             response_data = {
                 "success": True,
                 "businessId": business_id,
@@ -121,28 +127,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                                    if item["quantity"] <= item["minThreshold"] and item["status"] == "active"])
             }
             
-            response = func.HttpResponse(
-                json.dumps(response_data, default=str),
-                status_code=200,
-                mimetype="application/json"
-            )
-            return add_cors_headers(response)
+            return create_success_response(response_data)
             
         except Exception as db_error:
             logging.error(f"Database error: {str(db_error)}")
-            
-            response = func.HttpResponse(
-                json.dumps({"error": f"Database error: {str(db_error)}"}),
-                status_code=500,
-                mimetype="application/json"
-            )
-            return add_cors_headers(response)
+            return create_error_response(f"Database error: {str(db_error)}", 500)
     
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
-        response = func.HttpResponse(
-            json.dumps({"error": f"Internal server error: {str(e)}"}),
-            status_code=500,
-            mimetype="application/json"
-        )
-        return add_cors_headers(response)
+        return create_error_response(f"Internal server error: {str(e)}", 500)

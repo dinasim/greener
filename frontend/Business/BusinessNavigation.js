@@ -1,10 +1,10 @@
-// Business/BusinessNavigation.js - FIXED VERSION
+// Business/BusinessNavigation.js - CORRECTED VERSION WITH ALL EXISTING SCREENS
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-// Import Business Screens
+// Import ALL EXISTING Business Screens
 import BusinessWelcomeScreen from './BusinessScreens/BusinessWelcomeScreen';
 import BusinessSignUpScreen from './BusinessScreens/BusinessSignUpScreen';
 import BusinessSignInScreen from './BusinessScreens/BusinessSignInScreen';
@@ -12,16 +12,16 @@ import BusinessInventoryScreen from './BusinessScreens/BusinessInventoryScreen';
 import BusinessHomeScreen from './BusinessScreens/BusinessHomeScreen';
 import BusinessProfileScreen from './BusinessScreens/BusinessProfileScreen';
 import BusinessOrdersScreen from './BusinessScreens/BusinessOrdersScreen';
-import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import BusinessAnalyticsScreen from './BusinessScreens/BusinessAnalyticsScreen';
-import CustomerListScreen from './BusinessScreens/CustomerListScreen';
+import BusinessSettingsScreen from './BusinessScreens/BusinessSettingsScreen';
+import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
+import CreateOrderScreen from './BusinessScreens/CreateOrderScreen';
+import BusinessProductDetailScreen from './BusinessScreens/BusinessProductDetailScreen';
 import WateringChecklistScreen from './BusinessScreens/WateringChecklistScreen';
 import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
-
-// Import Components (if they have their own screens)
-import NotificationSettings from './components/NotificationSettings';
+import PlantCareForumScreen from '../screens/PlantCareForumScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -113,49 +113,33 @@ const BusinessNavigation = () => {
       <Stack.Screen 
         name="BusinessWelcomeScreen" 
         component={BusinessWelcomeScreen} 
-        options={{ title: 'Welcome' }}
       />
       <Stack.Screen 
         name="BusinessSignUpScreen" 
         component={BusinessSignUpScreen}
-        options={{ title: 'Sign Up' }}
       />
       <Stack.Screen 
         name="BusinessSignInScreen" 
         component={BusinessSignInScreen}
-        options={{ title: 'Sign In' }}
       />
       
       {/* Setup Flow */}
       <Stack.Screen 
         name="BusinessInventoryScreen" 
         component={BusinessInventoryScreen}
-        options={{ title: 'Setup Inventory' }}
       />
       
-      {/* Main App Flow - Tab Navigator */}
+      {/* Main App Flow */}
       <Stack.Screen 
         name="BusinessHomeScreen" 
         component={BusinessHomeScreen}
-        options={{ title: 'Dashboard' }}
       />
       <Stack.Screen 
         name="BusinessTabs" 
         component={BusinessTabs}
-        options={{ title: 'Business App' }}
       />
       
       {/* Individual Screens */}
-      <Stack.Screen 
-        name="BusinessProfileScreen" 
-        component={BusinessProfileScreen}
-        options={{ title: 'Business Profile' }}
-      />
-      <Stack.Screen 
-        name="BusinessOrdersScreen" 
-        component={BusinessOrdersScreen}
-        options={{ title: 'Orders' }}
-      />
       <Stack.Screen 
         name="BusinessAnalyticsScreen" 
         component={BusinessAnalyticsScreen} 
@@ -167,25 +151,7 @@ const BusinessNavigation = () => {
         options={{ title: 'Customers' }}
       />
       
-      {/* Inventory Management Screens */}
-      <Stack.Screen 
-        name="AddInventoryScreen" 
-        component={AddInventoryScreen}
-        options={{ title: 'Manage Inventory' }}
-      />
-      <Stack.Screen 
-        name="InventoryScreen" 
-        component={AddInventoryScreen}
-        options={{ title: 'Inventory' }}
-      />
-      <Stack.Screen 
-        name="EditProductScreen" 
-        component={AddInventoryScreen}
-        options={{ title: 'Edit Product' }}
-        initialParams={{ editMode: true }}
-      />
-      
-      {/* Watering & Plant Care Screens */}
+      {/* Watering & Plant Care Screens - ALL EXISTING */}
       <Stack.Screen 
         name="WateringChecklistScreen" 
         component={WateringChecklistScreen}
@@ -197,7 +163,7 @@ const BusinessNavigation = () => {
         options={{ title: 'GPS Navigation' }}
       />
       
-      {/* Notification Screens */}
+      {/* Notification Screens - EXISTING AND NEW */}
       <Stack.Screen 
         name="NotificationCenterScreen" 
         component={NotificationCenterScreen}
@@ -209,29 +175,41 @@ const BusinessNavigation = () => {
         options={{ title: 'Notification Settings' }}
       />
       <Stack.Screen 
-        name="NotificationSettings" 
-        component={NotificationSettings} 
-        options={{ title: 'Notification Settings' }}
+        name="BusinessProductDetailScreen" 
+        component={BusinessProductDetailScreen}
+        options={{ title: 'Product Details' }}
       />
-      
-      {/* Additional Screens */}
       <Stack.Screen 
-        name="BusinessSettingsScreen" 
-        component={BusinessProfileScreen}
-        options={{ title: 'Settings' }}
-        initialParams={{ settingsMode: true }}
+        name="AddInventoryScreen" 
+        component={AddInventoryScreen}
+        options={{ title: 'Add Product' }}
       />
       <Stack.Screen 
         name="CreateOrderScreen" 
-        component={BusinessOrdersScreen}
+        component={CreateOrderScreen}
         options={{ title: 'Create Order' }}
-        initialParams={{ createMode: true }}
       />
       <Stack.Screen 
-        name="BusinessProductDetailScreen" 
+        name="BusinessSettingsScreen" 
+        component={BusinessSettingsScreen}
+        options={{ title: 'Settings' }}
+      />
+      <Stack.Screen 
+        name="EditProductScreen" 
         component={AddInventoryScreen}
+        options={{ title: 'Edit Product' }}
+        initialParams={{ editMode: true }}
+      />
+      <Stack.Screen 
+        name="ProductDetailScreen" 
+        component={BusinessProductDetailScreen}
         options={{ title: 'Product Details' }}
         initialParams={{ detailMode: true }}
+      />
+      <Stack.Screen 
+        name="PlantCareForumScreen" 
+        component={PlantCareForumScreen}
+        options={{ title: 'Plant Care Forum' }}
       />
     </Stack.Navigator>
   );

@@ -1,25 +1,28 @@
-// components/MarketplaceFilterToggle.js - FIXED VERSION
+// components/MarketplaceFilterToggle.js - FIXED VERSION with proper refresh
 import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Dimensions,
-} from 'react-native';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
-
-const { width } = Dimensions.get('window');
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 const MarketplaceFilterToggle = ({ 
-  sellerType = 'all', 
+  sellerType, 
   onSellerTypeChange, 
-  counts = { all: 0, individual: 0, business: 0 } 
+  counts = { all: 0, individual: 0, business: 0 },
+  style 
 }) => {
+  
   const handlePress = (type) => {
-    if (onSellerTypeChange) {
+    console.log('🔄 MarketplaceFilterToggle: Changing from', sellerType, 'to', type);
+    
+    // Only trigger change if it's actually different
+    if (type !== sellerType) {
       onSellerTypeChange(type);
     }
+  };
+
+  const formatCount = (count) => {
+    if (count === undefined || count === null) return '0';
+    if (count > 999) return `${Math.floor(count / 1000)}k+`;
+    return count.toString();
   };
 
   const getButtonStyle = (type) => [
@@ -33,14 +36,15 @@ const MarketplaceFilterToggle = ({
   ];
 
   const getCountStyle = (type) => [
-    styles.countBadge,
-    sellerType === type && styles.activeCountBadge
+    styles.countText,
+    sellerType === type && styles.activeCountText
   ];
 
   return (
-    <View style={styles.container}>
-      <View style={styles.filterToggleContainer}>
-        {/* All Products Button */}
+    <View style={[styles.container, style]}>
+      <View style={styles.filterRow}>
+        
+        {/* All Products */}
         <TouchableOpacity
           style={getButtonStyle('all')}
           onPress={() => handlePress('all')}
@@ -49,24 +53,15 @@ const MarketplaceFilterToggle = ({
           <View style={styles.buttonContent}>
             <MaterialIcons 
               name="apps" 
-              size={18} 
-              color={sellerType === 'all' ? '#fff' : '#4CAF50'} 
+              size={16} 
+              color={sellerType === 'all' ? '#fff' : '#666'} 
             />
-            <Text style={getTextStyle('all')}>
-              All
-            </Text>
-            <View style={getCountStyle('all')}>
-              <Text style={[
-                styles.countText,
-                sellerType === 'all' && styles.activeCountText
-              ]}>
-                {counts.all}
-              </Text>
-            </View>
+            <Text style={getTextStyle('all')}>All</Text>
+            <Text style={getCountStyle('all')}>({formatCount(counts.all)})</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Individual Sellers Button */}
+        {/* Individual Sellers */}
         <TouchableOpacity
           style={getButtonStyle('individual')}
           onPress={() => handlePress('individual')}
@@ -75,58 +70,41 @@ const MarketplaceFilterToggle = ({
           <View style={styles.buttonContent}>
             <MaterialIcons 
               name="person" 
-              size={18} 
-              color={sellerType === 'individual' ? '#fff' : '#4CAF50'} 
+              size={16} 
+              color={sellerType === 'individual' ? '#fff' : '#666'} 
             />
-            <Text style={getTextStyle('individual')}>
-              Individual
-            </Text>
-            <View style={getCountStyle('individual')}>
-              <Text style={[
-                styles.countText,
-                sellerType === 'individual' && styles.activeCountText
-              ]}>
-                {counts.individual}
-              </Text>
-            </View>
+            <Text style={getTextStyle('individual')}>Individual</Text>
+            <Text style={getCountStyle('individual')}>({formatCount(counts.individual)})</Text>
           </View>
         </TouchableOpacity>
 
-        {/* Business Sellers Button */}
+        {/* Business Sellers */}
         <TouchableOpacity
           style={getButtonStyle('business')}
           onPress={() => handlePress('business')}
           activeOpacity={0.7}
         >
           <View style={styles.buttonContent}>
-            <MaterialCommunityIcons 
+            <MaterialIcons 
               name="store" 
-              size={18} 
-              color={sellerType === 'business' ? '#fff' : '#4CAF50'} 
+              size={16} 
+              color={sellerType === 'business' ? '#fff' : '#666'} 
             />
-            <Text style={getTextStyle('business')}>
-              Business
-            </Text>
-            <View style={getCountStyle('business')}>
-              <Text style={[
-                styles.countText,
-                sellerType === 'business' && styles.activeCountText
-              ]}>
-                {counts.business}
-              </Text>
-            </View>
+            <Text style={getTextStyle('business')}>Business</Text>
+            <Text style={getCountStyle('business')}>({formatCount(counts.business)})</Text>
           </View>
         </TouchableOpacity>
+        
       </View>
-
-      {/* Filter Description */}
-      <View style={styles.descriptionContainer}>
-        <Text style={styles.descriptionText}>
-          {sellerType === 'all' && `Showing all ${counts.all} products from individual sellers and businesses`}
-          {sellerType === 'individual' && `Showing ${counts.individual} products from individual plant enthusiasts`}
-          {sellerType === 'business' && `Showing ${counts.business} products from verified plant businesses`}
-        </Text>
-      </View>
+      
+      {/* Debug info in development - DISABLED */}
+      {__DEV__ && false && (
+        <View style={styles.debugInfo}>
+          <Text style={styles.debugText}>
+            Current: {sellerType} | Counts: A:{counts.all} I:{counts.individual} B:{counts.business}
+          </Text>
+        </View>
+      )}
     </View>
   );
 };
@@ -137,79 +115,62 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#eee',
   },
-  filterToggleContainer: {
+  filterRow: {
     flexDirection: 'row',
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   filterButton: {
     flex: 1,
+    marginHorizontal: 4,
     paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     borderRadius: 8,
-    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    backgroundColor: '#f8f9fa',
     alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 44, // Ensure touch target is large enough
   },
   activeFilterButton: {
     backgroundColor: '#4CAF50',
-    shadowColor: '#4CAF50',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    borderColor: '#4CAF50',
   },
   buttonContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    flexWrap: 'wrap',
   },
   filterButtonText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#4CAF50',
-    marginTop: 2,
-    textAlign: 'center',
+    color: '#666',
+    marginLeft: 6,
+    marginRight: 4,
   },
   activeFilterButtonText: {
     color: '#fff',
   },
-  countBadge: {
-    backgroundColor: '#e0e0e0',
-    borderRadius: 10,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginTop: 2,
-    minWidth: 20,
-    alignItems: 'center',
-  },
-  activeCountBadge: {
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-  },
   countText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#666',
+    fontSize: 12,
+    color: '#999',
+    fontWeight: '500',
   },
   activeCountText: {
-    color: '#fff',
+    color: '#e8f5e8',
   },
-  descriptionContainer: {
-    alignItems: 'center',
+  debugInfo: {
+    marginTop: 8,
+    padding: 8,
+    backgroundColor: '#f0f0f0',
+    borderRadius: 4,
   },
-  descriptionText: {
+  debugText: {
     fontSize: 12,
     color: '#666',
     textAlign: 'center',
-    lineHeight: 16,
   },
 });
 

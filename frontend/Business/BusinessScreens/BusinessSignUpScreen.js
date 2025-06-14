@@ -34,6 +34,9 @@ try {
   };
 }
 
+// API Configuration
+const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+
 export default function BusinessSignUpScreen({ navigation }) {
   const { updateFormData } = useForm();
   const webFileInputRef = useRef(null);
@@ -237,8 +240,9 @@ export default function BusinessSignUpScreen({ navigation }) {
         businessType: 'business'
       };
       
-      // Prepare business data
+      // Prepare business data with ALL form fields
       const businessData = {
+        id: formData.email,
         email: formData.email,
         name: formData.contactName,
         businessName: formData.businessName,
@@ -246,32 +250,69 @@ export default function BusinessSignUpScreen({ navigation }) {
         description: formData.description,
         contactPhone: formData.phone,
         contactEmail: formData.email,
+        phone: formData.phone, // Add phone field
+        logo: null, // Will be updated after logo upload
         address: {
           street: formData.location?.street || '',
           city: formData.location?.city || '',
           postalCode: formData.location?.postalCode || '',
-          country: 'Israel',
+          country: formData.location?.country || 'Israel',
           latitude: formData.location?.latitude || null,
           longitude: formData.location?.longitude || null,
+          formattedAddress: formData.location?.formattedAddress || ''
+        },
+        location: {
+          latitude: formData.location?.latitude || null,
+          longitude: formData.location?.longitude || null,
+          address: formData.location?.formattedAddress || '',
+          city: formData.location?.city || '',
+          country: formData.location?.country || 'Israel'
         },
         joinDate: new Date().toISOString(),
         status: 'active',
+        verificationStatus: 'pending',
+        businessHours: [], // Can be set later
+        paymentMethods: ['cash', 'pickup'],
+        socialMedia: {},
         settings: {
           notifications: true,
           messages: true,
           lowStockThreshold: 5,
-        }
+        },
+        stats: {
+          productsCount: 0,
+          salesCount: 0,
+          rating: 0,
+          reviewCount: 0
+        },
+        rating: 0,
+        reviewCount: 0,
+        isVerified: false
       };
+      
+      console.log('Creating business with data:', businessData);
       
       // First, create a normal user account
       await saveUserToBackend(userData);
       
-      // Then create a business account
-      await saveBusinessToBackend(businessData);
+      // Then create a business account (without logo first)
+      const businessResult = await saveBusinessToBackend(businessData);
       
-      // If we have a logo, upload it
+      // If we have a logo, upload it and update the business profile
+      let logoUrl = null;
       if (formData.logo) {
-        await uploadLogo(formData.logo, formData.email);
+        try {
+          logoUrl = await uploadLogo(formData.logo, formData.email);
+          
+          // Update business profile with logo
+          if (logoUrl) {
+            const updatedBusinessData = { ...businessData, logo: logoUrl };
+            await updateBusinessProfile(updatedBusinessData);
+          }
+        } catch (logoError) {
+          console.warn('Logo upload failed, but continuing with signup:', logoError);
+          // Don't fail the entire signup if logo upload fails
+        }
       }
       
       // Update form context for global state
@@ -285,33 +326,192 @@ export default function BusinessSignUpScreen({ navigation }) {
       
       setIsLoading(false);
       
-      // Navigate to inventory screen (CORRECTED)
+      console.log('Business signup completed successfully');
+      
+      // Navigate to inventory screen
       navigation.navigate('BusinessInventoryScreen');
       
     } catch (error) {
       console.error('Error during signup:', error);
       setIsLoading(false);
-      Alert.alert('Sign Up Failed', 'Could not create your business account. Please try again.');
+      Alert.alert('Sign Up Failed', `Could not create your business account: ${error.message}`);
     }
   };
   
-  // Placeholder functions for backend interactions
+  // ACTUAL API IMPLEMENTATION - Replace placeholder functions
   const saveUserToBackend = async (userData) => {
-    // Implementation will connect to Azure Functions
-    console.log('Saving user to backend:', userData);
-    return true;
+    try {
+      console.log('Creating user account:', userData);
+      
+      const response = await fetch(`${API_BASE_URL}/saveUser`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(userData)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`User creation failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('User created successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('Error creating user:', error);
+      throw error;
+    }
   };
   
   const saveBusinessToBackend = async (businessData) => {
-    // Implementation will connect to Azure Functions
-    console.log('Saving business to backend:', businessData);
-    return true;
+    try {
+      console.log('Creating business profile:', businessData);
+      
+      const response = await fetch(`${API_BASE_URL}/business/profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': businessData.email
+        },
+        body: JSON.stringify(businessData)
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Business creation failed: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('Business profile created successfully:', result);
+      return result;
+    } catch (error) {
+      console.error('Error creating business profile:', error);
+      throw error;
+    }
+  };
+
+  const updateBusinessProfile = async (businessData) => {
+    try {
+      console.log('Updating business profile with logo:', businessData.logo);
+      
+      const response = await fetch(`${API_BASE_URL}/business/profile`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': businessData.email
+        },
+        body: JSON.stringify({ logo: businessData.logo })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn(`Business profile update failed: ${response.status} - ${errorText}`);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log('Business profile updated with logo successfully');
+      return result;
+    } catch (error) {
+      console.error('Error updating business profile:', error);
+      throw error;
+    }
   };
   
   const uploadLogo = async (logoUri, businessId) => {
-    // Implementation will use blob storage
-    console.log('Uploading logo:', logoUri, 'for business:', businessId);
-    return true;
+    try {
+      console.log('Uploading logo:', logoUri.substring(0, 50) + '...');
+      
+      let imageData;
+      let contentType = 'image/jpeg';
+      
+      if (Platform.OS === 'web') {
+        // For web, convert blob URL to base64
+        if (logoUri.startsWith('blob:')) {
+          const response = await fetch(logoUri);
+          const blob = await response.blob();
+          
+          return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = async () => {
+              try {
+                const base64 = reader.result;
+                
+                const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-User-Email': businessId
+                  },
+                  body: JSON.stringify({
+                    image: base64,
+                    type: 'user',
+                    filename: `business_logo_${businessId.replace('@', '_').replace('.', '_')}_${Date.now()}.jpg`
+                  })
+                });
+
+                if (!uploadResponse.ok) {
+                  const errorText = await uploadResponse.text();
+                  throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+                }
+
+                const result = await uploadResponse.json();
+                console.log('Logo uploaded successfully:', result.url);
+                resolve(result.url);
+              } catch (error) {
+                reject(error);
+              }
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+          });
+        }
+      } else {
+        // For mobile, convert file URI to base64
+        const response = await fetch(logoUri);
+        const blob = await response.blob();
+        
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = async () => {
+            try {
+              const base64 = reader.result;
+              
+              const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-User-Email': businessId
+                },
+                body: JSON.stringify({
+                  image: base64,
+                  type: 'user',
+                  filename: `business_logo_${businessId.replace('@', '_').replace('.', '_')}_${Date.now()}.jpg`
+                })
+              });
+
+              if (!uploadResponse.ok) {
+                const errorText = await uploadResponse.text();
+                throw new Error(`Upload failed: ${uploadResponse.status} - ${errorText}`);
+              }
+
+              const result = await uploadResponse.json();
+              console.log('Logo uploaded successfully:', result.url);
+              resolve(result.url);
+            } catch (error) {
+              reject(error);
+            }
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (error) {
+      console.error('Error uploading logo:', error);
+      throw error;
+    }
   };
   
   const renderStep1 = () => (

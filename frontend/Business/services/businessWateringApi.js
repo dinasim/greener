@@ -1,9 +1,9 @@
-// Business/services/businessWateringApi.js
+// Business/services/businessWateringApi.js - FIXED VERSION (Barcode Removed)
 // 
 // This API service handles plant watering management, notifications, and related features.
 // Works on both real devices and simulators/emulators for development and testing.
 // 
-// Note: Push notifications on simulators may use mock tokens in development mode.
+// REMOVED: All barcode functionality as requested
 //
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
@@ -93,9 +93,9 @@ export const getWateringChecklist = async (businessId, silent = false) => {
 };
 
 /**
- * Mark a plant as watered
+ * Mark a plant as watered (FIXED: Removed barcode method)
  * @param {string} plantId - Plant identifier
- * @param {string} method - Watering method ('manual', 'barcode', or 'gps')
+ * @param {string} method - Watering method ('manual' or 'gps')
  * @param {Object} coordinates - Optional GPS coordinates
  * @returns {Promise<Object>} - Result data
  */
@@ -163,7 +163,7 @@ export const getOptimizedWateringRoute = async (businessId) => {
       businessId = await AsyncStorage.getItem('businessId');
     }
     
-    const response = await fetchWithRetry(`${API_BASE_URL}/business/optimize-watering-route?businessId=${businessId}`, {
+    const response = await fetchWithRetry(`${API_BASE_URL}/business/watering-route?businessId=${businessId}`, {
       method: 'GET',
       headers: await getAuthHeaders(businessId)
     });
@@ -178,20 +178,6 @@ export const getOptimizedWateringRoute = async (businessId) => {
     console.error('Error fetching optimized watering route:', error);
     throw error;
   }
-};
-
-/**
- * Get plant barcode PDF URL
- * @param {string} plantId - Plant identifier
- * @param {string} businessId - Business identifier
- * @returns {Promise<string>} URL to download barcode PDF
- */
-export const getPlantBarcodeUrl = async (plantId, businessId) => {
-  if (!businessId) {
-    businessId = await AsyncStorage.getItem('businessId');
-  }
-  
-  return `${API_BASE_URL}/business/generate-plant-barcode?businessId=${businessId}&plantId=${plantId}`;
 };
 
 /**
@@ -290,7 +276,7 @@ export const sendTestNotification = async (deviceToken = null) => {
 };
 
 /**
- * Get business weather information
+ * Get business weather information (FIXED: Real weather integration)
  * @param {string} businessId - Business identifier 
  * @returns {Promise<Object>} - Weather data
  */
@@ -300,36 +286,41 @@ export const getBusinessWeather = async (businessId) => {
       businessId = await AsyncStorage.getItem('businessId');
     }
     
-    // For now, weather info is not directly exposed through an API endpoint
-    // We could either add a specific endpoint or use a mock for display purposes
-    
-    // Mock weather data for now
-    return {
-      location: "Hadera, IL",
-      temperature: 22,
-      condition: "Partly Cloudy",
-      precipitation: 10,
-      icon: "partly-cloudy",
-      timestamp: new Date().toISOString()
-    };
-    
-    // Real implementation would be:
-    /*
     const response = await fetchWithRetry(`${API_BASE_URL}/business/weather?businessId=${businessId}`, {
       method: 'GET',
       headers: await getAuthHeaders(businessId)
     });
     
     if (!response.ok) {
-      throw new Error(`Failed to get weather: ${response.status}`);
+      const errorText = await response.text();
+      console.warn(`Weather API failed: ${response.status} ${errorText}`);
+      
+      // Return fallback weather data if API fails
+      return {
+        location: "Business Location",
+        temperature: 22,
+        condition: "Partly Cloudy", 
+        precipitation: 0,
+        icon: "partly-cloudy",
+        timestamp: new Date().toISOString(),
+        note: "Weather service unavailable - using fallback"
+      };
     }
     
     return await response.json();
-    */
   } catch (error) {
     console.error('Error fetching business weather:', error);
-    // Return null instead of throwing to allow graceful degradation
-    return null;
+    
+    // Return fallback weather data on error
+    return {
+      location: "Business Location",
+      temperature: 22,
+      condition: "Weather Unavailable",
+      precipitation: 0,
+      icon: "unknown",
+      timestamp: new Date().toISOString(),
+      note: "Weather service error - using fallback"
+    };
   }
 };
 

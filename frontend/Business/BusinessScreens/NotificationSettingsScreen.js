@@ -4,376 +4,230 @@ import {
   View,
   Text,
   StyleSheet,
+  SafeAreaView,
   ScrollView,
   TouchableOpacity,
-  Switch,
-  Alert,
   ActivityIndicator,
-  SafeAreaView,
+  Alert
 } from 'react-native';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import { getNotificationSettings, updateNotificationSettings } from '../services/notificationPollingApi';
 
-export default function NotificationSettingsScreen({ navigation, route }) {
-  const { businessId: routeBusinessId } = route.params || {};
-  
-  const [businessId, setBusinessId] = useState(routeBusinessId);
+// Import components
+import WateringNotificationSettings from '../components/WateringNotificationSettings';
+
+// Import API services
+import {
+  getNotificationToken,
+  registerForWateringNotifications
+} from '../services/businessWateringApi';
+
+const NotificationSettingsScreen = ({ navigation }) => {
+  const [businessId, setBusinessId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
-  
-  // Settings state
-  const [settings, setSettings] = useState({
-    notificationTime: '07:00',
-    enableWateringReminders: true,
-    enableLowStockAlerts: true,
-    enableSuccessNotifications: true,
-    pollingInterval: 60,
-    status: 'active'
+  const [notificationStats, setNotificationStats] = useState({
+    hasPermission: false,
+    tokenType: null,
+    isEnabled: false,
+    lastUpdate: null
   });
-  
-  // Initialize
+
   useEffect(() => {
-    const initialize = async () => {
-      try {
-        let id = businessId;
-        if (!id) {
-          id = await AsyncStorage.getItem('businessId');
-          setBusinessId(id);
-        }
-        
-        if (id) {
-          await loadSettings(id);
-        }
-      } catch (error) {
-        console.error('Error initializing notification settings:', error);
-        Alert.alert('Error', 'Failed to load notification settings');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    initialize();
-  }, [businessId]);
-  
-  // Load settings
-  const loadSettings = async (id) => {
+    loadBusinessId();
+  }, []);
+
+  const loadBusinessId = async () => {
     try {
-      const data = await getNotificationSettings(id);
-      if (data.settings) {
-        setSettings(prev => ({
-          ...prev,
-          ...data.settings
-        }));
-      }
-    } catch (error) {
-      console.error('Error loading settings:', error);
-      // Use default settings on error
-    }
-  };
-  
-  // Save settings
-  const saveSettings = async () => {
-    setIsSaving(true);
-    
-    try {
-      const result = await updateNotificationSettings({
-        ...settings,
-        businessId
-      });
+      const id = await AsyncStorage.getItem('businessId') || await AsyncStorage.getItem('userEmail');
+      setBusinessId(id);
       
-      if (result.success) {
-        Alert.alert('✅ Success', 'Notification settings saved successfully!');
+      if (id) {
+        await checkNotificationStatus();
       }
     } catch (error) {
-      console.error('Error saving settings:', error);
-      Alert.alert('❌ Error', 'Failed to save notification settings');
+      console.error('Error loading business ID:', error);
     } finally {
-      setIsSaving(false);
+      setIsLoading(false);
     }
   };
-  
-  // Handle time change
-  const handleTimeChange = (event, selectedTime) => {
-    setShowTimePicker(false);
-    
-    if (selectedTime) {
-      const timeString = selectedTime.toTimeString().slice(0, 5);
-      setSettings(prev => ({
-        ...prev,
-        notificationTime: timeString
-      }));
-    }
-  };
-  
-  // Get time object for picker
-  const getTimeObject = () => {
-    const [hours, minutes] = settings.notificationTime.split(':').map(Number);
-    const time = new Date();
-    time.setHours(hours, minutes, 0, 0);
-    return time;
-  };
-  
-  // Handle setting change
-  const handleSettingChange = (key, value) => {
-    setSettings(prev => ({
-      ...prev,
-      [key]: value
-    }));
-  };
-  
-  // Test notifications
-  const testNotifications = async () => {
+
+  const checkNotificationStatus = async () => {
     try {
+      const token = await getNotificationToken();
+      const enabled = await AsyncStorage.getItem('wateringNotificationsEnabled');
+      const lastUpdate = await AsyncStorage.getItem('notificationLastUpdate');
+      
+      setNotificationStats({
+        hasPermission: !!token,
+        tokenType: token ? (token.includes('ExponentPushToken') ? 'expo' : 'fcm') : null,
+        isEnabled: enabled === 'true',
+        lastUpdate: lastUpdate
+      });
+    } catch (error) {
+      console.error('Error checking notification status:', error);
+    }
+  };
+
+  const handleSetupNotifications = async () => {
+    try {
+      setIsLoading(true);
+      
+      await registerForWateringNotifications('07:00');
+      
       Alert.alert(
-        '🔔 Test Notification',
-        'This is how notifications will appear. You can customize the timing and types below.',
+        '✅ Notifications Enabled',
+        'You will now receive daily watering reminders at 7:00 AM',
         [{ text: 'OK' }]
       );
+      
+      await checkNotificationStatus();
     } catch (error) {
-      console.error('Error testing notifications:', error);
+      console.error('Error setting up notifications:', error);
+      Alert.alert(
+        'Setup Failed',
+        'Failed to set up notifications. Please try again or check your device settings.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
     }
   };
-  
-  if (isLoading) {
+
+  const handleSettingsChange = async (settings) => {
+    try {
+      await AsyncStorage.setItem('notificationLastUpdate', new Date().toISOString());
+      await checkNotificationStatus();
+    } catch (error) {
+      console.error('Error updating notification settings:', error);
+    }
+  };
+
+  const renderNotificationStatus = () => {
+    const { hasPermission, tokenType, isEnabled } = notificationStats;
+    
+    let statusColor = '#F44336';
+    let statusText = 'Not Set Up';
+    let statusIcon = 'bell-off';
+    
+    if (hasPermission && isEnabled) {
+      statusColor = '#4CAF50';
+      statusText = 'Active';
+      statusIcon = 'bell-ring';
+    } else if (hasPermission && !isEnabled) {
+      statusColor = '#FF9800';
+      statusText = 'Permission Granted';
+      statusIcon = 'bell-outline';
+    }
+    
+    return (
+      <View style={styles.statusCard}>
+        <View style={styles.statusHeader}>
+          <MaterialCommunityIcons name={statusIcon} size={24} color={statusColor} />
+          <View style={styles.statusInfo}>
+            <Text style={styles.statusTitle}>Notification Status</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+          </View>
+        </View>
+        
+        {tokenType && (
+          <View style={styles.statusDetail}>
+            <MaterialIcons name="info-outline" size={16} color="#666" />
+            <Text style={styles.statusDetailText}>
+              Using {tokenType.toUpperCase()} notifications
+            </Text>
+          </View>
+        )}
+        
+        {!hasPermission && (
+          <TouchableOpacity 
+            style={styles.setupButton}
+            onPress={handleSetupNotifications}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#4CAF50" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="bell-plus" size={20} color="#4CAF50" />
+                <Text style={styles.setupButtonText}>Set Up Notifications</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
+    );
+  };
+
+  if (isLoading && !businessId) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading notification settings...</Text>
+          <Text style={styles.loadingText}>Loading settings...</Text>
         </View>
       </SafeAreaView>
     );
   }
-  
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
+          <MaterialIcons name="arrow-back" size={24} color="#333" />
         </TouchableOpacity>
-        
         <Text style={styles.headerTitle}>Notification Settings</Text>
-        
-        <TouchableOpacity 
-          style={styles.testButton}
-          onPress={testNotifications}
-        >
-          <MaterialIcons name="notifications-active" size={24} color="#4CAF50" />
-        </TouchableOpacity>
+        <View style={styles.headerSpacer} />
       </View>
-      
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Notification Time Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <MaterialIcons name="schedule" size={20} color="#4CAF50" />
-            {' '}Daily Reminder Time
-          </Text>
-          
-          <TouchableOpacity 
-            style={styles.timeSelector}
-            onPress={() => setShowTimePicker(true)}
-          >
-            <View style={styles.timeSelectorContent}>
-              <Text style={styles.timeSelectorLabel}>Notification Time</Text>
-              <Text style={styles.timeSelectorValue}>{settings.notificationTime}</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#999" />
-          </TouchableOpacity>
-          
-          <Text style={styles.sectionDescription}>
-            Choose when you want to receive daily watering reminders
-          </Text>
-        </View>
+
+      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+        {renderNotificationStatus()}
         
-        {/* Notification Types Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <MaterialCommunityIcons name="bell-ring" size={20} color="#4CAF50" />
-            {' '}Notification Types
-          </Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <View style={styles.settingIcon}>
-                <MaterialCommunityIcons name="water" size={24} color="#2196F3" />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingTitle}>Watering Reminders</Text>
-                <Text style={styles.settingDescription}>
-                  Get notified when plants need watering
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.enableWateringReminders}
-              onValueChange={(value) => handleSettingChange('enableWateringReminders', value)}
-              trackColor={{ false: '#e0e0e0', true: '#4CAF50' }}
-              thumbColor={settings.enableWateringReminders ? '#fff' : '#f4f3f4'}
-            />
-          </View>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <View style={styles.settingIcon}>
-                <MaterialIcons name="inventory" size={24} color="#FF9800" />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingTitle}>Low Stock Alerts</Text>
-                <Text style={styles.settingDescription}>
-                  Get notified when inventory is running low
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.enableLowStockAlerts}
-              onValueChange={(value) => handleSettingChange('enableLowStockAlerts', value)}
-              trackColor={{ false: '#e0e0e0', true: '#4CAF50' }}
-              thumbColor={settings.enableLowStockAlerts ? '#fff' : '#f4f3f4'}
-            />
-          </View>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <View style={styles.settingIcon}>
-                <MaterialIcons name="check-circle" size={24} color="#4CAF50" />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingTitle}>Success Notifications</Text>
-                <Text style={styles.settingDescription}>
-                  Get encouraging messages for completed tasks
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.enableSuccessNotifications}
-              onValueChange={(value) => handleSettingChange('enableSuccessNotifications', value)}
-              trackColor={{ false: '#e0e0e0', true: '#4CAF50' }}
-              thumbColor={settings.enableSuccessNotifications ? '#fff' : '#f4f3f4'}
-            />
-          </View>
-        </View>
-        
-        {/* Polling Settings Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <MaterialIcons name="sync" size={20} color="#4CAF50" />
-            {' '}Update Frequency
-          </Text>
-          
-          <View style={styles.pollingOptions}>
-            {[30, 60, 120, 300].map((interval) => (
-              <TouchableOpacity
-                key={interval}
-                style={[
-                  styles.pollingOption,
-                  settings.pollingInterval === interval && styles.selectedPollingOption
-                ]}
-                onPress={() => handleSettingChange('pollingInterval', interval)}
-              >
-                <Text style={[
-                  styles.pollingOptionText,
-                  settings.pollingInterval === interval && styles.selectedPollingOptionText
-                ]}>
-                  {interval < 60 ? `${interval}s` : `${interval / 60}m`}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-          
-          <Text style={styles.sectionDescription}>
-            How often to check for new notifications (shorter intervals use more battery)
-          </Text>
-        </View>
-        
-        {/* Status Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            <MaterialIcons name="power-settings-new" size={20} color="#4CAF50" />
-            {' '}Notification Status
-          </Text>
-          
-          <View style={styles.settingItem}>
-            <View style={styles.settingInfo}>
-              <View style={[
-                styles.settingIcon,
-                { backgroundColor: settings.status === 'active' ? '#e8f5e8' : '#ffebee' }
-              ]}>
-                <MaterialIcons 
-                  name={settings.status === 'active' ? 'notifications-active' : 'notifications-off'} 
-                  size={24} 
-                  color={settings.status === 'active' ? '#4CAF50' : '#f44336'} 
-                />
-              </View>
-              <View style={styles.settingText}>
-                <Text style={styles.settingTitle}>Enable Notifications</Text>
-                <Text style={styles.settingDescription}>
-                  {settings.status === 'active' ? 'Notifications are enabled' : 'Notifications are disabled'}
-                </Text>
-              </View>
-            </View>
-            <Switch
-              value={settings.status === 'active'}
-              onValueChange={(value) => handleSettingChange('status', value ? 'active' : 'inactive')}
-              trackColor={{ false: '#e0e0e0', true: '#4CAF50' }}
-              thumbColor={settings.status === 'active' ? '#fff' : '#f4f3f4'}
-            />
-          </View>
-        </View>
-        
-        {/* Info Section */}
-        <View style={styles.infoSection}>
-          <MaterialIcons name="info" size={20} color="#2196F3" />
-          <Text style={styles.infoText}>
-            Notifications are checked periodically while the app is open. 
-            For best results, keep the app running in the background.
-          </Text>
-        </View>
-      </ScrollView>
-      
-      {/* Save Button */}
-      <View style={styles.footer}>
-        <TouchableOpacity 
-          style={[styles.saveButton, isSaving && styles.savingButton]}
-          onPress={saveSettings}
-          disabled={isSaving}
-        >
-          {isSaving ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <MaterialIcons name="save" size={20} color="#fff" />
-              <Text style={styles.saveButtonText}>Save Settings</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-      
-      {/* Time Picker */}
-      {showTimePicker && (
-        <DateTimePicker
-          value={getTimeObject()}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={handleTimeChange}
+        <WateringNotificationSettings 
+          businessId={businessId}
+          onSettingsChange={handleSettingsChange}
         />
-      )}
+        
+        <View style={styles.infoSection}>
+          <Text style={styles.infoTitle}>How it works</Text>
+          <View style={styles.infoItem}>
+            <MaterialCommunityIcons name="clock-outline" size={20} color="#4CAF50" />
+            <Text style={styles.infoText}>
+              Daily notifications at your chosen time
+            </Text>
+          </View>
+          <View style={styles.infoItem}>
+            <MaterialCommunityIcons name="water" size={20} color="#4CAF50" />
+            <Text style={styles.infoText}>
+              Only when plants actually need watering
+            </Text>
+          </View>
+          <View style={styles.infoItem}>
+            <MaterialCommunityIcons name="weather-rainy" size={20} color="#4CAF50" />
+            <Text style={styles.infoText}>
+              Weather-aware (skips rainy days)
+            </Text>
+          </View>
+          <View style={styles.infoItem}>
+            <MaterialCommunityIcons name="cellphone" size={20} color="#4CAF50" />
+            <Text style={styles.infoText}>
+              Works on mobile and web
+            </Text>
+          </View>
+        </View>
+        
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
     </SafeAreaView>
   );
-}
+};
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#F5F5F5',
   },
   loadingContainer: {
     flex: 1,
@@ -381,188 +235,126 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 16,
-    fontSize: 16,
+    marginTop: 10,
     color: '#666',
+    fontSize: 16,
   },
   header: {
-    backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
+    backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#E0E0E0',
+  },
+  backButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    flex: 1,
+  },
+  headerSpacer: {
+    width: 40,
+  },
+  scrollContainer: {
+    flex: 1,
+  },
+  statusCard: {
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    padding: 16,
+    borderRadius: 8,
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f9f3',
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#4CAF50',
-  },
-  testButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f9f3',
-  },
-  content: {
-    flex: 1,
-    padding: 16,
-  },
-  section: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 16,
-  },
-  sectionDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  timeSelector: {
+  statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
+    marginBottom: 8,
   },
-  timeSelectorContent: {
+  statusInfo: {
+    marginLeft: 12,
     flex: 1,
   },
-  timeSelectorLabel: {
-    fontSize: 14,
-    color: '#666',
-  },
-  timeSelectorValue: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 2,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  settingInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  settingIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#f5f5f5',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  settingText: {
-    flex: 1,
-  },
-  settingTitle: {
+  statusTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
   },
-  settingDescription: {
+  statusText: {
     fontSize: 14,
-    color: '#666',
+    fontWeight: '500',
     marginTop: 2,
   },
-  pollingOptions: {
+  statusDetail: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  pollingOption: {
-    flex: 1,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
     alignItems: 'center',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
-  selectedPollingOption: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
-  pollingOptionText: {
-    fontSize: 14,
-    fontWeight: '600',
+  statusDetailText: {
+    fontSize: 12,
     color: '#666',
+    marginLeft: 6,
   },
-  selectedPollingOptionText: {
-    color: '#fff',
+  setupButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    borderRadius: 6,
+  },
+  setupButtonText: {
+    fontSize: 14,
+    color: '#4CAF50',
+    fontWeight: '500',
+    marginLeft: 8,
   },
   infoSection: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#e3f2fd',
+    backgroundColor: '#FFFFFF',
+    margin: 16,
+    marginTop: 0,
     padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
+    borderRadius: 8,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
+  },
+  infoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
-    color: '#1976d2',
-    marginLeft: 8,
+    color: '#666',
+    marginLeft: 12,
     flex: 1,
-    lineHeight: 18,
   },
-  footer: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  saveButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4CAF50',
-    paddingVertical: 16,
-    borderRadius: 8,
-  },
-  savingButton: {
-    backgroundColor: '#bdbdbd',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
+  bottomSpacer: {
+    height: 20,
   },
 });
+
+export default NotificationSettingsScreen;

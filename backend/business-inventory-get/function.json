@@ -6,7 +6,7 @@
       "direction": "in",
       "name": "req",
       "methods": ["get", "options"],
-      "route": "business/inventory/{businessId}"
+      "route": "marketplace/business/{businessId}/inventory"
     },
     {
       "type": "http",

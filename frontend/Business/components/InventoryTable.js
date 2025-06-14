@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Modal,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { 
   MaterialCommunityIcons, 
@@ -33,7 +34,8 @@ export default function InventoryTable({
   onUpdateStock = () => {},
   onProductPress = () => {},
   refreshing = false,
-  businessId 
+  businessId,
+  navigation
 }) {
   // State
   const [searchQuery, setSearchQuery] = useState('');
@@ -269,6 +271,24 @@ export default function InventoryTable({
     }
   };
 
+  // Handle location press
+  const handleLocationPress = (item) => {
+    if (item.location?.coordinates) {
+      const { latitude, longitude } = item.location.coordinates;
+      const url = Platform.select({
+        ios: `maps:0,0?q=${latitude},${longitude}`,
+        android: `geo:0,0?q=${latitude},${longitude}`,
+        web: `https://www.google.com/maps?q=${latitude},${longitude}`,
+        default: `https://www.google.com/maps?q=${latitude},${longitude}`
+      });
+      
+      Linking.openURL(url).catch(err => {
+        console.error('Failed to open maps:', err);
+        Alert.alert('Error', 'Could not open maps application');
+      });
+    }
+  };
+
   // Get status color
   const getStatusColor = (status) => {
     switch (status) {
@@ -400,6 +420,26 @@ export default function InventoryTable({
                 {item.scientific_name}
               </Text>
             )}
+            {/* Enhanced product info */}
+            <View style={styles.productMetaInfo}>
+              {item.location?.coordinates && (
+                <TouchableOpacity 
+                  style={styles.metaInfoItem}
+                  onPress={() => handleLocationPress(item)}
+                >
+                  <MaterialIcons name="location-on" size={12} color="#2196F3" />
+                  <Text style={styles.metaInfoText}>GPS</Text>
+                </TouchableOpacity>
+              )}
+              {item.lastWatered && (
+                <View style={styles.metaInfoItem}>
+                  <MaterialCommunityIcons name="water" size={12} color="#00BCD4" />
+                  <Text style={styles.metaInfoText}>
+                    {new Date(item.lastWatered).toLocaleDateString()}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         </View>
       </TouchableOpacity>
@@ -419,12 +459,20 @@ export default function InventoryTable({
             <MaterialIcons name="warning" size={14} color="#FF9800" />
           )}
         </View>
+        <Text style={styles.thresholdText}>
+          Min: {item.minThreshold || 5}
+        </Text>
       </TouchableOpacity>
       
       <View style={styles.tableCell}>
         <Text style={styles.priceText}>
           ${(item.finalPrice || item.price || 0).toFixed(2)}
         </Text>
+        {item.discount > 0 && (
+          <Text style={styles.discountText}>
+            -{item.discount}%
+          </Text>
+        )}
       </View>
       
       <View style={styles.tableCell}>
@@ -449,6 +497,19 @@ export default function InventoryTable({
             onPress={() => handleDeletePress(item)}
           >
             <MaterialIcons name="delete" size={16} color="#f44336" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => {
+              Alert.alert(
+                'Product Details',
+                `Name: ${item.name || item.common_name}\nStock: ${item.quantity}\nPrice: $${(item.price || 0).toFixed(2)}\nStatus: ${item.status}\n${item.notes ? `Notes: ${item.notes}` : ''}`,
+                [{ text: 'OK' }]
+              );
+            }}
+          >
+            <MaterialIcons name="info" size={16} color="#9C27B0" />
           </TouchableOpacity>
         </View>
       </View>
@@ -857,6 +918,21 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     color: '#666',
   },
+  productMetaInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  metaInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  metaInfoText: {
+    fontSize: 12,
+    color: '#2196F3',
+    marginLeft: 4,
+  },
   stockContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -870,10 +946,20 @@ const styles = StyleSheet.create({
   lowStockText: {
     color: '#FF9800',
   },
+  thresholdText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+  },
   priceText: {
     fontSize: 14,
     fontWeight: '600',
     color: '#4CAF50',
+  },
+  discountText: {
+    fontSize: 12,
+    color: '#f44336',
+    marginTop: 4,
   },
   statusBadge: {
     paddingHorizontal: 8,

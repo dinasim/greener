@@ -1,30 +1,19 @@
-# backend/business-profile/__init__.py
+# backend/business-profile/__init__.py - FIXED VERSION WITH ROUTE PARAM
 import logging
 import json
 import azure.functions as func
 from azure.cosmos import CosmosClient
-from datetime import datetime
 import os
+from datetime import datetime
+
+# Import standardized helpers
+import sys
+sys.path.append('..')
+from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response
 
 # Database connection details for marketplace
 MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
-
-def add_cors_headers(response):
-    """Add CORS headers to response"""
-    response.headers.update({
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-User-Email'
-    })
-    return response
-
-def get_user_id_from_request(req):
-    """Extract user ID from request headers or query params"""
-    user_id = req.headers.get('X-User-Email')
-    if not user_id:
-        user_id = req.params.get('businessId')
-    return user_id
+MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business profile function processed a request.')
@@ -35,16 +24,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(response)
     
     try:
-        # Get business ID from headers or params
-        business_id = get_user_id_from_request(req)
+        # FIXED: Get business ID from route params first, then fallback to headers
+        business_id = req.route_params.get('businessId') or get_user_id_from_request(req)
         
         if not business_id:
-            response = func.HttpResponse(
-                json.dumps({"error": "Business ID is required"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-            return add_cors_headers(response)
+            return create_error_response("Business ID is required", 400)
         
         logging.info(f"Processing business profile request for: {business_id}")
         
@@ -62,48 +46,55 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             client = CosmosClient(account_endpoint, credential=account_key)
             database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
             business_users_container = database.get_container_client("business_users")
+            inventory_container = database.get_container_client("inventory")
             
             if req.method == 'GET':
-                # Get business profile
+                # Get business profile with inventory
                 try:
                     business_profile = business_users_container.read_item(item=business_id, partition_key=business_id)
                     logging.info(f"Retrieved business profile for {business_id}")
                     
-                    response = func.HttpResponse(
-                        json.dumps(business_profile, default=str),
-                        status_code=200,
-                        mimetype="application/json"
-                    )
-                    return add_cors_headers(response)
+                    # Get business inventory
+                    try:
+                        inventory_query = "SELECT * FROM c WHERE c.businessId = @businessId AND c.status = 'active'"
+                        inventory_items = list(inventory_container.query_items(
+                            query=inventory_query,
+                            parameters=[{"name": "@businessId", "value": business_id}],
+                            enable_cross_partition_query=True
+                        ))
+                        
+                        logging.info(f"Found {len(inventory_items)} inventory items")
+                    except Exception as e:
+                        logging.warning(f"Error getting inventory: {str(e)}")
+                        inventory_items = []
+                    
+                    # FIXED: Return consistent response structure that matches frontend expectations
+                    response_data = {
+                        "success": True,
+                        "business": {
+                            **business_profile,
+                            "inventory": inventory_items,
+                            "isBusiness": True
+                        },
+                        "inventory": inventory_items,
+                        "inventoryCount": len(inventory_items)
+                    }
+                    
+                    return create_success_response(response_data)
                     
                 except Exception as read_error:
                     logging.error(f"Business profile not found: {str(read_error)}")
-                    response = func.HttpResponse(
-                        json.dumps({"error": "Business profile not found"}),
-                        status_code=404,
-                        mimetype="application/json"
-                    )
-                    return add_cors_headers(response)
-            
+                    return create_error_response("Business profile not found", 404)
+                
             elif req.method in ['POST', 'PATCH']:
                 # Create or update business profile
                 try:
                     request_body = req.get_json()
                 except ValueError:
-                    response = func.HttpResponse(
-                        json.dumps({"error": "Invalid JSON body"}),
-                        status_code=400,
-                        mimetype="application/json"
-                    )
-                    return add_cors_headers(response)
+                    return create_error_response("Invalid JSON body", 400)
                 
                 if not request_body:
-                    response = func.HttpResponse(
-                        json.dumps({"error": "Request body is required"}),
-                        status_code=400,
-                        mimetype="application/json"
-                    )
-                    return add_cors_headers(response)
+                    return create_error_response("Request body is required", 400)
                 
                 current_time = datetime.utcnow().isoformat()
                 
@@ -133,18 +124,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                             "notifications": True,
                             "messages": True,
                             "lowStockThreshold": request_body.get('lowStockThreshold', 5)
-                        }
+                        },
+                        "createdAt": current_time
                     }
                     
                     created_profile = business_users_container.create_item(business_profile)
                     logging.info(f"Created business profile for {business_id}")
                     
-                    response = func.HttpResponse(
-                        json.dumps(created_profile, default=str),
-                        status_code=201,
-                        mimetype="application/json"
-                    )
-                    return add_cors_headers(response)
+                    return create_success_response({
+                        "success": True,
+                        "business": created_profile
+                    }, 201)
                 
                 else:  # PATCH
                     # Update existing business profile
@@ -167,44 +157,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                         
                         logging.info(f"Updated business profile for {business_id}")
                         
-                        response = func.HttpResponse(
-                            json.dumps(updated_profile, default=str),
-                            status_code=200,
-                            mimetype="application/json"
-                        )
-                        return add_cors_headers(response)
+                        return create_success_response({
+                            "success": True,
+                            "business": updated_profile
+                        })
                         
                     except Exception as update_error:
                         logging.error(f"Failed to update business profile: {str(update_error)}")
-                        response = func.HttpResponse(
-                            json.dumps({"error": f"Failed to update profile: {str(update_error)}"}),
-                            status_code=500,
-                            mimetype="application/json"
-                        )
-                        return add_cors_headers(response)
+                        return create_error_response(f"Failed to update profile: {str(update_error)}", 500)
             
             else:
-                response = func.HttpResponse(
-                    json.dumps({"error": "Method not allowed"}),
-                    status_code=405,
-                    mimetype="application/json"
-                )
-                return add_cors_headers(response)
+                return create_error_response("Method not allowed", 405)
             
         except Exception as db_error:
             logging.error(f"Database error: {str(db_error)}")
-            response = func.HttpResponse(
-                json.dumps({"error": f"Database error: {str(db_error)}"}),
-                status_code=500,
-                mimetype="application/json"
-            )
-            return add_cors_headers(response)
+            return create_error_response(f"Database error: {str(db_error)}", 500)
     
     except Exception as e:
         logging.error(f"Unexpected error: {str(e)}")
-        response = func.HttpResponse(
-            json.dumps({"error": f"Internal server error: {str(e)}"}),
-            status_code=500,
-            mimetype="application/json"
-        )
-        return add_cors_headers(response)
+        return create_error_response(f"Internal server error: {str(e)}", 500)

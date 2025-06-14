@@ -139,40 +139,70 @@ const EditProfileScreen = () => {
     }));
   };
   
-  // Pick avatar image
+  // Pick avatar image (gallery or camera)
   const pickAvatar = async () => {
     try {
-      // Request media library permissions
-      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
-      if (!permissionResult.granted) {
-        Alert.alert('Permission Required', 'We need permission to access your photos');
+      let result;
+      if (Platform.OS === 'web') {
+        // Web: use file input for both camera and gallery
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'image/*';
+        input.capture = 'environment';
+        input.onchange = async (event) => {
+          const file = event.target.files[0];
+          if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+              setProfile(prev => ({ ...prev, avatar: e.target.result }));
+              setAvatarChanged(true);
+            };
+            reader.readAsDataURL(file);
+          }
+        };
+        input.click();
         return;
       }
-      
-      // Launch image picker
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        aspect: [1, 1],
-        quality: 0.8,
-      });
-      
-      if (!result.canceled) {
-        // Get selected asset
-        const selectedAsset = result.assets?.[0] || { uri: result.uri };
-        
-        if (selectedAsset?.uri) {
-          setProfile(prev => ({
-            ...prev,
-            avatar: selectedAsset.uri
-          }));
-          setAvatarChanged(true);
-        }
-      }
+      // Mobile: ask user for camera or gallery
+      Alert.alert(
+        'Change Profile Photo',
+        'Choose a method',
+        [
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              const cameraPerm = await ImagePicker.requestCameraPermissionsAsync();
+              if (!cameraPerm.granted) {
+                Alert.alert('Permission Required', 'Camera access is needed.');
+                return;
+              }
+              result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+              if (!result.cancelled && result.assets?.[0]?.uri) {
+                setProfile(prev => ({ ...prev, avatar: result.assets[0].uri }));
+                setAvatarChanged(true);
+              }
+            }
+          },
+          {
+            text: 'Choose from Gallery',
+            onPress: async () => {
+              const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+              if (!permissionResult.granted) {
+                Alert.alert('Permission Required', 'We need permission to access your photos');
+                return;
+              }
+              result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+              if (!result.cancelled && result.assets?.[0]?.uri) {
+                setProfile(prev => ({ ...prev, avatar: result.assets[0].uri }));
+                setAvatarChanged(true);
+              }
+            }
+          },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
     } catch (err) {
-      console.error('Error picking image:', err);
-      Alert.alert('Error', 'Failed to select image. Please try again.');
+      Alert.alert('Error', 'Could not update photo.');
     }
   };
   

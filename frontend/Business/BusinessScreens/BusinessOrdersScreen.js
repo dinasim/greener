@@ -30,6 +30,7 @@ import CustomerDetailModal from '../components/CustomerDetailModal';
 
 // Import API services
 import { getBusinessOrders, updateOrderStatus, getBusinessCustomers } from '../services/businessOrderApi';
+import { sendOrderMessage } from '../../marketplace/services/marketplaceApi';
 
 export default function BusinessOrdersScreen({ navigation, route }) {
   const { businessId: routeBusinessId } = route.params || {};
@@ -285,35 +286,33 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
       setLoading(true);
-      
       // Optimistic update
       setOrders(prev => prev.map(order => 
         order.id === orderId ? { ...order, status: newStatus } : order
       ));
-      
       setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
-      
       const response = await updateOrderStatus(orderId, newStatus);
-      
-      // Success animation
-      Animated.sequence([
-        Animated.timing(fadeAnim, {
-          toValue: 0.7,
-          duration: 150,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 150,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
-      ]).start();
-      
-      Alert.alert('✅ Success', `Order status updated to ${newStatus.toUpperCase()}`);
-      
-      // Refresh to get latest data
-      await fetchOrders(businessId, true);
-      
+      // Send auto message to consumer in chat if status is confirmed or completed
+      try {
+        // Find the order details (from latest orders or selectedOrder)
+        const order = (response && response.order) || orders.find(o => o.id === orderId) || selectedOrder;
+        if (order && (newStatus === 'confirmed' || newStatus === 'completed')) {
+          const recipientId = order.customerEmail;
+          const senderId = businessId;
+          let msg = '';
+          if (newStatus === 'confirmed') {
+            msg = `Your order ${order.confirmationNumber} has been confirmed!\nPickup token: ${order.confirmationNumber}`;
+          } else if (newStatus === 'completed') {
+            msg = `Your order ${order.confirmationNumber} has been picked up. Thank you for shopping local!`;
+          }
+          if (msg) {
+            await sendOrderMessage(recipientId, msg, senderId, { orderId: order.id, confirmationNumber: order.confirmationNumber });
+          }
+        }
+      } catch (msgErr) {
+        console.warn('Failed to send auto order message to consumer:', msgErr);
+      }
+      // ...existing code...
     } catch (error) {
       console.error('Error updating order status:', error);
       Alert.alert('Error', 'Failed to update order status. Please try again.');
@@ -328,6 +327,20 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
   // ENHANCED: Contact customer with modal integration
   const handleContactCustomer = (order, method = 'auto') => {
+    if (method === 'chat') {
+      // Navigate directly to chat/messages screen
+      navigation.navigate('MessagesScreen', {
+        recipientId: order.customerEmail,
+        recipientName: order.customerName,
+        context: {
+          type: 'order',
+          orderId: order.id,
+          confirmationNumber: order.confirmationNumber
+        }
+      });
+      return;
+    }
+
     if (method === 'auto') {
       const options = [];
       
@@ -357,12 +370,11 @@ export default function BusinessOrdersScreen({ navigation, route }) {
         });
       }
       
-      if (order.communication?.messagesEnabled) {
-        options.push({
-          text: '💬 Message in App',
-          onPress: () => navigateToMessages(order)
-        });
-      }
+      // Always add chat option
+      options.push({
+        text: '💬 Chat with Customer',
+        onPress: () => handleContactCustomer(order, 'chat')
+      });
       
       options.push({ text: 'Cancel', style: 'cancel' });
       
@@ -392,7 +404,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           }
           break;
         case 'message':
-          navigateToMessages(order);
+          handleContactCustomer(order, 'chat');
           break;
       }
     }

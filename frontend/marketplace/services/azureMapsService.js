@@ -1,4 +1,4 @@
-// services/azureMapsService.js
+// services/azureMapsService.js - FIXED VERSION (No hardcoded keys)
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -8,8 +8,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  */
 export const getAzureMapsKey = async () => {
   try {
-    console.log('=== AZURE MAPS KEY DEBUG ===');
-    console.log('Starting request to fetch Azure Maps key');
+    console.log('🗺️ Fetching Azure Maps key from server...');
     
     // Get user email for authenticated requests
     const userEmail = await AsyncStorage.getItem('userEmail');
@@ -23,69 +22,45 @@ export const getAzureMapsKey = async () => {
     // Add authentication headers if available
     if (userEmail) {
       headers['X-User-Email'] = userEmail;
-      console.log('Added user email to headers:', userEmail);
-    } else {
-      console.log('No user email found in AsyncStorage');
     }
     
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
-      console.log('Added auth token to headers (token hidden)');
-    } else {
-      console.log('No auth token found in AsyncStorage');
     }
     
-    // Log the full request details
-    const requestUrl = `${API_BASE_URL}/marketplace/maps-config`;
-    console.log('Making request to:', requestUrl);
-    console.log('With headers:', JSON.stringify(headers, null, 2));
-    
     // Get Azure Maps key from backend
+    const requestUrl = `${API_BASE_URL}/marketplace/maps-config`;
     const response = await fetch(requestUrl, {
       method: 'GET',
       headers,
     });
     
-    console.log('Response status:', response.status);
-    
-    // Get the response text first for debugging
-    const responseText = await response.text();
-    console.log('Response text:', responseText);
-    
     if (!response.ok) {
-      throw new Error(`Failed to get Azure Maps key: ${response.status} - ${responseText}`);
+      const errorText = await response.text();
+      throw new Error(`Failed to get Azure Maps key: ${response.status} - ${errorText}`);
     }
     
-    // Parse the text response as JSON
-    let data;
-    try {
-      data = JSON.parse(responseText);
-      console.log('Parsed response data:', JSON.stringify(data, null, 2));
-    } catch (parseError) {
-      console.error('Failed to parse response as JSON:', parseError);
-      throw new Error('Invalid JSON response from server');
-    }
+    const data = await response.json();
     
     if (!data || !data.azureMapsKey) {
-      console.error('Response missing azureMapsKey property:', data);
       throw new Error('No Azure Maps key returned from server');
     }
     
-    console.log('Successfully retrieved Azure Maps key');
+    console.log('✅ Successfully retrieved Azure Maps key');
     
     // Cache the key for fallback
     try {
       await AsyncStorage.setItem('AZURE_MAPS_KEY_CACHE', data.azureMapsKey);
       await AsyncStorage.setItem('AZURE_MAPS_KEY_TIMESTAMP', Date.now().toString());
     } catch (cacheError) {
-      console.warn('Failed to cache Azure Maps key:', cacheError);
+      console.warn('⚠️ Failed to cache Azure Maps key:', cacheError);
     }
     
     return data.azureMapsKey;
   } catch (error) {
-    console.error('Error getting Azure Maps key:', error);
+    console.error('❌ Error getting Azure Maps key:', error);
     
-    // Try to use cached key if available
+    // Try to use cached key if available and not too old
     try {
       const cachedKey = await AsyncStorage.getItem('AZURE_MAPS_KEY_CACHE');
       const keyTimestamp = await AsyncStorage.getItem('AZURE_MAPS_KEY_TIMESTAMP');
@@ -96,19 +71,12 @@ export const getAzureMapsKey = async () => {
         
         // Use cached key if it's less than 24 hours old
         if (!isNaN(timestamp) && (now - timestamp) < 86400000) {
-          console.log('Using cached Azure Maps key');
+          console.log('📱 Using cached Azure Maps key');
           return cachedKey;
         }
       }
     } catch (cacheError) {
-      console.warn('Failed to retrieve cached Azure Maps key:', cacheError);
-    }
-    
-    // TEMPORARY FOR DEBUGGING: Use a direct fallback key
-    if (__DEV__) {
-      console.warn('*** USING HARDCODED DEVELOPMENT KEY ***');
-      const devKey = 'x4lgzsiW3KfzGLWVhIcgG3p0VavqZH7iUlPQ1VJgC0k';
-      return devKey;
+      console.warn('⚠️ Failed to retrieve cached Azure Maps key:', cacheError);
     }
     
     throw error;
@@ -155,7 +123,7 @@ export const geocodeAddress = async (address) => {
       postalCode: data.postalCode
     };
   } catch (error) {
-    console.error('Geocoding error:', error);
+    console.error('❌ Geocoding error:', error);
     throw error;
   }
 };
@@ -201,7 +169,7 @@ export const reverseGeocode = async (latitude, longitude) => {
       longitude: data.longitude
     };
   } catch (error) {
-    console.error('Reverse geocoding error:', error);
+    console.error('❌ Reverse geocoding error:', error);
     throw error;
   }
 };

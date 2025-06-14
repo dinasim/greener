@@ -1,336 +1,299 @@
-# send_watering_notifications/__init__.py
+# send-watering-notifications/__init__.py - COMPLETE FCM SCHEDULER
 import logging
-import azure.functions as func
-import os
-import datetime
-import requests
 import json
-import hmac
-import hashlib
-import base64
-import urllib.parse
-from azure.cosmos import CosmosClient
+import azure.functions as func
+from azure.cosmos import CosmosClient, exceptions
+import requests
+import os
+from datetime import datetime, timezone, timedelta
+
+# Database connection
+MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
+MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+
+# Firebase Cloud Messaging
+FCM_SERVER_KEY = os.environ.get("FCM_SERVER_KEY")
+FCM_SEND_URL = "https://fcm.googleapis.com/fcm/send"
+
+def send_fcm_notification_batch(fcm_tokens, web_tokens, title, body, data=None):
+    """Send FCM notification to multiple devices (both mobile and web)"""
+    try:
+        if not FCM_SERVER_KEY:
+            logging.error('FCM_SERVER_KEY not configured')
+            return False, "FCM server key not configured"
+        
+        all_tokens = []
+        if fcm_tokens:
+            all_tokens.extend(fcm_tokens)
+        if web_tokens:
+            all_tokens.extend(web_tokens)
+            
+        if not all_tokens:
+            logging.warning('No device tokens provided')
+            return True, "No tokens to send to"
+        
+        # FCM supports up to 1000 tokens in a single request
+        batch_size = 500
+        total_success = 0
+        total_failure = 0
+        
+        for i in range(0, len(all_tokens), batch_size):
+            batch_tokens = all_tokens[i:i + batch_size]
+            
+            payload = {
+                "registration_ids": batch_tokens,
+                "notification": {
+                    "title": title,
+                    "body": body,
+                    "icon": "ic_notification",
+                    "sound": "default",
+                    "priority": "high"
+                },
+                "data": data or {},
+                "android": {
+                    "notification": {
+                        "channel_id": "watering_notifications",
+                        "priority": "high",
+                        "vibrate": [1000, 1000],
+                        "sound": "default"
+                    }
+                },
+                "webpush": {
+                    "notification": {
+                        "title": title,
+                        "body": body,
+                        "icon": "/icon-192x192.png",
+                        "badge": "/badge-72x72.png"
+                    }
+                },
+                "apns": {
+                    "payload": {
+                        "aps": {
+                            "sound": "default",
+                            "badge": 1,
+                            "alert": {
+                                "title": title,
+                                "body": body
+                            }
+                        }
+                    }
+                }
+            }
+            
+            headers = {
+                "Authorization": f"key={FCM_SERVER_KEY}",
+                "Content-Type": "application/json"
+            }
+            
+            response = requests.post(
+                FCM_SEND_URL,
+                json=payload,
+                headers=headers,
+                timeout=15
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                batch_success = result.get('success', 0)
+                batch_failure = result.get('failure', 0)
+                total_success += batch_success
+                total_failure += batch_failure
+                
+                logging.info(f'FCM batch sent: {batch_success} success, {batch_failure} failures')
+            else:
+                logging.error(f'FCM batch failed: {response.status_code} {response.text}')
+                total_failure += len(batch_tokens)
+        
+        success = total_success > 0
+        message = f"Sent {total_success} notifications, {total_failure} failed"
+        
+        logging.info(f'FCM notification batch complete: {message}')
+        return success, message
+        
+    except Exception as e:
+        logging.error(f'Error sending FCM batch notification: {str(e)}')
+        return False, str(e)
+
+def get_businesses_needing_notifications():
+    """Get businesses that have plants needing water and notification settings"""
+    try:
+        params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
+        client = CosmosClient(params['AccountEndpoint'], credential=params['AccountKey'])
+        database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
+        
+        inventory_container = database.get_container_client("inventory")
+        notifications_container = database.get_container_client("watering_notifications")
+        
+        # Get current time
+        current_time = datetime.now(timezone.utc)
+        current_hour = current_time.hour
+        current_minute = current_time.minute
+        
+        # Get all notification settings for businesses that should receive notifications now
+        notification_settings = list(notifications_container.query_items(
+            query="SELECT * FROM c WHERE c.enabled = true",
+            enable_cross_partition_query=True
+        ))
+        
+        businesses_to_notify = []
+        
+        for setting in notification_settings:
+            # Check if it's time to send notification
+            notification_time = setting.get('notificationTime', '07:00')
+            try:
+                notify_hour, notify_minute = map(int, notification_time.split(':'))
+                
+                # Only send if current time matches notification time (within 30 minute window)
+                if current_hour == notify_hour and abs(current_minute - notify_minute) <= 30:
+                    business_id = setting.get('businessId')
+                    fcm_tokens = setting.get('fcmTokens', [])
+                    web_tokens = setting.get('webPushTokens', [])
+                    
+                    if business_id and (fcm_tokens or web_tokens):
+                        # Check if business has plants needing water
+                        plants_query = """
+                        SELECT COUNT(1) as count 
+                        FROM c 
+                        WHERE c.businessId = @businessId 
+                        AND c.productType = 'plant' 
+                        AND c.status = 'active'
+                        AND (c.wateringSchedule.needsWatering = true OR c.wateringSchedule.activeWaterDays <= 0)
+                        """
+                        
+                        plant_count_result = list(inventory_container.query_items(
+                            query=plants_query,
+                            parameters=[{"name": "@businessId", "value": business_id}],
+                            enable_cross_partition_query=True
+                        ))
+                        
+                        plants_needing_water = plant_count_result[0]['count'] if plant_count_result else 0
+                        
+                        if plants_needing_water > 0:
+                            # Get specific plant names for notification
+                            plants_query_details = """
+                            SELECT c.common_name
+                            FROM c 
+                            WHERE c.businessId = @businessId 
+                            AND c.productType = 'plant' 
+                            AND c.status = 'active'
+                            AND (c.wateringSchedule.needsWatering = true OR c.wateringSchedule.activeWaterDays <= 0)
+                            """
+                            
+                            plants_details = list(inventory_container.query_items(
+                                query=plants_query_details,
+                                parameters=[{"name": "@businessId", "value": business_id}],
+                                enable_cross_partition_query=True
+                            ))
+                            
+                            plant_names = [p.get('common_name', 'Unknown Plant') for p in plants_details[:3]]  # Max 3 names
+                            
+                            businesses_to_notify.append({
+                                'businessId': business_id,
+                                'fcmTokens': fcm_tokens,
+                                'webPushTokens': web_tokens,
+                                'plantsCount': plants_needing_water,
+                                'plantNames': plant_names,
+                                'notificationTime': notification_time,
+                                'settingId': setting.get('id')
+                            })
+                            
+            except ValueError:
+                logging.warning(f'Invalid notification time format: {notification_time}')
+                continue
+        
+        return businesses_to_notify
+        
+    except Exception as e:
+        logging.error(f'Error getting businesses needing notifications: {str(e)}')
+        return []
+
+def update_notification_log(settings_id, business_id, success, message):
+    """Update notification log in database"""
+    try:
+        params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
+        client = CosmosClient(params['AccountEndpoint'], credential=params['AccountKey'])
+        database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
+        notifications_container = database.get_container_client("watering_notifications")
+        
+        # Update the settings record with last notification info
+        try:
+            settings_item = notifications_container.read_item(item=settings_id, partition_key=business_id)
+            settings_item['lastNotificationSent'] = datetime.utcnow().isoformat()
+            settings_item['lastNotificationSuccess'] = success
+            settings_item['lastNotificationMessage'] = message
+            notifications_container.replace_item(item=settings_id, body=settings_item)
+        except:
+            logging.warning(f'Could not update notification log for {business_id}')
+        
+    except Exception as e:
+        logging.error(f'Error updating notification log: {str(e)}')
 
 def main(mytimer: func.TimerRequest) -> None:
-    utc_timestamp = datetime.datetime.utcnow().replace(
-        tzinfo=datetime.timezone.utc).isoformat()
+    """Timer trigger function that runs every hour to send watering notifications"""
+    utc_timestamp = datetime.utcnow().replace(tzinfo=timezone.utc).isoformat()
     
-    logging.info('Notification scheduler function triggered at: %s', utc_timestamp)
+    if mytimer.past_due:
+        logging.info('The notification timer is past due!')
+    
+    logging.info('Watering notification scheduler started at %s', utc_timestamp)
     
     try:
-        # Initialize Cosmos client
-        endpoint = os.environ["COSMOSDB__MARKETPLACE_CONNECTION_STRING"]
-        key = os.environ["COSMOSDB_KEY"]
-        database_id = os.environ["COSMOSDB_MARKETPLACE_DATABASE_NAME"]
-        inventory_container_id = "inventory"
-        notifications_container_id = "watering_notifications"
+        businesses_to_notify = get_businesses_needing_notifications()
         
-        client = CosmosClient(endpoint, key)
-        database = client.get_database_client(database_id)
-        inventory_container = database.get_container_client(inventory_container_id)
-        notifications_container = database.get_container_client(notifications_container_id)
-        
-        # Get current hour for checking notification times
-        now = datetime.datetime.utcnow()
-        current_hour = now.hour
-        current_minute = now.minute
-        current_time_string = f"{current_hour:02d}:{current_minute:02d}"
-        
-        logging.info(f"Checking for notifications scheduled around: {current_time_string}")
-        
-        # Find all businesses with active notifications around current time
-        start_time = get_time_offset(current_hour, current_minute, -30)
-        end_time = get_time_offset(current_hour, current_minute, 30)
-        
-        businesses_query = """
-            SELECT DISTINCT c.businessId FROM c 
-            WHERE c.status = 'active' 
-            AND c.notificationTime BETWEEN @startTime AND @endTime
-        """
-        
-        businesses = list(notifications_container.query_items(
-            query=businesses_query,
-            parameters=[
-                {"name": "@startTime", "value": start_time},
-                {"name": "@endTime", "value": end_time}
-            ],
-            enable_cross_partition_query=True
-        ))
-        
-        for business in businesses:
-            business_id = business['businessId']
-            process_business_notifications(inventory_container, notifications_container, business_id)
-        
-        logging.info(f"Completed notification check at {utc_timestamp}")
-        
-    except Exception as e:
-        logging.error(f"Error in notification scheduler: {str(e)}")
-        raise
-
-def get_time_offset(hour, minute, offset_minutes):
-    """Calculate time with offset minutes"""
-    dt = datetime.datetime.utcnow().replace(hour=hour, minute=minute)
-    offset_dt = dt + datetime.timedelta(minutes=offset_minutes)
-    return f"{offset_dt.hour:02d}:{offset_dt.minute:02d}"
-
-def process_business_notifications(inventory_container, notifications_container, business_id):
-    """Process notifications for a specific business"""
-    try:
-        # Find all plants that need watering for this business
-        plants_query = """
-            SELECT * FROM c 
-            WHERE c.businessId = @businessId 
-            AND c.productType = 'plant' 
-            AND c.wateringSchedule.needsWatering = true
-        """
-        
-        plants_needing_water = list(inventory_container.query_items(
-            query=plants_query,
-            parameters=[{"name": "@businessId", "value": business_id}],
-            enable_cross_partition_query=True
-        ))
-        
-        if not plants_needing_water:
-            logging.info(f"No plants need watering for business: {business_id}")
+        if not businesses_to_notify:
+            logging.info('No businesses need watering notifications at this time')
             return
         
-        # Get device tokens for this business
-        notifications_query = """
-            SELECT * FROM c 
-            WHERE c.businessId = @businessId 
-            AND c.status = 'active'
-        """
+        logging.info(f'Found {len(businesses_to_notify)} businesses needing notifications')
         
-        notifications = list(notifications_container.query_items(
-            query=notifications_query,
-            parameters=[{"name": "@businessId", "value": business_id}],
-            enable_cross_partition_query=True
-        ))
+        total_notifications_sent = 0
         
-        if not notifications:
-            logging.info(f"No active notification settings found for business: {business_id}")
-            return
-        
-        # Get unique device tokens
-        device_tokens = set()
-        for notification in notifications:
-            if 'deviceTokens' in notification and notification['deviceTokens']:
-                device_tokens.update(notification['deviceTokens'])
-        
-        if not device_tokens:
-            logging.info(f"No device tokens found for business: {business_id}")
-            return
-        
-        # Prepare notification message
-        plant_names = [p.get('name') or p.get('common_name') for p in plants_needing_water[:3]]
-        
-        if len(plants_needing_water) == 1:
-            notification_text = f"{plant_names[0]} needs watering today."
-        elif len(plants_needing_water) <= 3:
-            notification_text = f"{', '.join(plant_names)} need watering today."
-        else:
-            notification_text = f"{', '.join(plant_names)} and {len(plants_needing_water) - 3} more plants need watering today."
-        
-        # Send notifications via Azure Notification Hub
-        send_notifications(
-            business_id=business_id,
-            title="🌱 Plant Watering Reminder",
-            body=notification_text,
-            plant_count=len(plants_needing_water),
-            device_tokens=list(device_tokens)
-        )
-        
-        # Update last sent timestamp for notifications
-        for notification in notifications:
-            notification['lastSent'] = datetime.datetime.utcnow().isoformat()
-            notifications_container.upsert_item(notification)
-        
-        logging.info(f"Sent watering notifications for {len(plants_needing_water)} plants to {len(device_tokens)} devices")
-    
-    except Exception as e:
-        logging.error(f"Error processing notifications for business {business_id}: {str(e)}")
-        raise
-
-def generate_sas_token(namespace, hub_name, key_name, key_value, expiry_seconds=3600):
-    """Generate SAS token for Azure Notification Hub authentication"""
-    try:
-        # Create the resource URI
-        uri = f"https://{namespace}.servicebus.windows.net/{hub_name}"
-        encoded_uri = urllib.parse.quote_plus(uri)
-        
-        # Calculate expiry time
-        expiry = int(datetime.datetime.utcnow().timestamp()) + expiry_seconds
-        
-        # Create the string to sign
-        string_to_sign = f"{encoded_uri}\n{expiry}"
-        
-        # Create HMAC signature
-        signature = hmac.new(
-            key_value.encode('utf-8'),
-            string_to_sign.encode('utf-8'),
-            hashlib.sha256
-        ).digest()
-        
-        # Encode signature
-        encoded_signature = base64.b64encode(signature).decode('utf-8')
-        encoded_signature = urllib.parse.quote_plus(encoded_signature)
-        
-        # Create the SAS token
-        sas_token = f"SharedAccessSignature sr={encoded_uri}&sig={encoded_signature}&se={expiry}&skn={key_name}"
-        
-        return sas_token
-    
-    except Exception as e:
-        logging.error(f"Error generating SAS token: {str(e)}")
-        raise
-
-def send_notifications(business_id, title, body, plant_count, device_tokens):
-    """Send notifications via Azure Notification Hub"""
-    try:
-        # Get configuration from environment variables
-        connection_string = os.environ.get("AZURE_NOTIFICATION_HUB_CONNECTION_STRING")
-        hub_name = os.environ.get("AZURE_NOTIFICATION_HUB_NAME")
-        namespace = os.environ.get("AZURE_NOTIFICATION_HUB_NAMESPACE")
-        
-        if not all([connection_string, hub_name, namespace]):
-            logging.error("Missing Azure Notification Hub configuration")
-            return
-        
-        # Parse connection string to get key name and key value
-        conn_parts = dict(part.split('=', 1) for part in connection_string.split(';') if '=' in part)
-        key_name = conn_parts.get('SharedAccessKeyName')
-        key_value = conn_parts.get('SharedAccessKey')
-        
-        if not all([key_name, key_value]):
-            logging.error("Invalid connection string format")
-            return
-        
-        # Generate SAS token
-        sas_token = generate_sas_token(namespace, hub_name, key_name, key_value)
-        
-        # Prepare notification payload for Android (FCM format)
-        fcm_payload = {
-            "data": {
-                "title": title,
-                "body": body,
-                "type": "WATERING_REMINDER",
-                "businessId": business_id,
-                "plantCount": str(plant_count),
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "action": "open_watering_checklist"
-            }
-        }
-        
-        # Prepare notification payload for iOS (APNS format)
-        apns_payload = {
-            "aps": {
-                "alert": {
-                    "title": title,
-                    "body": body
-                },
-                "badge": plant_count,
-                "sound": "default"
-            },
-            "customData": {
-                "type": "WATERING_REMINDER",
-                "businessId": business_id,
-                "plantCount": plant_count,
-                "timestamp": datetime.datetime.utcnow().isoformat(),
-                "action": "open_watering_checklist"
-            }
-        }
-        
-        # Send to specific device tokens (if you want to target specific devices)
-        success_count = 0
-        error_count = 0
-        
-        for token in device_tokens:
+        for business in businesses_to_notify:
             try:
-                # Try sending as Android notification first
-                android_success = send_notification_to_platform(
-                    namespace, hub_name, sas_token, fcm_payload, "gcm", tag=f"deviceToken:{token}"
+                business_id = business['businessId']
+                plants_count = business['plantsCount']
+                plant_names = business['plantNames']
+                fcm_tokens = business['fcmTokens']
+                web_tokens = business['webPushTokens']
+                
+                # Create notification content
+                if plants_count == 1:
+                    title = "🌱 Plant Watering Reminder"
+                    body = f"{plant_names[0]} needs watering today!"
+                elif plants_count <= 3:
+                    title = f"🌱 {plants_count} Plants Need Watering"
+                    body = f"{', '.join(plant_names)} need watering today!"
+                else:
+                    title = f"🌱 {plants_count} Plants Need Watering"
+                    body = f"{', '.join(plant_names[:2])} and {plants_count - 2} more plants need watering!"
+                
+                notification_data = {
+                    "type": "watering_reminder",
+                    "businessId": business_id,
+                    "plantsCount": str(plants_count),
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "action": "open_watering_checklist"
+                }
+                
+                # Send notifications
+                success, message = send_fcm_notification_batch(
+                    fcm_tokens, web_tokens, title, body, notification_data
                 )
                 
-                if android_success:
-                    success_count += 1
-                    logging.info(f"Android notification sent to device: {token}")
+                if success:
+                    total_notifications_sent += len(fcm_tokens) + len(web_tokens)
+                    logging.info(f'✅ Sent watering notifications to business {business_id}: {message}')
                 else:
-                    # Try sending as iOS notification
-                    ios_success = send_notification_to_platform(
-                        namespace, hub_name, sas_token, apns_payload, "apple", tag=f"deviceToken:{token}"
-                    )
-                    
-                    if ios_success:
-                        success_count += 1
-                        logging.info(f"iOS notification sent to device: {token}")
-                    else:
-                        error_count += 1
-                        logging.error(f"Failed to send notification to device: {token}")
-            
+                    logging.error(f'❌ Failed to send notifications to business {business_id}: {message}')
+                
+                # Update notification log
+                update_notification_log(business['settingId'], business_id, success, message)
+                
             except Exception as e:
-                error_count += 1
-                logging.error(f"Error sending notification to device {token}: {str(e)}")
+                logging.error(f'Error processing notifications for business {business.get("businessId", "unknown")}: {str(e)}')
+                continue
         
-        # Also send broadcast notification to all devices for this business
-        business_tag = f"businessId:{business_id}"
+        logging.info(f'Watering notification scheduler completed. Sent {total_notifications_sent} notifications to {len(businesses_to_notify)} businesses.')
         
-        # Send Android broadcast
-        send_notification_to_platform(
-            namespace, hub_name, sas_token, fcm_payload, "gcm", tag=business_tag
-        )
-        
-        # Send iOS broadcast
-        send_notification_to_platform(
-            namespace, hub_name, sas_token, apns_payload, "apple", tag=business_tag
-        )
-        
-        logging.info(f"Notification summary - Success: {success_count}, Errors: {error_count}")
-    
     except Exception as e:
-        logging.error(f"Error sending notifications: {str(e)}")
-        raise
-
-def send_notification_to_platform(namespace, hub_name, sas_token, payload, platform, tag=None):
-    """Send notification to specific platform via Azure Notification Hub"""
-    try:
-        # Construct the API endpoint
-        endpoint = f"https://{namespace}.servicebus.windows.net/{hub_name}/messages/"
-        
-        # Add tag filter if provided
-        if tag:
-            endpoint += f"?api-version=2015-01"
-        else:
-            endpoint += "?api-version=2015-01"
-        
-        # Prepare headers
-        headers = {
-            "Authorization": sas_token,
-            "Content-Type": "application/json",
-            "ServiceBusNotification-Format": platform
-        }
-        
-        # Add tag header if provided
-        if tag:
-            headers["ServiceBusNotification-Tags"] = tag
-        
-        # Convert payload to JSON string
-        payload_json = json.dumps(payload)
-        
-        # Send the notification
-        response = requests.post(
-            endpoint,
-            headers=headers,
-            data=payload_json,
-            timeout=30
-        )
-        
-        if response.status_code in [201, 202]:
-            logging.info(f"Notification sent successfully to {platform} platform")
-            return True
-        else:
-            logging.error(f"Failed to send {platform} notification: {response.status_code} - {response.text}")
-            return False
-    
-    except Exception as e:
-        logging.error(f"Error sending {platform} notification: {str(e)}")
-        return False
+        logging.error(f'Watering notification scheduler failed: {str(e)}')
