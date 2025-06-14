@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useForm } from '../context/FormContext';
 
 // Helper: upload photo to Azure Blob Storage via your backend
@@ -55,6 +56,14 @@ export default function PlantReviewScreen({ route, navigation }) {
   const [photoUri, setPhotoUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // For date pickers
+  const [showWatered, setShowWatered] = useState(false);
+  const [showFed, setShowFed] = useState(false);
+  const [showRepotted, setShowRepotted] = useState(false);
+  const [lastWatered, setLastWatered] = useState(null);
+  const [lastFed, setLastFed] = useState(null);
+  const [lastRepotted, setLastRepotted] = useState(null);
+
   // Pick custom user photo
   const handlePhotoPick = async () => {
     let perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -66,6 +75,16 @@ export default function PlantReviewScreen({ route, navigation }) {
     if (res.cancelled || (res.assets && res.assets.length === 0)) return;
     setPhotoUri(res.uri || res.assets[0].uri);
   };
+
+  // Format date to readable string
+  function formatDate(d) {
+    if (!d) return 'Today';
+    try {
+      return new Date(d).toLocaleDateString();
+    } catch {
+      return d;
+    }
+  }
 
   // Save to backend (Cosmos + upload)
   const handleSave = async () => {
@@ -83,8 +102,10 @@ export default function PlantReviewScreen({ route, navigation }) {
       if (photoUri) {
         uploadedUrl = await uploadPlantPhotoToAzure(photoUri);
       }
-      // Compose plant record
+
+      // Compose plant record using new data format
       const id = normalizeId(userEmail, nickname); // normalized, deterministic!
+
       const payload = {
         id,
         email: userEmail,
@@ -92,19 +113,18 @@ export default function PlantReviewScreen({ route, navigation }) {
         location,
         common_name: plant.common_name,
         scientific_name: plant.scientific_name,
-        origin: plant.origin || "",
-        water_days: plant.water_days || 7,
-        light: plant.light || "",
-        humidity: plant.humidity || "",
-        temperature: plant.temperature || { min: null, max: null },
-        pets: plant.pets || "",
-        difficulty: plant.difficulty || 5,
-        repot: plant.repot || "",
-        feed: plant.feed || "",
-        common_problems: plant.common_problems || [],
         image_url: uploadedUrl || plant.image_url || plant.image_urls?.[0] || "",
-        avg_watering: 0,
-        // Any other custom fields...
+        care_info: plant.care_info || {},
+        schedule: plant.schedule || {},
+        family: plant.family || "",
+        care_tips: plant.care_tips || "",
+        common_problems: plant.common_problems || [],
+        origin: plant.origin || "",
+        avg_watering: plant.avg_watering || 0,
+        // Date fields for backend logic
+        last_watered: lastWatered,
+        last_fed: lastFed,
+        last_repotted: lastRepotted,
       };
 
       // Save to backend
@@ -165,6 +185,57 @@ export default function PlantReviewScreen({ route, navigation }) {
           onChangeText={setLocation}
           placeholder="E.g. Living Room"
         />
+
+        {/* Last Watered */}
+        <Text style={styles.label}>Last Watered</Text>
+        <TouchableOpacity style={styles.input} onPress={() => setShowWatered(true)}>
+          <Text>{lastWatered ? formatDate(lastWatered) : "Today"}</Text>
+        </TouchableOpacity>
+        {showWatered && (
+          <DateTimePicker
+            value={lastWatered ? new Date(lastWatered) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowWatered(false);
+              if (selectedDate) setLastWatered(selectedDate.toISOString());
+            }}
+          />
+        )}
+
+        {/* Last Fed */}
+        <Text style={styles.label}>Last Fed</Text>
+        <TouchableOpacity style={styles.input} onPress={() => setShowFed(true)}>
+          <Text>{lastFed ? formatDate(lastFed) : "Today"}</Text>
+        </TouchableOpacity>
+        {showFed && (
+          <DateTimePicker
+            value={lastFed ? new Date(lastFed) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowFed(false);
+              if (selectedDate) setLastFed(selectedDate.toISOString());
+            }}
+          />
+        )}
+
+        {/* Last Repotted */}
+        <Text style={styles.label}>Last Repotted</Text>
+        <TouchableOpacity style={styles.input} onPress={() => setShowRepotted(true)}>
+          <Text>{lastRepotted ? formatDate(lastRepotted) : "Today"}</Text>
+        </TouchableOpacity>
+        {showRepotted && (
+          <DateTimePicker
+            value={lastRepotted ? new Date(lastRepotted) : new Date()}
+            mode="date"
+            display="default"
+            onChange={(event, selectedDate) => {
+              setShowRepotted(false);
+              if (selectedDate) setLastRepotted(selectedDate.toISOString());
+            }}
+          />
+        )}
 
         <Text style={styles.label}>Custom Photo (optional)</Text>
         <TouchableOpacity style={styles.uploadBtn} onPress={handlePhotoPick}>

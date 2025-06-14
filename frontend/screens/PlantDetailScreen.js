@@ -62,6 +62,13 @@ export default function PlantDetailScreen({ route, navigation }) {
   const care = plant.care_info || {};
   const schedule = plant.schedule || {};
 
+  // Pet icon color and value
+  let petIconColor = '#826C5E', petValue = dash;
+  if (care.pets === 'poisonous') { petIconColor = '#D90429'; petValue = '❌ Poisonous'; }
+  else if (care.pets === 'not poisonous') { petIconColor = '#59BA2C'; petValue = '✔️ Safe'; }
+  else if (care.pets === 'unknown') { petIconColor = '#826C5E'; petValue = 'Unknown'; }
+
+  // Care Info (Temperature is always one row, never wrapped)
   const careInfo = [
     {
       icon: <MaterialIcons name="wb-sunny" size={24} color="#FFD600" />,
@@ -76,16 +83,20 @@ export default function PlantDetailScreen({ route, navigation }) {
     {
       icon: <FontAwesome5 name="temperature-low" size={22} color="#F26C4F" />,
       label: 'Temperature',
-      value: (care.temperature_min_c && care.temperature_max_c)
+      // Show single dash if neither, min if only one, else as "min°–max°C"
+      value: care.temperature_min_c && care.temperature_max_c
         ? `${care.temperature_min_c}°–${care.temperature_max_c}°C`
+        : care.temperature_min_c
+        ? `${care.temperature_min_c}°C`
+        : care.temperature_max_c
+        ? `${care.temperature_max_c}°C`
         : dash,
+      oneLine: true,
     },
     {
-      icon: <MaterialIcons name="pets" size={22} color="#826C5E" />,
+      icon: <MaterialIcons name="pets" size={22} color={petIconColor} />,
       label: 'Pets',
-      value: care.pets === "poisonous" ? "❌ Poisonous" :
-        care.pets === "not poisonous" ? "✔️ Safe" :
-        care.pets === "unknown" ? "Unknown" : dash,
+      value: petValue,
     },
     {
       icon: <MaterialIcons name="fitness-center" size={22} color="#8663DC" />,
@@ -135,8 +146,8 @@ export default function PlantDetailScreen({ route, navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        {/* Plant Image */}
-        {plant.image_url && (
+        {/* Plant Image (only if image_url exists and non-empty) */}
+        {!!plant.image_url && (
           <Image source={{ uri: plant.image_url }} style={styles.image} />
         )}
 
@@ -147,11 +158,27 @@ export default function PlantDetailScreen({ route, navigation }) {
         {/* Care Info Section */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Care Info</Text>
-          {careInfo.map((item) => (
-            <View style={styles.infoRow} key={item.label}>
+          {careInfo.map((item, idx) => (
+            <View
+              style={[
+                styles.infoRow,
+                item.oneLine && { flexWrap: 'nowrap', alignItems: 'center' }
+              ]}
+              key={item.label}
+            >
               <View style={styles.infoIcon}>{item.icon}</View>
-              <Text style={styles.infoLabel}>{item.label}:</Text>
-              <Text style={styles.infoValue}>{item.value}</Text>
+              {/* For Temperature: label/value always in a row */}
+              {item.oneLine ? (
+                <>
+                  <Text style={[styles.infoLabel, { flexShrink: 0, minWidth: 90 }]}>{item.label}:</Text>
+                  <Text style={[styles.infoValue, { flex: 1, flexWrap: 'nowrap' }]}>{item.value}</Text>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.infoLabel}>{item.label}:</Text>
+                  <Text style={styles.infoValue}>{item.value}</Text>
+                </>
+              )}
             </View>
           ))}
         </View>
@@ -233,10 +260,14 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 20, fontWeight: '700', marginBottom: 10, color: '#3a4b37', flexDirection: 'row', alignItems: 'center' },
   infoRow: {
-    flexDirection: 'row', alignItems: 'center', marginBottom: 6, paddingLeft: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    paddingLeft: 4,
+    flexWrap: 'nowrap',
   },
   infoIcon: { width: 30, alignItems: 'center' },
-  infoLabel: { fontSize: 17, fontWeight: 'bold', marginRight: 7, color: '#333', width: 90 },
+  infoLabel: { fontSize: 17, fontWeight: 'bold', marginRight: 7, color: '#333', width: 90, flexShrink: 0 },
   infoValue: { fontSize: 17, color: '#484848', flex: 1 },
   sectionBody: { fontSize: 15, color: '#545454', marginTop: 2, lineHeight: 21, paddingLeft: 4 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
