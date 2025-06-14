@@ -1,12 +1,17 @@
 {
+  "scriptFile": "__init__.py",
   "bindings": [
     {
       "authLevel": "anonymous",
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "options"],
-      "route": "marketplace/business/{businessId}/inventory"
+      "methods": [
+        "get",
+        "post",
+        "put",
+        "delete"
+      ]
     },
     {
       "type": "http",

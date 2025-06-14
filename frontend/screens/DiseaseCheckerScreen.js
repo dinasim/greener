@@ -188,10 +188,14 @@ export default function DiseaseCheckerScreen({ navigation }) {
     <View style={{ flex: 1 }}>
       {/* Header Row with Back Button */}
       <View style={styles.headerRow}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
-          <Ionicons name="arrow-back" size={26} color="#2e7d32" />
-          <Text style={{ color: "#2e7d32", fontWeight: "bold", marginLeft: 6, fontSize: 16 }}>Back</Text>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#4CAF50" />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Disease Checker</Text>
+        <View style={styles.backButton} /> {/* Placeholder for centering */}
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
@@ -450,9 +454,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingTop: 18, paddingHorizontal: 12, paddingBottom: 2,
     backgroundColor: 'transparent', zIndex: 1
   },
-  backBtn: {
-    flexDirection: 'row', alignItems: 'center', padding: 6,
-    borderRadius: 10, backgroundColor: "#e6f4ea", alignSelf: 'flex-start'
+  backButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerTitle: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#205d29',
+    letterSpacing: 0.5,
   },
   container: { padding: 20, alignItems: 'center', backgroundColor: '#f7f7fa' },
   greenBtn: {

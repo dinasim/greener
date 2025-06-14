@@ -6,7 +6,7 @@
         "direction": "in",
         "name": "req",
         "methods": ["post", "options"],
-        "route": "business/inventory/create"
+        "route": "business/inventory"
       },
       {
         "type": "http",

@@ -13,6 +13,7 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import ReviewForm from '../components/ReviewForm';
 import ToastMessage from '../components/ToastMessage';
 import { fetchUserProfile } from '../services/marketplaceApi';
+import RatingStars from '../components/RatingStars';
 
 const SellerProfileScreen = () => {
   const navigation = useNavigation();
@@ -184,9 +185,10 @@ const SellerProfileScreen = () => {
         <ReviewsList
           targetType="seller"
           targetId={sellerId}
-          onAddReview={handleAddReview}
+          onAddReview={null}
           onReviewsLoaded={handleReviewsLoaded}
           autoLoad={true}
+          hideAddButton={true}
           key={`reviews-${refreshKey}`}
         />
       );
@@ -316,16 +318,18 @@ const SellerProfileScreen = () => {
             Joined {new Date(user.joinDate || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
           </Text>
           {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
-          <TouchableOpacity 
-            style={styles.reviewButton} 
-            onPress={handleAddReview}
-            accessible={true}
-            accessibilityLabel="Write a review"
-            accessibilityRole="button"
-          >
-            <MaterialIcons name="rate-review" size={16} color="#4CAF50" />
-            <Text style={styles.reviewButtonText}>Write a Review</Text>
-          </TouchableOpacity>
+          {user.email !== sellerId && (
+            <TouchableOpacity 
+              style={styles.reviewButton} 
+              onPress={handleAddReview}
+              accessible={true}
+              accessibilityLabel="Write a review"
+              accessibilityRole="button"
+            >
+              <MaterialIcons name="rate-review" size={16} color="#4CAF50" />
+              <Text style={styles.reviewButtonText}>Write a Review</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
@@ -337,7 +341,10 @@ const SellerProfileScreen = () => {
             <Text style={styles.statLabel}>Sold</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{formattedRating}</Text>
+            <View style={{flexDirection:'row',alignItems:'center'}}>
+              <Text style={styles.statValue}>{formattedRating}</Text>
+              <RatingStars rating={displayRating} size={16} />
+            </View>
             <Text style={styles.statLabel}>Rating ({sellerRating.count || 0})</Text>
           </View>
         </View>

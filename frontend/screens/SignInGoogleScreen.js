@@ -112,6 +112,10 @@ export default function SignInGoogleScreen({ navigation }) {
                 //updateFormData('fcmToken', fcmToken);
               }
 
+              // Only store minimal data locally for authentication
+              await AsyncStorage.setItem('userEmail', userInfo.email);
+              await AsyncStorage.setItem('currentUserId', userInfo.email);
+
               const userData = {
                 email: userInfo.email,
                 name: userInfo.name,
@@ -205,15 +209,72 @@ export default function SignInGoogleScreen({ navigation }) {
 
   async function getWebPushToken() {
     try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') return null;
+      // Check if notifications are supported
+      if (!('Notification' in window)) {
+        console.log("📱 Notifications not supported in this browser");
+        return null;
+      }
 
-      const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-      const messaging = getMessaging(app);
-      return await getToken(messaging, { vapidKey, serviceWorkerRegistration: reg });
+      // Check current permission state
+      let permission = Notification.permission;
+      
+      // If permission is default (not asked yet), request it
+      if (permission === 'default') {
+        console.log("📱 Requesting notification permission...");
+        permission = await Notification.requestPermission();
+      }
+
+      // Handle different permission states
+      if (permission === 'denied') {
+        console.log("📱 Notification permission denied by user");
+        return null;
+      }
+
+      if (permission === 'granted') {
+        console.log("📱 Notification permission granted, getting token...");
+        
+        try {
+          // Check if service worker is supported
+          if (!('serviceWorker' in navigator)) {
+            console.log("📱 Service Worker not supported");
+            return null;
+          }
+
+          // Register service worker
+          const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+          console.log("📱 Service Worker registered successfully");
+
+          // Initialize Firebase app
+          const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
+          const messaging = getMessaging(app);
+
+          // Get FCM token
+          const token = await getToken(messaging, { 
+            vapidKey, 
+            serviceWorkerRegistration: reg 
+          });
+
+          if (token) {
+            console.log("📱 Successfully obtained FCM token");
+            return token;
+          } else {
+            console.log("📱 No FCM token available");
+            return null;
+          }
+
+        } catch (tokenError) {
+          console.warn("📱 Error getting FCM token:", tokenError.message);
+          // Don't treat token errors as critical - app can still work without push notifications
+          return null;
+        }
+      }
+
+      console.log("📱 Notification permission not granted:", permission);
+      return null;
+
     } catch (err) {
-      console.error("❌ Error getting web push token:", err);
+      console.warn("📱 Error in web push token setup:", err.message);
+      // Don't throw error - app should continue to work without push notifications
       return null;
     }
   }

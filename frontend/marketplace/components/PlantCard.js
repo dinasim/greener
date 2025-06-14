@@ -1,7 +1,7 @@
 // components/PlantCard.js - FIXED: Clean Grid Layout
 import React, { useState, useCallback } from 'react';
 import {
-  View, Text, TouchableOpacity, StyleSheet, Image, Alert, Platform, Dimensions
+  View, Text, TouchableOpacity, StyleSheet, Image, Alert, Platform, Dimensions, Share
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -49,6 +49,21 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
     }
   }, [navigation, plant]);
 
+  // Unified navigation to Messages tab
+  const openMessagesScreen = useCallback((params = {}) => {
+    try {
+      // Try MarketplaceTabs first
+      if (navigation.navigate) {
+        navigation.navigate('MarketplaceTabs', { screen: 'Messages', params });
+      } else {
+        // Fallback to direct navigation
+        navigation.navigate('Messages', params);
+      }
+    } catch (err) {
+      Alert.alert('Navigation Error', 'Could not open messages. Please try again.');
+    }
+  }, [navigation]);
+
   // FIXED: Enhanced contact navigation with better error handling
   const handleContact = useCallback(async () => {
     try {
@@ -78,48 +93,13 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
 
       console.log('📱 Navigating to messages with params:', messageParams);
 
-      // FIXED: Better navigation strategy without canNavigate
-      const navigateToMessages = () => {
-        try {
-          // Try MainTabs first (most common)
-          navigation.navigate('MainTabs', {
-            screen: 'Messages',
-            params: messageParams
-          });
-        } catch (mainTabsError) {
-          try {
-            // Try MarketplaceTabs
-            navigation.navigate('MarketplaceTabs', {
-              screen: 'Messages',
-              params: messageParams
-            });
-          } catch (marketplaceTabsError) {
-            try {
-              // Try direct Messages navigation
-              navigation.navigate('Messages', messageParams);
-            } catch (directError) {
-              console.error('All navigation attempts failed:', {
-                mainTabsError,
-                marketplaceTabsError,
-                directError
-              });
-              Alert.alert(
-                'Navigation Error', 
-                'Could not open messages. Please go to the Messages tab manually.',
-                [{ text: 'OK' }]
-              );
-            }
-          }
-        }
-      };
-
-      navigateToMessages();
+      openMessagesScreen(messageParams);
 
     } catch (error) {
       console.error('❌ Contact error:', error);
       Alert.alert('Error', 'Could not start conversation. Please try again.');
     }
-  }, [navigation, plant]);
+  }, [navigation, plant, openMessagesScreen]);
 
   // FIXED: Order confirmation popup before starting conversation
   const handleOrder = useCallback(async () => {
@@ -165,35 +145,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
 
               console.log('🛒 Starting order inquiry with params:', messageParams);
 
-              // Navigate to messages with order inquiry
-              try {
-                navigation.navigate('MainTabs', {
-                  screen: 'Messages',
-                  params: messageParams
-                });
-              } catch (mainTabsError) {
-                try {
-                  navigation.navigate('MarketplaceTabs', {
-                    screen: 'Messages',
-                    params: messageParams
-                  });
-                } catch (marketplaceTabsError) {
-                  try {
-                    navigation.navigate('Messages', messageParams);
-                  } catch (directError) {
-                    console.error('Order navigation failed:', {
-                      mainTabsError,
-                      marketplaceTabsError,
-                      directError
-                    });
-                    Alert.alert(
-                      'Navigation Error', 
-                      'Could not open messages for order inquiry. Please go to Messages manually.',
-                      [{ text: 'OK' }]
-                    );
-                  }
-                }
-              }
+              openMessagesScreen(messageParams);
             }
           }
         ]
@@ -203,7 +155,7 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
       console.error('❌ Order error:', error);
       Alert.alert('Error', 'Could not process order inquiry. Please try again.');
     }
-  }, [navigation, plant]);
+  }, [navigation, plant, openMessagesScreen]);
 
   const handleWishToggle = useCallback(async () => {
     if (isWishing) return;
@@ -232,6 +184,21 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
       setIsWishing(false);
     }
   }, [plant, isWished, isWishing]);
+
+  // Share handler
+  const handleShare = useCallback(async () => {
+    try {
+      const shareMessage = `${plant.title || plant.name || 'Plant'}\nPrice: $${formatPrice(plant.price || plant.finalPrice || 0)}\n` +
+        (plant.description ? `\n${plant.description}` : '') +
+        (plant.link ? `\n${plant.link}` : '');
+      await Share.share({
+        message: shareMessage,
+        title: plant.title || plant.name || 'Plant',
+      });
+    } catch (error) {
+      Alert.alert('Error', 'Could not share this product.');
+    }
+  }, [plant]);
 
   const formatPrice = (price) => {
     const numPrice = parseFloat(price);
@@ -355,12 +322,16 @@ const PlantCard = ({ plant, showActions = true, layout = 'grid', style }) => {
               <MaterialIcons name="chat" size={16} color="#4CAF50" />
               <Text style={styles.contactText}>Contact</Text>
             </TouchableOpacity>
-            
             <TouchableOpacity style={styles.orderButton} onPress={handleOrder}>
               <MaterialIcons name="shopping-cart" size={16} color="#fff" />
               <Text style={styles.orderText}>
                 {plant.seller?.isBusiness || plant.sellerType === 'business' ? 'Order' : 'Buy'}
               </Text>
+            </TouchableOpacity>
+            {/* Share Button */}
+            <TouchableOpacity style={styles.shareButton} onPress={handleShare}>
+              <MaterialIcons name="share" size={16} color="#2196F3" />
+              <Text style={styles.shareText}>Share</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -527,6 +498,25 @@ const styles = StyleSheet.create({
   },
   orderText: {
     color: '#fff',
+    fontSize: 13,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  shareButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#2196F3',
+    backgroundColor: '#f0f8ff',
+    marginLeft: 0,
+  },
+  shareText: {
+    color: '#2196F3',
     fontSize: 13,
     fontWeight: '600',
     marginLeft: 4,

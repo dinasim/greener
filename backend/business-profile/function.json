@@ -6,7 +6,7 @@
         "direction": "in",
         "name": "req",
         "methods": ["get", "post", "patch", "options"],
-        "route": "business/profile"
+        "route": "marketplace/business/{businessId}/profile"
       },
       {
         "type": "http",

@@ -128,12 +128,11 @@ export default function OrderDetailModal({
       });
     }
     
-    if (order.communication?.messagesEnabled) {
-      options.push({
-        text: '💬 Message in App',
-        onPress: () => onContactCustomer(order)
-      });
-    }
+    // Add chat option - always available for orders
+    options.push({
+      text: '💬 Chat with Customer',
+      onPress: () => onContactCustomer(order, 'chat')
+    });
     
     options.push({ text: 'Cancel', style: 'cancel' });
     

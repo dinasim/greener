@@ -24,6 +24,11 @@ import searchPlants from '../screens/SearchPlantScreen';
 import UserPlantDetails from '../screens/UserPlantDetails';
 import login from '../screens/loginUserScreen';
 import registration from '../screens/RegistrationScreen';
+import PlantCareForumScreen from '../screens/PlantCareForumScreen';
+import AddSiteScreen from '../screens/AddSiteScreen';
+import ForumScreen from '../screens/ForumScreen';
+import SearchScreen from '../screens/SearchScreen';
+import AddOptionsScreen from '../screens/AddOptionsScreen';
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
@@ -85,6 +90,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Registration" component={withBackground(registration)} />
         <Stack.Screen name="LoginUser" component={withBackground(login)} />
         <Stack.Screen name="PlantReview" component={withBackground(PlantReviewScreen)} />
+        <Stack.Screen name="AddSite" component={withBackground(AddSiteScreen)} />
 
         {/* Consumer Home and Other Screens */}
         <Stack.Screen name="Home" component={withBackground(HomeScreen)} />
@@ -109,6 +115,10 @@ export default function AppNavigator() {
         <Stack.Screen name="PlantDetail" component={withBackground(PlantDetail)} />
         <Stack.Screen name="PlantLocationScreen" component={withBackground(PlantLocationScreen)} />
         <Stack.Screen name="DiseaseChecker" component={withBackground(DiseaseChecker)} />
+        <Stack.Screen name="PlantCareForumScreen" component={withBackground(PlantCareForumScreen)} />
+        <Stack.Screen name="ForumScreen" component={withBackground(ForumScreen)} />
+        <Stack.Screen name="SearchScreen" component={withBackground(SearchScreen)} />
+        <Stack.Screen name="AddOptionsScreen" component={withBackground(AddOptionsScreen)} />
       </Stack.Navigator>
     </FormProvider>
   );

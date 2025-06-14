@@ -16,6 +16,8 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { submitReview } from '../services/marketplaceApi';
 import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import RatingStars from './RatingStars';
 
 /**
  * Enhanced ReviewForm component with better error handling and user feedback
@@ -40,6 +42,11 @@ const ReviewForm = ({
   const [error, setError] = useState(null);
   const [errorDetails, setErrorDetails] = useState(null);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  React.useEffect(() => {
+    AsyncStorage.getItem('userEmail').then(setCurrentUser);
+  }, []);
 
   /**
    * Reset the form to initial state
@@ -57,6 +64,11 @@ const ReviewForm = ({
    */
   const handleSubmit = async () => {
     try {
+      // Prevent self-rating
+      if (currentUser && ((targetType === 'seller' && currentUser === targetId) || (targetType === 'product' && currentUser === targetId))) {
+        setError('You cannot review yourself.');
+        return;
+      }
       if (!reviewText.trim()) {
         setError('Please enter a review comment');
         return;
@@ -159,17 +171,14 @@ const ReviewForm = ({
               <View style={styles.ratingContainer}>
                 <Text style={styles.ratingLabel}>Rating:</Text>
                 <View style={styles.starsContainer}>
+                  {/* Use RatingStars for display, but allow selection */}
                   {[1, 2, 3, 4, 5].map(star => (
                     <TouchableOpacity
                       key={star}
                       onPress={() => setRating(star)}
                       style={styles.starButton}
                     >
-                      <MaterialIcons
-                        name={star <= rating ? 'star' : 'star-border'}
-                        size={36}
-                        color="#FFD700"
-                      />
+                      <RatingStars rating={star} size={36} showHalfStars={false} color={star <= rating ? '#FFD700' : '#E0E0E0'} />
                     </TouchableOpacity>
                   ))}
                 </View>

@@ -179,7 +179,6 @@ const ProductListView = ({
     if (!item.rating || item.rating === 0) {
       return <Text style={styles.newProductText}>New Product</Text>;
     }
-    
     return (
       <View style={styles.ratingContainer}>
         <MaterialIcons name="star" size={14} color="#FFD700" />
@@ -191,13 +190,12 @@ const ProductListView = ({
     );
   };
 
-  // Render seller rating
+  // Render seller rating (business & individual unified)
   const renderSellerRating = (item) => {
     const sellerRating = item.seller?.rating;
     const isBusiness = item.seller?.isBusiness || 
                        item.sellerType === 'business' || 
                        item.isBusinessListing;
-    
     return (
       <View style={styles.sellerInfo}>
         <View style={styles.sellerTypeContainer}>
@@ -206,19 +204,16 @@ const ProductListView = ({
             size={12} 
             color={isBusiness ? '#FF9800' : '#2196F3'} 
           />
-          <Text style={[styles.sellerTypeText, { color: isBusiness ? '#FF9800' : '#2196F3' }]}>
+          <Text style={[styles.sellerTypeText, { color: isBusiness ? '#FF9800' : '#2196F3' }]}> 
             {isBusiness ? 'Business' : 'Individual'}
           </Text>
         </View>
-        
         {!sellerRating || sellerRating === 0 ? (
           <Text style={styles.newSellerText}>New Seller</Text>
         ) : (
           <View style={styles.sellerRatingContainer}>
-            <MaterialIcons name="person" size={12} color="#666" />
-            <Text style={styles.sellerRatingText}>
-              {typeof sellerRating === 'number' ? sellerRating.toFixed(1) : sellerRating}
-            </Text>
+            <MaterialIcons name="star" size={12} color="#FFD700" />
+            <Text style={styles.sellerRatingText}>{sellerRating.toFixed(1)}</Text>
           </View>
         )}
       </View>

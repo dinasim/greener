@@ -12,10 +12,15 @@ import {
   Dimensions,
   ActivityIndicator,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import HomeToolbar from '../components/HomeTool';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import PlantCareForumScreen from './PlantCareForumScreen';
+import SearchPlantScreen from './SearchPlantScreen';
+import AddPlantScreen from './AddPlantScreen';
+import LocationsScreen from './LocationsScreen';
+import DiseaseCheckerScreen from './DiseaseCheckerScreen';
 
 const { width } = Dimensions.get('window');
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
@@ -29,13 +34,77 @@ function daysUntil(dateStr) {
   return Math.floor((target - today) / (1000 * 60 * 60 * 24));
 }
 
+const MAIN_TABS = [
+  { key: 'home', label: 'Home', icon: <MaterialIcons name="home" size={20} color="#2e7d32" /> },
+  { key: 'plants', label: 'My Plants', icon: <Ionicons name="leaf" size={20} color="#4CAF50" /> },
+  { key: 'marketplace', label: 'Market', icon: <Ionicons name="cart-outline" size={20} color="#FF9800" /> },
+  { key: 'disease', label: 'Disease', icon: <Ionicons name="medkit" size={20} color="#F44336" /> },
+  { key: 'forum', label: 'Forum', icon: <MaterialCommunityIcons name="forum" size={20} color="#2196F3" /> },
+  { key: 'search', label: 'Search', icon: <Ionicons name="search" size={20} color="#9C27B0" /> },
+  { key: 'add', label: 'Add', icon: <Ionicons name="add-circle" size={20} color="#673AB7" /> },
+];
+
+// Add component for Add tab options
+const AddTabContent = ({ navigation }) => {
+  return (
+    <View style={styles.addTabContainer}>
+      <Text style={styles.addTabTitle}>What would you like to add?</Text>
+      
+      <TouchableOpacity 
+        style={styles.addOption}
+        onPress={() => navigation.navigate('AddPlant')}
+      >
+        <View style={styles.addOptionIcon}>
+          <Ionicons name="leaf" size={30} color="#4CAF50" />
+        </View>
+        <Text style={styles.addOptionText}>🌿 Add Plant</Text>
+        <Text style={styles.addOptionDesc}>Add a new plant to your collection</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.addOption}
+        onPress={() => navigation.navigate('AddSite')}
+      >
+        <View style={styles.addOptionIcon}>
+          <Ionicons name="location" size={30} color="#FF9800" />
+        </View>
+        <Text style={styles.addOptionText}>📍 Add Site</Text>
+        <Text style={styles.addOptionDesc}>Create a new location for your plants</Text>
+      </TouchableOpacity>
+    </View>
+  );
+};
+
 export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
-  const [showPopup, setShowPopup] = useState(false);
-  const fadeAnim = useState(new Animated.Value(0))[0];
   const [activeTab, setActiveTab] = useState('today');
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [mainTab, setMainTab] = useState('home');
+  const fadeAnim = useState(new Animated.Value(0))[0]; // Add this missing line
+
+  // Handle navigation for tabs that should navigate immediately
+  useEffect(() => {
+    if (mainTab === 'plants') {
+      navigation.navigate('Locations');
+      setMainTab('home'); // Reset to home after navigation
+    } else if (mainTab === 'marketplace') {
+      navigation.navigate('MainTabs');
+      setMainTab('home'); // Reset to home after navigation
+    } else if (mainTab === 'disease') {
+      navigation.navigate('DiseaseChecker');
+      setMainTab('home'); // Reset to home after navigation
+    } else if (mainTab === 'search') {
+      navigation.navigate('SearchScreen');
+      setMainTab('home'); // Reset to home after navigation
+    } else if (mainTab === 'add') {
+      navigation.navigate('AddOptionsScreen');
+      setMainTab('home'); // Reset to home after navigation
+    } else if (mainTab === 'forum') {
+      navigation.navigate('PlantCareForumScreen');
+      setMainTab('home'); // Reset to home after navigation
+    }
+  }, [mainTab, navigation]);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -84,13 +153,6 @@ export default function HomeScreen({ navigation }) {
     fetchPlants();
   }, []);
 
-  const handleAddPress = () => setShowPopup(true);
-  const handleOptionPress = (type) => {
-    setShowPopup(false);
-    if (type === 'plant') navigation.navigate('AddPlant');
-    else if (type === 'site') navigation.navigate('AddSite');
-  };
-
   // Filter by selected tab (by next_water)
   const filteredPlants = plants.filter((plant) => {
     const days = daysUntil(plant.next_water);
@@ -134,67 +196,66 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.greeting}>{greeting}</Text>
       </Animated.View>
 
-      <View style={styles.tabRow}>
-        <TouchableOpacity style={{ flex: 1 }} onPress={() => setActiveTab('today')}>
-          <LinearGradient
-            colors={activeTab === 'today' ? ['#a8e063', '#56ab2f'] : ['#f0f0f0', '#e0e0e0']}
-            style={activeTab === 'today' ? styles.activeTab : styles.inactiveTab}
+      {/* Main Tabs */}
+      <View style={styles.mainTabsRow}>
+        {MAIN_TABS.map(tab => (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.mainTab, mainTab === tab.key && styles.activeMainTab]}
+            onPress={() => setMainTab(tab.key)}
           >
-            <Text style={activeTab === 'today' ? styles.tabText : styles.tabInactiveText}>Today</Text>
-          </LinearGradient>
-        </TouchableOpacity>
-        <TouchableOpacity style={{ flex: 1 }} onPress={() => setActiveTab('upcoming')}>
-          <LinearGradient
-            colors={activeTab === 'upcoming' ? ['#a8e063', '#56ab2f'] : ['#f0f0f0', '#e0e0e0']}
-            style={activeTab === 'upcoming' ? styles.activeTab : styles.inactiveTab}
-          >
-            <Text style={activeTab === 'upcoming' ? styles.tabText : styles.tabInactiveText}>Upcoming</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+            {tab.icon}
+            <Text style={[styles.mainTabLabel, mainTab === tab.key && styles.activeMainTabLabel]}>{tab.label}</Text>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {loading ? (
-        <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 30 }} />
-      ) : (
-        <FlatList
-          data={filteredPlants}
-          keyExtractor={(item, idx) => item.id || `${item.nickname || item.common_name}-${idx}`}
-          renderItem={renderItem}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
-            <Text style={{ textAlign: 'center', color: '#aaa', marginTop: 40 }}>
-              {activeTab === 'today'
-                ? "No plants to water today! 🎉"
-                : "No upcoming watering tasks."}
-            </Text>
-          }
-        />
+      {/* Only show Today/Upcoming tabs in Home */}
+      {mainTab === 'home' && (
+        <View style={styles.tabRow}>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setActiveTab('today')}>
+            <LinearGradient
+              colors={activeTab === 'today' ? ['#a8e063', '#56ab2f'] : ['#f0f0f0', '#e0e0e0']}
+              style={activeTab === 'today' ? styles.activeTab : styles.inactiveTab}
+            >
+              <Text style={activeTab === 'today' ? styles.tabText : styles.tabInactiveText}>Today</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ flex: 1 }} onPress={() => setActiveTab('upcoming')}>
+            <LinearGradient
+              colors={activeTab === 'upcoming' ? ['#a8e063', '#56ab2f'] : ['#f0f0f0', '#e0e0e0']}
+              style={activeTab === 'upcoming' ? styles.activeTab : styles.inactiveTab}
+            >
+              <Text style={activeTab === 'upcoming' ? styles.tabText : styles.tabInactiveText}>Upcoming</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
       )}
 
-      {/* Floating buttons */}
-      <View style={styles.floatingContainer}>
-        <TouchableOpacity style={styles.floatingButton} onPress={() => navigation.navigate('SearchPlants')}>
-          <Ionicons name="search" size={32} color="#4CAF50" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
-          <Ionicons name="add" size={36} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Add Plant popup */}
-      <Modal transparent visible={showPopup} animationType="slide" onRequestClose={() => setShowPopup(false)}>
-        <TouchableOpacity style={styles.popupOverlay} onPress={() => setShowPopup(false)}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('plant')}>
-              <Text style={styles.modalButtonText}>🌿 Add Plant</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('site')}>
-              <Text style={styles.modalButtonText}>📍 Add Site</Text>
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </Modal>
+      {/* Main Tab Content */}
+      {mainTab === 'home' && (
+        loading ? (
+          <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 30 }} />
+        ) : (
+          <FlatList
+            data={filteredPlants}
+            keyExtractor={(item, idx) => item.id || `${item.nickname || item.common_name}-${idx}`}
+            renderItem={renderItem}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={styles.listContainer}
+            ListEmptyComponent={
+              <Text style={{ textAlign: 'center', color: '#aaa', marginTop: 40 }}>
+                {activeTab === 'today'
+                  ? "No plants to water today! 🎉"
+                  : "No upcoming watering tasks."}
+              </Text>
+            }
+          />
+        )
+      )}
+      {mainTab === 'forum' && <PlantCareForumScreen navigation={navigation} />}
+      {mainTab === 'search' && <SearchPlantScreen navigation={navigation} />}
+      {mainTab === 'add' && <AddTabContent navigation={navigation} />}
 
       <HomeToolbar navigation={navigation} />
     </SafeAreaView>
@@ -230,23 +291,85 @@ const styles = StyleSheet.create({
   plantName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
   location: { color: '#555' },
   statusText: { marginTop: 4, fontWeight: 'bold' },
-  floatingContainer: {
-    position: 'absolute', bottom: 70, right: 25, alignItems: 'center',
+  mainTabsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 5,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
   },
-  floatingButton: { marginBottom: 12 },
-  addButton: {
-    backgroundColor: '#2e7d32', width: 64, height: 64,
-    borderRadius: 32, justifyContent: 'center', alignItems: 'center',
-    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3, shadowRadius: 4,
+  mainTab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 8,
   },
-  popupOverlay: {
-    flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end',
+  activeMainTab: {
+    backgroundColor: '#e0f7fa',
   },
-  modalContent: {
-    backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    width: width * 0.6, alignSelf: 'flex-end', elevation: 5,
+  mainTabLabel: {
+    fontSize: 10,
+    color: '#333',
+    marginTop: 2,
+    fontWeight: '500',
+    textAlign: 'center',
   },
-  popupOption: { paddingVertical: 14 },
-  modalButtonText: { fontSize: 16, color: '#333', textAlign: 'right' },
+  activeMainTabLabel: {
+    color: '#2e7d32',
+    fontWeight: 'bold',
+  },
+  addTabContainer: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+  },
+  addTabTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    textAlign: 'center',
+    marginBottom: 40,
+  },
+  addOption: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  addOptionIcon: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#f5f5f5',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  addOptionText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  addOptionDesc: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+  },
 });

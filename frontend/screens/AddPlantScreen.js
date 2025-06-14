@@ -250,7 +250,18 @@ export default function AddPlantScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.header}>Add a Plant</Text>
+      {/* Header with back button */}
+      <View style={styles.headerContainer}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+        >
+          <Ionicons name="arrow-back" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+        <Text style={styles.header}>Add a Plant</Text>
+        <View style={styles.backButton} /> {/* Placeholder for centering */}
+      </View>
+      
       {/* Search + Scan */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
@@ -304,7 +315,9 @@ export default function AddPlantScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container:      { flex:1, backgroundColor:'#fff', padding:16, paddingBottom:100 },
-  header:         { fontSize:26, fontWeight:'bold', textAlign:'center', marginBottom:16 },
+  headerContainer: { flexDirection:'row', alignItems:'center', justifyContent:'space-between', marginBottom:16 },
+  backButton:     { width:40, height:40, justifyContent:'center', alignItems:'center' },
+  header:         { fontSize:26, fontWeight:'bold', textAlign:'center', flex:1 },
   searchRow:      { flexDirection:'row', alignItems:'center', marginBottom:12 },
   searchBox:      { flex:1, flexDirection:'row', alignItems:'center', backgroundColor:'#f0f0f0', paddingHorizontal:12, borderRadius:20, height:44 },
   input:          { flex:1, marginLeft:8, color:'#000' },

@@ -23,6 +23,7 @@ import { useFocusEffect } from '@react-navigation/native';
 // Import API services
 import { getBusinessInventory } from '../services/businessApi';
 import { createOrder } from '../services/businessOrderApi';
+import { sendOrderMessage } from '../../marketplace/services/marketplaceApi';
 
 export default function CreateOrderScreen({ navigation, route }) {
   const { businessId: routeBusinessId } = route.params || {};
@@ -298,9 +299,7 @@ export default function CreateOrderScreen({ navigation, route }) {
   // Submit order
   const handleSubmitOrder = async () => {
     if (!validateForm()) return;
-    
     setIsSubmitting(true);
-    
     try {
       const orderData = {
         businessId,
@@ -314,13 +313,19 @@ export default function CreateOrderScreen({ navigation, route }) {
           quantity: item.quantity
         }))
       };
-      
       console.log('Submitting order:', orderData);
       const result = await createOrder(orderData);
-      
       // Store last created order
       setLastCreatedOrder(result.order);
-      
+      // Send auto message to business in chat
+      try {
+        const senderId = customerInfo.email.trim();
+        const recipientId = businessId;
+        const orderMsg = `New order received from ${customerInfo.name.trim()} (${customerInfo.email.trim()}) for pickup.\nOrder: ${result.order.confirmationNumber}\nTotal: $${result.order.total.toFixed(2)}`;
+        await sendOrderMessage(recipientId, orderMsg, senderId, { orderId: result.order.id, confirmationNumber: result.order.confirmationNumber });
+      } catch (msgErr) {
+        console.warn('Failed to send auto order message to business:', msgErr);
+      }
       // Show success animation
       setShowSuccessAnimation(true);
       

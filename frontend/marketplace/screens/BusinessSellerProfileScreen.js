@@ -24,6 +24,7 @@ import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import ReviewForm from '../components/ReviewForm';
 import ToastMessage from '../components/ToastMessage';
+import RatingStars from '../components/RatingStars';
 
 // Import services
 import marketplaceApi from '../services/marketplaceApi';
@@ -694,9 +695,10 @@ const BusinessSellerProfileScreen = () => {
         <ReviewsList
           targetType="seller"
           targetId={businessId}
-          onAddReview={handleAddReview}
+          onAddReview={null}
           onReviewsLoaded={handleReviewsLoaded}
           autoLoad={true}
+          hideAddButton={true}
           key={`reviews-${refreshKey}`}
         />
       );
@@ -1043,16 +1045,7 @@ const BusinessSellerProfileScreen = () => {
           <View style={styles.statBox}>
             <View style={styles.ratingBox}>
               <Text style={styles.ratingValue}>{formattedRating}</Text>
-              <View style={styles.starsContainer}>
-                {[1, 2, 3, 4, 5].map(star => (
-                  <MaterialIcons
-                    key={star}
-                    name={star <= Math.round(displayRating) ? 'star' : 'star-border'}
-                    size={16}
-                    color="#FFD700"
-                  />
-                ))}
-              </View>
+              <RatingStars rating={displayRating} size={16} />
             </View>
             <Text style={styles.statLabel}>
               Rating ({businessRating.count || business.reviewCount || 0})

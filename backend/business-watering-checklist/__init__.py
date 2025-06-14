@@ -1,4 +1,4 @@
-# business-watering-checklist/__init__.py
+# business-watering-checklist/__init__.py - FIXED VERSION (Barcode Removed)
 import logging
 import json
 import azure.functions as func
@@ -19,7 +19,7 @@ def add_cors_headers(response):
     return response
 
 def get_watering_checklist(business_id):
-    """Get plants that need watering for a business"""
+    """Get plants that need watering for a business - UPDATED: Removed barcode fields"""
     try:
         params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
         client = CosmosClient(params['AccountEndpoint'], credential=params['AccountKey'])
@@ -29,7 +29,7 @@ def get_watering_checklist(business_id):
         # Query plants that need watering
         query = """
         SELECT c.id, c.common_name, c.scientific_name, c.quantity, c.location,
-               c.wateringSchedule, c.plantInfo.water_days, c.addedAt
+               c.wateringSchedule, c.plantInfo.water_days, c.addedAt, c.mainImage, c.images
         FROM c 
         WHERE c.businessId = @businessId 
         AND c.productType = 'plant'
@@ -66,6 +66,11 @@ def get_watering_checklist(business_id):
             # Calculate if plant needs watering
             needs_watering = watering_schedule.get('activeWaterDays', water_days) <= 0
             
+            # Get plant image
+            plant_image = item.get('mainImage')
+            if not plant_image and item.get('images'):
+                plant_image = item['images'][0] if len(item['images']) > 0 else None
+            
             plant_item = {
                 'id': item['id'],
                 'name': item.get('common_name', 'Unknown Plant'),
@@ -77,7 +82,10 @@ def get_watering_checklist(business_id):
                 'lastWatered': watering_schedule.get('lastWatered'),
                 'needsWatering': needs_watering,
                 'priority': 'high' if watering_schedule.get('activeWaterDays', water_days) < 0 else 'normal',
-                'overdueDays': max(0, -watering_schedule.get('activeWaterDays', 0)) if needs_watering else 0
+                'overdueDays': max(0, -watering_schedule.get('activeWaterDays', 0)) if needs_watering else 0,
+                'image': plant_image,
+                # REMOVED: barcode field - no longer needed
+                'plantId': f"PLT-{item['id'][:8]}"  # Simple plant identifier instead of barcode
             }
             
             checklist.append(plant_item)
@@ -97,7 +105,7 @@ def get_watering_checklist(business_id):
         raise
 
 def mark_plant_watered(business_id, plant_id, method='manual', coordinates=None):
-    """Mark a plant as watered and reset its watering schedule"""
+    """Mark a plant as watered and reset its watering schedule - UPDATED: Removed barcode method"""
     try:
         params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
         client = CosmosClient(params['AccountEndpoint'], credential=params['AccountKey'])
@@ -109,6 +117,12 @@ def mark_plant_watered(business_id, plant_id, method='manual', coordinates=None)
         
         if not plant_item:
             raise Exception("Plant not found")
+        
+        # Validate method (removed 'barcode' option)
+        valid_methods = ['manual', 'gps']
+        if method not in valid_methods:
+            logging.warning(f'Invalid watering method: {method}, defaulting to manual')
+            method = 'manual'
         
         # Update watering schedule
         current_date = datetime.utcnow()
@@ -186,6 +200,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             plant_id = request_body['plantId']
             method = request_body.get('method', 'manual')
             coordinates = request_body.get('coordinates')
+            
+            # Validate method
+            if method not in ['manual', 'gps']:
+                return func.HttpResponse(
+                    json.dumps({"error": "Invalid method. Use 'manual' or 'gps'"}),
+                    status_code=400,
+                    headers={"Content-Type": "application/json"}
+                )
             
             result = mark_plant_watered(business_id, plant_id, method, coordinates)
             

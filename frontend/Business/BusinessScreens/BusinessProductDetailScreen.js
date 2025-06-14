@@ -48,7 +48,6 @@ export default function BusinessProductDetailScreen({ navigation, route }) {
   const [editModalVisible, setEditModalVisible] = useState(false);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [stockHistoryModalVisible, setStockHistoryModalVisible] = useState(false);
-  const [barcodeModalVisible, setBarcodeModalVisible] = useState(false);
   
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -135,40 +134,38 @@ export default function BusinessProductDetailScreen({ navigation, route }) {
   );
 
   // Load product data
-  const loadProductData = async (id = businessId, silent = false) => {
-    if (!id || !productId) return;
-    
+  const loadProductData = async (businessId, silent = false) => {
     try {
       if (!silent) {
         setIsLoading(true);
         setRefreshing(true);
       }
       
-      console.log(`Loading product details for: ${productId}`);
+      // Load inventory from business API
+      const inventoryResponse = await getBusinessInventory(businessId);
+      const inventory = inventoryResponse.inventory || [];
       
-      // Get all inventory to find the specific product
-      const inventory = await getBusinessInventory(id);
       const productData = inventory.find(item => item.id === productId);
       
       if (!productData) {
-        setError('Product not found');
+        setError('Product not found in inventory');
         return;
       }
       
       setProduct(productData);
       
-      // Pre-fill edit form
+      // Pre-fill edit form with actual data
       setEditForm({
-        quantity: productData.quantity?.toString() || '',
-        price: productData.price?.toString() || '',
+        quantity: productData.quantity?.toString() || '0',
+        price: productData.price?.toString() || '0',
         minThreshold: productData.minThreshold?.toString() || '5',
         discount: productData.discount?.toString() || '0',
         notes: productData.notes || '',
         status: productData.status || 'active'
       });
       
-      // Load sales analytics in parallel
-      await loadSalesAnalytics(id, productId);
+      // Load sales analytics
+      await loadSalesAnalytics(businessId, productId);
       
       setError(null);
       console.log('Product data loaded successfully');
@@ -351,40 +348,18 @@ export default function BusinessProductDetailScreen({ navigation, route }) {
     }
   };
 
-  // Handle share product
+  // Share product details
   const handleShareProduct = async () => {
     try {
-      const result = await Share.share({
-        message: `Check out this ${product.name || product.common_name} for $${product.price} at our plant store!`,
-        title: product.name || product.common_name,
-      });
+      const shareData = {
+        title: product?.name || 'Plant Product',
+        message: `Check out this ${product?.name || 'plant'} for $${product?.price || 0}!\n\nQuantity available: ${product?.quantity || 0}\n\nFrom ${businessId}`,
+      };
+      
+      await Share.share(shareData);
     } catch (error) {
       console.error('Error sharing product:', error);
     }
-  };
-
-  // Generate barcode data
-  const generateBarcodeData = () => {
-    return {
-      productId: product.id,
-      name: product.name || product.common_name,
-      scientificName: product.scientific_name,
-      price: product.price,
-      businessId: businessId,
-      qrData: JSON.stringify({
-        type: 'plant',
-        id: product.id,
-        name: product.name || product.common_name,
-        scientific_name: product.scientific_name,
-        origin: product.plantInfo?.origin,
-        water_days: product.plantInfo?.water_days,
-        light: product.plantInfo?.light,
-        temperature: product.plantInfo?.temperature,
-        pets: product.plantInfo?.pets,
-        difficulty: product.plantInfo?.difficulty,
-        care_tips: product.plantInfo?.common_problems,
-      })
-    };
   };
 
   // Format date helper
@@ -691,22 +666,26 @@ export default function BusinessProductDetailScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* Action Buttons */}
+        {/* Action Buttons - Remove QR/Barcode, keep essential actions */}
         <View style={styles.actionButtonsContainer}>
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={() => setBarcodeModalVisible(true)}
-          >
-            <MaterialCommunityIcons name="qrcode" size={20} color="#4CAF50" />
-            <Text style={styles.actionButtonText}>Generate QR Code</Text>
-          </TouchableOpacity>
-          
           <TouchableOpacity 
             style={styles.actionButton}
             onPress={() => setStockHistoryModalVisible(true)}
           >
             <MaterialIcons name="history" size={20} color="#2196F3" />
             <Text style={styles.actionButtonText}>Stock History</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.actionButton}
+            onPress={() => navigation.navigate('BusinessAnalyticsScreen', { 
+              businessId, 
+              productId,
+              focusProduct: true 
+            })}
+          >
+            <MaterialIcons name="analytics" size={20} color="#9C27B0" />
+            <Text style={styles.actionButtonText}>Analytics</Text>
           </TouchableOpacity>
           
           <TouchableOpacity 
@@ -887,47 +866,6 @@ export default function BusinessProductDetailScreen({ navigation, route }) {
                 ) : (
                   <Text style={styles.deleteConfirmButtonText}>Delete</Text>
                 )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* QR Code Modal */}
-      <Modal
-        visible={barcodeModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setBarcodeModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.barcodeModalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Product QR Code</Text>
-              <TouchableOpacity onPress={() => setBarcodeModalVisible(false)}>
-                <MaterialIcons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-            </View>
-            
-            <View style={styles.barcodeContent}>
-              <View style={styles.qrCodePlaceholder}>
-                <MaterialCommunityIcons name="qrcode" size={120} color="#4CAF50" />
-                <Text style={styles.qrCodeText}>QR Code for</Text>
-                <Text style={styles.qrCodeProductName}>
-                  {product?.name || product?.common_name}
-                </Text>
-              </View>
-              
-              <View style={styles.barcodeInfo}>
-                <Text style={styles.barcodeInfoText}>
-                  Print this QR code and place it next to your plant in the store. 
-                  Customers can scan it to see detailed plant information even without the app.
-                </Text>
-              </View>
-              
-              <TouchableOpacity style={styles.exportButton}>
-                <MaterialIcons name="download" size={20} color="#fff" />
-                <Text style={styles.exportButtonText}>Export as PDF</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1434,56 +1372,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#fff',
-  },
-  barcodeModalContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    width: '90%',
-    maxHeight: '70%',
-  },
-  barcodeContent: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  qrCodePlaceholder: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  qrCodeText: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 16,
-  },
-  qrCodeProductName: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginTop: 4,
-  },
-  barcodeInfo: {
-    backgroundColor: '#f0f9f3',
-    borderRadius: 8,
-    padding: 16,
-    marginBottom: 20,
-  },
-  barcodeInfoText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  exportButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  exportButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
   },
   successOverlay: {
     position: 'absolute',

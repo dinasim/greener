@@ -1,11 +1,60 @@
-# db_helpers.py
+# db_helpers.py - COMPLETELY FIXED VERSION with proper container mapping and error handling
 
 import os
 import logging
-from azure.cosmos import CosmosClient, PartitionKey
+from azure.cosmos import CosmosClient, PartitionKey, exceptions
 
 # Dictionary to cache database connections to avoid creating multiple clients
 _db_clients = {}
+_container_cache = {}
+
+# FIXED: Comprehensive container name mapping
+CONTAINER_NAME_MAPPING = {
+    # Marketplace containers (handle both dash and underscore variants)
+    "marketplace-plants": "marketplace_plants",
+    "marketplace-conversations": "marketplace_conversations", 
+    "marketplace-messages": "marketplace_messages",
+    "marketplace-reviews": "marketplace_reviews",
+    "marketplace-wishlists": "marketplace_wishlists",
+    "marketplace_plants": "marketplace_plants",
+    "marketplace_conversations": "marketplace_conversations",
+    "marketplace_messages": "marketplace_messages", 
+    "marketplace_reviews": "marketplace_reviews",
+    "marketplace_wishlists": "marketplace_wishlists",
+    
+    # Business containers
+    "business_users": "business_users",
+    "business_customers": "business_customers",
+    "business_transactions": "business_transactions",
+    "inventory": "inventory",
+    "orders": "orders",
+    "watering_notifications": "watering_notifications",
+    
+    # User containers  
+    "users": "users",
+    "Users": "Users",
+    
+    # Forum container
+    "forum": "forum"
+}
+
+# FIXED: Complete partition key mapping for all containers
+PARTITION_KEY_MAPPING = {
+    "marketplace_plants": "/category",
+    "marketplace_conversations": "/id", 
+    "marketplace_messages": "/conversationId",
+    "marketplace_reviews": "/sellerId",
+    "marketplace_wishlists": "/userId",
+    "business_users": "/id",
+    "business_customers": "/id", 
+    "business_transactions": "/businessId",
+    "inventory": "/businessId",
+    "orders": "/businessId",
+    "watering_notifications": "/businessId",
+    "users": "/id",
+    "Users": "/id",
+    "forum": "/category"  # Forum uses category as partition key
+}
 
 def get_database_client():
     """Get a connection to the main Greener database."""
@@ -28,12 +77,16 @@ def get_database_client():
         client = CosmosClient(cosmos_uri, credential=cosmos_key)
         database = client.get_database_client(database_name)
         
+        # Test connection
+        database.read()
+        
         # Cache the database client
         _db_clients['main'] = database
         
+        logging.info(f"✅ Connected to main database: {database_name}")
         return database
     except Exception as e:
-        logging.error(f"Failed to initialize main database: {str(e)}")
+        logging.error(f"❌ Failed to initialize main database: {str(e)}")
         raise
 
 def get_marketplace_db_client():
@@ -47,7 +100,7 @@ def get_marketplace_db_client():
             
         # Get connection details from environment variables
         connection_string = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-        database_name = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
+        database_name = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
         
         if not connection_string:
             # Fall back to separate URI and KEY if connection string is not provided
@@ -62,9 +115,9 @@ def get_marketplace_db_client():
             database = client.get_database_client(database_name)
         else:
             # Parse the connection string
-            params = dict(param.split('=', 1) for param in connection_string.split(';'))
-            account_endpoint = params.get('AccountEndpoint')
-            account_key = params.get('AccountKey')
+            connection_parts = dict(param.split('=', 1) for param in connection_string.split(';') if '=' in param)
+            account_endpoint = connection_parts.get('AccountEndpoint')
+            account_key = connection_parts.get('AccountKey')
             
             if not account_endpoint or not account_key:
                 raise ValueError("Invalid connection string format for marketplace database")
@@ -73,51 +126,106 @@ def get_marketplace_db_client():
             client = CosmosClient(account_endpoint, credential=account_key)
             database = client.get_database_client(database_name)
         
+        # Test connection
+        database.read()
+        
         # Cache the database client
         _db_clients['marketplace'] = database
         
+        logging.info(f"✅ Connected to marketplace database: {database_name}")
         return database
     except Exception as e:
-        logging.error(f"Failed to initialize marketplace database: {str(e)}")
+        logging.error(f"❌ Failed to initialize marketplace database: {str(e)}")
         raise
 
 def get_container(container_name):
     """
-    Get container with proper environment variable mapping.
-    Keys from any database (marketplace or main)
+    COMPLETELY FIXED: Get container with comprehensive error handling and auto-creation.
     """
     try:
-        # Normalize container name format for checking (convert hyphens to underscores)
-        normalized_name = container_name.replace('-', '_')
+        # Normalize container name using mapping
+        actual_container_name = CONTAINER_NAME_MAPPING.get(container_name, container_name)
         
-        # Convert container names with dashes to env var format
-        env_var_name = f"COSMOS_CONTAINER_{container_name.upper().replace('-', '_')}"
+        # Check cache first
+        cache_key = f"{container_name}_{actual_container_name}"
+        if cache_key in _container_cache:
+            return _container_cache[cache_key]
         
-        # Special handling for reviews container - make sure we're using the new container
-        if container_name == "marketplace-reviews":
-            actual_container_name = os.environ.get(env_var_name, "marketplace-reviews")
-            logging.info(f"Using marketplace-reviews container: {actual_container_name}")
-        elif container_name == "marketplace-conversations":
-            actual_container_name = "marketplace_conversations_new"
-        else:
-            actual_container_name = os.environ.get(env_var_name, normalized_name)
-        
-        # Select right database based on container prefix using normalized name for checking
-        if (normalized_name.startswith('marketplace_') or normalized_name in 
-            ['marketplace_plants', 'marketplace_conversations', 'marketplace_reviews',
-     'marketplace_messages', 'marketplace_wishlists', 'users', 'inventory', 'business_users']):
+        # Determine which database to use based on container type
+        if (container_name.startswith('marketplace') or 
+            actual_container_name.startswith('marketplace') or
+            container_name in ['users', 'inventory', 'business_users', 'business_customers', 
+                              'business_transactions', 'orders', 'watering_notifications', 'forum']):
             database = get_marketplace_db_client()
+            logging.info(f"🔗 Using marketplace database for container: {actual_container_name}")
         else:
             database = get_database_client()
+            logging.info(f"🔗 Using main database for container: {actual_container_name}")
+        
+        # Get container client with comprehensive error handling
+        try:
+            container_client = database.get_container_client(actual_container_name)
             
-        logging.info(f"Accessing container: {actual_container_name} from database")
+            # Test container accessibility
+            container_client.read()
+            
+            # Cache the container client
+            _container_cache[cache_key] = container_client
+            
+            logging.info(f"✅ Successfully connected to existing container: {actual_container_name}")
+            return container_client
+            
+        except exceptions.CosmosResourceNotFoundError:
+            # Container doesn't exist, try to create it
+            logging.warning(f"⚠️ Container {actual_container_name} not found, attempting to create...")
+            
+            # Get partition key for this container
+            partition_key_path = PARTITION_KEY_MAPPING.get(actual_container_name, "/id")
+            partition_key = PartitionKey(path=partition_key_path)
+            
+            try:
+                container_client = database.create_container(
+                    id=actual_container_name,
+                    partition_key=partition_key,
+                    offer_throughput=400  # Minimum throughput
+                )
+                
+                # Cache the new container client
+                _container_cache[cache_key] = container_client
+                
+                logging.info(f"✅ Created and connected to new container: {actual_container_name} with partition key: {partition_key_path}")
+                return container_client
+                
+            except exceptions.CosmosHttpResponseError as create_error:
+                if create_error.status_code == 409:  # Container already exists (race condition)
+                    logging.info(f"ℹ️ Container {actual_container_name} was created by another process, retrying connection...")
+                    # Try to get the container again
+                    container_client = database.get_container_client(actual_container_name)
+                    container_client.read()  # Test accessibility
+                    _container_cache[cache_key] = container_client
+                    return container_client
+                else:
+                    logging.error(f"❌ Failed to create container {actual_container_name}: {str(create_error)}")
+                    raise
+            except Exception as create_error:
+                logging.error(f"❌ Unexpected error creating container {actual_container_name}: {str(create_error)}")
+                raise
+                
+        except exceptions.CosmosHttpResponseError as http_error:
+            logging.error(f"❌ HTTP error accessing container {actual_container_name}: {http_error.status_code} - {str(http_error)}")
+            raise
+        except Exception as unexpected_error:
+            logging.error(f"❌ Unexpected error accessing container {actual_container_name}: {str(unexpected_error)}")
+            raise
         
-        # Get container client with proper partition key handling
-        container_client = database.get_container_client(actual_container_name)
-        
-        return container_client
     except Exception as e:
-        logging.error(f"Failed to get container {container_name}: {str(e)}")
+        logging.error(f"❌ Failed to get container {container_name} -> {actual_container_name}: {str(e)}")
+        
+        # Clear cache for this container to allow retry
+        cache_key = f"{container_name}_{actual_container_name}"
+        if cache_key in _container_cache:
+            del _container_cache[cache_key]
+        
         raise
 
 def get_main_container(container_name):
@@ -128,20 +236,119 @@ def get_main_container(container_name):
         actual_container_name = os.environ.get(env_var_name, container_name)
         
         database = get_database_client()
-        return database.get_container_client(actual_container_name)
+        
+        try:
+            container_client = database.get_container_client(actual_container_name)
+            # Test accessibility
+            container_client.read()
+            return container_client
+        except exceptions.CosmosResourceNotFoundError:
+            logging.error(f"❌ Main container {actual_container_name} not found")
+            raise
+        except Exception as e:
+            logging.error(f"❌ Error accessing main container {actual_container_name}: {str(e)}")
+            raise
+            
     except Exception as e:
-        logging.error(f"Failed to get main container {container_name}: {str(e)}")
+        logging.error(f"❌ Failed to get main container {container_name}: {str(e)}")
         raise
 
 def get_marketplace_container(container_name):
-    """Get a specific container from the marketplace database."""
+    """Get a specific container from the marketplace database with auto-creation."""
     try:
-        # Get container name from environment variables or use default
-        env_var_name = f"COSMOS_CONTAINER_{container_name.upper()}"
-        actual_container_name = os.environ.get(env_var_name, container_name)
+        # Normalize container name
+        actual_container_name = CONTAINER_NAME_MAPPING.get(container_name, container_name)
         
         database = get_marketplace_db_client()
-        return database.get_container_client(actual_container_name)
+        
+        try:
+            container_client = database.get_container_client(actual_container_name)
+            # Test accessibility
+            container_client.read()
+            return container_client
+        except exceptions.CosmosResourceNotFoundError:
+            logging.warning(f"⚠️ Marketplace container {actual_container_name} not found, creating...")
+            
+            # Try to create container with proper partition key
+            partition_key_path = PARTITION_KEY_MAPPING.get(actual_container_name, "/id")
+            partition_key = PartitionKey(path=partition_key_path)
+            
+            container_client = database.create_container(
+                id=actual_container_name,
+                partition_key=partition_key,
+                offer_throughput=400
+            )
+            
+            logging.info(f"✅ Created marketplace container: {actual_container_name}")
+            return container_client
+        except Exception as e:
+            logging.error(f"❌ Error accessing marketplace container {actual_container_name}: {str(e)}")
+            raise
+            
     except Exception as e:
-        logging.error(f"Failed to get marketplace container {container_name}: {str(e)}")
+        logging.error(f"❌ Failed to get marketplace container {container_name}: {str(e)}")
         raise
+
+def clear_container_cache():
+    """Clear the container cache - useful for testing or error recovery."""
+    global _container_cache
+    _container_cache.clear()
+    logging.info("🧹 Container cache cleared")
+
+def get_container_info(container_name):
+    """Get information about a container without connecting to it."""
+    actual_container_name = CONTAINER_NAME_MAPPING.get(container_name, container_name)
+    partition_key_path = PARTITION_KEY_MAPPING.get(actual_container_name, "/id")
+    
+    database_type = "marketplace" if (
+        container_name.startswith('marketplace') or 
+        actual_container_name.startswith('marketplace') or
+        container_name in ['users', 'inventory', 'business_users', 'business_customers', 
+                          'business_transactions', 'orders', 'watering_notifications', 'forum']
+    ) else "main"
+    
+    return {
+        "requested_name": container_name,
+        "actual_name": actual_container_name,
+        "partition_key": partition_key_path,
+        "database_type": database_type,
+        "is_cached": f"{container_name}_{actual_container_name}" in _container_cache
+    }
+
+def test_database_connections():
+    """Test both database connections and return detailed status."""
+    status = {
+        "main_db": {"connected": False, "error": None, "database_name": None},
+        "marketplace_db": {"connected": False, "error": None, "database_name": None}
+    }
+    
+    # Test main database
+    try:
+        main_db = get_database_client()
+        main_db.read()
+        status["main_db"]["connected"] = True
+        status["main_db"]["database_name"] = os.environ.get("COSMOS_DATABASE_NAME", "GreenerDB")
+        logging.info("✅ Main database connection: OK")
+    except Exception as e:
+        status["main_db"]["error"] = str(e)
+        logging.error(f"❌ Main database connection failed: {str(e)}")
+    
+    # Test marketplace database
+    try:
+        marketplace_db = get_marketplace_db_client()
+        marketplace_db.read()
+        status["marketplace_db"]["connected"] = True
+        status["marketplace_db"]["database_name"] = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+        logging.info("✅ Marketplace database connection: OK")
+    except Exception as e:
+        status["marketplace_db"]["error"] = str(e)
+        logging.error(f"❌ Marketplace database connection failed: {str(e)}")
+    
+    return status
+
+def reset_connections():
+    """Reset all database connections and clear caches - useful for error recovery."""
+    global _db_clients, _container_cache
+    _db_clients.clear()
+    _container_cache.clear()
+    logging.info("🔄 All database connections and caches reset")
