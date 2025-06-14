@@ -184,12 +184,32 @@ export const getBusinessProfile = async (businessId) => {
       headers['Authorization'] = `Bearer ${token}`;
     }
     
-    const response = await fetch(`${API_BASE_URL}/marketplace/business/profile/${businessId}`, {
+    // FIXED: Add business ID to headers for authentication
+    if (businessId) {
+      headers['X-Business-ID'] = businessId;
+    }
+    
+    const response = await fetch(`${API_BASE_URL}/business-profile`, {
       method: 'GET',
       headers,
     });
     
     if (!response.ok) {
+      // If business-profile fails, try the alternative endpoint
+      if (response.status === 404) {
+        console.log('Trying alternative business profile endpoint...');
+        const altResponse = await fetch(`${API_BASE_URL}/get_business_profile/${encodeURIComponent(businessId)}`, {
+          method: 'GET',
+          headers,
+        });
+        
+        if (!altResponse.ok) {
+          throw new Error(`Failed to fetch business profile: ${altResponse.status}`);
+        }
+        
+        return await altResponse.json();
+      }
+      
       throw new Error(`Failed to fetch business profile: ${response.status}`);
     }
     
@@ -231,7 +251,7 @@ export const getBusinessInventory = async (businessId, filters = {}) => {
     });
     
     const queryString = queryParams.toString();
-    const url = `${API_BASE_URL}/marketplace/business/${businessId}/inventory${queryString ? `?${queryString}` : ''}`;
+    const url = `${API_BASE_URL}/business-inventory${queryString ? `?${queryString}` : ''}`;
     
     const response = await fetch(url, {
       method: 'GET',

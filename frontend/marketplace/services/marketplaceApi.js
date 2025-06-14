@@ -558,7 +558,7 @@ export const fetchBusinessProfile = async (businessId) => {
   }
   
   // FIXED: Use the correct endpoint that matches the backend route
-  const endpoint = `marketplace/business/${encodeURIComponent(businessId)}/profile`;
+  const endpoint = `business-profile`;
   return apiRequest(endpoint);
 };
 
@@ -571,7 +571,7 @@ export const fetchBusinessInventory = async (businessId) => {
   }
   
   // FIXED: Use the correct endpoint that matches the backend route
-  const endpoint = `marketplace/business/${encodeURIComponent(businessId)}/inventory`;
+  const endpoint = `business-inventory`;
   return apiRequest(endpoint);
 };
 
