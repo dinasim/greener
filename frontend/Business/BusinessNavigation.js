@@ -21,6 +21,7 @@ import WateringChecklistScreen from './BusinessScreens/WateringChecklistScreen';
 import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
+import CustomerListScreen from './BusinessScreens/CustomerListScreen';
 import PlantCareForumScreen from '../screens/PlantCareForumScreen';
 
 const Stack = createNativeStackNavigator();
