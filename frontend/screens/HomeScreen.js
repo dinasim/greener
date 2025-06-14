@@ -11,16 +11,18 @@ import {
   Animated,
   Dimensions,
   ActivityIndicator,
+  ScrollView,
+  Platform
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import HomeToolbar from '../components/HomeTool';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import PlantCareForumScreen from './PlantCareForumScreen';
 import SearchPlantScreen from './SearchPlantScreen';
 import AddPlantScreen from './AddPlantScreen';
 import LocationsScreen from './LocationsScreen';
 import DiseaseCheckerScreen from './DiseaseCheckerScreen';
+import { useFirebaseNotifications } from '../hooks/useFirebaseNotifications';
 
 const { width } = Dimensions.get('window');
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
@@ -81,7 +83,11 @@ export default function HomeScreen({ navigation }) {
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mainTab, setMainTab] = useState('home');
+  const [userEmail, setUserEmail] = useState(null);
   const fadeAnim = useState(new Animated.Value(0))[0]; // Add this missing line
+
+  // Initialize Firebase notifications
+  const { isInitialized, hasPermission, token, error } = useFirebaseNotifications(userEmail);
 
   // Handle navigation for tabs that should navigate immediately
   useEffect(() => {
@@ -190,11 +196,108 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'plants':
+        return (
+          <View style={styles.content}>
+            <Text style={styles.contentTitle}>🌿 My Plants</Text>
+            <Text style={styles.contentDescription}>Manage and care for your plant collection</Text>
+            
+            {/* Quick Actions */}
+            <View style={styles.quickActions}>
+              <TouchableOpacity 
+                style={styles.quickAction}
+                onPress={() => navigation.navigate('AddPlant')}
+              >
+                <View style={styles.quickActionIcon}>
+                  <Ionicons name="add" size={24} color="#4CAF50" />
+                </View>
+                <Text style={styles.quickActionText}>Add Plant</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.quickAction}
+                onPress={() => navigation.navigate('Locations')}
+              >
+                <View style={styles.quickActionIcon}>
+                  <Ionicons name="location" size={24} color="#FF9800" />
+                </View>
+                <Text style={styles.quickActionText}>My Locations</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Notification Status */}
+            {userEmail && (
+              <View style={styles.notificationStatus}>
+                <View style={styles.notificationHeader}>
+                  <MaterialIcons name="notifications" size={20} color="#4CAF50" />
+                  <Text style={styles.notificationTitle}>Notifications</Text>
+                </View>
+                <View style={styles.notificationInfo}>
+                  <View style={styles.statusRow}>
+                    <Text style={styles.statusLabel}>Status:</Text>
+                    <View style={[styles.statusIndicator, hasPermission ? styles.statusActive : styles.statusInactive]}>
+                      <Text style={styles.statusText}>{hasPermission ? 'Active' : 'Inactive'}</Text>
+                    </View>
+                  </View>
+                  {error && (
+                    <Text style={styles.errorText}>⚠️ {error}</Text>
+                  )}
+                  <TouchableOpacity 
+                    style={styles.setupButton}
+                    onPress={() => navigation.navigate('NotificationSettings')}
+                  >
+                    <Text style={styles.setupButtonText}>Manage Notifications</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </View>
+        );
+      case 'marketplace':
+        return (
+          <View style={styles.content}>
+            <Text style={styles.contentTitle}>🛒 Marketplace</Text>
+            <Text style={styles.contentDescription}>Buy and sell plants with other enthusiasts</Text>
+            <TouchableOpacity 
+              style={styles.actionButton}
+              onPress={() => navigation.navigate('MainTabs')}
+            >
+              <Text style={styles.actionButtonText}>Browse Marketplace</Text>
+            </TouchableOpacity>
+          </View>
+        );
+      case 'disease':
+        return (
+          <DiseaseCheckerScreen navigation={navigation} />
+        );
+      case 'forum':
+        return <PlantCareForumScreen navigation={navigation} />;
+      case 'search':
+        return <SearchPlantScreen navigation={navigation} />;
+      case 'add':
+        return <AddTabContent navigation={navigation} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-        <Text style={styles.greeting}>{greeting}</Text>
-      </Animated.View>
+      {/* Header with Settings Button */}
+      <View style={styles.header}>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Greener</Text>
+          <Text style={styles.headerSubtitle}>Your Plant Care Companion</Text>
+        </View>
+        <TouchableOpacity 
+          style={styles.settingsButton}
+          onPress={() => navigation.navigate('UserSettings')}
+        >
+          <MaterialIcons name="settings" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+      </View>
 
       {/* Main Tabs */}
       <View style={styles.mainTabsRow}>
@@ -232,39 +335,47 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Main Tab Content */}
-      {mainTab === 'home' && (
-        loading ? (
-          <ActivityIndicator size="large" color="#4CAF50" style={{ marginTop: 30 }} />
-        ) : (
-          <FlatList
-            data={filteredPlants}
-            keyExtractor={(item, idx) => item.id || `${item.nickname || item.common_name}-${idx}`}
-            renderItem={renderItem}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.listContainer}
-            ListEmptyComponent={
-              <Text style={{ textAlign: 'center', color: '#aaa', marginTop: 40 }}>
-                {activeTab === 'today'
-                  ? "No plants to water today! 🎉"
-                  : "No upcoming watering tasks."}
-              </Text>
-            }
-          />
-        )
-      )}
-      {mainTab === 'forum' && <PlantCareForumScreen navigation={navigation} />}
-      {mainTab === 'search' && <SearchPlantScreen navigation={navigation} />}
-      {mainTab === 'add' && <AddTabContent navigation={navigation} />}
-
-      <HomeToolbar navigation={navigation} />
+      {/* Content */}
+      <View style={styles.contentContainer}>
+        {renderContent()}
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: 'transparent', padding: 20, paddingBottom: 90 },
-  header: { marginTop: 10, marginBottom: 15 },
+  container: { flex: 1, backgroundColor: 'transparent', padding: 20, paddingBottom: 20 },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  settingsButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f9f3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   greeting: { fontSize: 30, color: '#2e7d32', fontWeight: 'bold' },
   tabRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   activeTab: {
@@ -279,7 +390,7 @@ const styles = StyleSheet.create({
   },
   tabText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   tabInactiveText: { color: '#666', fontWeight: 'bold', fontSize: 16 },
-  listContainer: { paddingBottom: 100 },
+  listContainer: { paddingBottom: 20 },
   taskCard: {
     flexDirection: 'row', backgroundColor: '#fff', padding: 15,
     borderRadius: 16, marginBottom: 12, shadowColor: '#000',
@@ -371,5 +482,119 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     textAlign: 'center',
+  },
+  content: {
+    flex: 1,
+    padding: 20,
+    justifyContent: 'center',
+  },
+  contentTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    marginBottom: 8,
+  },
+  contentDescription: {
+    fontSize: 16,
+    color: '#666',
+    marginBottom: 20,
+    lineHeight: 24,
+  },
+  quickActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  quickAction: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 15,
+    marginHorizontal: 4,
+    alignItems: 'center',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  quickActionIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f0f9f3',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  quickActionText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  notificationStatus: {
+    backgroundColor: '#f8f9fa',
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  notificationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  notificationTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 8,
+  },
+  notificationInfo: {
+    gap: 8,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  statusLabel: {
+    fontSize: 14,
+    color: '#666',
+  },
+  statusIndicator: {
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  statusActive: {
+    backgroundColor: '#e8f5e8',
+  },
+  statusInactive: {
+    backgroundColor: '#ffebee',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+  },
+  errorText: {
+    fontSize: 12,
+    color: '#f44336',
+    marginTop: 4,
+  },
+  setupButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  setupButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });

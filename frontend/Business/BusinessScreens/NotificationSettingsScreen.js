@@ -4,27 +4,24 @@ import {
   View,
   Text,
   StyleSheet,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
   SafeAreaView,
   ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
-  Alert
 } from 'react-native';
-import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import components
 import WateringNotificationSettings from '../components/WateringNotificationSettings';
 
-// Import API services
-import {
-  getNotificationToken,
-  registerForWateringNotifications
-} from '../services/businessWateringApi';
+// Import hooks
+import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
 
 const NotificationSettingsScreen = ({ navigation }) => {
-  const [businessId, setBusinessId] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [businessId, setBusinessId] = useState(null);
   const [notificationStats, setNotificationStats] = useState({
     hasPermission: false,
     tokenType: null,
@@ -32,17 +29,34 @@ const NotificationSettingsScreen = ({ navigation }) => {
     lastUpdate: null
   });
 
+  // Use Firebase notifications hook
+  const {
+    isInitialized,
+    hasPermission,
+    token,
+    initialize,
+    registerForWateringNotifications,
+    sendTestNotification,
+    getNotificationInfo
+  } = useBusinessFirebaseNotifications(businessId);
+
   useEffect(() => {
     loadBusinessId();
   }, []);
+
+  useEffect(() => {
+    if (businessId) {
+      checkNotificationStatus();
+    }
+  }, [businessId, isInitialized, hasPermission, token]);
 
   const loadBusinessId = async () => {
     try {
       const id = await AsyncStorage.getItem('businessId') || await AsyncStorage.getItem('userEmail');
       setBusinessId(id);
       
-      if (id) {
-        await checkNotificationStatus();
+      if (id && !isInitialized) {
+        await initialize(id);
       }
     } catch (error) {
       console.error('Error loading business ID:', error);
@@ -53,13 +67,14 @@ const NotificationSettingsScreen = ({ navigation }) => {
 
   const checkNotificationStatus = async () => {
     try {
-      const token = await getNotificationToken();
       const enabled = await AsyncStorage.getItem('wateringNotificationsEnabled');
       const lastUpdate = await AsyncStorage.getItem('notificationLastUpdate');
       
+      const info = getNotificationInfo();
+      
       setNotificationStats({
-        hasPermission: !!token,
-        tokenType: token ? (token.includes('ExponentPushToken') ? 'expo' : 'fcm') : null,
+        hasPermission: info.hasPermission,
+        tokenType: info.tokenType,
         isEnabled: enabled === 'true',
         lastUpdate: lastUpdate
       });
@@ -72,15 +87,33 @@ const NotificationSettingsScreen = ({ navigation }) => {
     try {
       setIsLoading(true);
       
-      await registerForWateringNotifications('07:00');
+      // Initialize Firebase if not already done
+      if (!isInitialized) {
+        const initialized = await initialize(businessId);
+        if (!initialized) {
+          Alert.alert('Setup Failed', 'Failed to initialize notifications');
+          return;
+        }
+      }
+
+      // Register for default watering notifications at 7:00 AM
+      const success = await registerForWateringNotifications('07:00');
       
-      Alert.alert(
-        '✅ Notifications Enabled',
-        'You will now receive daily watering reminders at 7:00 AM',
-        [{ text: 'OK' }]
-      );
-      
-      await checkNotificationStatus();
+      if (success) {
+        Alert.alert(
+          '✅ Notifications Enabled',
+          'You will now receive daily watering reminders at 7:00 AM',
+          [{ text: 'OK' }]
+        );
+        
+        await checkNotificationStatus();
+      } else {
+        Alert.alert(
+          'Setup Failed',
+          'Failed to set up notifications. Please try again or check your device settings.',
+          [{ text: 'OK' }]
+        );
+      }
     } catch (error) {
       console.error('Error setting up notifications:', error);
       Alert.alert(
@@ -102,41 +135,76 @@ const NotificationSettingsScreen = ({ navigation }) => {
     }
   };
 
+  const handleTestNotification = async () => {
+    try {
+      setIsLoading(true);
+
+      if (!hasPermission || !token) {
+        Alert.alert(
+          'Setup Required',
+          'Please enable notifications first before testing.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      const result = await sendTestNotification();
+      
+      if (result.success) {
+        Alert.alert(
+          '✅ Test Sent',
+          'Test notification sent successfully! You should receive it shortly.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Test Failed',
+          result.message || 'Failed to send test notification',
+          [{ text: 'OK' }]
+        );
+      }
+
+    } catch (error) {
+      console.error('Error sending test notification:', error);
+      Alert.alert(
+        'Error',
+        'Failed to send test notification. Please check your internet connection.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const renderNotificationStatus = () => {
     const { hasPermission, tokenType, isEnabled } = notificationStats;
     
     let statusColor = '#F44336';
-    let statusText = 'Not Set Up';
     let statusIcon = 'bell-off';
-    
+    let statusText = 'Disabled';
+
     if (hasPermission && isEnabled) {
       statusColor = '#4CAF50';
+      statusIcon = 'bell-check';
       statusText = 'Active';
-      statusIcon = 'bell-ring';
     } else if (hasPermission && !isEnabled) {
       statusColor = '#FF9800';
-      statusText = 'Permission Granted';
       statusIcon = 'bell-outline';
+      statusText = 'Available';
     }
-    
+
     return (
       <View style={styles.statusCard}>
-        <View style={styles.statusHeader}>
-          <MaterialCommunityIcons name={statusIcon} size={24} color={statusColor} />
-          <View style={styles.statusInfo}>
-            <Text style={styles.statusTitle}>Notification Status</Text>
-            <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
-          </View>
-        </View>
-        
-        {tokenType && (
-          <View style={styles.statusDetail}>
-            <MaterialIcons name="info-outline" size={16} color="#666" />
-            <Text style={styles.statusDetailText}>
+        <MaterialCommunityIcons name={statusIcon} size={32} color={statusColor} />
+        <View style={styles.statusInfo}>
+          <Text style={styles.statusTitle}>Notification Status</Text>
+          <Text style={[styles.statusText, { color: statusColor }]}>{statusText}</Text>
+          {tokenType && (
+            <Text style={styles.statusDetails}>
               Using {tokenType.toUpperCase()} notifications
             </Text>
-          </View>
-        )}
+          )}
+        </View>
         
         {!hasPermission && (
           <TouchableOpacity 
@@ -172,53 +240,52 @@ const NotificationSettingsScreen = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton}
-          onPress={() => navigation.goBack()}
-        >
-          <MaterialIcons name="arrow-back" size={24} color="#333" />
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#333" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Notification Settings</Text>
-        <View style={styles.headerSpacer} />
       </View>
 
-      <ScrollView style={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView style={styles.content}>
         {renderNotificationStatus()}
         
         <WateringNotificationSettings 
           businessId={businessId}
           onSettingsChange={handleSettingsChange}
         />
-        
+
+        {hasPermission && token && (
+          <TouchableOpacity 
+            style={styles.testNotificationButton}
+            onPress={handleTestNotification}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#4CAF50" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="bell-ring-outline" size={20} color="#4CAF50" />
+                <Text style={styles.testButtonText}>Send Test Notification</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         <View style={styles.infoSection}>
-          <Text style={styles.infoTitle}>How it works</Text>
-          <View style={styles.infoItem}>
-            <MaterialCommunityIcons name="clock-outline" size={20} color="#4CAF50" />
-            <Text style={styles.infoText}>
-              Daily notifications at your chosen time
-            </Text>
-          </View>
-          <View style={styles.infoItem}>
-            <MaterialCommunityIcons name="water" size={20} color="#4CAF50" />
-            <Text style={styles.infoText}>
-              Only when plants actually need watering
-            </Text>
-          </View>
-          <View style={styles.infoItem}>
-            <MaterialCommunityIcons name="weather-rainy" size={20} color="#4CAF50" />
-            <Text style={styles.infoText}>
-              Weather-aware (skips rainy days)
-            </Text>
-          </View>
-          <View style={styles.infoItem}>
-            <MaterialCommunityIcons name="cellphone" size={20} color="#4CAF50" />
-            <Text style={styles.infoText}>
-              Works on mobile and web
-            </Text>
-          </View>
+          <Text style={styles.infoTitle}>About Notifications</Text>
+          <Text style={styles.infoText}>
+            • Watering reminders help you maintain consistent plant care schedules
+          </Text>
+          <Text style={styles.infoText}>
+            • Notifications are sent based on your business plants' watering needs
+          </Text>
+          <Text style={styles.infoText}>
+            • You can customize notification times and preferences
+          </Text>
+          <Text style={styles.infoText}>
+            • Test notifications help ensure your setup is working correctly
+          </Text>
         </View>
-        
-        <View style={styles.bottomSpacer} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -227,7 +294,26 @@ const NotificationSettingsScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#f5f5f5',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginLeft: 16,
+  },
+  content: {
+    flex: 1,
+    padding: 16,
   },
   loadingContainer: {
     flex: 1,
@@ -235,125 +321,100 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   loadingText: {
-    marginTop: 10,
+    marginTop: 12,
     color: '#666',
     fontSize: 16,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  backButton: {
-    padding: 8,
-    marginRight: 8,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    flex: 1,
-  },
-  headerSpacer: {
-    width: 40,
-  },
-  scrollContainer: {
-    flex: 1,
-  },
   statusCard: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    padding: 16,
-    borderRadius: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  statusHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statusInfo: {
-    marginLeft: 12,
     flex: 1,
+    marginLeft: 16,
   },
   statusTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
+    marginBottom: 4,
   },
   statusText: {
     fontSize: 14,
-    fontWeight: '500',
-    marginTop: 2,
+    fontWeight: '600',
+    marginBottom: 2,
   },
-  statusDetail: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F0F0F0',
-  },
-  statusDetailText: {
+  statusDetails: {
     fontSize: 12,
     color: '#666',
-    marginLeft: 6,
   },
   setupButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 12,
-    paddingVertical: 10,
+    backgroundColor: '#E8F5E8',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
-    borderRadius: 6,
   },
   setupButtonText: {
-    fontSize: 14,
     color: '#4CAF50',
-    fontWeight: '500',
+    fontWeight: '600',
     marginLeft: 8,
   },
-  infoSection: {
-    backgroundColor: '#FFFFFF',
-    margin: 16,
-    marginTop: 0,
-    padding: 16,
-    borderRadius: 8,
-    elevation: 2,
+  testNotificationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  testButtonText: {
+    color: '#4CAF50',
+    fontWeight: '600',
+    marginLeft: 8,
+    fontSize: 16,
+  },
+  infoSection: {
+    backgroundColor: '#fff',
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   infoTitle: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
     marginBottom: 12,
-  },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 10,
   },
   infoText: {
     fontSize: 14,
     color: '#666',
-    marginLeft: 12,
-    flex: 1,
-  },
-  bottomSpacer: {
-    height: 20,
+    marginBottom: 8,
+    lineHeight: 20,
   },
 });
 

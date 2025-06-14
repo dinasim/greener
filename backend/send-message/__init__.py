@@ -4,6 +4,7 @@ import json
 import azure.functions as func
 from db_helpers import get_container
 from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
+from firebase_helpers import send_fcm_notification_to_user
 import uuid
 from datetime import datetime
 
@@ -64,6 +65,51 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             # Update the conversation
             conversations_container.replace_item(item=chat_id, body=conversation)
+            
+            # Get sender's name for notification
+            sender_name = "Someone"
+            try:
+                users_container = get_container("users")
+                sender_query = "SELECT c.name, c.businessName, c.isBusiness FROM c WHERE c.id = @id OR c.email = @id"
+                sender_params = [{"name": "@id", "value": sender_id}]
+                
+                senders = list(users_container.query_items(
+                    query=sender_query,
+                    parameters=sender_params,
+                    enable_cross_partition_query=True
+                ))
+                
+                if senders:
+                    sender = senders[0]
+                    if sender.get('isBusiness') and sender.get('businessName'):
+                        sender_name = sender.get('businessName')
+                    else:
+                        sender_name = sender.get('name', 'Someone')
+            except Exception as e:
+                logging.warning(f"Error getting sender name: {str(e)}")
+            
+            # Send real-time notification to receiver
+            plant_name = conversation.get('plantName', 'a plant')
+            notification_title = f"New message from {sender_name}"
+            notification_body = f"About {plant_name}: {message_text[:100]}..."
+            
+            notification_data = {
+                'type': 'marketplace_message',
+                'conversationId': chat_id,
+                'senderId': sender_id,
+                'senderName': sender_name,
+                'plantName': plant_name,
+                'screen': 'MessagesScreen',
+                'params': json.dumps({
+                    'conversationId': chat_id,
+                    'sellerId': sender_id if conversation.get('sellerId') == sender_id else receiver_id
+                })
+            }
+            
+            # Send notification to receiver using Firebase Admin SDK
+            users_container = get_container("users")
+            send_fcm_notification_to_user(users_container, receiver_id, notification_title, notification_body, notification_data)
+            
         except Exception as e:
             logging.warning(f"Error updating conversation: {str(e)}")
             # Continue with message creation even if conversation update fails
@@ -97,5 +143,5 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         }, 201)
     
     except Exception as e:
-        logging.error(f"Error sending message: {str(e)}")
+        logging.error(f"Error in send-message function: {str(e)}")
         return create_error_response(str(e), 500)
