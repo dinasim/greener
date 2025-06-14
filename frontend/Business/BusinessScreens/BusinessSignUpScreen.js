@@ -18,6 +18,7 @@ import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import LocationPicker from '../../marketplace/components/LocationPicker';
 import { useForm } from '../../context/FormContext';
+import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
 
 // Safe ImagePicker import with web compatibility
 let ImagePicker;
@@ -66,6 +67,15 @@ export default function BusinessSignUpScreen({ navigation }) {
     'Other'
   ]);
   
+  // Add Firebase notifications hook
+  const {
+    isInitialized,
+    hasPermission,
+    token,
+    initialize,
+    registerForWateringNotifications
+  } = useBusinessFirebaseNotifications(formData.email);
+
   const handleChange = (key, value) => {
     setFormData({
       ...formData,
@@ -232,12 +242,35 @@ export default function BusinessSignUpScreen({ navigation }) {
     setIsLoading(true);
     
     try {
+      // Initialize Firebase notifications during signup
+      console.log('🔔 Setting up Firebase notifications...');
+      await initialize(formData.email);
+      
+      // Prepare notification data
+      const notificationData = {
+        fcmToken: token || null,
+        platform: Platform.OS,
+        notificationSettings: {
+          enabled: hasPermission,
+          wateringReminders: hasPermission,
+          platform: Platform.OS
+        }
+      };
+      
       // Prepare user data
       const userData = {
         email: formData.email,
         type: 'business',
         name: formData.contactName,
-        businessType: 'business'
+        businessType: 'business',
+        // Add Firebase notification token if available
+        fcmToken: token || null,
+        platform: Platform.OS,
+        notificationSettings: {
+          enabled: hasPermission,
+          wateringReminders: hasPermission,
+          platform: Platform.OS
+        }
       };
       
       // Prepare business data with ALL form fields
@@ -268,7 +301,8 @@ export default function BusinessSignUpScreen({ navigation }) {
           city: formData.location?.city || '',
           country: formData.location?.country || 'Israel'
         },
-        joinDate: new Date().toISOString(),
+        registrationDate: new Date().toISOString(),
+        lastUpdated: new Date().toISOString(),
         status: 'active',
         verificationStatus: 'pending',
         businessHours: [], // Can be set later
@@ -297,6 +331,18 @@ export default function BusinessSignUpScreen({ navigation }) {
       
       // Then create a business account (without logo first)
       const businessResult = await saveBusinessToBackend(businessData);
+      
+      // Set up notifications if permission is granted
+      if (hasPermission && token) {
+        try {
+          console.log('🔔 Setting up business notifications...');
+          await registerForWateringNotifications('07:00');
+          console.log('✅ Business notifications configured');
+        } catch (notificationError) {
+          console.warn('⚠️ Failed to setup notifications, but continuing with signup:', notificationError);
+          // Don't fail the entire signup if notifications fail
+        }
+      }
       
       // If we have a logo, upload it and update the business profile
       let logoUrl = null;
