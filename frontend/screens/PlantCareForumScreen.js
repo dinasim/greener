@@ -91,15 +91,16 @@ export default function PlantCareForumScreen({ navigation }) {
         setTopics(data.topics || []);
         setCategoryStats(data.categoryStats || {});
       } else {
-        const errorData = await response.json();
-        console.error('API Error:', errorData);
-        Alert.alert('Error', `Failed to load topics: ${errorData.error || 'Unknown error'}`);
+        // Silently handle API errors without flooding console
+        console.log('🔇 Forum API temporarily unavailable - showing offline message');
         setTopics([]);
+        setCategoryStats({});
       }
     } catch (error) {
-      console.error('Error loading topics:', error);
-      Alert.alert('Network Error', 'Failed to connect to server. Please check your internet connection.');
+      // Silently handle network errors without flooding console
+      console.log('🔇 Forum API connection failed - showing offline message');
       setTopics([]);
+      setCategoryStats({});
     } finally {
       setIsLoading(false);
       setRefreshing(false);

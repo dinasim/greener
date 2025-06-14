@@ -4,6 +4,7 @@ import json
 import azure.functions as func
 from db_helpers import get_container
 from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
+from firebase_helpers import send_fcm_notification_to_user
 import uuid
 from datetime import datetime
 
@@ -38,27 +39,19 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         # Access the marketplace-conversations container
         conversations_container = get_container("marketplace-conversations")
-        logging.info('Successfully got conversations container')
         
-        # Create a conversation key by combining participants (sorted for consistency)
-        participant_ids = sorted([sender_id, receiver_id])
-        participants_key = "|".join(participant_ids)
+        # Create a sorted participants key for querying
+        participants_key = "|".join(sorted([sender_id, receiver_id]))
         
-        # Check if a conversation already exists between these users about this plant
+        # Check if conversation already exists between these users
         query = "SELECT * FROM c WHERE c.participantsKey = @participantsKey"
         parameters = [{"name": "@participantsKey", "value": participants_key}]
         
-        # Add plant filter if provided
+        # If plant_id is provided, check for conversation about this specific plant
         if plant_id:
             query += " AND c.plantId = @plantId"
             parameters.append({"name": "@plantId", "value": plant_id})
-        else:
-            query += " AND (NOT IS_DEFINED(c.plantId) OR c.plantId = null)"
         
-        logging.info(f"Query: {query}")
-        logging.info(f"Parameters: {parameters}")
-        
-        # Execute query with cross-partition support
         existing_conversations = list(conversations_container.query_items(
             query=query,
             parameters=parameters,
@@ -91,30 +84,20 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             # Update the conversation - use id for both item and partition_key
             try:
-                logging.info(f"Updating conversation {conversation_id}")
                 conversations_container.replace_item(
                     item=conversation_id,
-                    body=conversation
+                    body=conversation,
+                    partition_key=conversation_id
                 )
-                logging.info(f"Successfully updated conversation {conversation_id}")
+                logging.info(f"Updated existing conversation {conversation_id}")
             except Exception as update_error:
                 logging.error(f"Error updating conversation: {str(update_error)}")
-                # Try with partition key equal to the ID
-                try:
-                    logging.info(f"Retrying update with id as partition key")
-                    conversations_container.replace_item(
-                        item=conversation_id,
-                        partition_key=conversation_id,
-                        body=conversation
-                    )
-                    logging.info(f"Successfully updated conversation with id as partition key")
-                except Exception as retry_error:
-                    logging.error(f"Retry also failed: {str(retry_error)}")
-                    raise retry_error
+                return create_error_response("Failed to update conversation", 500)
         else:
             # Create a new conversation
             conversation_id = str(uuid.uuid4())
             current_time = datetime.utcnow().isoformat()
+            is_new_conversation = True
             
             new_conversation = {
                 "id": conversation_id,
@@ -147,66 +130,56 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 logging.info(f"Successfully created conversation {conversation_id}")
             except Exception as create_error:
                 logging.error(f"Error creating conversation: {str(create_error)}")
-                # Fallback: try without explicit partition key
-                try:
-                    logging.info("Retrying create without explicit partition key")
-                    conversations_container.create_item(body=new_conversation)
-                    logging.info("Successfully created conversation without explicit partition key")
-                except Exception as retry_error:
-                    logging.error(f"Retry failed: {str(retry_error)}")
-                    raise retry_error
-                    
-            is_new_conversation = True
+                return create_error_response("Failed to create conversation", 500)
         
-        # Add the message to the messages container
-        messages_container = get_container("marketplace-messages")
-        
-        message_id = str(uuid.uuid4())
-        current_time = datetime.utcnow().isoformat()
-        
-        message = {
-            "id": message_id,
-            "conversationId": conversation_id,
-            "senderId": sender_id,
-            "text": initial_message,
-            "timestamp": current_time,
-            "status": {
-                "delivered": True,
-                "read": False,
-                "readAt": None
-            }
-        }
-        
-        # Create the message
+        # Get sender's name for notification
+        sender_name = "Someone"
         try:
+            users_container = get_container("users")
+            sender_query = "SELECT c.name, c.businessName, c.isBusiness FROM c WHERE c.id = @id OR c.email = @id"
+            sender_params = [{"name": "@id", "value": sender_id}]
+            
+            senders = list(users_container.query_items(
+                query=sender_query,
+                parameters=sender_params,
+                enable_cross_partition_query=True
+            ))
+            
+            if senders:
+                sender = senders[0]
+                if sender.get('isBusiness') and sender.get('businessName'):
+                    sender_name = sender.get('businessName')
+                else:
+                    sender_name = sender.get('name', 'Someone')
+        except Exception as e:
+            logging.warning(f"Error getting sender name: {str(e)}")
+        
+        # Create the initial message
+        try:
+            messages_container = get_container("marketplace-messages")
+            
+            message_id = str(uuid.uuid4())
+            current_time = datetime.utcnow().isoformat()
+            
+            message = {
+                "id": message_id,
+                "conversationId": conversation_id,
+                "senderId": sender_id,
+                "text": initial_message,
+                "timestamp": current_time,
+                "status": {
+                    "delivered": True,
+                    "read": False,
+                    "readAt": None
+                }
+            }
+            
             messages_container.create_item(body=message)
             logging.info(f"Created message {message_id} in conversation {conversation_id}")
         except Exception as msg_error:
             logging.error(f"Error creating message: {str(msg_error)}")
             # Continue even if message creation fails
         
-        # Get seller name for response
-        seller_name = "User"
-        try:
-            if is_new_conversation:
-                users_container = get_container("users")
-                user_query = "SELECT c.name FROM c WHERE c.id = @id OR c.email = @email"
-                user_params = [
-                    {"name": "@id", "value": receiver_id},
-                    {"name": "@email", "value": receiver_id}
-                ]
-                
-                users = list(users_container.query_items(
-                    query=user_query,
-                    parameters=user_params,
-                    enable_cross_partition_query=True
-                ))
-                
-                if users:
-                    seller_name = users[0].get('name', 'User')
-        except Exception as e:
-            logging.warning(f"Error getting seller name: {str(e)}")
-            
         # If this is a plant listing, get plant info and update message count
         plant_name = None
         if plant_id:
@@ -234,16 +207,64 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     
                     plants_container.replace_item(item=plant_id, body=plant)
             except Exception as e:
-                logging.warning(f"Error updating plant info: {str(e)}")
+                logging.warning(f"Error updating plant stats: {str(e)}")
+        
+        # Send real-time notification to receiver for new conversations
+        if is_new_conversation:
+            notification_title = f"New message from {sender_name}"
+            if plant_name:
+                notification_body = f"About {plant_name}: {initial_message[:100]}..."
+            else:
+                notification_body = f"{initial_message[:100]}..."
+            
+            notification_data = {
+                'type': 'marketplace_message',
+                'conversationId': conversation_id,
+                'senderId': sender_id,
+                'senderName': sender_name,
+                'plantName': plant_name or 'a plant',
+                'screen': 'MessagesScreen',
+                'params': json.dumps({
+                    'conversationId': conversation_id,
+                    'sellerId': sender_id
+                })
+            }
+            
+            # Send notification to receiver using Firebase Admin SDK
+            users_container = get_container("users")
+            send_fcm_notification_to_user(users_container, receiver_id, notification_title, notification_body, notification_data)
+        
+        # Get seller name for response
+        seller_name = "User"
+        try:
+            if is_new_conversation:
+                users_container = get_container("users")
+                user_query = "SELECT c.name FROM c WHERE c.id = @id OR c.email = @email"
+                user_params = [
+                    {"name": "@id", "value": receiver_id},
+                    {"name": "@email", "value": receiver_id}
+                ]
+                
+                users = list(users_container.query_items(
+                    query=user_query,
+                    parameters=user_params,
+                    enable_cross_partition_query=True
+                ))
+                
+                if users:
+                    seller_name = users[0].get('name', 'User')
+        except Exception as e:
+            logging.warning(f"Error getting seller name: {str(e)}")
         
         return create_success_response({
             "success": True,
-            "messageId": conversation_id,
-            "isNewConversation": is_new_conversation,
+            "conversationId": conversation_id,
+            "messageId": message_id if 'message_id' in locals() else None,
             "sellerName": seller_name,
-            "plantName": plant_name
-        })
+            "plantName": plant_name,
+            "isNewConversation": is_new_conversation
+        }, 201)
     
     except Exception as e:
-        logging.error(f"Error creating chat room: {str(e)}")
+        logging.error(f"Error in create-chat function: {str(e)}")
         return create_error_response(str(e), 500)

@@ -1,4 +1,4 @@
-// Business/components/WateringNotificationSettings.js - NO BARCODE VERSION
+// Business/components/WateringNotificationSettings.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,63 +7,55 @@ import {
   Switch,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
   Platform
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Import REAL API services
-import {
-  updateNotificationSettings,
-  sendTestNotification,
-  getNotificationToken
-} from '../services/businessWateringApi';
+// Use the proper Firebase notifications hook
+import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
 
 const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
-  const [isEnabled, setIsEnabled] = useState(true);
-  const [notificationTime, setNotificationTime] = useState(new Date());
+  const [isEnabled, setIsEnabled] = useState(false);
+  const [notificationTime, setNotificationTime] = useState(new Date(new Date().setHours(7, 0, 0, 0)));
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [hasToken, setHasToken] = useState(false);
+
+  // Use Firebase notifications hook
+  const {
+    isInitialized,
+    hasPermission,
+    token,
+    initialize,
+    registerForWateringNotifications,
+    sendTestNotification,
+    getNotificationInfo
+  } = useBusinessFirebaseNotifications(businessId);
 
   useEffect(() => {
     loadSettings();
-    checkNotificationToken();
-  }, []);
+    if (businessId && !isInitialized) {
+      initialize(businessId);
+    }
+  }, [businessId, isInitialized, initialize]);
 
   const loadSettings = async () => {
     try {
       const enabled = await AsyncStorage.getItem('wateringNotificationsEnabled');
-      const timeStr = await AsyncStorage.getItem('wateringNotificationTime');
+      const time = await AsyncStorage.getItem('wateringNotificationTime');
       
-      if (enabled !== null) {
-        setIsEnabled(enabled === 'true');
-      }
+      setIsEnabled(enabled === 'true');
       
-      if (timeStr) {
-        const [hours, minutes] = timeStr.split(':').map(Number);
-        const time = new Date();
-        time.setHours(hours, minutes, 0, 0);
-        setNotificationTime(time);
+      if (time) {
+        const [hours, minutes] = time.split(':').map(Number);
+        const date = new Date();
+        date.setHours(hours, minutes, 0, 0);
+        setNotificationTime(date);
       }
     } catch (error) {
-      console.warn('Error loading notification settings:', error);
-    }
-  };
-
-  const checkNotificationToken = async () => {
-    try {
-      const token = await getNotificationToken();
-      setHasToken(!!token);
-      
-      if (token) {
-        const tokenKey = Platform.OS === 'web' ? 'webPushToken' : 'fcmToken';
-        await AsyncStorage.setItem(tokenKey, token);
-      }
-    } catch (error) {
-      console.warn('Error checking notification token:', error);
-      setHasToken(false);
+      console.error('Error loading watering notification settings:', error);
     }
   };
 
@@ -72,62 +64,61 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
       setIsLoading(true);
       setIsEnabled(enabled);
 
-      if (enabled && !hasToken) {
-        // Try to get notification token if we don't have one
-        const token = await getNotificationToken();
-        if (token) {
-          setHasToken(true);
-          const tokenKey = Platform.OS === 'web' ? 'webPushToken' : 'fcmToken';
-          await AsyncStorage.setItem(tokenKey, token);
-        } else {
+      if (enabled) {
+        // Initialize Firebase if not already done
+        if (!isInitialized) {
+          const initialized = await initialize(businessId);
+          if (!initialized) {
+            Alert.alert('Setup Failed', 'Failed to initialize notifications');
+            setIsEnabled(false);
+            return;
+          }
+        }
+
+        // Check permission
+        if (!hasPermission) {
           Alert.alert(
             'Permission Required',
             'Please allow notifications in your device settings to receive watering reminders.',
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: 'Cancel', style: 'cancel', onPress: () => setIsEnabled(false) },
               { text: 'Settings', onPress: () => {
-                // You could add logic to open device settings here
                 console.log('Open device settings for notifications');
+                setIsEnabled(false);
               }}
             ]
           );
-          setIsEnabled(false);
           return;
+        }
+
+        // Register for watering notifications
+        if (token) {
+          const timeStr = `${notificationTime.getHours().toString().padStart(2, '0')}:${notificationTime.getMinutes().toString().padStart(2, '0')}`;
+          const success = await registerForWateringNotifications(timeStr);
+          
+          if (!success) {
+            Alert.alert('Registration Failed', 'Could not register for notifications');
+            setIsEnabled(false);
+            return;
+          }
         }
       }
 
       // Save settings locally
       await AsyncStorage.setItem('wateringNotificationsEnabled', enabled.toString());
-
-      // Update settings on backend
-      const timeStr = `${notificationTime.getHours().toString().padStart(2, '0')}:${notificationTime.getMinutes().toString().padStart(2, '0')}`;
       
-      await updateNotificationSettings(businessId, {
-        enabled: enabled,
-        notificationTime: timeStr
-      });
+      if (enabled) {
+        const timeStr = `${notificationTime.getHours().toString().padStart(2, '0')}:${notificationTime.getMinutes().toString().padStart(2, '0')}`;
+        await AsyncStorage.setItem('wateringNotificationTime', timeStr);
+      }
 
       if (onSettingsChange) {
         onSettingsChange({ enabled, notificationTime });
       }
 
-      // Show success message
-      Alert.alert(
-        'Settings Updated',
-        enabled 
-          ? `Watering reminders enabled for ${formatTime(notificationTime)}`
-          : 'Watering reminders disabled',
-        [{ text: 'OK' }]
-      );
-
     } catch (error) {
-      console.error('Error updating notification settings:', error);
-      Alert.alert(
-        'Error',
-        'Failed to update notification settings. Please try again.',
-        [{ text: 'OK' }]
-      );
-      // Revert the toggle
+      console.error('Error toggling notifications:', error);
+      Alert.alert('Error', 'Failed to update notification settings');
       setIsEnabled(!enabled);
     } finally {
       setIsLoading(false);
@@ -147,10 +138,10 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
           // Save locally
           await AsyncStorage.setItem('wateringNotificationTime', timeStr);
           
-          // Update backend
-          await updateNotificationSettings(businessId, {
-            notificationTime: timeStr
-          });
+          // Re-register with new time if notifications are enabled
+          if (token) {
+            await registerForWateringNotifications(timeStr);
+          }
 
           if (onSettingsChange) {
             onSettingsChange({ enabled: isEnabled, notificationTime: selectedTime });
@@ -167,16 +158,16 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
     try {
       setIsLoading(true);
 
-      if (!hasToken) {
+      if (!hasPermission || !token) {
         Alert.alert(
-          'No Notification Token',
-          'Unable to send test notification. Please enable notifications first.',
+          'Setup Required',
+          'Please enable notifications first before testing.',
           [{ text: 'OK' }]
         );
         return;
       }
 
-      const result = await sendTestNotification(businessId);
+      const result = await sendTestNotification();
       
       if (result.success) {
         Alert.alert(
@@ -208,154 +199,159 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
     return time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
-  const getStatusColor = () => {
-    if (!hasToken) return '#F44336';
-    if (isEnabled) return '#4CAF50';
-    return '#FF9800';
-  };
+  const renderNotificationStatus = () => {
+    const info = getNotificationInfo();
+    
+    if (!info.isInitialized) {
+      return (
+        <View style={styles.statusRow}>
+          <MaterialCommunityIcons name="bell-off" size={16} color="#999" />
+          <Text style={styles.statusText}>Initializing...</Text>
+        </View>
+      );
+    }
 
-  const getStatusText = () => {
-    if (!hasToken) return 'Permission needed';
-    if (isEnabled) return 'Active';
-    return 'Disabled';
+    if (!info.hasPermission) {
+      return (
+        <View style={styles.statusRow}>
+          <MaterialCommunityIcons name="bell-off" size={16} color="#f44336" />
+          <Text style={styles.statusText}>Permission required</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.statusRow}>
+        <MaterialCommunityIcons name="bell-check" size={16} color="#4caf50" />
+        <Text style={styles.statusText}>Ready • {info.tokenType}</Text>
+      </View>
+    );
   };
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <MaterialCommunityIcons name="bell-outline" size={24} color="#4CAF50" />
-        <View style={styles.headerText}>
-          <Text style={styles.title}>Watering Reminders</Text>
-          <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, { backgroundColor: getStatusColor() }]} />
-            <Text style={[styles.statusText, { color: getStatusColor() }]}>
-              {getStatusText()}
+      <View style={styles.section}>
+        <View style={styles.sectionHeader}>
+          <MaterialCommunityIcons name="water" size={24} color="#4CAF50" />
+          <Text style={styles.sectionTitle}>Watering Notifications</Text>
+        </View>
+        
+        {renderNotificationStatus()}
+        
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>Daily Reminders</Text>
+            <Text style={styles.settingDescription}>
+              Get notified when plants need watering
             </Text>
           </View>
-        </View>
-      </View>
-
-      <View style={styles.settingRow}>
-        <View style={styles.settingInfo}>
-          <Text style={styles.settingLabel}>Enable Notifications</Text>
-          <Text style={styles.settingDescription}>
-            Get daily reminders for plants that need watering
-          </Text>
-        </View>
-        <Switch
-          value={isEnabled}
-          onValueChange={handleToggleNotifications}
-          disabled={isLoading}
-          trackColor={{ false: '#E0E0E0', true: '#4CAF50' }}
-          thumbColor={isEnabled ? '#FFFFFF' : '#FFFFFF'}
-        />
-      </View>
-
-      {isEnabled && hasToken && (
-        <>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingLabel}>Notification Time</Text>
-              <Text style={styles.settingDescription}>
-                When to send daily watering reminders
-              </Text>
-            </View>
-            <TouchableOpacity
-              style={styles.timeButton}
-              onPress={() => setShowTimePicker(true)}
-            >
-              <Text style={styles.timeButtonText}>{formatTime(notificationTime)}</Text>
-              <MaterialCommunityIcons name="chevron-down" size={20} color="#666" />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={[styles.testButton, isLoading && styles.testButtonDisabled]}
-            onPress={handleTestNotification}
+          <Switch
+            value={isEnabled}
+            onValueChange={handleToggleNotifications}
+            thumbColor={isEnabled ? '#4CAF50' : '#f4f3f4'}
+            trackColor={{ false: '#767577', true: '#81b0ff' }}
             disabled={isLoading}
-          >
-            <MaterialCommunityIcons 
-              name="bell-ring" 
-              size={20} 
-              color={isLoading ? '#999' : '#4CAF50'} 
-            />
-            <Text style={[styles.testButtonText, isLoading && styles.testButtonTextDisabled]}>
-              {isLoading ? 'Sending...' : 'Send Test Notification'}
-            </Text>
-          </TouchableOpacity>
-        </>
-      )}
-
-      {!hasToken && (
-        <View style={styles.permissionWarning}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#F44336" />
-          <Text style={styles.permissionWarningText}>
-            Notification permission required. Please enable notifications in your device settings.
-          </Text>
+          />
         </View>
-      )}
 
-      {showTimePicker && (
-        <DateTimePicker
-          value={notificationTime}
-          mode="time"
-          is24Hour={true}
-          display="default"
-          onChange={handleTimeChange}
-        />
-      )}
+        {isEnabled && (
+          <>
+            <View style={styles.timeSection}>
+              <Text style={styles.timeLabel}>Notification Time</Text>
+              <TouchableOpacity
+                style={styles.timeButton}
+                onPress={() => setShowTimePicker(true)}
+              >
+                <MaterialCommunityIcons name="clock-outline" size={20} color="#4CAF50" />
+                <Text style={styles.timeText}>{formatTime(notificationTime)}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.testButton, isLoading && styles.testButtonDisabled]}
+              onPress={handleTestNotification}
+              disabled={isLoading}
+            >
+              <MaterialCommunityIcons 
+                name="bell-ring" 
+                size={20} 
+                color={isLoading ? '#999' : '#4CAF50'} 
+              />
+              <Text style={[styles.testButtonText, isLoading && styles.testButtonTextDisabled]}>
+                {isLoading ? 'Sending...' : 'Send Test Notification'}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {!hasPermission && (
+          <View style={styles.permissionWarning}>
+            <MaterialCommunityIcons name="alert-circle-outline" size={20} color="#F44336" />
+            <Text style={styles.permissionWarningText}>
+              Notification permission required. Please enable notifications in your device settings.
+            </Text>
+          </View>
+        )}
+
+        {showTimePicker && (
+          <DateTimePicker
+            value={notificationTime}
+            mode="time"
+            is24Hour={true}
+            display="default"
+            onChange={handleTimeChange}
+          />
+        )}
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 8,
     padding: 16,
-    margin: 16,
-    elevation: 2,
+    backgroundColor: '#fff',
+    borderRadius: 8,
+    marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  header: {
+  section: {
+    paddingTop: 16,
+  },
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 16,
   },
-  headerText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  title: {
+  sectionTitle: {
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: 'bold',
     color: '#333',
+    marginLeft: 8,
   },
-  statusContainer: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
+    marginBottom: 12,
+    padding: 8,
+    backgroundColor: '#f5f5f5',
+    borderRadius: 6,
   },
   statusText: {
+    marginLeft: 8,
     fontSize: 12,
-    fontWeight: '500',
+    color: '#666',
   },
   settingRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F0F0F0',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 8,
   },
   settingInfo: {
     flex: 1,
@@ -363,67 +359,76 @@ const styles = StyleSheet.create({
   },
   settingLabel: {
     fontSize: 16,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#333',
+    marginBottom: 4,
   },
   settingDescription: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#666',
-    marginTop: 4,
-    lineHeight: 16,
+  },
+  timeSection: {
+    marginBottom: 16,
+  },
+  timeLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
   },
   timeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#F5F5F5',
-    borderRadius: 6,
+    backgroundColor: '#f0f8f0',
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
   },
-  timeButtonText: {
+  timeText: {
+    marginLeft: 8,
     fontSize: 16,
-    color: '#333',
-    marginRight: 8,
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   testButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    marginTop: 16,
-    backgroundColor: 'transparent',
+    backgroundColor: '#f0f8f0',
+    padding: 12,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: '#4CAF50',
-    borderRadius: 6,
+    marginBottom: 16,
   },
   testButtonDisabled: {
-    borderColor: '#E0E0E0',
+    borderColor: '#999',
+    backgroundColor: '#f5f5f5',
   },
   testButtonText: {
+    marginLeft: 8,
     fontSize: 14,
     color: '#4CAF50',
-    marginLeft: 8,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   testButtonTextDisabled: {
     color: '#999',
   },
   permissionWarning: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginTop: 12,
+    alignItems: 'center',
+    backgroundColor: '#fff3cd',
     padding: 12,
-    backgroundColor: '#FFEBEE',
-    borderRadius: 6,
-    borderLeftWidth: 4,
-    borderLeftColor: '#F44336',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#ff9800',
   },
   permissionWarningText: {
-    fontSize: 12,
-    color: '#D32F2F',
     marginLeft: 8,
     flex: 1,
-    lineHeight: 16,
+    color: '#856404',
+    fontSize: 12,
   },
 });
 

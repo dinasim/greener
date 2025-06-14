@@ -4,23 +4,7 @@ import {
 } from 'react-native';
 import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Firebase imports - using your existing setup
-import { initializeApp } from "firebase/app";
-import { getMessaging, getToken } from "firebase/messaging";
-import messaging from '@react-native-firebase/messaging';
-
-// Your Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
-  authDomain: "greenerapp2025.firebaseapp.com",
-  projectId: "greenerapp2025",
-  storageBucket: "greenerapp2025.appspot.com",
-  messagingSenderId: "241318918547",
-  appId: "1:241318918547:web:9fc472ce576da839f11066",
-  measurementId: "G-8K9XS4GPRM"
-};
-const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+import firebaseNotificationService from '../services/FirebaseNotificationService';
 
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
 
@@ -33,69 +17,47 @@ export default function LoginScreen({ navigation }) {
 
   const canLogin = username.trim() && password.trim();
 
-  // --------- Web Push Helper Function (from your SignInGoogleScreen) ------------
-  async function getAndUpdateWebPushToken(email) {
-    if (Platform.OS !== "web" || !email) return null;
+  // Setup Firebase notifications for the user
+  const setupNotifications = async (email) => {
     try {
-      await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      const app = initializeApp(firebaseConfig);
-      const messaging = getMessaging(app);
-      const token = await getToken(messaging, { vapidKey });
-
-      console.log('✅ Web push token obtained during login:', token?.substring(0, 20) + '...');
+      console.log('🔔 Setting up Firebase notifications...');
       
-      // Update user with new token in case it changed
-      await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email,
-          webPushSubscription: token,
-          platform: "web"
-        }),
-      });
-      
-      return token;
-    } catch (err) {
-      console.error('❌ Error getting web push token:', err);
-      return null;
-    }
-  }
-
-  // --------- FCM (Mobile) Push Helper Function (from your SignInGoogleScreen) ------------
-  async function getAndUpdateFcmToken(email) {
-    if ((Platform.OS !== "android" && Platform.OS !== "ios") || !email) return null;
-    try {
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      
-      if (enabled) {
-        const token = await messaging().getToken();
-        console.log('✅ FCM token obtained during login:', token?.substring(0, 20) + '...');
-        
-        // Update user with new token in case it changed
-        await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            fcmToken: token,
-            platform: Platform.OS
-          }),
-        });
-        
-        return token;
-      } else {
-        console.log('❌ FCM permission not granted during login');
-        return null;
+      // Initialize Firebase
+      const initialized = await firebaseNotificationService.initialize();
+      if (!initialized) {
+        console.log('⚠️ Firebase initialization failed - continuing without notifications');
+        return;
       }
-    } catch (err) {
-      console.error('❌ Error getting FCM token:', err);
-      return null;
+
+      // Request permission
+      const hasPermission = await firebaseNotificationService.requestPermission();
+      if (!hasPermission) {
+        console.log('⚠️ Notification permission denied - continuing without notifications');
+        return;
+      }
+
+      // Get FCM token
+      const token = await firebaseNotificationService.getToken();
+      if (!token) {
+        console.log('⚠️ Failed to get FCM token - continuing without notifications');
+        return;
+      }
+
+      // Update token on server
+      const tokenUpdated = await firebaseNotificationService.updateTokenOnServer(email, token);
+      if (tokenUpdated) {
+        // Setup token refresh listener
+        firebaseNotificationService.setupTokenRefresh(email);
+        console.log('✅ Notifications setup completed successfully');
+      } else {
+        console.log('⚠️ Failed to update token on server');
+      }
+
+    } catch (error) {
+      console.log('⚠️ Notification setup failed:', error.message);
+      // Don't throw - continue with login even if notifications fail
     }
-  }
+  };
 
   const handleLogin = async () => {
     setErrorMsg('');
@@ -128,29 +90,8 @@ export default function LoginScreen({ navigation }) {
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('userName', data.username);
 
-      // --------- Update notification tokens based on platform ---------
-      let webPushToken = null;
-      let fcmToken = null;
-      
-      if (Platform.OS === "web") {
-        webPushToken = await getAndUpdateWebPushToken(data.email);
-        updateFormData('webPushSubscription', webPushToken);
-        if (webPushToken) {
-          await AsyncStorage.setItem('webPushToken', webPushToken);
-        }
-      } else if (Platform.OS === "android" || Platform.OS === "ios") {
-        fcmToken = await getAndUpdateFcmToken(data.email);
-        updateFormData('fcmToken', fcmToken);
-        if (fcmToken) {
-          await AsyncStorage.setItem('fcmToken', fcmToken);
-        }
-      }
-
-      console.log('🔔 Notification tokens updated:', {
-        platform: Platform.OS,
-        webPushToken: webPushToken?.substring(0, 20) + '...' || null,
-        fcmToken: fcmToken?.substring(0, 20) + '...' || null
-      });
+      // Setup Firebase notifications (non-blocking)
+      setupNotifications(data.email);
 
       setLoading(false);
       navigation.navigate('Home');

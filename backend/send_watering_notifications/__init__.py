@@ -3,7 +3,7 @@ import logging
 import json
 import azure.functions as func
 from azure.cosmos import CosmosClient, exceptions
-import requests
+from firebase_helpers import send_fcm_notification
 import os
 from datetime import datetime, timezone, timedelta
 
@@ -11,17 +11,9 @@ from datetime import datetime, timezone, timedelta
 MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
 MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
 
-# Firebase Cloud Messaging
-FCM_SERVER_KEY = os.environ.get("FCM_SERVER_KEY")
-FCM_SEND_URL = "https://fcm.googleapis.com/fcm/send"
-
 def send_fcm_notification_batch(fcm_tokens, web_tokens, title, body, data=None):
-    """Send FCM notification to multiple devices (both mobile and web)"""
+    """Send FCM notification to multiple devices using Firebase Admin SDK"""
     try:
-        if not FCM_SERVER_KEY:
-            logging.error('FCM_SERVER_KEY not configured')
-            return False, "FCM server key not configured"
-        
         all_tokens = []
         if fcm_tokens:
             all_tokens.extend(fcm_tokens)
@@ -32,77 +24,19 @@ def send_fcm_notification_batch(fcm_tokens, web_tokens, title, body, data=None):
             logging.warning('No device tokens provided')
             return True, "No tokens to send to"
         
-        # FCM supports up to 1000 tokens in a single request
-        batch_size = 500
         total_success = 0
         total_failure = 0
         
-        for i in range(0, len(all_tokens), batch_size):
-            batch_tokens = all_tokens[i:i + batch_size]
-            
-            payload = {
-                "registration_ids": batch_tokens,
-                "notification": {
-                    "title": title,
-                    "body": body,
-                    "icon": "ic_notification",
-                    "sound": "default",
-                    "priority": "high"
-                },
-                "data": data or {},
-                "android": {
-                    "notification": {
-                        "channel_id": "watering_notifications",
-                        "priority": "high",
-                        "vibrate": [1000, 1000],
-                        "sound": "default"
-                    }
-                },
-                "webpush": {
-                    "notification": {
-                        "title": title,
-                        "body": body,
-                        "icon": "/icon-192x192.png",
-                        "badge": "/badge-72x72.png"
-                    }
-                },
-                "apns": {
-                    "payload": {
-                        "aps": {
-                            "sound": "default",
-                            "badge": 1,
-                            "alert": {
-                                "title": title,
-                                "body": body
-                            }
-                        }
-                    }
-                }
-            }
-            
-            headers = {
-                "Authorization": f"key={FCM_SERVER_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            response = requests.post(
-                FCM_SEND_URL,
-                json=payload,
-                headers=headers,
-                timeout=15
-            )
-            
-            if response.status_code == 200:
-                result = response.json()
-                batch_success = result.get('success', 0)
-                batch_failure = result.get('failure', 0)
-                total_success += batch_success
-                total_failure += batch_failure
-                
-                logging.info(f'FCM batch sent: {batch_success} success, {batch_failure} failures')
-            else:
-                logging.error(f'FCM batch failed: {response.status_code} {response.text}')
-                total_failure += len(batch_tokens)
+        for token in all_tokens:
+            try:
+                success = send_fcm_notification(token, title, body, data)
+                if success:
+                    total_success += 1
+                else:
+                    total_failure += 1
+            except Exception as e:
+                logging.error(f"Error sending notification to token {token[:20]}...: {str(e)}")
+                total_failure += 1
         
         success = total_success > 0
         message = f"Sent {total_success} notifications, {total_failure} failed"
