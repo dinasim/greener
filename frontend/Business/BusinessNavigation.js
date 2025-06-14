@@ -192,11 +192,6 @@ const BusinessNavigation = () => {
         options={{ title: 'Watering Checklist' }}
       />
       <Stack.Screen 
-        name="BarcodeScannerScreen" 
-        component={BarcodeScannerScreen}
-        options={{ title: 'Scan Barcode' }}
-      />
-      <Stack.Screen 
         name="GPSWateringNavigator" 
         component={GPSWateringNavigator}
         options={{ title: 'GPS Navigation' }}

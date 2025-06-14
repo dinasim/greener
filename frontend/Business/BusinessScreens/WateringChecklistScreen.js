@@ -293,13 +293,7 @@ export default function WateringChecklistScreen({ navigation, route }) {
     }
   };
   
-  // Handle opening barcode scanner
-  const handleScanBarcode = () => {
-    navigation.navigate('BarcodeScannerScreen', {
-      onBarcodeScanned: handleBarcodeScanned,
-      businessId
-    });
-  };
+  
   
   // Handle barcode scan result
   const handleBarcodeScanned = (data) => {
