@@ -50,8 +50,7 @@ export default function AddOptionsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-    backgroundColor: '#fff',
+    flex: 1
   },
   header: {
     flexDirection: 'row',

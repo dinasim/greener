@@ -369,7 +369,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee',
   },
   activeFiltersContainer: {
-    paddingVertical: 10,
+    paddingVertical: 5,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
@@ -405,7 +405,7 @@ const styles = StyleSheet.create({
   controlsRow: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingVertical: 4,
     alignItems: 'center',
   },
   sortContainer: {

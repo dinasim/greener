@@ -3,7 +3,6 @@
     "name": "Greener",
     "slug": "greener",
     "platforms": [
-      "ios",
       "android",
       "web"
     ],
@@ -22,14 +21,6 @@
     "assetBundlePatterns": [
       "**/*"
     ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.dinasim.greener",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search.",
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",

@@ -22,7 +22,7 @@ import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
 import PlantCareForumScreen from '../screens/PlantCareForumScreen';
-
+import CustomerListScreen from './BusinessScreens/CustomerListScreen';
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
