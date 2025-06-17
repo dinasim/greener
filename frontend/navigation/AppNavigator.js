@@ -31,6 +31,7 @@ import SearchScreen from '../screens/SearchScreen';
 import AddOptionsScreen from '../screens/AddOptionsScreen';
 import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
 import UserSettingsScreen from '../screens/UserSettingsScreen';
+import ForumTopicDetail from '../screens/ForumTopicDetail';
 
 // Import marketplace navigation
 import MainTabs from './MainTabs';
@@ -123,6 +124,7 @@ export default function AppNavigator() {
         <Stack.Screen name="ForumScreen" component={withBackground(ForumScreen)} />
         <Stack.Screen name="SearchScreen" component={withBackground(SearchScreen)} />
         <Stack.Screen name="AddOptionsScreen" component={withBackground(AddOptionsScreen)} />
+        <Stack.Screen name="ForumTopicDetail" component={withBackground(ForumTopicDetail)} />
       </Stack.Navigator>
     </FormProvider>
   );

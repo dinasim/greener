@@ -10,6 +10,29 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
+// FIXED: Icon name mapping to ensure compatibility
+const getValidIconName = (iconName) => {
+  const iconMap = {
+    'shopping-cart': 'cart',
+    'attach-money': 'currency-usd',
+    'alert': 'alert-circle',
+    'cart': 'cart',
+    'cash': 'cash',
+    'trending-up': 'trending-up',
+    'trending-down': 'trending-down',
+    'trending-flat': 'trending-neutral',
+    'alert-circle': 'alert-circle',
+    'check-circle': 'check-circle',
+    'package-variant': 'package-variant',
+    'currency-usd': 'currency-usd',
+    'account-group': 'account-group',
+    'account-plus': 'account-plus',
+    'star': 'star'
+  };
+  
+  return iconMap[iconName] || iconName;
+};
+
 export default function KPIWidget({
   title,
   value,
@@ -141,6 +164,9 @@ export default function KPIWidget({
     outputRange: ['0deg', '360deg'],
   });
 
+  // FIXED: Use the mapping function for icon name
+  const validIconName = getValidIconName(icon);
+
   return (
     <Animated.View
       style={[
@@ -163,7 +189,7 @@ export default function KPIWidget({
                 <MaterialIcons name="refresh" size={20} color="#fff" />
               </Animated.View>
             ) : (
-              <MaterialCommunityIcons name={icon} size={20} color="#fff" />
+              <MaterialCommunityIcons name={validIconName} size={20} color="#fff" />
             )}
           </View>
           

@@ -127,10 +127,30 @@ export default function SignInGoogleScreen({ navigation }) {
                 expoPushToken: null,
                 webPushSubscription: webPushToken || formData.webPushSubscription || null,
                 fcmToken: fcmToken || null,
-                location: formData.userLocation,
+                // FIXED: Ensure location data includes coordinates and address
+                location: formData.userLocation ? {
+                  city: formData.userLocation.city || '',
+                  street: formData.userLocation.street || '',
+                  houseNumber: formData.userLocation.houseNumber || '',
+                  latitude: formData.userLocation.latitude || null,
+                  longitude: formData.userLocation.longitude || null,
+                  formattedAddress: formData.userLocation.formattedAddress || '',
+                  country: formData.userLocation.country || 'Israel',
+                  postalCode: formData.userLocation.postalCode || ''
+                } : null,
               };
 
-              console.log("📦 Sending user data:", userData);
+              console.log("📦 Sending user data:", {
+                ...userData,
+                webPushSubscription: userData.webPushSubscription?.substring(0, 20) + '...' || null,
+                fcmToken: userData.fcmToken?.substring(0, 20) + '...' || null,
+                location: userData.location ? {
+                  city: userData.location.city,
+                  hasCoordinates: !!(userData.location.latitude && userData.location.longitude),
+                  coordinates: userData.location.latitude && userData.location.longitude ? 
+                    `${userData.location.latitude.toFixed(4)}, ${userData.location.longitude.toFixed(4)}` : 'None'
+                } : 'No location'
+              });
               saveUserToBackend(userData);
             } else {
               setIsLoading(false);

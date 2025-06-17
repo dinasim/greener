@@ -10,6 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NotificationList from '../components/NotificationList';
 import { useNotificationManager } from '../components/NotificationManager';
@@ -167,7 +168,7 @@ export default function NotificationCenterScreen({ navigation, route }) {
       {summary && (
         <View style={styles.summary}>
           <View style={styles.summaryItem}>
-            <MaterialIcons name="water-drop" size={16} color="#2196F3" />
+            <MaterialCommunityIcons name="water" size={16} color="#2196F3" />
             <Text style={styles.summaryText}>
               {summary.plantsNeedingWater} plants need watering
             </Text>

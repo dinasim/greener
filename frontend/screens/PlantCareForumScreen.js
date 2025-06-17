@@ -14,9 +14,12 @@ import {
   Modal,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as ImagePicker from 'expo-image-picker';
+import ToastMessage from '../marketplace/components/ToastMessage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
@@ -30,6 +33,9 @@ export default function PlantCareForumScreen({ navigation }) {
   const [userEmail, setUserEmail] = useState('');
   const [categoryStats, setCategoryStats] = useState({});
   const [isCreatingTopic, setIsCreatingTopic] = useState(false);
+  const [topicImages, setTopicImages] = useState([]);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const modalContentRef = useRef(null); // For accessibility fix
 
   // Create topic form
   const [newTopic, setNewTopic] = useState({
@@ -52,6 +58,20 @@ export default function PlantCareForumScreen({ navigation }) {
     { id: 'outdoor', name: 'Outdoor Plants', icon: 'tree' },
   ];
 
+  // Toast state
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
+  const showToast = (message, type = 'info') => setToast({ visible: true, message, type });
+  const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
+
+  // --- Search Suggestions State ---
+  const [suggestions, setSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  // Add search mode state
+  const [searchMode, setSearchMode] = useState('text'); // 'text' or 'tag'
+
+  // --- Delete confirmation modal state ---
+  const [deleteConfirm, setDeleteConfirm] = useState({ visible: false, topicId: null, category: null });
+
   useEffect(() => {
     loadUserEmail();
     loadTopics();
@@ -72,49 +92,198 @@ export default function PlantCareForumScreen({ navigation }) {
       
       // Build query parameters
       const params = new URLSearchParams({
-        category: selectedCategory,
+        category: selectedCategory !== 'all' ? selectedCategory : '',
         search: searchQuery,
         limit: '20',
         offset: '0',
         sort: 'lastActivity'
       });
       
+      console.log('🔍 Loading forum topics with params:', params.toString());
+      
+      // FIXED: Use correct API endpoint for plant care forum
       const response = await fetch(`${API_BASE_URL}/plant-care-forum?${params}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
+          'Accept': 'application/json'
         }
       });
 
+      console.log('📡 Forum API Response Status:', response.status);
+
       if (response.ok) {
         const data = await response.json();
-        setTopics(data.topics || []);
-        setCategoryStats(data.categoryStats || {});
+        console.log('✅ Forum topics loaded:', data);
+        
+        // FIXED: Handle different response structures from Azure Functions
+        const topicsArray = data.topics || data.data || data || [];
+        const statsData = data.categoryStats || data.stats || {};
+        
+        console.log(`📊 Found ${topicsArray.length} topics`);
+        
+        setTopics(Array.isArray(topicsArray) ? topicsArray : []);
+        setCategoryStats(statsData);
+        
+        // Log first topic for debugging
+        if (topicsArray.length > 0) {
+          console.log('🔍 First topic sample:', topicsArray[0]);
+        }
       } else {
-        // Silently handle API errors without flooding console
-        console.log('🔇 Forum API temporarily unavailable - showing offline message');
+        // Enhanced error handling for debugging
+        const errorText = await response.text();
+        console.error(`❌ Forum API error (${response.status}): ${response.statusText}`);
+        console.error('Error response:', errorText);
+        
+        if (response.status === 404) {
+          console.log('⚠️ The plant-care-forum endpoint might be missing or misconfigured');
+        }
+        
+        // Show user-friendly error but don't break the app
         setTopics([]);
         setCategoryStats({});
+        
+        // Only show alert for non-404 errors to avoid spam
+        if (response.status !== 404) {
+          Alert.alert('Forum Error', 'Unable to load forum topics. Please try again later.');
+        }
       }
     } catch (error) {
-      // Silently handle network errors without flooding console
-      console.log('🔇 Forum API connection failed - showing offline message');
+      console.error('🔥 Forum API connection failed:', error);
+      
+      // Provide more specific error messages
+      let errorMessage = 'Connection failed. ';
+      if (error.message.includes('Network request failed')) {
+        errorMessage += 'Please check your internet connection.';
+      } else {
+        errorMessage += 'Please try again later.';
+      }
+      
       setTopics([]);
       setCategoryStats({});
+      
+      // Only show alert for actual network errors
+      if (!error.message.includes('404')) {
+        Alert.alert('Connection Error', errorMessage);
+      }
     } finally {
       setIsLoading(false);
       setRefreshing(false);
     }
   };
 
+  // Image upload functionality
+  const uploadImageToServer = async (imageUri) => {
+    try {
+      setIsUploadingImage(true);
+      
+      // Convert image to base64
+      const response = await fetch(imageUri);
+      const blob = await response.blob();
+      const base64 = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
+
+      // Upload to server - FIXED path to match function.json route
+      const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image: base64,
+          type: 'forum',
+          contentType: 'image/jpeg'
+        })
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error('Failed to upload image');
+      }
+
+      const result = await uploadResponse.json();
+      return result.url;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
+  const pickImageFromGallery = async () => {
+    try {
+      if (topicImages.length >= 3) {
+        Alert.alert('Limit Reached', 'You can upload up to 3 images per topic');
+        return;
+      }
+
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Camera roll access is required to upload images');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUrl = await uploadImageToServer(result.assets[0].uri);
+        setTopicImages(prev => [...prev, { uri: result.assets[0].uri, url: imageUrl }]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload image. Please try again.');
+    }
+  };
+
+  const takePhotoWithCamera = async () => {
+    try {
+      if (topicImages.length >= 3) {
+        Alert.alert('Limit Reached', 'You can upload up to 3 images per topic');
+        return;
+      }
+
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Camera access is required to take photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUrl = await uploadImageToServer(result.assets[0].uri);
+        setTopicImages(prev => [...prev, { uri: result.assets[0].uri, url: imageUrl }]);
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to take photo. Please try again.');
+    }
+  };
+
+  const removeImage = (index) => {
+    setTopicImages(prev => prev.filter((_, i) => i !== index));
+  };
+
   const createNewTopic = async () => {
     if (!newTopic.title.trim() || !newTopic.content.trim()) {
-      Alert.alert('Error', 'Please fill in both title and content');
+      showToast('Please fill in both title and content', 'error');
       return;
     }
-
     if (!userEmail || userEmail === 'Anonymous User') {
-      Alert.alert('Error', 'Please log in to create a topic');
+      showToast('Please log in to create a topic', 'error');
       return;
     }
 
@@ -127,7 +296,8 @@ export default function PlantCareForumScreen({ navigation }) {
         category: newTopic.category,
         author: userEmail,
         tags: newTopic.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        authorType: 'customer' // Determine this based on user type
+        images: topicImages.map(img => img.url), // Include uploaded image URLs
+        authorType: 'customer'
       };
 
       const response = await fetch(`${API_BASE_URL}/plant-care-forum`, {
@@ -142,15 +312,16 @@ export default function PlantCareForumScreen({ navigation }) {
         const result = await response.json();
         setShowCreateModal(false);
         setNewTopic({ title: '', content: '', category: 'general', tags: '' });
-        loadTopics(); // Reload topics to show the new one
-        Alert.alert('Success', 'Your topic has been posted successfully!');
+        setTopicImages([]); // Clear uploaded images
+        loadTopics();
+        showToast('Your topic has been posted successfully!', 'success');
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create topic');
       }
     } catch (error) {
       console.error('Error creating topic:', error);
-      Alert.alert('Error', `Failed to create topic: ${error.message}`);
+      showToast(`Failed to create topic: ${error.message}`, 'error');
     } finally {
       setIsCreatingTopic(false);
     }
@@ -191,6 +362,59 @@ export default function PlantCareForumScreen({ navigation }) {
     return category ? category.icon : 'leaf';
   };
 
+  // Delete topic handler
+  const deleteTopic = (topicId, category) => {
+    setDeleteConfirm({ visible: true, topicId, category });
+  };
+
+  const confirmDelete = async () => {
+    const { topicId, category } = deleteConfirm;
+    setDeleteConfirm({ visible: false, topicId: null, category: null });
+    try {
+      const response = await fetch(`${API_BASE_URL}/plant-care-forum?topicId=${encodeURIComponent(topicId)}&category=${encodeURIComponent(category)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || 'Failed to delete topic');
+      }
+      setTopics(prev => prev.filter(t => t.id !== topicId));
+      showToast('Topic deleted successfully.', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to delete topic.', 'error');
+    }
+  };
+
+  const cancelDelete = () => setDeleteConfirm({ visible: false, topicId: null, category: null });
+
+  // --- Enhanced Search Suggestions Logic ---
+  useEffect(() => {
+    const query = searchQuery.trim().toLowerCase();
+    // Filter topics by current category (tab)
+    const filteredTopics = selectedCategory === 'all'
+      ? topics
+      : topics.filter(t => t.category === selectedCategory);
+    if (!query) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    if (searchMode === 'tag') {
+      const tagMatches = filteredTopics.filter(t =>
+        Array.isArray(t.tags) && t.tags.length > 0 && t.tags.some(tag => tag.toLowerCase().includes(query))
+      );
+      setSuggestions(tagMatches);
+      setShowSuggestions(true);
+    } else {
+      const titleMatches = filteredTopics.filter(t => t.title?.toLowerCase().includes(query));
+      const contentMatches = filteredTopics.filter(t => !titleMatches.includes(t) && t.content?.toLowerCase().includes(query));
+      const replyMatches = [];
+      setSuggestions([...titleMatches, ...contentMatches, ...replyMatches]);
+      setShowSuggestions(true);
+    }
+  }, [searchQuery, topics, searchMode, selectedCategory]);
+
   const renderTopic = (topic) => (
     <TouchableOpacity
       key={topic.id}
@@ -211,21 +435,50 @@ export default function PlantCareForumScreen({ navigation }) {
             {topic.isAnswered ? 'Answered' : 'Open'}
           </Text>
         </View>
-        
-        <View style={styles.categoryBadge}>
+        <View style={styles.categoryBadgeSmall}>
           <MaterialCommunityIcons 
             name={getCategoryIcon(topic.category)} 
             size={12} 
-            color="#666" 
+            color="#4CAF50" 
           />
           <Text style={styles.categoryText}>
             {getCategoryDisplayName(topic.category)}
           </Text>
         </View>
+        {/* Delete button for author */}
+        {userEmail && topic.author === userEmail && (
+          <TouchableOpacity onPress={() => deleteTopic(topic.id, topic.category)} style={{ marginLeft: 8 }}>
+            <MaterialIcons name="delete" size={20} color="#f44336" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <Text style={styles.topicTitle} numberOfLines={2}>{topic.title}</Text>
       <Text style={styles.topicContent} numberOfLines={2}>{topic.content}</Text>
+
+      {/* Display topic images if available */}
+      {topic.images && topic.images.length > 0 && (
+        <ScrollView 
+          horizontal 
+          showsHorizontalScrollIndicator={false}
+          style={styles.topicImagesContainer}
+          contentContainerStyle={styles.topicImagesContent}
+        >
+          {topic.images.slice(0, 3).map((imageUrl, index) => (
+            <Image 
+              key={index}
+              source={{ uri: imageUrl }} 
+              style={styles.topicImage}
+              resizeMode="cover"
+            />
+          ))}
+          {topic.images.length > 3 && (
+            <View style={styles.moreImagesIndicator}>
+              <Text style={styles.moreImagesText}>+{topic.images.length - 3}</Text>
+            </View>
+          )}
+        </ScrollView>
+      )}
 
       {topic.tags && topic.tags.length > 0 && (
         <View style={styles.tagsContainer}>
@@ -241,10 +494,12 @@ export default function PlantCareForumScreen({ navigation }) {
         <Text style={styles.authorText}>by {topic.author}</Text>
         
         <View style={styles.topicStats}>
-          <View style={styles.statItem}>
-            <MaterialIcons name="thumb-up" size={14} color="#666" />
-            <Text style={styles.statText}>{topic.votes || 0}</Text>
-          </View>
+          {topic.hasImages && (
+            <View style={styles.statItem}>
+              <MaterialIcons name="image" size={14} color="#4CAF50" />
+              <Text style={styles.statText}>{topic.images?.length || 0}</Text>
+            </View>
+          )}
           
           <View style={styles.statItem}>
             <MaterialIcons name="chat-bubble" size={14} color="#666" />
@@ -256,14 +511,72 @@ export default function PlantCareForumScreen({ navigation }) {
             <Text style={styles.statText}>{topic.views || 0}</Text>
           </View>
           
-          <Text style={styles.timeText}>{formatTimeAgo(topic.lastActivity || topic.timestamp)}</Text>
+          <Text style={styles.timeText}>{formatDateTime24(topic.lastActivity || topic.timestamp)}</Text>
         </View>
       </View>
     </TouchableOpacity>
   );
 
+  // Accessibility fix: blur focus if inside modal before closing (web only)
+  function closeCreateModal() {
+    if (
+      typeof document !== 'undefined' &&
+      modalContentRef.current &&
+      typeof modalContentRef.current.contains === 'function'
+    ) {
+      const active = document.activeElement;
+      if (active && modalContentRef.current.contains(active)) {
+        active.blur();
+      }
+    }
+    setShowCreateModal(false);
+  }
+
+  // --- Render search suggestions dropdown ---
+  const renderSuggestions = () => {
+    if (!showSuggestions || suggestions.length === 0) return null;
+    return (
+      <View style={{
+        position: 'absolute',
+        top: 48,
+        left: 16,
+        right: 16,
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        zIndex: 100,
+        maxHeight: 200,
+      }}>
+        {suggestions.slice(0, 5).map(s => (
+          <TouchableOpacity
+            key={s.id}
+            style={{ padding: 12, borderBottomWidth: 1, borderBottomColor: '#f0f0f0' }}
+            onPress={() => {
+              setSearchQuery(s.title);
+              setShowSuggestions(false);
+              handleTopicPress(s);
+            }}
+          >
+            <Text style={{ fontWeight: 'bold', color: '#333' }}>{s.title}</Text>
+            <Text style={{ color: '#666', fontSize: 12 }} numberOfLines={1}>{s.content}</Text>
+            <Text style={{ color: '#888', fontSize: 11 }}>{formatDateTime24(s.lastActivity || s.timestamp)}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Toast Message always visible at root */}
+      <ToastMessage
+        visible={toast.visible}
+        message={toast.message}
+        type={toast.type}
+        onHide={hideToast}
+        duration={3000}
+      />
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -283,15 +596,28 @@ export default function PlantCareForumScreen({ navigation }) {
         <MaterialIcons name="search" size={20} color="#666" />
         <TextInput
           style={styles.searchInput}
-          placeholder="Search topics..."
+          placeholder={`Search by ${searchMode === 'tag' ? 'tag' : 'text'} in ${getCategoryDisplayName(selectedCategory)}`}
           value={searchQuery}
-          onChangeText={setSearchQuery}
+          onChangeText={text => {
+            setSearchQuery(text);
+            setShowSuggestions(!!text);
+          }}
+          onFocus={() => setShowSuggestions(!!searchQuery)}
         />
+        {/* Toggle search mode button */}
+        <TouchableOpacity
+          style={{ marginLeft: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#e0e0e0' }}
+          onPress={() => setSearchMode(searchMode === 'text' ? 'tag' : 'text')}
+          accessibilityLabel={searchMode === 'text' ? 'Switch to tag search' : 'Switch to text search'}
+        >
+          <Text style={{ fontSize: 12, color: '#333', fontWeight: 'bold' }}>{searchMode === 'text' ? 'Text' : 'Tag'}</Text>
+        </TouchableOpacity>
         {searchQuery ? (
           <TouchableOpacity onPress={() => setSearchQuery('')}>
             <MaterialIcons name="clear" size={20} color="#999" />
           </TouchableOpacity>
         ) : null}
+        {renderSuggestions()}
       </View>
 
       {/* Categories */}
@@ -366,16 +692,26 @@ export default function PlantCareForumScreen({ navigation }) {
       <Modal
         visible={showCreateModal}
         animationType="slide"
-        onRequestClose={() => setShowCreateModal(false)}
+        onRequestClose={closeCreateModal}
+        transparent={true}
       >
         <SafeAreaView style={styles.modalContainer}>
+          {/* ToastMessage also inside modal for feedback */}
+          <ToastMessage
+            visible={toast.visible}
+            message={toast.message}
+            type={toast.type}
+            onHide={hideToast}
+            duration={3000}
+          />
           <KeyboardAvoidingView 
             style={styles.modalContent}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            ref={modalContentRef}
           >
             {/* Modal Header */}
             <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
+              <TouchableOpacity onPress={closeCreateModal}>
                 <MaterialIcons name="close" size={24} color="#666" />
               </TouchableOpacity>
               <Text style={styles.modalTitle}>Create New Topic</Text>
@@ -460,10 +796,74 @@ export default function PlantCareForumScreen({ navigation }) {
                   onChangeText={(text) => setNewTopic(prev => ({ ...prev, tags: text }))}
                 />
               </View>
+
+              {/* Image Upload */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Upload Image (optional)</Text>
+                <View style={styles.imageUploadContainer}>
+                  <TouchableOpacity 
+                    style={styles.imageUploadButton}
+                    onPress={pickImageFromGallery}
+                  >
+                    <MaterialIcons name="image" size={24} color="#4CAF50" />
+                    <Text style={styles.imageUploadButtonText}>Choose from Gallery</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.imageUploadButton}
+                    onPress={takePhotoWithCamera}
+                  >
+                    <MaterialIcons name="camera-alt" size={24} color="#4CAF50" />
+                    <Text style={styles.imageUploadButtonText}>Take a Photo</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {topicImages.length > 0 && (
+                  <View style={styles.selectedImagesContainer}>
+                    {topicImages.map((image, index) => (
+                      <View key={index} style={styles.selectedImageWrapper}>
+                        <Image source={{ uri: image.uri }} style={styles.selectedImage} />
+                        <TouchableOpacity 
+                          style={styles.removeImageButton}
+                          onPress={() => removeImage(index)}
+                        >
+                          <MaterialIcons name="remove-circle" size={20} color="#f44336" />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
             </ScrollView>
           </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
+
+      {/* --- Custom Delete Confirmation Modal --- */}
+      {deleteConfirm.visible && (
+        <View style={{
+          position: 'absolute',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.25)',
+          justifyContent: 'center', alignItems: 'center',
+          zIndex: 9999
+        }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, minWidth: 260, alignItems: 'center' }}>
+            <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Delete Topic</Text>
+            <Text style={{ fontSize: 14, color: '#444', marginBottom: 20, textAlign: 'center' }}>
+              Are you sure you want to delete this topic? This action cannot be undone.
+            </Text>
+            <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+              <TouchableOpacity onPress={cancelDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#eee' }}>
+                <Text style={{ color: '#333', fontWeight: 'bold' }}>No</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={confirmDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#f44336' }}>
+                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Yes</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -522,8 +922,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#fff',
     paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingVertical: 3, // half of previous 6
+    borderRadius: 10, // half of previous 16
     marginRight: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -533,7 +933,7 @@ const styles = StyleSheet.create({
     borderColor: '#4CAF50',
   },
   categoryButtonText: {
-    fontSize: 12,
+    fontSize: 10, // smaller font
     color: '#666',
     marginLeft: 4,
     fontWeight: '500',
@@ -605,10 +1005,20 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 12,
   },
+  categoryBadgeSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    minHeight: 18,
+    height: 22,
+  },
   categoryText: {
-    fontSize: 10,
-    color: '#666',
-    marginLeft: 4,
+    fontSize: 15, // larger font for topic list
+    color: '#2e7d32',
+    marginLeft: 6,
   },
   topicTitle: {
     fontSize: 16,
@@ -767,4 +1177,93 @@ const styles = StyleSheet.create({
   selectedCategoryOptionText: {
     color: '#fff',
   },
+  imageUploadContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 8,
+  },
+  imageUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#4CAF50',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    flex: 1,
+    marginRight: 8,
+  },
+  imageUploadButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: 8,
+  },
+  selectedImagesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 12,
+  },
+  selectedImageWrapper: {
+    position: 'relative',
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  selectedImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  removeImageButton: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#f44336',
+    padding: 4,
+  },
+  topicImagesContainer: {
+    flexDirection: 'row',
+    marginBottom: 8,
+  },
+  topicImagesContent: {
+    paddingHorizontal: 0,
+  },
+  topicImage: {
+    width: 100,
+    height: 75,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 4,
+  },
+  moreImagesIndicator: {
+    backgroundColor: '#f0f9f3',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moreImagesText: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontWeight: '500',
+  },
 });
+
+// Helper for 24h date formatting
+function formatDateTime24(dt) {
+  if (!dt) return '';
+  const d = new Date(dt);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const mins = String(d.getMinutes()).padStart(2, '0');
+  return `${year}-${month}-${day} ${hours}:${mins}`;
+}

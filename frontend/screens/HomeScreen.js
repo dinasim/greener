@@ -12,7 +12,8 @@ import {
   Dimensions,
   ActivityIndicator,
   ScrollView,
-  Platform
+  Platform,
+  RefreshControl
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -23,6 +24,12 @@ import AddPlantScreen from './AddPlantScreen';
 import LocationsScreen from './LocationsScreen';
 import DiseaseCheckerScreen from './DiseaseCheckerScreen';
 import { useFirebaseNotifications } from '../hooks/useFirebaseNotifications';
+import { 
+  getWeatherData, 
+  generateWateringAdvice, 
+  getWeatherIconUrl, 
+  getUserLocation 
+} from '../services/weatherService';
 
 const { width } = Dimensions.get('window');
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
@@ -84,10 +91,54 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading] = useState(true);
   const [mainTab, setMainTab] = useState('home');
   const [userEmail, setUserEmail] = useState(null);
-  const fadeAnim = useState(new Animated.Value(0))[0]; // Add this missing line
+  const [weatherData, setWeatherData] = useState(null);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [wateringAdvice, setWateringAdvice] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const fadeAnim = useState(new Animated.Value(0))[0];
 
   // Initialize Firebase notifications
   const { isInitialized, hasPermission, token, error } = useFirebaseNotifications(userEmail);
+
+  // Load weather data
+  const loadWeatherData = async (silent = false) => {
+    try {
+      if (!silent) {
+        setWeatherLoading(true);
+      }
+
+      console.log('🌤️ Loading weather data for watering advice...');
+      
+      // Get user location
+      const location = await getUserLocation();
+      setUserLocation(location);
+      
+      // Get weather data
+      const weather = await getWeatherData(location);
+      setWeatherData(weather);
+      
+      // Generate watering advice based on weather and plants
+      const advice = generateWateringAdvice(weather, plants);
+      setWateringAdvice(advice);
+      
+      console.log('✅ Weather data loaded successfully');
+      
+    } catch (error) {
+      console.error('❌ Error loading weather data:', error);
+      // Set fallback advice
+      setWateringAdvice({
+        general: 'Weather data unavailable. Follow your regular watering schedule.',
+        urgency: 'normal',
+        icon: 'help-circle-outline',
+        color: '#666'
+      });
+    } finally {
+      if (!silent) {
+        setWeatherLoading(false);
+      }
+    }
+  };
 
   // Handle navigation for tabs that should navigate immediately
   useEffect(() => {
@@ -130,6 +181,8 @@ export default function HomeScreen({ navigation }) {
       setLoading(true);
       try {
         let userEmail = await AsyncStorage.getItem('userEmail');
+        setUserEmail(userEmail);
+        
         if (!userEmail) {
           setPlants([]);
           setLoading(false);
@@ -151,6 +204,11 @@ export default function HomeScreen({ navigation }) {
           });
         }
         setPlants(allPlants);
+        
+        // Load weather data after plants are loaded
+        if (allPlants.length > 0) {
+          loadWeatherData(true);
+        }
       } catch (e) {
         setPlants([]);
       }
@@ -158,6 +216,50 @@ export default function HomeScreen({ navigation }) {
     };
     fetchPlants();
   }, []);
+
+  // Refresh weather advice when plants change
+  useEffect(() => {
+    if (weatherData && plants.length > 0) {
+      const advice = generateWateringAdvice(weatherData, plants);
+      setWateringAdvice(advice);
+    }
+  }, [plants, weatherData]);
+
+  // Pull to refresh
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([
+      fetchPlants(),
+      loadWeatherData(true)
+    ]);
+    setRefreshing(false);
+  };
+
+  const fetchPlants = async () => {
+    try {
+      let userEmail = await AsyncStorage.getItem('userEmail');
+      if (!userEmail) {
+        setPlants([]);
+        return;
+      }
+      const res = await fetch(`${API_URL}?email=${encodeURIComponent(userEmail)}`);
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
+      let allPlants = [];
+      if (Array.isArray(data)) {
+        data.forEach(locationObj => {
+          if (locationObj.plants && Array.isArray(locationObj.plants)) {
+            locationObj.plants.forEach(p => {
+              allPlants.push({ ...p, location: p.location || locationObj.location });
+            });
+          }
+        });
+      }
+      setPlants(allPlants);
+    } catch (e) {
+      setPlants([]);
+    }
+  };
 
   // Filter by selected tab (by next_water)
   const filteredPlants = plants.filter((plant) => {
@@ -167,37 +269,216 @@ export default function HomeScreen({ navigation }) {
     return false;
   });
 
-  const renderItem = ({ item }) => {
-    const days = daysUntil(item.next_water);
-    let status = '';
-    let statusColor = '#2e7d32';
-    if (days < 0) {
-      status = `Late by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
-      statusColor = 'red';
-    } else if (days === 0) {
-      status = 'Water today';
-      statusColor = '#e2b400';
-    } else {
-      status = `In ${days} day${days !== 1 ? 's' : ''}`;
-      statusColor = '#2e7d32';
+  const renderWeatherCard = () => {
+    if (!weatherData || weatherLoading) {
+      return (
+        <View style={styles.weatherCard}>
+          <View style={styles.weatherHeader}>
+            <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
+            <Text style={styles.weatherTitle}>Weather & Watering</Text>
+            <TouchableOpacity onPress={() => loadWeatherData()}>
+              <MaterialIcons name="refresh" size={20} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
+          {weatherLoading ? (
+            <View style={styles.weatherLoading}>
+              <ActivityIndicator size="small" color="#4CAF50" />
+              <Text style={styles.weatherLoadingText}>Loading weather data...</Text>
+            </View>
+          ) : (
+            <Text style={styles.weatherUnavailable}>Tap refresh to load weather</Text>
+          )}
+        </View>
+      );
     }
 
+    const { current, location } = weatherData;
+    
     return (
-      <View style={styles.taskCard}>
-        <Image source={item.image_url ? { uri: item.image_url } : require('../assets/plant-placeholder.png')} style={styles.plantImage} />
-        <View style={styles.taskInfo}>
-          <Text style={styles.plantName}>{item.nickname || item.common_name}</Text>
-          <Text style={styles.location}>{item.location}</Text>
-          <Text style={[styles.statusText, { color: statusColor }]}>
-            {status}
-          </Text>
+      <View style={styles.weatherCard}>
+        <View style={styles.weatherHeader}>
+          <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
+          <Text style={styles.weatherTitle}>Weather & Watering</Text>
+          <View style={styles.weatherActions}>
+            <TouchableOpacity 
+              onPress={() => navigation.navigate('PlantCareCalendar')}
+              style={styles.calendarButton}
+            >
+              <MaterialIcons name="calendar-today" size={20} color="#4CAF50" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => loadWeatherData()}>
+              <MaterialIcons name="refresh" size={20} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.weatherContent}>
+          <View style={styles.weatherMain}>
+            <View style={styles.weatherLeft}>
+              <Image 
+                source={{ uri: getWeatherIconUrl(current.icon) }}
+                style={styles.weatherIcon}
+              />
+              <View>
+                <Text style={styles.temperature}>{current.temperature}°C</Text>
+                <Text style={styles.weatherDescription}>{current.description}</Text>
+                <Text style={styles.location}>{location.city}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.weatherDetails}>
+              <View style={styles.weatherDetailItem}>
+                <MaterialCommunityIcons name="water-percent" size={16} color="#2196F3" />
+                <Text style={styles.weatherDetailText}>{current.humidity}%</Text>
+              </View>
+              <View style={styles.weatherDetailItem}>
+                <MaterialCommunityIcons name="weather-windy" size={16} color="#9E9E9E" />
+                <Text style={styles.weatherDetailText}>{Math.round(current.windSpeed)} m/s</Text>
+              </View>
+              <View style={styles.weatherDetailItem}>
+                <MaterialCommunityIcons name="thermometer" size={16} color="#FF5722" />
+                <Text style={styles.weatherDetailText}>Feels {current.feelsLike}°</Text>
+              </View>
+            </View>
+          </View>
+
+          {wateringAdvice && (
+            <View style={[styles.wateringAdvice, { borderLeftColor: wateringAdvice.color }]}>
+              <View style={styles.adviceHeader}>
+                <MaterialCommunityIcons 
+                  name={wateringAdvice.icon} 
+                  size={20} 
+                  color={wateringAdvice.color} 
+                />
+                <Text style={styles.adviceTitle}>
+                  {wateringAdvice.urgency === 'high' ? 'High Priority' :
+                   wateringAdvice.urgency === 'medium' ? 'Medium Priority' :
+                   wateringAdvice.urgency === 'low' ? 'Low Priority' : 'Normal'}
+                </Text>
+                {wateringAdvice.plantsNeedingWater > 0 && (
+                  <View style={styles.plantsBadge}>
+                    <Text style={styles.plantsBadgeText}>
+                      {wateringAdvice.plantsNeedingWater}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Text style={styles.adviceText}>{wateringAdvice.general}</Text>
+            </View>
+          )}
         </View>
       </View>
     );
   };
 
+  const renderItem = ({ item }) => {
+    const days = daysUntil(item.next_water);
+    let status = '';
+    let statusColor = '#2e7d32';
+    let statusIcon = 'water-outline';
+    
+    if (days < 0) {
+      status = `Late by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
+      statusColor = 'red';
+      statusIcon = 'alert-circle';
+    } else if (days === 0) {
+      status = 'Water today';
+      statusColor = '#e2b400';
+      statusIcon = 'water';
+    } else {
+      status = `In ${days} day${days !== 1 ? 's' : ''}`;
+      statusColor = '#2e7d32';
+      statusIcon = 'time-outline';
+    }
+
+    return (
+      <TouchableOpacity 
+        style={styles.taskCard}
+        onPress={() => navigation.navigate('UserPlantDetail', { plant: item })}
+      >
+        <Image 
+          source={item.image_url ? { uri: item.image_url } : require('../assets/plant-placeholder.png')} 
+          style={styles.plantImage} 
+        />
+        <View style={styles.taskInfo}>
+          <Text style={styles.plantName}>{item.nickname || item.common_name}</Text>
+          <Text style={styles.location}>{item.location}</Text>
+          <View style={styles.statusRow}>
+            <MaterialCommunityIcons name={statusIcon} size={16} color={statusColor} />
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {status}
+            </Text>
+          </View>
+        </View>
+        <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+      </TouchableOpacity>
+    );
+  };
+
+  const renderHomeContent = () => (
+    <ScrollView 
+      style={styles.scrollContent}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={onRefresh}
+          colors={['#4CAF50']}
+          tintColor="#4CAF50"
+        />
+      }
+    >
+      {/* Weather Card */}
+      {renderWeatherCard()}
+      
+      {/* Plants List */}
+      <View style={styles.plantsSection}>
+        <View style={styles.plantsSectionHeader}>
+          <Text style={styles.sectionTitle}>
+            {activeTab === 'today' ? 'Today\'s Care' : 'Upcoming Care'}
+          </Text>
+          <Text style={styles.plantsCount}>
+            {filteredPlants.length} plant{filteredPlants.length !== 1 ? 's' : ''}
+          </Text>
+        </View>
+        
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading your plants...</Text>
+          </View>
+        ) : filteredPlants.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="sprout" size={64} color="#E0E0E0" />
+            <Text style={styles.emptyTitle}>
+              {activeTab === 'today' ? 'No plants need care today' : 'No upcoming care needed'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {plants.length === 0 ? 'Add some plants to get started!' : 'Great job keeping up with your plants! 🌿'}
+            </Text>
+            {plants.length === 0 && (
+              <TouchableOpacity 
+                style={styles.addPlantButton}
+                onPress={() => navigation.navigate('AddPlant')}
+              >
+                <Text style={styles.addPlantButtonText}>Add Your First Plant</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          filteredPlants.map((item, index) => (
+            <View key={item.id || index}>
+              {renderItem({ item })}
+            </View>
+          ))
+        )}
+      </View>
+    </ScrollView>
+  );
+
   const renderContent = () => {
-    switch (activeTab) {
+    switch (mainTab) {
+      case 'home':
+        return renderHomeContent();
       case 'plants':
         return (
           <View style={styles.content}>
@@ -279,7 +560,7 @@ export default function HomeScreen({ navigation }) {
       case 'add':
         return <AddTabContent navigation={navigation} />;
       default:
-        return null;
+        return renderHomeContent();
     }
   };
 
@@ -297,6 +578,14 @@ export default function HomeScreen({ navigation }) {
         >
           <MaterialIcons name="settings" size={24} color="#4CAF50" />
         </TouchableOpacity>
+        
+        {/* AI Assistant Button */}
+        <TouchableOpacity 
+          style={styles.aiAssistantButton}
+          onPress={() => navigation.navigate('AIPlantCareAssistant')}
+        >
+          <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
+        </TouchableOpacity>
       </View>
 
       {/* Main Tabs */}
@@ -312,6 +601,20 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
         ))}
       </View>
+
+      {/* AI Chat Quick Access */}
+      {mainTab === 'home' && (
+        <TouchableOpacity 
+          style={styles.aiQuickAccessButton}
+          onPress={() => navigation.navigate('AIPlantCareAssistant')}
+        >
+          <View style={styles.aiQuickAccessContent}>
+            <MaterialCommunityIcons name="robot-excited" size={20} color="#4CAF50" />
+            <Text style={styles.aiQuickAccessText}>Ask AI Plant Expert</Text>
+            <MaterialIcons name="arrow-forward" size={16} color="#4CAF50" />
+          </View>
+        </TouchableOpacity>
+      )}
 
       {/* Only show Today/Upcoming tabs in Home */}
       {mainTab === 'home' && (
@@ -376,6 +679,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  aiAssistantButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#e8f5e9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 12,
+  },
   greeting: { fontSize: 30, color: '#2e7d32', fontWeight: 'bold' },
   tabRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   activeTab: {
@@ -395,13 +707,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row', backgroundColor: '#fff', padding: 15,
     borderRadius: 16, marginBottom: 12, shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1,
-    shadowRadius: 4, elevation: 3,
+    shadowRadius: 4, elevation: 3, alignItems: 'center',
   },
   plantImage: { width: 60, height: 60, borderRadius: 30, marginRight: 15 },
-  taskInfo: { justifyContent: 'center' },
+  taskInfo: { justifyContent: 'center', flex: 1 },
   plantName: { fontSize: 18, fontWeight: 'bold', color: '#222' },
-  location: { color: '#555' },
   statusText: { marginTop: 4, fontWeight: 'bold' },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
   mainTabsRow: {
     flexDirection: 'row',
     justifyContent: 'space-around',
@@ -554,11 +870,6 @@ const styles = StyleSheet.create({
   notificationInfo: {
     gap: 8,
   },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   statusLabel: {
     fontSize: 14,
     color: '#666',
@@ -573,11 +884,6 @@ const styles = StyleSheet.create({
   },
   statusInactive: {
     backgroundColor: '#ffebee',
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#333',
   },
   errorText: {
     fontSize: 12,
@@ -596,5 +902,256 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Weather Card Styles
+  weatherCard: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  weatherHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  weatherTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+    flex: 1,
+    marginLeft: 8,
+  },
+  weatherLoading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 20,
+  },
+  weatherLoadingText: {
+    color: '#666',
+    marginLeft: 8,
+    fontSize: 14,
+  },
+  weatherUnavailable: {
+    color: '#666',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontSize: 14,
+  },
+  weatherContent: {
+    flexDirection: 'column',
+  },
+  weatherMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  weatherLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  weatherIcon: {
+    width: 50,
+    height: 50,
+    marginRight: 12,
+  },
+  temperature: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+  },
+  weatherDescription: {
+    fontSize: 14,
+    color: '#666',
+    textTransform: 'capitalize',
+  },
+  location: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#888',
+    marginTop: 2,
+  },
+  weatherDetails: {
+    flexDirection: 'column',
+    alignItems: 'flex-end',
+    gap: 4,
+  },
+  weatherDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  weatherDetailText: {
+    fontSize: 12,
+    color: '#333',
+    marginLeft: 4,
+  },
+  // Watering Advice Styles
+  wateringAdvice: {
+    borderLeftWidth: 4,
+    paddingLeft: 12,
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 8,
+    marginTop: 12,
+  },
+  adviceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  adviceTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginLeft: 8,
+    flex: 1,
+  },
+  plantsBadge: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    marginLeft: 8,
+  },
+  plantsBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  adviceText: {
+    fontSize: 13,
+    color: '#333',
+    lineHeight: 18,
+  },
+  // Content Styles
+  scrollContent: {
+    flex: 1,
+  },
+  contentContainer: {
+    flex: 1,
+  },
+  plantsSection: {
+    flex: 1,
+  },
+  plantsSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#2e7d32',
+  },
+  plantsCount: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  loadingContainer: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  loadingText: {
+    color: '#666',
+    marginTop: 12,
+    fontSize: 16,
+  },
+  emptyState: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  addPlantButton: {
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    marginTop: 20,
+  },
+  addPlantButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  actionButton: {
+    backgroundColor: '#4CAF50',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  actionButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  weatherActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  calendarButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#f0f9f3',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  aiQuickAccessButton: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  aiQuickAccessContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  aiQuickAccessText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
   },
 });

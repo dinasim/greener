@@ -1,7 +1,90 @@
 // frontend/components/PriceRange.js
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput } from 'react-native';
-import Slider from '@react-native-community/slider';
+import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
+
+// Create a cross-platform slider component that works on web
+const WebSlider = ({ value, minimumValue, maximumValue, step, onValueChange, onSlidingComplete, style, minimumTrackTintColor, thumbTintColor }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="range"
+        min={minimumValue}
+        max={maximumValue}
+        step={step}
+        value={value}
+        onChange={(e) => onValueChange && onValueChange(parseFloat(e.target.value))}
+        onMouseUp={() => onSlidingComplete && onSlidingComplete()}
+        onTouchEnd={() => onSlidingComplete && onSlidingComplete()}
+        style={{
+          width: '100%',
+          height: '40px',
+          background: 'transparent',
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          cursor: 'pointer',
+          ...style,
+        }}
+        css={`
+          &::-webkit-slider-track {
+            height: 4px;
+            background: #E0E0E0;
+            border-radius: 2px;
+          }
+          &::-webkit-slider-thumb {
+            appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: ${thumbTintColor || '#4CAF50'};
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          }
+          &::-moz-range-track {
+            height: 4px;
+            background: #E0E0E0;
+            border-radius: 2px;
+            border: none;
+          }
+          &::-moz-range-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: ${thumbTintColor || '#4CAF50'};
+            cursor: pointer;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          }
+        `}
+      />
+    );
+  }
+  
+  // Fallback for mobile platforms - simple input
+  return (
+    <TextInput
+      style={[{
+        height: 40,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 4,
+        paddingHorizontal: 8,
+        textAlign: 'center',
+      }, style]}
+      value={String(value)}
+      onChangeText={(text) => {
+        const numValue = parseFloat(text.replace(/[^0-9.]/g, ''));
+        if (!isNaN(numValue) && numValue >= minimumValue && numValue <= maximumValue) {
+          onValueChange && onValueChange(numValue);
+        }
+      }}
+      onBlur={() => onSlidingComplete && onSlidingComplete()}
+      keyboardType="numeric"
+      placeholder={`${minimumValue}-${maximumValue}`}
+    />
+  );
+};
 
 const PriceRange = ({ 
   initialMin = 0, 
@@ -129,7 +212,7 @@ const PriceRange = ({
       </View>
       
       <View style={styles.sliderContainer}>
-        <Slider
+        <WebSlider
           style={styles.slider}
           minimumValue={0}
           maximumValue={max}
@@ -141,7 +224,7 @@ const PriceRange = ({
           onValueChange={(val) => handleSliderChange([val, maxValue])}
           onSlidingComplete={handleSliderComplete}
         />
-        <Slider
+        <WebSlider
           style={[styles.slider, styles.secondSlider]}
           minimumValue={0}
           maximumValue={max}

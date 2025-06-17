@@ -68,6 +68,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         customer_phone = request_body.get('customerPhone', '')
         notes = request_body.get('notes', '')
         communication_pref = request_body.get('communicationPreference', 'messages')
+        
+        # NEW: Handle customer profile ID for chat integration
+        customer_profile_id = request_body.get('customerProfileId')
+        has_greener_profile = request_body.get('hasGreenerProfile', False)
 
         if not items:
             return add_cors_headers(func.HttpResponse(
@@ -169,6 +173,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "customerEmail": customer_email,
             "customerName": customer_name,
             "customerPhone": customer_phone,
+            # NEW: Add customer profile integration for chat
+            "customerProfileId": customer_profile_id,
+            "hasGreenerProfile": has_greener_profile,
             "confirmationNumber": confirmation,
             "orderDate": now_iso,
             "status": "pending",
@@ -181,13 +188,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "pickupDetails": {"availableFrom": pickup_from},
             "communication": {
                 "preferredMethod": communication_pref,
-                "customerResponsive": True
+                "customerResponsive": True,
+                # NEW: Enhanced chat capability flags
+                "chatEnabled": has_greener_profile,
+                "profileLinked": bool(customer_profile_id)
             },
             "statusHistory": [{"status":"pending","timestamp":now_iso,"notes":"Order created"}],
             "notifications": {
                 "smsEnabled": bool(customer_phone),
                 "emailEnabled": True,
-                "messagesEnabled": communication_pref == 'messages'
+                "messagesEnabled": communication_pref == 'messages' or has_greener_profile
             },
             "createdAt": now_iso,
             "updatedAt": now_iso

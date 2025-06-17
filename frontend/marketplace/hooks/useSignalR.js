@@ -48,6 +48,19 @@ const useSignalR = (options = {}) => {
         return;
       }
 
+      // FIXED: Check if we're in signup flow and skip SignalR initialization
+      const userEmail = await AsyncStorage.getItem('userEmail');
+      const isInApp = await AsyncStorage.getItem('isBusinessUser') || await AsyncStorage.getItem('userName');
+      
+      if (!userEmail || !isInApp) {
+        console.log('📶 useSignalR: User not fully registered yet, skipping initialization');
+        setConnectionState(prev => ({
+          ...prev,
+          error: 'User not registered yet',
+        }));
+        return;
+      }
+
       setConnectionState(prev => ({
         ...prev,
         isConnecting: true,
@@ -88,7 +101,6 @@ const useSignalR = (options = {}) => {
       });
 
       // Get user email for group subscription
-      const userEmail = await AsyncStorage.getItem('userEmail');
       if (userEmail) {
         // Join user specific group for targeted messages
         await newConnection.invoke('JoinUserGroup', userEmail);

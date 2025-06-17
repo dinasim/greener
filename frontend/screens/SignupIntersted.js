@@ -215,10 +215,13 @@ const styles = StyleSheet.create({
     borderTopColor: "#e0e0e0",
   },
   nextButton: {
-    backgroundColor: "#2e7d32",
-    padding: 16,
-    borderRadius: 12,
-    alignItems: "center",
+    backgroundColor: "#4caf50",
+    paddingVertical: 15,
+    paddingHorizontal: 30,
+    borderRadius: 25,
+    marginTop: 20,
+    boxShadow: "0px 3px 3px rgba(0, 0, 0, 0.1)",
+    elevation: 3,
   },
   nextButtonText: {
     color: "#fff",

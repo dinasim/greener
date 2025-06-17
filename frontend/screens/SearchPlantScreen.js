@@ -127,7 +127,12 @@ export default function AddPlantScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes: [ImagePicker.MediaTypeOptions.Images]});
+    // FIXED: Use correct mediaTypes format instead of deprecated MediaTypeOptions
+    const pick = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'image',
+      allowsEditing: true,
+      quality: 0.8
+    });
     const uri  = pick.assets?.[0]?.uri || pick.uri;
     if (!uri) { setLoading(false); return; }
     try {

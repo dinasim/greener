@@ -12,6 +12,9 @@ export default function SearchScreen({ navigation }) {
         <TouchableOpacity 
           style={styles.backButton} 
           onPress={() => navigation.goBack()}
+          accessible={true}
+          accessibilityLabel="Go back"
+          accessibilityRole="button"
         >
           <Ionicons name="arrow-back" size={24} color="#4CAF50" />
         </TouchableOpacity>

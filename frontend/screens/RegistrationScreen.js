@@ -111,7 +111,17 @@ export default function RegistrationScreen({ navigation }) {
         intersted: formData.intersted || '',
         animals: formData.animals || '',
         kids: formData.kids || '',
-        location: formData.userLocation || null,
+        // FIXED: Ensure location data includes coordinates and address
+        location: formData.userLocation ? {
+          city: formData.userLocation.city || '',
+          street: formData.userLocation.street || '',
+          houseNumber: formData.userLocation.houseNumber || '',
+          latitude: formData.userLocation.latitude || null,
+          longitude: formData.userLocation.longitude || null,
+          formattedAddress: formData.userLocation.formattedAddress || '',
+          country: formData.userLocation.country || 'Israel',
+          postalCode: formData.userLocation.postalCode || ''
+        } : null,
         plantLocations: formData.plantLocations || [],
         // Add notification tokens
         expoPushToken: null, // deprecated
@@ -122,14 +132,23 @@ export default function RegistrationScreen({ navigation }) {
           wateringReminders: true,
           marketplaceUpdates: false,
           platform: Platform.OS
-        }
+        },
+        // Add timestamps for tracking
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       console.log('📦 Sending registration data:', {
         ...registrationData,
         password: '[HIDDEN]',
         webPushSubscription: registrationData.webPushSubscription?.substring(0, 20) + '...' || null,
-        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null
+        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null,
+        location: registrationData.location ? {
+          city: registrationData.location.city,
+          hasCoordinates: !!(registrationData.location.latitude && registrationData.location.longitude),
+          coordinates: registrationData.location.latitude && registrationData.location.longitude ? 
+            `${registrationData.location.latitude.toFixed(4)}, ${registrationData.location.longitude.toFixed(4)}` : 'None'
+        } : 'No location'
       });
 
       const res = await fetch(REGISTER_API, {

@@ -126,7 +126,7 @@ export default class SmartNotifications {
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/business-weather-get?lat=${location.lat}&lon=${location.lon}`,
+        `${API_BASE_URL}/business/weather?lat=${location.lat}&lon=${location.lon}`,
         {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' }

@@ -85,19 +85,45 @@ export default function BusinessHomeScreen({ navigation }) {
     setRefreshing(true);
     
     try {
-      console.log('Loading dashboard data...');
-      const data = await getBusinessDashboard();
-      console.log('Dashboard data loaded:', data);
+      console.log('📊 Loading REAL dashboard data...');
       
-      setDashboardData(data);
-    } catch (err) {
-      console.error('Error loading dashboard:', err);
-      setError('Could not load dashboard data. Please try again.');
+      // FIXED: Call the correct backend endpoint
+      const businessId = await AsyncStorage.getItem('businessId') || await AsyncStorage.getItem('userEmail');
       
-      // Show fallback data if first load fails
-      if (!dashboardData) {
-        setDashboardData(getFallbackData());
+      if (!businessId) {
+        throw new Error('Business ID not found. Please log in again.');
       }
+
+      // Use real API call to business-dashboard endpoint
+      const response = await fetch(`https://usersfunctions.azurewebsites.net/api/business-dashboard`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Email': businessId,
+          'X-Business-ID': businessId,
+          'X-User-Type': 'business'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Dashboard API failed: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('✅ Real dashboard data loaded:', data);
+      
+      // REMOVED: No more fallback to mock data
+      if (data && data.success !== false) {
+        setDashboardData(data);
+      } else {
+        throw new Error('Invalid dashboard data received');
+      }
+      
+    } catch (err) {
+      console.error('❌ Error loading dashboard:', err);
+      setError(`Could not load dashboard data: ${err.message}`);
+      
+      // REMOVED: No fallback to mock data - show error instead
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -158,10 +184,6 @@ export default function BusinessHomeScreen({ navigation }) {
     navigation.navigate('BusinessCustomersScreen', { businessId });
   };
   
-  const handleMarketplace = () => {
-    navigation.navigate('MainTabs', { screen: 'Home' });
-  };
-
   const handleSettings = () => {
     navigation.navigate('BusinessSettingsScreen', { businessId });
   };
@@ -179,7 +201,7 @@ export default function BusinessHomeScreen({ navigation }) {
   };
 
   const handleDiseaseChecker = () => {
-    navigation.navigate('DiseaseCheckerScreen');
+    navigation.navigate('DiseaseChecker');
   };
 
   const handleForum = () => {
@@ -277,6 +299,91 @@ export default function BusinessHomeScreen({ navigation }) {
   // Use fallback data if dashboardData is null
   const data = dashboardData || getFallbackData();
   
+  // FIXED: Add null safety for all data access
+  const metrics = data?.metrics || {
+    totalSales: 0,
+    salesToday: 0,
+    newOrders: 0,
+    lowStockItems: 0,
+    totalInventory: 0,
+    activeInventory: 0,
+    totalOrders: 0,
+    inventoryValue: 0,
+    revenueGrowth: 0,
+    dailyGrowth: 0,
+    orderGrowth: 0,
+    stockChange: 0
+  };
+
+  const chartData = data?.chartData || {
+    sales: { labels: [], values: [], total: 0, average: 0 },
+    orders: { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 },
+    inventory: { inStock: 0, lowStock: 0, outOfStock: 0 }
+  };
+
+  const recentOrders = data?.recentOrders || [];
+  const lowStockDetails = data?.lowStockDetails || [];
+  
+  // FIXED: Handle business logo with proper fallback and blob URL validation
+  const getBusinessLogo = () => {
+    // Check multiple possible data structures from API response
+    const logo = data?.businessInfo?.businessLogo || 
+                 data?.businessProfile?.businessLogo || 
+                 data?.business?.businessLogo || 
+                 data?.profile?.businessLogo;
+    
+    // Validate blob URL format for Azure Storage
+    if (logo && typeof logo === 'string') {
+      // Check if it's a valid Azure blob URL
+      if (logo.includes('greenermarketplacestore') && logo.includes('business-logos')) {
+        return logo;
+      }
+      // Check if it's a base64 data URL
+      if (logo.startsWith('data:image/')) {
+        return logo;
+      }
+      // Check if it's a valid HTTP/HTTPS URL
+      if (logo.startsWith('http://') || logo.startsWith('https://')) {
+        return logo;
+      }
+    }
+    
+    // Return null for invalid URLs to use placeholder
+    return null;
+  };
+  
+  // FIXED: Enhanced business info extraction with multiple fallback paths
+  const getBusinessInfo = () => {
+    return {
+      businessName: data?.businessInfo?.businessName || 
+                   data?.businessProfile?.businessName || 
+                   data?.business?.name || 
+                   data?.profile?.businessName || 
+                   'Your Business',
+      businessType: data?.businessInfo?.businessType || 
+                   data?.businessProfile?.businessType || 
+                   data?.business?.businessType || 
+                   'Plant Business',
+      businessLogo: getBusinessLogo(),
+      email: data?.businessInfo?.email || 
+             data?.businessProfile?.email || 
+             data?.business?.email || 
+             businessId || 
+             'business@example.com',
+      rating: data?.businessInfo?.rating || 
+              data?.businessProfile?.rating || 
+              data?.business?.rating || 0,
+      reviewCount: data?.businessInfo?.reviewCount || 
+                   data?.businessProfile?.reviewCount || 
+                   data?.business?.reviewCount || 0,
+      joinDate: data?.businessInfo?.joinDate || 
+                data?.businessProfile?.joinDate || 
+                data?.business?.createdAt
+    };
+  };
+
+  const businessInfo = getBusinessInfo();
+  
   return (
     <SafeAreaView style={styles.safeArea}>
       {/* Enhanced Header with Back Button */}
@@ -286,23 +393,26 @@ export default function BusinessHomeScreen({ navigation }) {
         </TouchableOpacity>
         <View style={styles.profileSection}>
           <Image 
-            source={data.businessInfo.businessLogo ? 
-              { uri: data.businessInfo.businessLogo } : 
+            source={businessInfo.businessLogo ? 
+              { uri: businessInfo.businessLogo } : 
               require('../../assets/business-placeholder.png')
             } 
             style={styles.logo}
+            onError={() => {
+              console.warn('Failed to load business logo, using placeholder');
+            }}
           />
           <View style={styles.businessInfo}>
             <Text style={styles.businessName} numberOfLines={1}>
-              {data.businessInfo.businessName}
+              {businessInfo.businessName}
             </Text>
             <Text style={styles.welcomeText}>Welcome back!</Text>
             <View style={styles.ratingContainer}>
-              {data.businessInfo.rating > 0 && (
+              {businessInfo.rating > 0 && (
                 <>
                   <MaterialIcons name="star" size={14} color="#FFC107" />
                   <Text style={styles.ratingText}>
-                    {data.businessInfo.rating.toFixed(1)} ({data.businessInfo.reviewCount})
+                    {businessInfo.rating.toFixed(1)} ({businessInfo.reviewCount})
                   </Text>
                 </>
               )}
@@ -330,7 +440,7 @@ export default function BusinessHomeScreen({ navigation }) {
       >
         {/* Low Stock Banner */}
         <LowStockBanner
-          lowStockItems={data.lowStockDetails || []}
+          lowStockItems={lowStockDetails}
           onManageStock={handleManageStock}
           onRestock={handleRestock}
           autoRefresh={true}
@@ -340,8 +450,8 @@ export default function BusinessHomeScreen({ navigation }) {
         <View style={styles.kpiContainer}>
           <KPIWidget
             title="Total Revenue"
-            value={data.metrics.totalSales}
-            change={data.metrics.revenueGrowth}
+            value={metrics.totalSales}
+            change={metrics.revenueGrowth}
             icon="cash"
             format="currency"
             color="#216a94"
@@ -350,8 +460,8 @@ export default function BusinessHomeScreen({ navigation }) {
           
           <KPIWidget
             title="Today's Sales"
-            value={data.metrics.salesToday}
-            change={data.metrics.dailyGrowth}
+            value={metrics.salesToday}
+            change={metrics.dailyGrowth}
             icon="trending-up"
             format="currency"
             color="#4CAF50"
@@ -360,24 +470,24 @@ export default function BusinessHomeScreen({ navigation }) {
           
           <KPIWidget
             title="New Orders"
-            value={data.metrics.newOrders}
-            change={data.metrics.orderGrowth}
+            value={metrics.newOrders}
+            change={metrics.orderGrowth}
             icon="cart"
             format="number"
             color="#FF9800"
             onPress={handleOrders}
-            trend={data.metrics.newOrders > 0 ? 'up' : 'neutral'}
+            trend={metrics.newOrders > 0 ? 'up' : 'neutral'}
           />
           
           <KPIWidget
             title="Low Stock"
-            value={data.metrics.lowStockItems}
-            change={data.metrics.stockChange}
+            value={metrics.lowStockItems}
+            change={metrics.stockChange}
             icon="alert-circle"
             format="number"
-            color={data.metrics.lowStockItems > 0 ? "#F44336" : "#9E9E9E"}
+            color={metrics.lowStockItems > 0 ? "#F44336" : "#9E9E9E"}
             onPress={handleInventory}
-            trend={data.metrics.lowStockItems > 0 ? 'down' : 'neutral'}
+            trend={metrics.lowStockItems > 0 ? 'down' : 'neutral'}
           />
         </View>
 
@@ -385,128 +495,220 @@ export default function BusinessHomeScreen({ navigation }) {
         <View style={styles.additionalMetrics}>
           <View style={styles.metricItem}>
             <MaterialCommunityIcons name="package-variant" size={24} color="#2196F3" />
-            <Text style={styles.metricValue}>{data.metrics.totalInventory}</Text>
+            <Text style={styles.metricValue}>{metrics.totalInventory}</Text>
             <Text style={styles.metricLabel}>Total Items</Text>
           </View>
           <View style={styles.metricItem}>
             <MaterialCommunityIcons name="check-circle" size={24} color="#4CAF50" />
-            <Text style={styles.metricValue}>{data.metrics.activeInventory}</Text>
+            <Text style={styles.metricValue}>{metrics.activeInventory}</Text>
             <Text style={styles.metricLabel}>Active Items</Text>
           </View>
           <View style={styles.metricItem}>
             <MaterialCommunityIcons name="receipt" size={24} color="#9C27B0" />
-            <Text style={styles.metricValue}>{data.metrics.totalOrders}</Text>
+            <Text style={styles.metricValue}>{metrics.totalOrders}</Text>
             <Text style={styles.metricLabel}>Total Orders</Text>
           </View>
           <View style={styles.metricItem}>
             <MaterialCommunityIcons name="cash" size={24} color="#FF5722" />
-            <Text style={styles.metricValue}>${data.metrics.inventoryValue.toFixed(0)}</Text>
+            <Text style={styles.metricValue}>${(metrics.inventoryValue || 0).toFixed(0)}</Text>
             <Text style={styles.metricLabel}>Inventory Value</Text>
           </View>
         </View>
         
         {/* Charts Dashboard */}
         <BusinessDashboardCharts
-          salesData={data.chartData?.sales || { labels: [], values: [], total: 0, average: 0 }}
-          ordersData={data.chartData?.orders || { pending: 0, confirmed: 0, ready: 0, completed: 0, total: 0 }}
-          inventoryData={data.chartData?.inventory || { inStock: 0, lowStock: 0, outOfStock: 0 }}
+          salesData={chartData.sales}
+          ordersData={chartData.orders}
+          inventoryData={chartData.inventory}
           onRefresh={loadDashboardData}
           autoRefresh={true}
         />
         
-        {/* Expanded Quick Actions */}
+        {/* IMPROVED: Complete Quick Actions with all business features */}
         <Text style={styles.sectionTitle}>Quick Actions</Text>
-        <View style={styles.quickActionsGrid}>
+        <View style={styles.quickActionsContainer}>
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.actionTab}
             onPress={handleAddProduct}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#4CAF50' }]}>
+            <View style={[styles.actionTabIcon, { backgroundColor: '#4CAF50' }]}>
               <MaterialIcons name="add" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Add Product</Text>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Add New Product</Text>
+              <Text style={styles.actionTabDescription}>Add inventory items to your store</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.actionTab}
             onPress={handleInventory}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#2196F3' }]}>
+            <View style={[styles.actionTabIcon, { backgroundColor: '#2196F3' }]}>
               <MaterialIcons name="inventory" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Inventory</Text>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Manage Inventory</Text>
+              <Text style={styles.actionTabDescription}>View and update your stock levels</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.actionTab}
             onPress={handleOrders}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#FF9800' }]}>
+            <View style={[styles.actionTabIcon, { backgroundColor: '#FF9800' }]}>
               <MaterialIcons name="receipt" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Orders</Text>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Orders Management</Text>
+              <Text style={styles.actionTabDescription}>Process and track customer orders</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
           
           <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handleWateringChecklist}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#9C27B0' }]}>
-              <MaterialCommunityIcons name="water" size={24} color="#fff" />
-            </View>
-            <Text style={styles.actionText}>Watering</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handleDiseaseChecker}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#F44336' }]}>
-              <Ionicons name="medkit" size={24} color="#fff" />
-            </View>
-            <Text style={styles.actionText}>Disease Check</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionButton}
-            onPress={handleForum}
-          >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#8BC34A' }]}>
-              <MaterialCommunityIcons name="forum" size={24} color="#fff" />
-            </View>
-            <Text style={styles.actionText}>Forum</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.actionTab}
             onPress={handleCustomers}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#3F51B5' }]}>
+            <View style={[styles.actionTabIcon, { backgroundColor: '#9C27B0' }]}>
               <MaterialIcons name="people" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Customers</Text>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Customer Management</Text>
+              <Text style={styles.actionTabDescription}>View customer profiles and history</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
 
           <TouchableOpacity 
-            style={styles.actionButton}
+            style={styles.actionTab}
+            onPress={handleWateringChecklist}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#00BCD4' }]}>
+              <MaterialCommunityIcons name="water" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Watering Schedule</Text>
+              <Text style={styles.actionTabDescription}>Track plant care and watering tasks</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={handleDiseaseChecker}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#E91E63' }]}>
+              <MaterialCommunityIcons name="microscope" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Disease Checker</Text>
+              <Text style={styles.actionTabDescription}>Diagnose plant health issues with AI</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={handleForum}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#673AB7' }]}>
+              <MaterialCommunityIcons name="forum" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Plant Care Forum</Text>
+              <Text style={styles.actionTabDescription}>Connect with plant care community</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={() => setShowAIAssistant(true)}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#FF5722' }]}>
+              <MaterialCommunityIcons name="robot" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>AI Plant Assistant</Text>
+              <Text style={styles.actionTabDescription}>Get smart plant care recommendations</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
             onPress={handleAnalytics}
           >
-            <View style={[styles.actionIconContainer, { backgroundColor: '#795548' }]}>
+            <View style={[styles.actionTabIcon, { backgroundColor: '#795548' }]}>
               <MaterialIcons name="analytics" size={24} color="#fff" />
             </View>
-            <Text style={styles.actionText}>Analytics</Text>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Business Analytics</Text>
+              <Text style={styles.actionTabDescription}>View sales reports and insights</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={() => navigation.navigate('BusinessReportsScreen', { businessId })}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#607D8B' }]}>
+              <MaterialCommunityIcons name="file-chart" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Business Reports</Text>
+              <Text style={styles.actionTabDescription}>Generate detailed business reports</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={() => navigation.navigate('BusinessNotificationsScreen', { businessId })}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#FFC107' }]}>
+              <MaterialCommunityIcons name="bell" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Notifications</Text>
+              <Text style={styles.actionTabDescription}>Manage business alerts and reminders</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#3F51B5' }]}>
+              <MaterialCommunityIcons name="map-marker-path" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Route Optimization</Text>
+              <Text style={styles.actionTabDescription}>Optimize delivery and service routes</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionTab}
+            onPress={() => navigation.navigate('BusinessWeatherScreen', { businessId })}
+          >
+            <View style={[styles.actionTabIcon, { backgroundColor: '#009688' }]}>
+              <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#fff" />
+            </View>
+            <View style={styles.actionTabContent}>
+              <Text style={styles.actionTabTitle}>Weather Insights</Text>
+              <Text style={styles.actionTabDescription}>Weather-based plant care recommendations</Text>
+            </View>
+            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
         </View>
-
-        {/* Enhanced Marketplace Button */}
-        <TouchableOpacity 
-          style={styles.marketplaceButton}
-          onPress={handleMarketplace}
-        >
-          <MaterialCommunityIcons name="storefront" size={24} color="#fff" />
-          <Text style={styles.marketplaceButtonText}>Browse Marketplace</Text>
-          <MaterialIcons name="arrow-forward" size={20} color="#fff" />
-        </TouchableOpacity>
 
         {/* Top Selling Products */}
         <TopSellingProductsList
@@ -529,8 +731,8 @@ export default function BusinessHomeScreen({ navigation }) {
         </View>
         
         <View style={styles.ordersContainer}>
-          {data.recentOrders && data.recentOrders.length > 0 ? (
-            data.recentOrders.slice(0, 3).map((order) => (
+          {recentOrders && recentOrders.length > 0 ? (
+            recentOrders.slice(0, 3).map((order) => (
               <TouchableOpacity 
                 key={order.id} 
                 style={styles.orderItem}
@@ -549,7 +751,7 @@ export default function BusinessHomeScreen({ navigation }) {
                   </Text>
                 </View>
                 <View style={styles.orderInfo}>
-                  <Text style={styles.orderTotal}>${order.total.toFixed(2)}</Text>
+                  <Text style={styles.orderTotal}>${(order.total || 0).toFixed(2)}</Text>
                   <Text style={styles.orderItems}>
                     {order.items?.length || 0} items
                   </Text>
@@ -578,16 +780,16 @@ export default function BusinessHomeScreen({ navigation }) {
           <View style={styles.businessCardContent}>
             <Text style={styles.businessCardItem}>
               <Text style={styles.businessCardLabel}>Type: </Text>
-              {data.businessInfo.businessType}
+              {businessInfo.businessType}
             </Text>
             <Text style={styles.businessCardItem}>
               <Text style={styles.businessCardLabel}>Email: </Text>
-              {data.businessInfo.email}
+              {businessInfo.email}
             </Text>
-            {data.businessInfo.joinDate && (
+            {businessInfo.joinDate && (
               <Text style={styles.businessCardItem}>
                 <Text style={styles.businessCardLabel}>Member since: </Text>
-                {new Date(data.businessInfo.joinDate).toLocaleDateString('en-US', { 
+                {new Date(businessInfo.joinDate).toLocaleDateString('en-US', { 
                   year: 'numeric', 
                   month: 'long' 
                 })}
@@ -608,7 +810,7 @@ export default function BusinessHomeScreen({ navigation }) {
         onClose={() => setShowOrderModal(false)}
         onUpdateStatus={handleUpdateOrderStatus}
         onContactCustomer={handleContactCustomer}
-        businessInfo={data.businessInfo}
+        businessInfo={businessInfo}
       />
 
       {/* AI Plant Care Assistant Modal */}
@@ -779,43 +981,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     marginTop: 8,
   },
-  quickActionsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
+  quickActionsContainer: {
+    backgroundColor: '#fff',
+    marginHorizontal: 16,
     marginBottom: 24,
-  },
-  actionButton: {
-    alignItems: 'center',
-    width: '48%',
-    marginBottom: 16,
-  },
-  actionIconContainer: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  actionText: {
-    fontSize: 12,
-    color: '#333',
-    textAlign: 'center',
-  },
-  enhancedFeaturesContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 16,
-    marginBottom: 24,
-  },
-  enhancedFeatureButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f8ff',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     borderRadius: 12,
     elevation: 1,
     shadowColor: '#000',
@@ -823,33 +992,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  enhancedFeatureText: {
-    color: '#333',
-    fontWeight: '500',
-    fontSize: 14,
-    marginLeft: 8,
-  },
-  marketplaceButton: {
+  actionTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4CAF50',
-    marginHorizontal: 16,
     paddingVertical: 16,
-    borderRadius: 12,
-    marginBottom: 24,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
   },
-  marketplaceButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 16,
-    marginLeft: 8,
-    marginRight: 8,
+  actionTabIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  actionTabContent: {
+    flex: 1,
+  },
+  actionTabTitle: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#333',
+  },
+  actionTabDescription: {
+    fontSize: 12,
+    color: '#666',
   },
   sectionHeader: {
     flexDirection: 'row',

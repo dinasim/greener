@@ -186,7 +186,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
             <Text style={styles.infoValue}>{care.light || plant.light || "—"}</Text>
           </View>
           <View style={styles.infoRow}>
-            <MaterialIcons name="water-drop" size={18} color="#4caf50" style={styles.infoIcon} />
+            <MaterialCommunityIcons name="water" size={18} color="#4caf50" style={styles.infoIcon} />
             <Text style={styles.infoLabel}>Humidity:</Text>
             <Text style={styles.infoValue}>{care.humidity || plant.humidity || "—"}</Text>
           </View>
@@ -324,10 +324,7 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingVertical: 10,
     paddingHorizontal: 6,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.06,
-    shadowRadius: 5,
+    boxShadow: "0px 1px 5px rgba(0, 0, 0, 0.06)",
     elevation: 2,
   },
   kpiCard: {
@@ -360,9 +357,7 @@ const styles = StyleSheet.create({
     marginTop: 11,
     marginBottom: 11,
     elevation: 1,
-    shadowColor: "#000",
-    shadowOpacity: 0.03,
-    shadowRadius: 2,
+    boxShadow: "0px 1px 2px rgba(0, 0, 0, 0.03)",
   },
   infoTitle: { fontWeight: "bold", fontSize: 17, marginBottom: 8, color: "#3b6147" },
   infoRow: { flexDirection: "row", alignItems: "center", marginVertical: 2 },

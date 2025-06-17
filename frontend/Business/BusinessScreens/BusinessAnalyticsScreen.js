@@ -362,6 +362,21 @@ export default function BusinessAnalyticsScreen({ navigation, route }) {
     }
   };
 
+  // Transform chart data to ensure color is a function
+  const transformChartData = (chartData) => {
+    if (!chartData || !chartData.datasets) return chartData;
+    
+    return {
+      ...chartData,
+      datasets: chartData.datasets.map(dataset => ({
+        ...dataset,
+        color: typeof dataset.color === 'string' 
+          ? (opacity = 1) => dataset.color.replace(/[^,]+(?=\))/, opacity)
+          : dataset.color || ((opacity = 1) => `rgba(76, 175, 80, ${opacity})`)
+      }))
+    };
+  };
+
   // Chart configurations
   const chartConfig = {
     backgroundColor: '#ffffff',
@@ -480,7 +495,7 @@ export default function BusinessAnalyticsScreen({ navigation, route }) {
             </View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               <LineChart
-                data={analyticsData.sales.trendData}
+                data={transformChartData(analyticsData.sales.trendData)}
                 width={Math.max(chartWidth, 300)}
                 height={220}
                 chartConfig={chartConfig}
@@ -584,7 +599,7 @@ export default function BusinessAnalyticsScreen({ navigation, route }) {
           <View style={styles.chartContainer}>
             <Text style={styles.chartTitle}>Revenue Trend</Text>
             <LineChart
-              data={analyticsData.sales.trendData}
+              data={transformChartData(analyticsData.sales.trendData)}
               width={chartWidth}
               height={220}
               chartConfig={chartConfig}
@@ -679,17 +694,17 @@ export default function BusinessAnalyticsScreen({ navigation, route }) {
 
         <View style={styles.customerTiers}>
           <Text style={styles.sectionTitle}>Customer Tiers</Text>
-          {Object.entries(analyticsData.customers.customerTiers || {}).map(([tier, count]) => (
+          {['new', 'regular'].map((tier) => (
             <View key={tier} style={styles.tierItem}>
               <View style={styles.tierInfo}>
                 <MaterialCommunityIcons 
-                  name={tier === 'vip' ? 'star' : tier === 'premium' ? 'diamond' : tier === 'regular' ? 'account-check' : 'account-plus'} 
+                  name={tier === 'regular' ? 'account-check' : 'account-plus'} 
                   size={20} 
-                  color={tier === 'vip' ? '#9C27B0' : tier === 'premium' ? '#FF9800' : tier === 'regular' ? '#4CAF50' : '#2196F3'} 
+                  color={tier === 'regular' ? '#4CAF50' : '#2196F3'} 
                 />
                 <Text style={styles.tierName}>{tier.toUpperCase()}</Text>
               </View>
-              <Text style={styles.tierCount}>{count}</Text>
+              <Text style={styles.tierCount}>{analyticsData.customers.customerTiers?.[tier] || 0}</Text>
             </View>
           ))}
         </View>

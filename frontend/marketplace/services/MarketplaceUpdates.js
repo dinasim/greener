@@ -30,27 +30,41 @@ export const UPDATE_TYPES = {
   NOTIFICATION: 'NOTIFICATION_UPDATED'
 };
 
-// Storage keys for different update types
+// FIXED: Unified storage keys for consistent sync
 const STORAGE_KEYS = {
-  [UPDATE_TYPES.WISHLIST]: 'marketplace_wishlist_update',
-  [UPDATE_TYPES.PRODUCT]: 'marketplace_product_update',
-  [UPDATE_TYPES.PROFILE]: 'marketplace_profile_update',
-  [UPDATE_TYPES.REVIEW]: 'marketplace_review_update',
-  [UPDATE_TYPES.MESSAGE]: 'marketplace_message_update',
-  [UPDATE_TYPES.INVENTORY]: 'business_inventory_update',
-  [UPDATE_TYPES.ORDER]: 'business_order_update',
-  [UPDATE_TYPES.BUSINESS_PROFILE]: 'business_profile_update',
-  [UPDATE_TYPES.DASHBOARD]: 'business_dashboard_update',
-  [UPDATE_TYPES.SETTINGS]: 'business_settings_update',
-  [UPDATE_TYPES.CUSTOMER]: 'business_customer_update',
-  [UPDATE_TYPES.WATERING]: 'business_watering_update',
-  [UPDATE_TYPES.NOTIFICATION]: 'business_notification_update'
+  [UPDATE_TYPES.WISHLIST]: 'WISHLIST_UPDATED',
+  [UPDATE_TYPES.PRODUCT]: 'PRODUCT_UPDATED',
+  [UPDATE_TYPES.PROFILE]: 'PROFILE_UPDATED',
+  [UPDATE_TYPES.REVIEW]: 'REVIEW_UPDATED',
+  [UPDATE_TYPES.MESSAGE]: 'MESSAGE_UPDATED',
+  [UPDATE_TYPES.INVENTORY]: 'INVENTORY_UPDATED',
+  [UPDATE_TYPES.ORDER]: 'ORDER_UPDATED',
+  [UPDATE_TYPES.BUSINESS_PROFILE]: 'BUSINESS_PROFILE_UPDATED',
+  [UPDATE_TYPES.DASHBOARD]: 'DASHBOARD_UPDATED',
+  [UPDATE_TYPES.SETTINGS]: 'SETTINGS_UPDATED',
+  [UPDATE_TYPES.CUSTOMER]: 'CUSTOMER_UPDATED',
+  [UPDATE_TYPES.WATERING]: 'WATERING_UPDATED',
+  [UPDATE_TYPES.NOTIFICATION]: 'NOTIFICATION_UPDATED'
 };
 
 // Event listeners map for cleanup
 const listeners = new Map();
 const updateListeners = new Map();
+
+// FCM unsubscribe function
 let messageUnsubscribe = null;
+
+// FIXED: Cross-module sync triggers
+const SYNC_TRIGGERS = {
+  // Business profile changes should trigger marketplace refresh
+  [UPDATE_TYPES.BUSINESS_PROFILE]: [UPDATE_TYPES.PRODUCT, UPDATE_TYPES.INVENTORY],
+  // Inventory changes should trigger marketplace product refresh
+  [UPDATE_TYPES.INVENTORY]: [UPDATE_TYPES.PRODUCT, UPDATE_TYPES.BUSINESS_PROFILE],
+  // Profile changes should trigger both business and marketplace refresh
+  [UPDATE_TYPES.PROFILE]: [UPDATE_TYPES.BUSINESS_PROFILE],
+  // Product changes should trigger inventory sync for businesses
+  [UPDATE_TYPES.PRODUCT]: [UPDATE_TYPES.INVENTORY]
+};
 
 // Initialize FCM for notifications (only on mobile)
 const initializeFCM = () => {
@@ -105,98 +119,39 @@ const handleFCMMessage = (remoteMessage, wasClicked = false) => {
     // Map common FCM message types to our update types
     if (data.type === 'NEW_MESSAGE') updateType = UPDATE_TYPES.MESSAGE;
     if (data.type === 'NEW_REVIEW') updateType = UPDATE_TYPES.REVIEW;
-    if (data.type === 'WISHLIST_CHANGE') updateType = UPDATE_TYPES.WISHLIST;
-    if (data.type === 'INVENTORY_UPDATE') updateType = UPDATE_TYPES.INVENTORY;
-    if (data.type === 'ORDER_UPDATE') updateType = UPDATE_TYPES.ORDER;
-    if (data.type === 'WATERING_REMINDER') updateType = UPDATE_TYPES.WATERING;
+    if (data.type === 'PROFILE_UPDATED') updateType = UPDATE_TYPES.PROFILE;
+    if (data.type === 'BUSINESS_PROFILE_UPDATED') updateType = UPDATE_TYPES.BUSINESS_PROFILE;
+    if (data.type === 'INVENTORY_UPDATED') updateType = UPDATE_TYPES.INVENTORY;
+    if (data.type === 'ORDER_CREATED') updateType = UPDATE_TYPES.ORDER;
     
-    // Create update data from the notification
+    // Create update data from FCM payload
     const updateData = {
-      ...data,
-      title: notification?.title,
-      body: notification?.body,
-      wasClicked,
+      source: 'fcm',
+      notification: notification ? {
+        title: notification.title,
+        body: notification.body
+      } : null,
+      data: data,
+      wasClicked: wasClicked,
       timestamp: Date.now()
     };
     
-    // Trigger update to refresh UI components
-    triggerUpdate(updateType, updateData, { source: 'fcm' });
+    // Trigger the update
+    triggerUpdate(updateType, updateData, { 
+      silent: !wasClicked, // Only show logs if user clicked notification
+      source: 'fcm' 
+    });
     
   } catch (error) {
     console.error('[MarketplaceUpdates] ❌ Error handling FCM message:', error);
   }
 };
 
-// Set up SignalR handlers
-const setupSignalRHandlers = () => {
-  if (!signalRService) {
-    console.log('[MarketplaceUpdates] ⚠️ SignalR service not available');
-    return;
-  }
-  
-  try {
-    // Handle incoming messages
-    signalRService.onMessageReceived(message => {
-      triggerUpdate(UPDATE_TYPES.MESSAGE, {
-        messageId: message.id,
-        conversationId: message.conversationId,
-        senderId: message.senderId,
-        text: message.text || message.message,
-        timestamp: message.timestamp || Date.now(),
-        source: 'signalr'
-      });
-    });
-    
-    // Handle typing indicators
-    signalRService.onTypingStarted && signalRService.onTypingStarted((conversationId, userId) => {
-      triggerUpdate('TYPING_STARTED', {
-        conversationId,
-        userId,
-        timestamp: Date.now(),
-        source: 'signalr'
-      });
-    });
-    
-    // Handle when user stops typing
-    signalRService.onTypingStopped && signalRService.onTypingStopped((conversationId, userId) => {
-      triggerUpdate('TYPING_STOPPED', {
-        conversationId,
-        userId,
-        timestamp: Date.now(),
-        source: 'signalr'
-      });
-    });
-    
-    // Handle read receipts
-    signalRService.onReadReceiptReceived && signalRService.onReadReceiptReceived((conversationId, userId, messageIds, timestamp) => {
-      triggerUpdate('MESSAGE_READ', {
-        conversationId,
-        userId,
-        messageIds,
-        timestamp: timestamp || Date.now(),
-        source: 'signalr'
-      });
-    });
-    
-    console.log('[MarketplaceUpdates] ✅ SignalR handlers set up successfully');
-  } catch (error) {
-    console.error('[MarketplaceUpdates] ❌ Error setting up SignalR handlers:', error);
-  }
-};
-
-// Initialize services
-initializeFCM();
-setupSignalRHandlers();
-
 /**
- * Enhanced trigger update with retry mechanism and validation
- * @param {string} updateType - Type of update from UPDATE_TYPES
- * @param {Object} data - Update data
- * @param {Object} options - Options like silent, retry
- * @returns {Promise<boolean>} Success status
+ * FIXED: Enhanced update trigger with cross-module sync
  */
-export const triggerUpdate = async (updateType, data = {}, options = {}) => {
-  const { silent = false, retry = true, source = 'app' } = options;
+export const triggerUpdate = async (updateType, data = {}, options = { silent: false, retry: true, source: 'manual' }) => {
+  const { silent, retry, source } = options;
   
   try {
     // Validate update type
@@ -212,9 +167,26 @@ export const triggerUpdate = async (updateType, data = {}, options = {}) => {
       ...data
     };
     
-    // Store update info
+    // Store update info using unified storage keys
     const storageKey = STORAGE_KEYS[updateType] || updateType;
     await AsyncStorage.setItem(storageKey, JSON.stringify(updateInfo));
+    
+    // FIXED: Trigger related updates for cross-module sync
+    const relatedUpdates = SYNC_TRIGGERS[updateType] || [];
+    for (const relatedType of relatedUpdates) {
+      const relatedStorageKey = STORAGE_KEYS[relatedType] || relatedType;
+      const relatedUpdateInfo = {
+        ...updateInfo,
+        type: relatedType,
+        source: `cascade_from_${updateType}`,
+        originalUpdate: updateType
+      };
+      await AsyncStorage.setItem(relatedStorageKey, JSON.stringify(relatedUpdateInfo));
+      
+      if (!silent) {
+        console.log(`[MarketplaceUpdates] ⚡ Triggered cascade update: ${relatedType} from ${updateType}`);
+      }
+    }
     
     // Web-specific cross-tab communication
     if (Platform.OS === 'web') {
@@ -242,6 +214,15 @@ export const triggerUpdate = async (updateType, data = {}, options = {}) => {
     // Notify registered listeners
     notifyUpdateListeners(updateType, updateInfo);
     
+    // FIXED: Also notify listeners for related updates
+    for (const relatedType of relatedUpdates) {
+      notifyUpdateListeners(relatedType, {
+        ...updateInfo,
+        type: relatedType,
+        source: `cascade_from_${updateType}`
+      });
+    }
+    
     if (!silent) {
       console.log(`[MarketplaceUpdates] ✅ Triggered ${updateType} update:`, updateInfo);
     }
@@ -262,80 +243,41 @@ export const triggerUpdate = async (updateType, data = {}, options = {}) => {
 };
 
 /**
- * Enhanced check for updates with comparison logic
- * @param {string} updateType - Type of update to check
- * @param {number} since - Timestamp to check since (default: 0)
- * @param {boolean} includeData - Whether to return update data
- * @returns {Promise<boolean|Object>} Update status or data
+ * FIXED: Enhanced check for updates with cross-module awareness
  */
-export const checkForUpdate = async (updateType, since = 0, includeData = false) => {
+export const checkForUpdate = async (updateType) => {
   try {
-    if (!Object.values(UPDATE_TYPES).includes(updateType) && !updateType.includes('_STARTED') && !updateType.includes('_STOPPED') && !updateType.includes('_READ')) {
-      console.warn(`[MarketplaceUpdates] Invalid update type for check: ${updateType}`);
-      return false;
-    }
-    
     const storageKey = STORAGE_KEYS[updateType] || updateType;
-    const storedUpdate = await AsyncStorage.getItem(storageKey);
+    const updateData = await AsyncStorage.getItem(storageKey);
     
-    if (!storedUpdate) {
-      return includeData ? null : false;
+    if (updateData) {
+      const parsedData = JSON.parse(updateData);
+      
+      // Check if this is a recent update (within last 5 minutes)
+      const isRecent = Date.now() - (parsedData.timestamp || 0) < 5 * 60 * 1000;
+      
+      return {
+        hasUpdate: true,
+        updateInfo: parsedData,
+        isRecent: isRecent
+      };
     }
     
-    const updateInfo = JSON.parse(storedUpdate);
-    const hasUpdate = updateInfo.timestamp > since;
-    
-    if (includeData && hasUpdate) {
-      return updateInfo;
-    }
-    
-    return hasUpdate;
+    return { hasUpdate: false, updateInfo: null, isRecent: false };
   } catch (error) {
-    console.error(`[MarketplaceUpdates] ❌ Error checking ${updateType} update:`, error);
-    return includeData ? null : false;
+    console.error(`[MarketplaceUpdates] ❌ Error checking for ${updateType} update:`, error);
+    return { hasUpdate: false, updateInfo: null, isRecent: false };
   }
 };
 
 /**
- * Get the latest update timestamp for a type
- * @param {string} updateType - Type of update
- * @returns {Promise<number|null>} Timestamp or null
- */
-export const getLastUpdateTimestamp = async (updateType) => {
-  try {
-    const updateInfo = await checkForUpdate(updateType, 0, true);
-    return updateInfo ? updateInfo.timestamp : null;
-  } catch (error) {
-    console.error(`[MarketplaceUpdates] Error getting timestamp for ${updateType}:`, error);
-    return null;
-  }
-};
-
-/**
- * Enhanced clear update with validation
- * @param {string} updateType - Type of update to clear
- * @returns {Promise<boolean>} Success status
+ * Clear specific update flag
  */
 export const clearUpdate = async (updateType) => {
   try {
-    if (!Object.values(UPDATE_TYPES).includes(updateType) && !updateType.includes('_STARTED') && !updateType.includes('_STOPPED') && !updateType.includes('_READ')) {
-      console.warn(`[MarketplaceUpdates] Invalid update type for clear: ${updateType}`);
-      return false;
-    }
-    
     const storageKey = STORAGE_KEYS[updateType] || updateType;
     await AsyncStorage.removeItem(storageKey);
-    
-    // Clear web localStorage as well
-    if (Platform.OS === 'web') {
-      try {
-        window.localStorage.removeItem(`${storageKey}_EVENT`);
-      } catch (webError) {
-        console.warn('[MarketplaceUpdates] Web storage clear failed:', webError);
-      }
-    }
-    
-    console.log(`[MarketplaceUpdates] ✅ Cleared ${updateType} update`);
+    console.log(`[MarketplaceUpdates] 🧹 Cleared ${updateType} update flag`);
     return true;
   } catch (error) {
     console.error(`[MarketplaceUpdates] ❌ Error clearing ${updateType} update:`, error);
@@ -344,307 +286,186 @@ export const clearUpdate = async (updateType) => {
 };
 
 /**
- * Clear all updates (useful for logout or reset)
- * @returns {Promise<boolean>} Success status
+ * FIXED: Enhanced listener registration with support for multiple update types
+ */
+export const addUpdateListener = (listenerId, updateTypes, callback) => {
+  if (!listenerId || !callback || typeof callback !== 'function') {
+    console.warn('[MarketplaceUpdates] Invalid listener registration');
+    return;
+  }
+  
+  // Ensure updateTypes is an array
+  const types = Array.isArray(updateTypes) ? updateTypes : [updateTypes];
+  
+  // Register listener for each update type
+  types.forEach(updateType => {
+    if (!updateListeners.has(updateType)) {
+      updateListeners.set(updateType, new Map());
+    }
+    updateListeners.get(updateType).set(listenerId, callback);
+  });
+  
+  console.log(`[MarketplaceUpdates] 📡 Registered listener ${listenerId} for: ${types.join(', ')}`);
+};
+
+/**
+ * Remove update listener
+ */
+export const removeUpdateListener = (listenerId) => {
+  let removedCount = 0;
+  
+  updateListeners.forEach((listeners, updateType) => {
+    if (listeners.has(listenerId)) {
+      listeners.delete(listenerId);
+      removedCount++;
+    }
+    
+    // Clean up empty listener maps
+    if (listeners.size === 0) {
+      updateListeners.delete(updateType);
+    }
+  });
+  
+  if (removedCount > 0) {
+    console.log(`[MarketplaceUpdates] 🗑️ Removed listener ${listenerId} from ${removedCount} update types`);
+  }
+};
+
+/**
+ * Notify registered listeners of updates
+ */
+const notifyUpdateListeners = (updateType, updateInfo) => {
+  const listeners = updateListeners.get(updateType);
+  if (!listeners || listeners.size === 0) return;
+  
+  listeners.forEach((callback, listenerId) => {
+    try {
+      callback(updateType, updateInfo);
+    } catch (error) {
+      console.error(`[MarketplaceUpdates] ❌ Error in listener ${listenerId}:`, error);
+    }
+  });
+};
+
+/**
+ * FIXED: Clear all update flags for fresh start
  */
 export const clearAllUpdates = async () => {
   try {
-    const clearPromises = Object.values(UPDATE_TYPES).map(updateType => 
-      clearUpdate(updateType).catch(error => {
-        console.warn(`Failed to clear ${updateType}:`, error);
-        return false;
-      })
-    );
+    const keysToRemove = Object.values(STORAGE_KEYS);
+    await Promise.all(keysToRemove.map(key => AsyncStorage.removeItem(key)));
     
-    const results = await Promise.all(clearPromises);
-    const allSuccessful = results.every(result => result === true);
+    // Also clear legacy keys
+    const legacyKeys = [
+      'FAVORITES_UPDATED',
+      'marketplace_wishlist_update',
+      'marketplace_product_update',
+      'marketplace_profile_update',
+      'marketplace_review_update',
+      'marketplace_message_update',
+      'business_inventory_update',
+      'business_order_update',
+      'business_profile_update',
+      'business_dashboard_update',
+      'business_settings_update',
+      'business_customer_update',
+      'business_watering_update',
+      'business_notification_update'
+    ];
     
-    console.log(`[MarketplaceUpdates] ${allSuccessful ? '✅' : '⚠️'} Cleared all updates`);
-    return allSuccessful;
+    await Promise.all(legacyKeys.map(key => AsyncStorage.removeItem(key)));
+    
+    console.log('[MarketplaceUpdates] 🧹 All update flags cleared');
+    return true;
   } catch (error) {
-    console.error('[MarketplaceUpdates] Error clearing all updates:', error);
+    console.error('[MarketplaceUpdates] ❌ Error clearing all updates:', error);
     return false;
   }
 };
 
 /**
- * Register listener for specific update types
- * @param {string} id - Unique listener ID
- * @param {string|Array} updateTypes - Update type(s) to listen for
- * @param {Function} callback - Callback function
+ * Get status of all updates
  */
-export const addUpdateListener = (id, updateTypes, callback) => {
-  if (typeof callback !== 'function') {
-    console.warn('[MarketplaceUpdates] Callback must be a function');
-    return;
-  }
-  
-  const types = Array.isArray(updateTypes) ? updateTypes : [updateTypes];
-  
-  // Validate update types (more permissive to allow custom signalR events)
-  const validTypes = types;
-  if (validTypes.length === 0) {
-    console.warn('[MarketplaceUpdates] No valid update types provided');
-    return;
-  }
-  
-  // Store listener info
-  updateListeners.set(id, {
-    types: validTypes,
-    callback,
-    addedAt: Date.now()
-  });
-  
-  // Web-specific event listener
-  if (Platform.OS === 'web') {
-    const handleUpdate = (event) => {
-      if (event.detail && validTypes.includes(event.detail.type)) {
-        callback(event.detail.type, event.detail.data);
-      }
-    };
-    
-    listeners.set(id, handleUpdate);
-    window.addEventListener('MARKETPLACE_UPDATE', handleUpdate);
-    
-    // Also listen to broadcast channel
-    if (window.BroadcastChannel) {
-      try {
-        const channel = new BroadcastChannel('greener_updates');
-        const channelListener = (event) => {
-          if (event.data && validTypes.includes(event.data.type)) {
-            callback(event.data.type, event.data.data);
-          }
-        };
-        
-        channel.addEventListener('message', channelListener);
-        listeners.set(`${id}_broadcast`, { channel, listener: channelListener });
-      } catch (channelError) {
-        console.warn('[MarketplaceUpdates] BroadcastChannel setup failed:', channelError);
-      }
-    }
-  }
-  
-  console.log(`[MarketplaceUpdates] ✅ Added listener ${id} for types:`, validTypes);
-};
-
-/**
- * Remove update listener
- * @param {string} id - Listener ID to remove
- */
-export const removeUpdateListener = (id) => {
-  // Remove from update listeners
-  if (updateListeners.has(id)) {
-    updateListeners.delete(id);
-  }
-  
-  // Web-specific cleanup
-  if (Platform.OS === 'web') {
-    // Remove window event listener
-    const listener = listeners.get(id);
-    if (listener) {
-      window.removeEventListener('MARKETPLACE_UPDATE', listener);
-      listeners.delete(id);
-    }
-    
-    // Remove broadcast channel listener
-    const broadcastData = listeners.get(`${id}_broadcast`);
-    if (broadcastData && broadcastData.channel) {
-      try {
-        broadcastData.channel.removeEventListener('message', broadcastData.listener);
-        broadcastData.channel.close();
-        listeners.delete(`${id}_broadcast`);
-      } catch (channelError) {
-        console.warn('[MarketplaceUpdates] BroadcastChannel cleanup failed:', channelError);
-      }
-    }
-  }
-  
-  console.log(`[MarketplaceUpdates] ✅ Removed listener ${id}`);
-};
-
-/**
- * Notify all registered update listeners
- * @param {string} updateType - Type of update
- * @param {Object} data - Update data
- */
-const notifyUpdateListeners = (updateType, data) => {
-  updateListeners.forEach((listenerInfo, id) => {
-    if (listenerInfo.types.includes(updateType)) {
-      try {
-        listenerInfo.callback(updateType, data);
-      } catch (callbackError) {
-        console.error(`[MarketplaceUpdates] Listener ${id} callback error:`, callbackError);
-      }
-    }
-  });
-};
-
-/**
- * Get update statistics for debugging
- * @returns {Promise<Object>} Update statistics
- */
-export const getUpdateStats = async () => {
+export const getAllUpdateStatus = async () => {
   try {
-    const stats = {
-      totalListeners: updateListeners.size,
-      listenerBreakdown: {},
-      recentUpdates: {},
-      timestamp: Date.now()
-    };
+    const status = {};
     
-    // Count listeners by type
-    updateListeners.forEach((listenerInfo, id) => {
-      listenerInfo.types.forEach(type => {
-        if (!stats.listenerBreakdown[type]) {
-          stats.listenerBreakdown[type] = 0;
-        }
-        stats.listenerBreakdown[type]++;
-      });
-    });
-    
-    // Get recent update timestamps
-    for (const updateType of Object.values(UPDATE_TYPES)) {
-      const timestamp = await getLastUpdateTimestamp(updateType);
-      if (timestamp) {
-        stats.recentUpdates[updateType] = {
-          timestamp,
-          timeAgo: Date.now() - timestamp
+    for (const [updateType, storageKey] of Object.entries(STORAGE_KEYS)) {
+      const updateData = await AsyncStorage.getItem(storageKey);
+      if (updateData) {
+        const parsedData = JSON.parse(updateData);
+        status[updateType] = {
+          hasUpdate: true,
+          timestamp: parsedData.timestamp,
+          source: parsedData.source,
+          isRecent: Date.now() - (parsedData.timestamp || 0) < 5 * 60 * 1000
         };
+      } else {
+        status[updateType] = { hasUpdate: false };
       }
     }
     
-    return stats;
+    return status;
   } catch (error) {
-    console.error('[MarketplaceUpdates] Error getting stats:', error);
-    return {
-      totalListeners: 0,
-      listenerBreakdown: {},
-      recentUpdates: {},
-      error: error.message,
-      timestamp: Date.now()
-    };
+    console.error('[MarketplaceUpdates] ❌ Error getting all update status:', error);
+    return {};
   }
 };
 
 /**
- * Batch trigger multiple updates
- * @param {Array} updates - Array of {type, data} objects
- * @param {Object} options - Global options
- * @returns {Promise<Object>} Results summary
+ * Initialize the service
  */
-export const batchTriggerUpdates = async (updates, options = {}) => {
+export const initializeMarketplaceUpdates = () => {
+  console.log('[MarketplaceUpdates] 🚀 Initializing marketplace updates service...');
+  
   try {
-    const results = {
-      successful: 0,
-      failed: 0,
-      errors: [],
-      timestamp: Date.now()
-    };
+    // Initialize FCM if available
+    initializeFCM();
     
-    const updatePromises = updates.map(async ({ type, data = {} }) => {
-      try {
-        const success = await triggerUpdate(type, data, { ...options, silent: true });
-        if (success) {
-          results.successful++;
-        } else {
-          results.failed++;
-          results.errors.push({ type, error: 'Trigger failed' });
-        }
-        return success;
-      } catch (error) {
-        results.failed++;
-        results.errors.push({ type, error: error.message });
-        return false;
-      }
-    });
+    // Initialize SignalR if available
+    if (signalRService && typeof signalRService.initialize === 'function') {
+      signalRService.initialize();
+    }
     
-    await Promise.all(updatePromises);
-    
-    console.log(`[MarketplaceUpdates] Batch update complete:`, results);
-    return results;
+    console.log('[MarketplaceUpdates] ✅ Marketplace updates service initialized');
   } catch (error) {
-    console.error('[MarketplaceUpdates] Batch update error:', error);
-    return {
-      successful: 0,
-      failed: updates.length,
-      errors: [{ error: error.message }],
-      timestamp: Date.now()
-    };
+    console.error('[MarketplaceUpdates] ❌ Error initializing marketplace updates:', error);
   }
 };
 
 /**
- * Auto-refresh helper for components
- * @param {Array} updateTypes - Update types to watch
- * @param {Function} refreshCallback - Function to call on updates
- * @param {Object} options - Options like debounce, immediate
- * @returns {Function} Cleanup function
+ * Cleanup function
  */
-export const useAutoRefresh = (updateTypes, refreshCallback, options = {}) => {
-  const { debounce = 1000, immediate = false } = options;
-  const listenerId = `auto_refresh_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
-  let debounceTimer = null;
-  
-  const debouncedRefresh = (...args) => {
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
+export const cleanupMarketplaceUpdates = () => {
+  try {
+    // Clean up FCM listener
+    if (messageUnsubscribe) {
+      messageUnsubscribe();
+      messageUnsubscribe = null;
     }
     
-    debounceTimer = setTimeout(() => {
-      refreshCallback(...args);
-      debounceTimer = null;
-    }, debounce);
-  };
-  
-  // Add listener
-  addUpdateListener(listenerId, updateTypes, debouncedRefresh);
-  
-  // Immediate refresh if requested
-  if (immediate) {
-    refreshCallback();
+    // Clear all listeners
+    updateListeners.clear();
+    listeners.clear();
+    
+    console.log('[MarketplaceUpdates] 🧹 Marketplace updates service cleaned up');
+  } catch (error) {
+    console.error('[MarketplaceUpdates] ❌ Error cleaning up marketplace updates:', error);
   }
-  
-  // Return cleanup function
-  return () => {
-    removeUpdateListener(listenerId);
-    if (debounceTimer) {
-      clearTimeout(debounceTimer);
-    }
-  };
 };
 
-// Cleanup function for app shutdown
-export const cleanup = () => {
-  // Clean up FCM subscription
-  if (messageUnsubscribe) {
-    messageUnsubscribe();
-    messageUnsubscribe = null;
-  }
-  
-  // Remove all listeners
-  listeners.forEach((listener, id) => {
-    removeUpdateListener(id);
-  });
-  
-  updateListeners.clear();
-  listeners.clear();
-  
-  console.log('[MarketplaceUpdates] ✅ Cleanup completed');
-};
+// Auto-initialize on import
+initializeMarketplaceUpdates();
 
-// Export for convenience
 export default {
-  UPDATE_TYPES,
   triggerUpdate,
   checkForUpdate,
-  getLastUpdateTimestamp,
   clearUpdate,
   clearAllUpdates,
   addUpdateListener,
   removeUpdateListener,
-  getUpdateStats,
-  batchTriggerUpdates,
-  useAutoRefresh,
-  cleanup
+  getAllUpdateStatus,
+  initializeMarketplaceUpdates,
+  cleanupMarketplaceUpdates,
+  UPDATE_TYPES
 };

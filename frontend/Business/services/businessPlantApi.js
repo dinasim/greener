@@ -79,28 +79,30 @@ export const searchPlantsForBusiness = async (query, filters = {}) => {
 };
 
 /**
- * Get Weather Advice for Business
+ * Get Business Weather Advice - FIXED ROUTE
  */
 export const getBusinessWeatherAdvice = async (location) => {
   try {
     console.log('🌤️ Getting business weather advice');
     const headers = await getEnhancedHeaders();
     
-    const url = `${API_BASE_URL}/business-weather-get`;
+    // FIXED: Use correct backend endpoint name
+    const url = `${API_BASE_URL}/business/weather`;
     const response = await apiRequest(url, {
-      method: 'POST',
+      method: 'GET',
       headers,
-      body: JSON.stringify({ location }),
+      // Add location as query parameter if provided
+      ...(location && { 
+        url: `${url}?lat=${location.latitude}&lon=${location.longitude}` 
+      })
     }, 3, 'Business Weather Advice');
 
     return {
       success: true,
-      location,
-      weather: response.weather || {},
-      advice: response.advice || [],
-      plantCareRecommendations: response.plantCareRecommendations || [],
-      businessInsights: response.businessInsights || [],
-      lastUpdated: response.lastUpdated || new Date().toISOString()
+      weather: response.weather || response.data || {},
+      advice: response.advice || response.plantCareAdvice || [],
+      location: response.location || location,
+      timestamp: new Date().toISOString()
     };
   } catch (error) {
     console.error('❌ Business weather advice error:', error);
@@ -228,6 +230,47 @@ export const optimizeWateringRoute = async (plantsToWater) => {
   }
 };
 
+/**
+ * AI Plant Care Chat - FIXED MESSAGE VALIDATION
+ */
+export const getAIPlantCareAdvice = async (message, plantData = null, context = null) => {
+  try {
+    console.log('🤖 Getting AI plant care advice');
+    
+    // FIXED: Validate message is provided and not empty
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      throw new Error('Message is required and cannot be empty');
+    }
+
+    const headers = await getEnhancedHeaders();
+    
+    const requestBody = {
+      message: message.trim(),
+      ...(plantData && { plantData }),
+      ...(context && { context }),
+      timestamp: new Date().toISOString()
+    };
+
+    const url = `${API_BASE_URL}/ai-plant-care-chat`;
+    const response = await apiRequest(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(requestBody),
+    }, 3, 'AI Plant Care Chat');
+
+    return {
+      success: true,
+      response: response.response || response.advice || response.message || 'I apologize, but I could not generate a response at this time.',
+      confidence: response.confidence || 0.8,
+      suggestions: response.suggestions || [],
+      timestamp: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('❌ AI plant care advice error:', error);
+    throw error;
+  }
+};
+
 export default {
   searchPlantsForBusiness,
   getBusinessWeatherAdvice,
@@ -235,4 +278,5 @@ export default {
   markPlantsAsWatered,
   getBusinessWateringChecklist,
   optimizeWateringRoute,
+  getAIPlantCareAdvice,
 };

@@ -19,14 +19,47 @@ import * as Sharing from 'expo-sharing';
 
 const { width } = Dimensions.get('window');
 
-export default function DiseaseCheckerScreen({ navigation }) {
+export default function DiseaseCheckerScreen({ navigation, route }) {
   const [imageUri, setImageUri] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [history, setHistory] = useState([]);
+  const [isBusiness, setIsBusiness] = useState(false);
 
   const resultCardRef = useRef();
+
+  // Check if user is business user on component mount
+  useEffect(() => {
+    const checkUserType = async () => {
+      try {
+        // Method 1: From route params
+        if (route?.params?.business === true) {
+          setIsBusiness(true);
+          return;
+        }
+
+        // Method 2: From AsyncStorage
+        const userType = await AsyncStorage.getItem('userType');
+        const businessId = await AsyncStorage.getItem('businessId');
+        
+        if (userType === 'business' || businessId) {
+          setIsBusiness(true);
+        }
+
+        // Method 3: Check current navigation stack
+        const currentRouteName = navigation.getState()?.routeNames?.[0];
+        if (currentRouteName?.includes('Business') || 
+            navigation.getState()?.routes?.some(route => route.name.includes('Business'))) {
+          setIsBusiness(true);
+        }
+      } catch (error) {
+        console.log('Error checking user type:', error);
+      }
+    };
+
+    checkUserType();
+  }, [route?.params, navigation]);
 
   // Helper to display bullet list for "." or ";"
   const renderMultiLine = (text) => {
@@ -163,19 +196,58 @@ export default function DiseaseCheckerScreen({ navigation }) {
     }
   };
 
-  // Nav bar actions
-  const handleLeafPress = () => navigation.navigate('Locations');
-  const handleMarketplacePress = () => navigation.navigate('MainTabs');
-  const handleHomePress = () => navigation.navigate('Home');
-  const handleMedkitPress = () => navigation.navigate('DiseaseChecker');
+  // Nav bar actions - different for business vs consumer
+  const handleNavigation = (destination) => {
+    if (isBusiness) {
+      // Business navigation
+      switch (destination) {
+        case 'home':
+          navigation.navigate('BusinessDashboard');
+          break;
+        case 'locations':
+          navigation.navigate('BusinessLocations');
+          break;
+        case 'marketplace':
+          navigation.navigate('BusinessInventory');
+          break;
+        case 'disease':
+          // Already on disease checker
+          break;
+        default:
+          navigation.goBack();
+      }
+    } else {
+      // Consumer navigation
+      switch (destination) {
+        case 'home':
+          navigation.navigate('Home');
+          break;
+        case 'locations':
+          navigation.navigate('Locations');
+          break;
+        case 'marketplace':
+          navigation.navigate('MainTabs');
+          break;
+        case 'disease':
+          navigation.navigate('DiseaseChecker');
+          break;
+        default:
+          navigation.goBack();
+      }
+    }
+  };
+
   const handleAddPress = () => setShowPopup(true);
   const handleOptionPress = (type) => {
     setShowPopup(false);
-    if (type === 'plant') navigation.navigate('AddPlant');
-    else if (type === 'site') navigation.navigate('AddSite');
+    if (type === 'plant') {
+      navigation.navigate(isBusiness ? 'BusinessAddPlant' : 'AddPlant');
+    } else if (type === 'site') {
+      navigation.navigate(isBusiness ? 'BusinessAddSite' : 'AddSite');
+    }
   };
 
-  // NEW: Robust plant detected check!
+  // Robust plant detected check
   const isPlantDetected = result && Array.isArray(result.results) && result.results.length > 0;
 
   // Critical warnings
@@ -194,11 +266,19 @@ export default function DiseaseCheckerScreen({ navigation }) {
         >
           <Ionicons name="arrow-back" size={24} color="#4CAF50" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Disease Checker</Text>
-        <View style={styles.backButton} /> {/* Placeholder for centering */}
+        <Text style={styles.headerTitle}>
+          {isBusiness ? 'Plant Health Scanner' : 'Disease Checker'}
+        </Text>
+        <View style={styles.backButton} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView 
+        contentContainerStyle={[
+          styles.container,
+          // Add bottom padding for business users (no nav bar)
+          isBusiness && { paddingBottom: 40 }
+        ]}
+      >
         {/* Animated Loading Indicator */}
         {loading && (
           <View style={{ alignItems: 'center', marginTop: 30 }}>
@@ -242,7 +322,8 @@ export default function DiseaseCheckerScreen({ navigation }) {
                 </Text>
                 <TouchableOpacity
                   style={[styles.againBtn, { backgroundColor: "#4285f4" }]}
-                  onPress={() => { setImageUri(null); setResult(null); }}>
+                  onPress={() => { setImageUri(null); setResult(null); }}
+                >
                   <Text style={styles.againBtnText}>Try Again</Text>
                 </TouchableOpacity>
               </View>
@@ -253,13 +334,15 @@ export default function DiseaseCheckerScreen({ navigation }) {
                   {/* Encyclopedia only if plant_name available */}
                   {result.plant_name && result.plant_name !== "Unknown" && (
                     <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}
-                      onPress={() => navigation.navigate('PlantDetail', { plantId: result.plant_name })}>
+                      onPress={() => navigation.navigate('PlantDetail', { plantId: result.plant_name })}
+                    >
                       <Ionicons name="book-outline" size={22} color="#7e57c2" />
                       <Text style={{ marginLeft: 6, fontWeight: '600', color: '#7e57c2' }}>Plant Encyclopedia</Text>
                     </TouchableOpacity>
                   )}
                   <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}
-                    onPress={shareResultCard}>
+                    onPress={shareResultCard}
+                  >
                     <Ionicons name="share-social-outline" size={22} color="#4285f4" />
                     <Text style={{ marginLeft: 6, fontWeight: '600', color: '#4285f4' }}>Share</Text>
                   </TouchableOpacity>
@@ -279,7 +362,7 @@ export default function DiseaseCheckerScreen({ navigation }) {
                 )}
                 <View style={styles.summaryBox}>
                   <Text style={styles.summaryTitle}>Analysis Summary</Text>
-                  <Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={styles.summaryLabel}>Status: </Text>
                     <Text style={[
                       styles.statusText,
@@ -287,11 +370,11 @@ export default function DiseaseCheckerScreen({ navigation }) {
                     ]}>
                       {result.is_healthy ? "Healthy" : "Issues Detected"}
                     </Text>
-                  </Text>
-                  <Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                     <Text style={styles.summaryLabel}>Confidence: </Text>
-                    {result.confidence ? `${result.confidence}%` : "N/A"}
-                  </Text>
+                    <Text>{result.confidence ? `${result.confidence}%` : "N/A"}</Text>
+                  </View>
                 </View>
                 {/* CATEGORY CARDS */}
                 {result.results && result.results.length > 0 && (
@@ -320,7 +403,12 @@ export default function DiseaseCheckerScreen({ navigation }) {
                             }
                           ]} />
                         </View>
-                        <Text style={styles.cardLabel}>Probability: <Text style={{ fontWeight: "bold" }}>{item.probability || "N/A"}</Text></Text>
+                        <View style={{ flexDirection: 'row' }}>
+                          <Text style={styles.cardLabel}>
+                            Probability: 
+                          </Text>
+                          <Text style={{ fontWeight: "bold" }}>{item.probability || "N/A"}</Text>
+                        </View>
                         {/* SYMPTOMS */}
                         {item.symptoms && (
                           <View style={styles.infoCard}>
@@ -379,7 +467,8 @@ export default function DiseaseCheckerScreen({ navigation }) {
                   <Text style={[styles.statusText, { color: "#38b000", marginTop: 18 }]}>Your plant looks healthy!</Text>
                 )}
                 <TouchableOpacity style={styles.againBtn}
-                  onPress={() => { setImageUri(null); setResult(null); }}>
+                  onPress={() => { setImageUri(null); setResult(null); }}
+                >
                   <Text style={styles.againBtnText}>Analyze Another Plant</Text>
                 </TouchableOpacity>
               </>
@@ -394,7 +483,8 @@ export default function DiseaseCheckerScreen({ navigation }) {
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {history.map((h, idx) => (
                 <TouchableOpacity key={idx} style={styles.historyCard}
-                  onPress={() => { setResult(h.result); setImageUri(h.imageUri); }}>
+                  onPress={() => { setResult(h.result); setImageUri(h.imageUri); }}
+                >
                   <Image source={{ uri: h.imageUri }} style={{ width: 52, height: 52, borderRadius: 6, marginBottom: 4 }} />
                   <Text numberOfLines={1} style={{ fontSize: 13, fontWeight: '600', maxWidth: 70 }}>{h.plant_name}</Text>
                   <Text style={{ fontSize: 11, color: "#777" }}>{h.date.split(',')[0]}</Text>
@@ -403,48 +493,54 @@ export default function DiseaseCheckerScreen({ navigation }) {
             </ScrollView>
           </View>
         )}
-
       </ScrollView>
 
-      {/* NAV BAR */}
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={handleHomePress}>
-          <Ionicons name="home" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleLeafPress}>
-          <Ionicons name="leaf" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleMarketplacePress}>
-          <Ionicons name="cart-outline" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleMedkitPress}>
-          <Ionicons name="medkit" size={24} color="black" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Floating buttons */}
-      <View style={styles.floatingContainer}>
-        <TouchableOpacity style={styles.floatingButton} onPress={handleMedkitPress}>
-          <Ionicons name="search" size={32} color="#4CAF50" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
-          <Ionicons name="add" size={36} color="#fff" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Add Plant popup */}
-      <Modal transparent visible={showPopup} animationType="slide" onRequestClose={() => setShowPopup(false)}>
-        <TouchableOpacity style={styles.popupOverlay} onPress={() => setShowPopup(false)}>
-          <View style={styles.modalContent}>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('plant')}>
-              <Text style={styles.modalButtonText}>🌿 Add Plant</Text>
+      {/* CONDITIONAL NAVIGATION - Only show for consumer users */}
+      {!isBusiness && (
+        <>
+          {/* NAV BAR */}
+          <View style={styles.navBar}>
+            <TouchableOpacity onPress={() => handleNavigation('home')}>
+              <Ionicons name="home" size={24} color="black" />
             </TouchableOpacity>
-            <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('site')}>
-              <Text style={styles.modalButtonText}>📍 Add Site</Text>
+            <TouchableOpacity onPress={() => handleNavigation('locations')}>
+              <Ionicons name="leaf" size={24} color="black" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleNavigation('marketplace')}>
+              <Ionicons name="cart-outline" size={24} color="black" />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => handleNavigation('disease')}>
+              <Ionicons name="medkit" size={24} color="black" />
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </Modal>
+
+          {/* Floating buttons */}
+          <View style={styles.floatingContainer}>
+            <TouchableOpacity style={styles.floatingButton} onPress={() => handleNavigation('disease')}>
+              <Ionicons name="search" size={32} color="#4CAF50" />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
+              <Ionicons name="add" size={36} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+
+      {/* Add Plant popup - Available for both user types but with different options */}
+      {showPopup && (
+        <Modal transparent visible={showPopup} animationType="slide" onRequestClose={() => setShowPopup(false)}>
+          <TouchableOpacity style={styles.popupOverlay} onPress={() => setShowPopup(false)}>
+            <View style={styles.modalContent}>
+              <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('plant')}>
+                <Text style={styles.modalButtonText}>🌿 Add Plant</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.popupOption} onPress={() => handleOptionPress('site')}>
+                <Text style={styles.modalButtonText}>📍 Add Site</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -482,7 +578,19 @@ const styles = StyleSheet.create({
   greenBtnText: { color: "#fff", fontWeight: "bold", fontSize: 18, marginLeft: 10 },
   pickBtnText: { color: "#fff", fontWeight: "bold", fontSize: 18, letterSpacing: 1 },
   imagePreview: { width: 230, height: 230, margin: 18, borderRadius: 12, borderWidth: 2, borderColor: "#ddd" },
-  resultCard: { backgroundColor: "#fff", borderRadius: 16, padding: 18, width: "97%", alignItems: "center", marginTop: 18, marginBottom: 48, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4 },
+  resultCard: { 
+    backgroundColor: "#fff", 
+    borderRadius: 16, 
+    padding: 18, 
+    width: "97%", 
+    alignItems: "center", 
+    marginTop: 18, 
+    marginBottom: 48, 
+    ...Platform.select({
+      web: { boxShadow: '0px 1px 4px rgba(0, 0, 0, 0.05)' },
+      default: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 4, elevation: 2 }
+    })
+  },
   plantName: { fontSize: 23, fontWeight: "bold", marginBottom: 8, color: "#205d29", letterSpacing: 1 },
   summaryBox: { backgroundColor: "#f6f7fa", borderRadius: 9, padding: 12, marginBottom: 16, alignSelf: "stretch" },
   summaryTitle: { fontSize: 17, fontWeight: "bold", marginBottom: 6 },
@@ -555,15 +663,21 @@ const styles = StyleSheet.create({
   addButton: {
     backgroundColor: '#2e7d32', width: 64, height: 64,
     borderRadius: 32, justifyContent: 'center', alignItems: 'center',
-    elevation: 6, shadowColor: "#000", shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3, shadowRadius: 4,
+    ...Platform.select({
+      web: { boxShadow: '0px 3px 4px rgba(0, 0, 0, 0.3)' },
+      default: { elevation: 6, shadowColor: "#000", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.3, shadowRadius: 4 }
+    })
   },
   popupOverlay: {
     flex: 1, backgroundColor: '#00000088', justifyContent: 'flex-end',
   },
   modalContent: {
     backgroundColor: '#fff', borderRadius: 16, padding: 16,
-    width: width * 0.6, alignSelf: 'flex-end', elevation: 5,
+    width: width * 0.6, alignSelf: 'flex-end', 
+    ...Platform.select({
+      web: { boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15)' },
+      default: { elevation: 5 }
+    })
   },
   popupOption: { paddingVertical: 14 },
   modalButtonText: { fontSize: 16, color: '#333', textAlign: 'right' },
@@ -575,7 +689,10 @@ const styles = StyleSheet.create({
   },
   historyCard: {
     marginRight: 12, alignItems: "center", backgroundColor: "#fff", borderRadius: 10, padding: 8,
-    elevation: 2, shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 3,
+    ...Platform.select({
+      web: { boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.08)' },
+      default: { elevation: 2 }
+    }),
     borderColor: "#f0f0f0", borderWidth: 1, minWidth: 75
   }
 });

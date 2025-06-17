@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
@@ -221,9 +222,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     elevation: 3,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.08,
+        shadowRadius: 2,
+        shadowOffset: { width: 0, height: 1 },
+      },
+      android: {
+        elevation: 3,
+      },
+      web: {
+        boxShadow: "0px 2px 4px rgba(0, 0, 0, 0.08)",
+      },
+    }),
     padding: 8,
   },
   siteImage: {
@@ -242,9 +254,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 8,
     elevation: 2,
-    shadowColor: "#000",
-    shadowOpacity: 0.04,
-    shadowRadius: 1,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#000",
+        shadowOpacity: 0.04,
+        shadowRadius: 1,
+        shadowOffset: { width: 0, height: 1 },
+      },
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow: "0px 1px 2px rgba(0, 0, 0, 0.04)",
+      },
+    }),
     marginHorizontal: 8,
   },
   plantImg: {

@@ -5,8 +5,8 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "options"],
-      "route": "business/dashboard"
+      "methods": ["get", "post", "options"],
+      "route": "business-dashboard"
     },
     {
       "type": "http",

@@ -1,4 +1,4 @@
-// components/plant/LocationPickerIntegration.js
+// components/plant/LocationPickerIntegration.js - SYNCED WITH ENHANCED AZURE MAPS
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -12,11 +12,12 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import LocationPicker from '../LocationPicker';
+// FIXED: Use the enhanced Azure Maps service
 import { reverseGeocode } from '../../services/azureMapsService';
 
 /**
  * Enhanced location picker component with GPS integration
- * Specifically designed for AddPlantScreen
+ * SYNCED: Now uses the enhanced Azure Maps service with proper fallbacks
  * 
  * @param {Object} value Current location value
  * @param {Function} onChange Called when location changes
@@ -41,7 +42,7 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
     onChange(location);
   };
 
-  // Handle getting current location from GPS
+  // ENHANCED: Handle getting current location from GPS with Azure Maps integration
   const useCurrentLocation = async () => {
     try {
       setIsLoadingLocation(true);
@@ -60,19 +61,29 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
         return;
       }
       
-      // Get current position with higher accuracy
-      const position = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        timeout: 15000
-      });
+      // ENHANCED: Get current position with higher accuracy
+      const locationOptions = Platform.OS === 'web' 
+        ? {
+            accuracy: Location.Accuracy.BestForNavigation,
+            timeout: 20000,
+            maximumAge: 10000,
+            enableHighAccuracy: true
+          }
+        : {
+            accuracy: Location.Accuracy.Highest,
+            timeout: 15000,
+            maximumAge: 10000
+          };
+
+      const position = await Location.getCurrentPositionAsync(locationOptions);
       
       const { latitude, longitude } = position.coords;
       console.log("GPS location obtained:", latitude, longitude);
       
       try {
-        // Use Azure Maps reverse geocode to get address details
+        // FIXED: Use the enhanced Azure Maps reverse geocode service
         const locationInfo = await reverseGeocode(latitude, longitude);
-        console.log("Reverse geocode result:", locationInfo);
+        console.log("Azure Maps reverse geocode result:", locationInfo);
         
         if (locationInfo) {
           // Create complete location object with all required fields
@@ -80,16 +91,17 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
             latitude: locationInfo.latitude,
             longitude: locationInfo.longitude,
             city: locationInfo.city || '',
-            country: locationInfo.country || '',
+            country: locationInfo.country || 'Israel',
             street: locationInfo.street || '',
             houseNumber: locationInfo.houseNumber || '',
-            formattedAddress: locationInfo.formattedAddress || ''
+            formattedAddress: locationInfo.formattedAddress || `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`
           };
           
           // Only update forms if we're in Israel
-          if (locationInfo.country === 'Israel') {
+          if (locationInfo.country === 'Israel' || !locationInfo.country) {
             setLocationData(location);
             onChange(location);
+            setLocationFetchError(null);
           } else {
             Alert.alert(
               'Location Notice', 
@@ -98,8 +110,8 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
             );
           }
         }
-      } catch (apiError) {
-        console.warn('Reverse geocoding failed:', apiError);
+      } catch (azureError) {
+        console.warn('Azure Maps reverse geocoding failed:', azureError);
         setLocationFetchError('Could not determine your address. Please enter it manually.');
         
         // Fallback to Expo's geocoder
@@ -183,22 +195,25 @@ const LocationPickerIntegration = ({ value, onChange, formErrors }) => {
         <Text style={styles.errorText}>{locationFetchError}</Text>
       )}
       
+      {/* SYNCED: Use the enhanced LocationPicker component */}
       <LocationPicker
         value={locationData}
         onChange={handleLocationChange}
         required={true}
         showConfirmButton={true}
+        placeholder="Enter your location in Israel"
       />
       
       {formErrors?.city ? (
         <Text style={styles.errorText}>{formErrors.city}</Text>
       ) : null}
       
+      {/* ENHANCED: Show coordinates with proper formatting */}
       {locationData?.latitude && locationData?.longitude ? (
         <View style={styles.coordsContainer}>
           <MaterialIcons name="place" size={16} color="#4CAF50" />
           <Text style={styles.coordsText}>
-            {locationData.formattedAddress || `${locationData.city}, Israel`}
+            {locationData.formattedAddress || `${locationData.latitude.toFixed(4)}, ${locationData.longitude.toFixed(4)}`}
           </Text>
         </View>
       ) : null}

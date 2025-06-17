@@ -1,7 +1,7 @@
 // screens/PlantDetailScreen.js - FIXED: Business API + All Features
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  View, StyleSheet, ScrollView, SafeAreaView, Modal, Alert, Text
+  View, StyleSheet, ScrollView, SafeAreaView, Modal, Alert, Text, Platform, Linking
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
@@ -323,8 +323,41 @@ const PlantDetailScreen = () => {
   }, [showToast, loadPlantDetail]);
 
   const handleGetDirections = useCallback(() => {
-    showToast("Opening map directions", "info");
-  }, [showToast]);
+    if (!plant?.location?.latitude || !plant?.location?.longitude) {
+      showToast('Location information is not available for this plant', 'error');
+      return;
+    }
+
+    const lat = plant.location.latitude;
+    const lng = plant.location.longitude;
+    const label = encodeURIComponent(plant.title || plant.name || 'Plant Location');
+    
+    let url;
+    if (Platform.OS === 'ios') {
+      // iOS - Use Apple Maps
+      url = `maps://app?daddr=${lat},${lng}&ll=${lat},${lng}&q=${label}`;
+    } else if (Platform.OS === 'android') {
+      // Android - Use Google Maps app
+      url = `google.navigation:q=${lat},${lng}`;
+    } else {
+      // Web/other platforms - Use Google Maps web
+      url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${label}`;
+    }
+    
+    showToast("Opening directions...", "info");
+    
+    Linking.openURL(url).catch(err => {
+      console.error('Error opening maps app:', err);
+      
+      // Fallback to Google Maps web URL for all platforms
+      const fallbackUrl = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+      
+      Linking.openURL(fallbackUrl).catch(fallbackErr => {
+        console.error('Error opening fallback maps:', fallbackErr);
+        showToast('Could not open maps application. Please check if you have a maps app installed.', 'error');
+      });
+    });
+  }, [plant, showToast]);
 
   const handleExpandMap = useCallback(() => {
     setMapModalVisible(true);

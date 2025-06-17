@@ -1,7 +1,8 @@
-// services/marketplaceApi.js - FIXED: Removed duplicate fetchBusinessProfile definition
+// services/marketplaceApi.js - CLEANED: Removed all fallback and mock data
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import config from './config';
+import syncBridge, { addBusinessProfileSync, addInventorySync, invalidateMarketplaceCache } from './BusinessMarketplaceSyncBridge';
 
 // Base URL for API requests
 const API_BASE_URL = config.API_BASE_URL || 'https://usersfunctions.azurewebsites.net/api';
@@ -28,7 +29,7 @@ export const setAuthToken = async (token) => {
 };
 
 /**
- * FIXED: Enhanced API request function with proper error handling and retry logic
+ * API request function with proper Azure Functions routing and error handling
  */
 const apiRequest = async (endpoint, options = {}, retries = 3) => {
   try {
@@ -61,9 +62,7 @@ const apiRequest = async (endpoint, options = {}, retries = 3) => {
     const url = `${API_BASE_URL}/${endpoint.replace(/^\//, '')}`;
     console.log(`🌐 API Request: ${options.method || 'GET'} ${url}`);
     
-    // FIXED: Add retry logic with exponential backoff
-    let lastError;
-    const retries = 2;
+    let lastError = null;
     
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
@@ -73,66 +72,62 @@ const apiRequest = async (endpoint, options = {}, retries = 3) => {
           headers,
         });
         
-        let data;
-        try {
-          // FIXED: Always check response.ok before parsing JSON
-          if (!response.ok) {
-            console.error(`❌ API Error ${response.status}:`, response.statusText);
-            
-            // Try to get error details if response has content
+        if (!response.ok) {
+          console.error(`❌ API Error ${response.status}:`, response.statusText);
+          
+          let errorData = { error: `Request failed with status ${response.status}` };
+          
+          try {
             const textResponse = await response.text();
-            let errorData = { error: `Request failed with status ${response.status}` };
-            
             if (textResponse) {
               try {
                 errorData = JSON.parse(textResponse);
-              } catch (parseError) {
+              } catch {
                 errorData = { error: textResponse };
               }
             }
-            
-            // Don't retry on client errors (4xx), only on server errors (5xx) or network issues
-            if (response.status >= 400 && response.status < 500 && attempt === 1) {
-              throw new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`);
-            }
-            
-            lastError = new Error(errorData.error || errorData.message || `Request failed with status ${response.status}`);
-          } else {
-            // Only parse JSON if response is OK
-            const textResponse = await response.text();
-            data = textResponse ? JSON.parse(textResponse) : {};
-            console.log(`✅ API Success: ${endpoint}`);
-            return data;
+          } catch (parseError) {
+            console.warn('Could not parse error response:', parseError);
           }
-        } catch (parseError) {
-          console.error('❌ JSON parse error:', parseError);
-          // If we can't parse the response, treat it as an error
-          lastError = new Error('Invalid response format from server');
+          
+          lastError = new Error(
+            errorData?.error || 
+            errorData?.message || 
+            errorData?.ExceptionMessage ||
+            `Request failed with status ${response.status}`
+          );
+          
+          // Don't retry on client errors (4xx), only on server errors (5xx)
+          if (response.status >= 400 && response.status < 500) {
+            throw lastError;
+          }
+          
+        } else {
+          const textResponse = await response.text();
+          const data = textResponse ? JSON.parse(textResponse) : {};
+          console.log(`✅ API Success: ${endpoint}`);
+          return data;
         }
         
-        lastError = new Error(data.error || data.message || `Request failed with status ${response.status}`);
-        
-        // If this is not a server error, don't retry
-        if (response.status < 500) {
-          throw lastError;
-        }
+        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        console.log(`⚠️ Attempt ${attempt} failed, retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
         
       } catch (error) {
         lastError = error;
         
-        // Don't retry on client-side errors
+        // Don't retry on network errors or final attempt
         if (error.name === 'TypeError' || error.message.includes('network') || attempt === retries) {
           break;
         }
         
-        // Exponential backoff
         const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
         console.log(`⚠️ Attempt ${attempt} failed, retrying in ${delay}ms...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
     
-    throw lastError;
+    throw lastError || new Error(`Request failed: ${endpoint}`);
   } catch (error) {
     console.error(`❌ API request failed (${endpoint}):`, error);
     throw error;
@@ -140,11 +135,203 @@ const apiRequest = async (endpoint, options = {}, retries = 3) => {
 };
 
 // ==========================================
-// RESTORED: ENHANCED IMAGE PROCESSING FUNCTIONS
+// HELPER FUNCTIONS
 // ==========================================
 
 /**
- * RESTORED: Process business product images for marketplace display with enhanced handling
+ * Calculate distance between two coordinates
+ */
+const calculateDistance = (lat1, lon1, lat2, lon2) => {
+  const R = 6371; // Radius of the Earth in kilometers
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const d = R * c; // Distance in kilometers
+  return d;
+};
+
+/**
+ * Sort products helper
+ */
+const sortProducts = (products, sortBy) => {
+  switch (sortBy) {
+    case 'recent':
+      return products.sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
+    case 'priceAsc':
+      return products.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
+    case 'priceDesc':
+      return products.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
+    default:
+      return products;
+  }
+};
+
+// ==========================================
+// BUSINESS FUNCTIONS
+// ==========================================
+
+/**
+ * ENHANCED: Get all businesses with better caching and error handling
+ */
+const getAllBusinesses = async () => {
+  const cacheKey = 'all_businesses';
+  const cached = businessCache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
+    console.log('📱 Using cached businesses data');
+    return cached.data;
+  }
+  
+  const response = await apiRequest('get-all-businesses');
+  const businesses = response.businesses || response.data || response || [];
+  
+  businessCache.set(cacheKey, {
+    data: businesses,
+    timestamp: Date.now()
+  });
+  
+  console.log(`✅ Loaded ${businesses.length} businesses`);
+  return businesses;
+};
+
+/**
+ * FIXED: Get business inventory with correct route matching backend documentation
+ */
+export const fetchBusinessInventory = async (businessId) => {
+  if (!businessId) {
+    throw new Error('Business ID is required');
+  }
+  
+  // Check unified cache first
+  try {
+    const unifiedCache = await AsyncStorage.getItem('unified_business_inventory');
+    if (unifiedCache) {
+      const cached = JSON.parse(unifiedCache);
+      if (Date.now() - cached.timestamp < 180000 && cached.businessId === businessId) { // 3 minutes
+        console.log('📱 Using unified cached business inventory');
+        return { success: true, inventory: cached.data };
+      }
+    }
+  } catch (cacheError) {
+    console.warn('Cache read error:', cacheError);
+  }
+  
+  // FIXED: Use correct backend endpoint from documentation
+  const response = await apiRequest(`business-inventory-get?businessId=${encodeURIComponent(businessId)}`);
+  
+  // Update unified cache
+  await AsyncStorage.setItem('unified_business_inventory', JSON.stringify({
+    data: response.inventory || response.items || response.data || [],
+    businessId,
+    timestamp: Date.now(),
+    source: 'marketplace'
+  }));
+
+  return {
+    success: true,
+    inventory: response.inventory || response.items || response.data || []
+  };
+};
+
+/**
+ * FIXED: Get business profile with correct route matching backend documentation
+ */
+export const fetchBusinessProfile = async (businessId) => {
+  if (!businessId) {
+    throw new Error('Business ID is required');
+  }
+  
+  // Check unified cache first
+  try {
+    const unifiedCache = await AsyncStorage.getItem('unified_business_profile');
+    if (unifiedCache) {
+      const cached = JSON.parse(unifiedCache);
+      if (Date.now() - cached.timestamp < 300000) { // 5 minutes
+        console.log('📱 Using unified cached business profile');
+        return { success: true, business: cached.data };
+      }
+    }
+  } catch (cacheError) {
+    console.warn('Cache read error:', cacheError);
+  }
+  
+  // FIXED: Use correct backend endpoint from documentation - get_business_profile
+  const response = await apiRequest(`get_business_profile/${encodeURIComponent(businessId)}`);
+  
+  // Update unified cache
+  await AsyncStorage.setItem('unified_business_profile', JSON.stringify({
+    data: response.business || response.profile || response.data || response,
+    timestamp: Date.now(),
+    source: 'marketplace'
+  }));
+
+  return {
+    success: true,
+    business: response.business || response.profile || response.data || response
+  };
+};
+
+// ==========================================
+// USER FUNCTIONS
+// ==========================================
+
+/**
+ * FIXED: Get user profile using correct Azure Function endpoint
+ */
+export const fetchUserProfile = async (userId) => {
+  if (!userId) {
+    throw new Error('User ID is required');
+  }
+  
+  // FIXED: Use correct deployed endpoint route
+  const response = await apiRequest(`marketplace/users/${encodeURIComponent(userId)}`);
+  return response;
+};
+
+/**
+ * ENHANCED: Update user profile with sync bridge integration
+ */
+export const updateUserProfile = async (userId, userData) => {
+  const endpoint = `user-profile/${userId}`;
+  
+  const result = await apiRequest(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  });
+
+  if (userData.isBusiness || userData.userType === 'business') {
+    await addBusinessProfileSync(userData, 'marketplace');
+  }
+
+  await invalidateMarketplaceCache([
+    `user_profile_${userId}`,
+    `seller_profile_${userId}`,
+    'marketplace_plants'
+  ]);
+
+  return result;
+};
+
+export const getUserListings = async (userId, status = 'all') => {
+  const endpoint = `marketplace/users/${userId}/listings?status=${status}`;
+  return apiRequest(endpoint);
+};
+
+export const getUserWishlist = async (userId) => {
+  const endpoint = `marketplace/users/${userId}/wishlist`;
+  return apiRequest(endpoint);
+};
+
+// ==========================================
+// IMAGE PROCESSING FUNCTIONS
+// ==========================================
+
+/**
+ * ENHANCED: Process business product images for marketplace display
  */
 const processBusinessProductImages = (item, business) => {
   // Collect all possible image sources
@@ -213,7 +400,7 @@ const processBusinessProductImages = (item, business) => {
 };
 
 /**
- * RESTORED: Enhanced product image processing for individual listings
+ * ENHANCED: Product image processing for individual listings
  */
 const processIndividualProductImages = (product) => {
   const images = [];
@@ -243,19 +430,7 @@ const processIndividualProductImages = (product) => {
 };
 
 /**
- * RESTORED: Generate fallback image based on product category
- */
-const generateFallbackImage = (product, business) => {
-  const category = product.category || product.productType || 'general';
-  const businessName = business?.businessName || business?.name || 'Business';
-  
-  // You could implement a service that generates placeholder images here
-  // For now, return a standard placeholder
-  return `https://via.placeholder.com/300x200/4CAF50/white?text=${encodeURIComponent(category)}`;
-};
-
-/**
- * RESTORED: Simplified image processing for business products (backward compatibility)
+ * Simplified image processing for business products (backward compatibility)
  */
 const processProductImages = (item) => {
   const images = [];
@@ -285,11 +460,11 @@ const processProductImages = (item) => {
 };
 
 // ==========================================
-// RESTORED: ENHANCED PRODUCT CONVERSION FUNCTIONS
+// PRODUCT CONVERSION FUNCTIONS
 // ==========================================
 
 /**
- * RESTORED: Convert inventory items to marketplace products with enhanced features
+ * ENHANCED: Convert inventory items to marketplace products with comprehensive features
  */
 const convertInventoryToProducts = (inventory, business, category, search) => {
   if (!Array.isArray(inventory)) {
@@ -360,7 +535,7 @@ const convertInventoryToProducts = (inventory, business, category, search) => {
         productType: item.productType || 'plant',
         
         // Enhanced image handling
-        image: processedImages.mainImage || generateFallbackImage(item, business),
+        image: processedImages.mainImage,
         mainImage: processedImages.mainImage,
         images: processedImages.images,
         hasImages: processedImages.hasImages,
@@ -465,7 +640,7 @@ const convertInventoryToProducts = (inventory, business, category, search) => {
 };
 
 /**
- * RESTORED: Enhanced individual product processing
+ * ENHANCED: Individual product processing
  */
 const processIndividualProducts = (products) => {
   if (!Array.isArray(products)) {
@@ -514,69 +689,7 @@ const processIndividualProducts = (products) => {
 };
 
 /**
- * FIXED: Get all businesses with enhanced caching and error handling
- */
-const getAllBusinesses = async () => {
-  const cacheKey = 'all_businesses';
-  const cached = businessCache.get(cacheKey);
-  
-  if (cached && Date.now() - cached.timestamp < cacheTimeout) {
-    console.log('📱 Using cached businesses data');
-    return cached.data;
-  }
-  
-  try {
-    const response = await apiRequest('marketplace/businesses');
-    const businesses = response.businesses || [];
-    
-    businessCache.set(cacheKey, {
-      data: businesses,
-      timestamp: Date.now()
-    });
-    
-    console.log(`✅ Loaded ${businesses.length} businesses`);
-    return businesses;
-  } catch (error) {
-    console.error('❌ Get businesses failed:', error);
-    
-    // Return cached data if available, even if stale
-    if (cached) {
-      console.log('📱 Using stale cached businesses data due to error');
-      return cached.data;
-    }
-    
-    return [];
-  }
-};
-
-/**
- * FIXED: Get business profile using the corrected endpoint
- */
-export const fetchBusinessProfile = async (businessId) => {
-  if (!businessId) {
-    throw new Error('Business ID is required');
-  }
-  
-  // FIXED: Use the correct endpoint that matches the backend route
-  const endpoint = `business-profile`;
-  return apiRequest(endpoint);
-};
-
-/**
- * FIXED: Get business inventory using the corrected endpoint
- */
-export const fetchBusinessInventory = async (businessId) => {
-  if (!businessId) {
-    throw new Error('Business ID is required');
-  }
-  
-  // FIXED: Use the correct endpoint that matches the backend route
-  const endpoint = `business-inventory`;
-  return apiRequest(endpoint);
-};
-
-/**
- * FIXED: Get business products with proper endpoint calls and error handling
+ * Get business products with enhanced processing and error handling
  */
 const getBusinessProducts = async (category, search) => {
   const cacheKey = `business_products_${category || 'all'}_${search || 'none'}`;
@@ -586,78 +699,54 @@ const getBusinessProducts = async (category, search) => {
     return cached.data;
   }
   
-  try {
-    const businesses = await getAllBusinesses();
-    if (businesses.length === 0) return [];
+  const businesses = await getAllBusinesses();
+  if (businesses.length === 0) throw new Error('No businesses found');
+  
+  console.log(`🏢 Processing ${businesses.length} businesses for products...`);
+  
+  const businessPromises = businesses.map(async business => {
+    const businessId = business.id || business.email;
     
-    console.log(`🏢 Processing ${businesses.length} businesses for products...`);
+    let businessProfile = business;
+    let inventory = [];
     
-    const businessPromises = businesses.map(async business => {
-      try {
-        // FIXED: Use correct backend endpoints that actually exist
-        const businessId = business.id || business.email;
-        
-        // Get business profile with inventory using the fixed endpoint
-        let businessProfile = business;
-        let inventory = [];
-        
-        try {
-          const profileResponse = await fetchBusinessProfile(businessId);
-          if (profileResponse && profileResponse.success && profileResponse.business) {
-            businessProfile = { ...business, ...profileResponse.business };
-            // If the profile response includes inventory, use it
-            if (profileResponse.inventory && Array.isArray(profileResponse.inventory)) {
-              inventory = profileResponse.inventory;
-            }
-          }
-        } catch (profileError) {
-          console.warn(`⚠️ Profile endpoint failed for ${businessId}:`, profileError.message);
+    try {
+      const profileResponse = await fetchBusinessProfile(businessId);
+      if (profileResponse && profileResponse.success && profileResponse.business) {
+        businessProfile = { ...business, ...profileResponse.business };
+        if (profileResponse.inventory && Array.isArray(profileResponse.inventory)) {
+          inventory = profileResponse.inventory;
         }
-        
-        // If we don't have inventory from profile, try the separate inventory endpoint
-        if (inventory.length === 0) {
-          try {
-            const inventoryResponse = await fetchBusinessInventory(businessId);
-            if (inventoryResponse && inventoryResponse.success && inventoryResponse.inventory) {
-              inventory = inventoryResponse.inventory;
-            } else if (Array.isArray(inventoryResponse)) {
-              inventory = inventoryResponse;
-            }
-          } catch (invError) {
-            console.warn(`⚠️ Could not fetch inventory for ${businessId}:`, invError.message);
-            // Try fallback from profile if it has inventory
-            if (businessProfile.inventory && Array.isArray(businessProfile.inventory)) {
-              inventory = businessProfile.inventory;
-            }
-          }
-        }
-        
-        console.log(`📦 Business ${businessProfile.businessName || businessProfile.name}: ${inventory.length} items`);
-        
-        return convertInventoryToProducts(inventory, businessProfile, category, search);
-      } catch (error) {
-        console.warn(`⚠️ Business ${business.id || business.email} failed:`, error.message);
-        return [];
       }
-    });
+    } catch (profileError) {
+      console.warn(`⚠️ Profile endpoint failed for ${businessId}:`, profileError.message);
+    }
     
-    const businessProductArrays = await Promise.all(businessPromises);
-    const allBusinessProducts = businessProductArrays.flat();
+    if (inventory.length === 0) {
+      const inventoryResponse = await fetchBusinessInventory(businessId);
+      if (inventoryResponse && inventoryResponse.success && inventoryResponse.inventory) {
+        inventory = inventoryResponse.inventory;
+      } else if (Array.isArray(inventoryResponse)) {
+        inventory = inventoryResponse;
+      }
+    }
     
-    console.log(`✅ Total business products: ${allBusinessProducts.length}`);
+    console.log(`📦 Business ${businessProfile.businessName || businessProfile.name}: ${inventory.length} items`);
     
-    // Cache the result
-    businessCache.set(cacheKey, {
-      data: allBusinessProducts,
-      timestamp: Date.now()
-    });
-    
-    return allBusinessProducts;
-    
-  } catch (error) {
-    console.error('❌ Business products failed:', error);
-    return [];
-  }
+    return convertInventoryToProducts(inventory, businessProfile, category, search);
+  });
+  
+  const businessProductArrays = await Promise.all(businessPromises);
+  const allBusinessProducts = businessProductArrays.flat();
+  
+  console.log(`✅ Total business products: ${allBusinessProducts.length}`);
+  
+  businessCache.set(cacheKey, {
+    data: allBusinessProducts,
+    timestamp: Date.now()
+  });
+  
+  return allBusinessProducts;
 };
 
 /**
@@ -673,132 +762,201 @@ const getIndividualProducts = async (page, category, search, options) => {
   if (options.maxPrice !== undefined) queryParams.append('maxPrice', options.maxPrice);
   if (options.sortBy) queryParams.append('sortBy', options.sortBy);
   
-  const endpoint = `marketplace/products?${queryParams.toString()}`;
+  const endpoint = `marketplace-products?${queryParams.toString()}`;
   return apiRequest(endpoint);
 };
 
+// ==========================================
+// MARKETPLACE FUNCTIONS
+// ==========================================
+
 /**
- * FIXED: Main marketplace loading function
+ * ENHANCED: Main marketplace loading function with pagination and filtering
  */
 export const getAll = async (page = 1, category = null, search = null, options = {}) => {
   console.log('🛒 Loading marketplace...', { page, category, search, sellerType: options.sellerType });
   
-  try {
-    let products = [];
-    let paginationInfo = { page: 1, pages: 1, count: 0 };
-    
-    if (options.sellerType === 'individual') {
-      // Individual products only
-      const data = await getIndividualProducts(page, category, search, options);
-      products = (data.products || []).map(product => ({
-        ...product,
-        sellerType: 'individual',
-        isBusinessListing: false,
-        seller: { ...product.seller, isBusiness: false }
-      }));
-      paginationInfo = {
-        page: data.page || page,
-        pages: data.pages || 1,
-        count: data.count || products.length
-      };
-      
-    } else if (options.sellerType === 'business') {
-      // Business products only
-      const businessProducts = await getBusinessProducts(category, search);
-      const pageSize = 20;
-      const totalItems = businessProducts.length;
-      const startIndex = (page - 1) * pageSize;
-      products = businessProducts.slice(startIndex, startIndex + pageSize);
-      
-      paginationInfo = {
-        page: page,
-        pages: Math.ceil(totalItems / pageSize),
-        count: totalItems
-      };
-      
-    } else {
-      // All products - load both types
-      const [individualData, businessProducts] = await Promise.all([
-        getIndividualProducts(page, category, search, options),
-        getBusinessProducts(category, search)
-      ]);
-      
-      const individualProducts = (individualData.products || []).map(product => ({
-        ...product,
-        sellerType: 'individual',
-        isBusinessListing: false,
-        seller: { ...product.seller, isBusiness: false }
-      }));
-      
-      products = [...individualProducts, ...businessProducts];
-      paginationInfo = {
-        page: individualData.page || page,
-        pages: Math.max(individualData.pages || 1, Math.ceil(products.length / 20)),
-        count: products.length
-      };
-    }
-    
-    // Apply price filters
-    if (options.minPrice !== undefined || options.maxPrice !== undefined) {
-      products = products.filter(product => {
-        const price = parseFloat(product.price || 0);
-        if (options.minPrice !== undefined && price < options.minPrice) return false;
-        if (options.maxPrice !== undefined && price > options.maxPrice) return false;
-        return true;
-      });
-    }
-    
-    // Apply sorting
-    if (options.sortBy) {
-      products = sortProducts(products, options.sortBy);
-    } else {
-      products.sort((a, b) => 
-        new Date(b.addedAt || b.listedDate || 0) - new Date(a.addedAt || a.listedDate || 0)
-      );
-    }
-    
-    console.log(`✅ Returning ${products.length} products`);
-    
-    return {
-      products: products,
-      page: paginationInfo.page,
-      pages: paginationInfo.pages,
-      count: paginationInfo.count,
-      currentPage: page,
-      filters: { category, search, ...options }
+  let products = [];
+  let paginationInfo = { page: 1, pages: 1, count: 0 };
+  
+  if (options.sellerType === 'individual') {
+    const data = await getIndividualProducts(page, category, search, options);
+    products = (data.products || []).map(product => ({
+      ...product,
+      sellerType: 'individual',
+      isBusinessListing: false,
+      seller: { ...product.seller, isBusiness: false }
+    }));
+    paginationInfo = {
+      page: data.page || page,
+      pages: data.pages || 1,
+      count: data.count || products.length
     };
     
-  } catch (error) {
-    console.error('❌ Marketplace error:', error);
-    return {
-      products: [],
-      page: 1,
-      pages: 1,
-      count: 0,
-      currentPage: 1,
-      filters: { error: true }
+  } else if (options.sellerType === 'business') {
+    const businessProducts = await getBusinessProducts(category, search);
+    const pageSize = 20;
+    const totalItems = businessProducts.length;
+    const startIndex = (page - 1) * pageSize;
+    products = businessProducts.slice(startIndex, startIndex + pageSize);
+    
+    paginationInfo = {
+      page: page,
+      pages: Math.ceil(totalItems / pageSize),
+      count: totalItems
+    };
+    
+  } else {
+    const [individualData, businessProducts] = await Promise.all([
+      getIndividualProducts(page, category, search, options),
+      getBusinessProducts(category, search)
+    ]);
+    
+    const individualProducts = (individualData.products || []).map(product => ({
+      ...product,
+      sellerType: 'individual',
+      isBusinessListing: false,
+      seller: { ...product.seller, isBusiness: false }
+    }));
+    
+    products = [...individualProducts, ...businessProducts];
+    paginationInfo = {
+      page: individualData.page || page,
+      pages: Math.max(individualData.pages || 1, Math.ceil(products.length / 20)),
+      count: products.length
     };
   }
+  
+  if (options.minPrice !== undefined || options.maxPrice !== undefined) {
+    products = products.filter(product => {
+      const price = parseFloat(product.price || 0);
+      if (options.minPrice !== undefined && price < options.minPrice) return false;
+      if (options.maxPrice !== undefined && price > options.maxPrice) return false;
+      return true;
+    });
+  }
+  
+  if (options.sortBy) {
+    products = sortProducts(products, options.sortBy);
+  } else {
+    products.sort((a, b) => 
+      new Date(b.addedAt || b.listedDate || 0) - new Date(a.addedAt || a.listedDate || 0)
+    );
+  }
+  
+  console.log(`✅ Returning ${products.length} products`);
+  
+  return {
+    products: products,
+    page: paginationInfo.page,
+    pages: paginationInfo.pages,
+    count: paginationInfo.count,
+    currentPage: page,
+    filters: { category, search, ...options }
+  };
 };
 
 /**
- * Sort products helper
+ * FIXED: Get specific product using correct Azure Function endpoint
  */
-const sortProducts = (products, sortBy) => {
-  switch (sortBy) {
-    case 'recent':
-      return products.sort((a, b) => new Date(b.addedAt) - new Date(a.addedAt));
-    case 'priceAsc':
-      return products.sort((a, b) => parseFloat(a.price) - parseFloat(b.price));
-    case 'priceDesc':
-      return products.sort((a, b) => parseFloat(b.price) - parseFloat(a.price));
-    default:
-      return products;
+export const getSpecific = async (productId) => {
+  if (!productId) {
+    throw new Error('Product ID is required');
   }
+  
+  // FIXED: Use correct deployed endpoint route with path parameter
+  const response = await apiRequest(`marketplace/products/specific/${encodeURIComponent(productId)}`);
+  
+  if (response.product) {
+    const processedProducts = processIndividualProducts([response.product]);
+    return processedProducts[0];
+  }
+  
+  throw new Error('Product not found');
 };
 
 /**
- * Clear cache when needed
+ * FIXED: Add product to wishlist
+ */
+export const wishProduct = async (productId, userId) => {
+  if (!productId || !userId) {
+    throw new Error('Product ID and User ID are required');
+  }
+  
+  const endpoint = 'marketplace/wishlist/add';
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify({ productId, userId }),
+  });
+};
+
+/**
+ * FIXED: Create new product listing
+ */
+export const createProduct = async (productData) => {
+  if (!productData) {
+    throw new Error('Product data is required');
+  }
+  
+  const endpoint = 'marketplace/products';
+  return apiRequest(endpoint, {
+    method: 'POST',
+    body: JSON.stringify(productData),
+  });
+};
+
+/**
+ * FIXED: Create new plant listing (alias for createProduct)
+ */
+export const createPlant = async (plantData) => {
+  return createProduct(plantData);
+};
+
+/**
+ * FIXED: Update existing product
+ */
+export const updateProduct = async (productId, productData) => {
+  if (!productId || !productData) {
+    throw new Error('Product ID and data are required');
+  }
+  
+  const endpoint = `marketplace/products/${productId}`;
+  return apiRequest(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(productData),
+  });
+};
+
+/**
+ * FIXED: Delete product
+ */
+export const deleteProduct = async (productId) => {
+  if (!productId) {
+    throw new Error('Product ID is required');
+  }
+  
+  const endpoint = `marketplace/products/${productId}`;
+  return apiRequest(endpoint, {
+    method: 'DELETE',
+  });
+};
+
+/**
+ * FIXED: Mark product as sold
+ */
+export const markAsSold = async (productId) => {
+  if (!productId) {
+    throw new Error('Product ID is required');
+  }
+  
+  const endpoint = `marketplace/products/${productId}/sold`;
+  return apiRequest(endpoint, {
+    method: 'PATCH',
+  });
+};
+
+/**
+ * FIXED: Clear marketplace cache
  */
 export const clearMarketplaceCache = () => {
   businessCache.clear();
@@ -806,118 +964,35 @@ export const clearMarketplaceCache = () => {
 };
 
 // ==========================================
-// PRODUCT MANAGEMENT FUNCTIONS
-// ==========================================
-
-export const getSpecific = async (id) => {
-  if (!id) {
-    throw new Error('Product ID is required');
-  }
-  
-  const endpoint = `marketplace/products/specific/${id}`;
-  return apiRequest(endpoint);
-};
-
-export const wishProduct = async (productId) => {
-  if (!productId) {
-    throw new Error('Product ID is required');
-  }
-  
-  const endpoint = `marketplace/products/wish/${productId}`;
-  return apiRequest(endpoint, { method: 'POST' });
-};
-
-export const createProduct = async (productData) => {
-  const endpoint = 'marketplace/products/create';
-  return apiRequest(endpoint, {
-    method: 'POST',
-    body: JSON.stringify(productData),
-  });
-};
-
-export const createPlant = async (plantData) => {
-  return createProduct(plantData);
-};
-
-export const updateProduct = async (productId, productData) => {
-  const endpoint = `marketplace/products/${productId}`;
-  return apiRequest(endpoint, {
-    method: 'PATCH',
-    body: JSON.stringify(productData),
-  });
-};
-
-export const deleteProduct = async (productId) => {
-  const endpoint = `marketplace/products/${productId}`;
-  return apiRequest(endpoint, { method: 'DELETE' });
-};
-
-export const markAsSold = async (productId, data = {}) => {
-  const endpoint = `marketplace/products/${productId}/sold`;
-  return apiRequest(endpoint, {
-    method: 'POST',
-    body: JSON.stringify(data),
-  });
-};
-
-// ==========================================
-// USER PROFILE FUNCTIONS
-// ==========================================
-
-export const fetchUserProfile = async (userId) => {
-  if (!userId) {
-    throw new Error('User ID is required');
-  }
-  
-  const endpoint = `marketplace/users/${userId}`;
-  return apiRequest(endpoint);
-};
-
-export const updateUserProfile = async (userId, profileData) => {
-  const endpoint = `marketplace/users/${userId}`;
-  return apiRequest(endpoint, {
-    method: 'PATCH',
-    body: JSON.stringify(profileData),
-  });
-};
-
-export const getUserListings = async (userId, status = 'all') => {
-  const endpoint = `marketplace/users/${userId}/listings?status=${status}`;
-  return apiRequest(endpoint);
-};
-
-export const getUserWishlist = async (userId) => {
-  const endpoint = `marketplace/users/${userId}/wishlist`;
-  return apiRequest(endpoint);
-};
-
-// ==========================================
 // IMAGE UPLOAD FUNCTIONS
 // ==========================================
 
+/**
+ * FIXED: Upload image using correct Azure Function endpoint
+ */
 export const uploadImage = async (imageData, type = 'plant') => {
   if (!imageData) {
     throw new Error('Image data is required');
   }
   
-  const endpoint = 'marketplace/uploadImage';
-  
   if (typeof imageData === 'string' && imageData.startsWith('data:')) {
-    return apiRequest(endpoint, {
+    const response = await apiRequest('marketplace/uploadImage', {
       method: 'POST',
       body: JSON.stringify({ image: imageData, type }),
     });
+    return response;
   }
   
   const formData = new FormData();
   formData.append('file', imageData);
   formData.append('type', type);
   
-  return apiRequest(endpoint, {
+  const response = await apiRequest('marketplace/uploadImage', {
     method: 'POST',
     body: formData,
-    headers: {},
+    headers: {}, // Let browser set Content-Type for FormData
   });
+  return response;
 };
 
 // ==========================================
@@ -925,9 +1000,7 @@ export const uploadImage = async (imageData, type = 'plant') => {
 // ==========================================
 
 export const purchaseBusinessProduct = async (productId, businessId, quantity = 1, customerInfo) => {
-  const endpoint = 'business/orders/create';
-  
-  return apiRequest(endpoint, {
+  const response = await apiRequest('business-order-create', {
     method: 'POST',
     body: JSON.stringify({
       businessId: businessId,
@@ -942,12 +1015,17 @@ export const purchaseBusinessProduct = async (productId, businessId, quantity = 
       communicationPreference: 'messages'
     })
   });
+  
+  return response;
 };
 
 // ==========================================
 // LOCATION FUNCTIONS
 // ==========================================
 
+/**
+ * FIXED: Get nearby products using correct Azure Function endpoint
+ */
 export const getNearbyProducts = async (latitude, longitude, radius = 10, category = null) => {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new Error('Valid coordinates required');
@@ -958,10 +1036,13 @@ export const getNearbyProducts = async (latitude, longitude, radius = 10, catego
     queryParams += `&category=${encodeURIComponent(category)}`;
   }
   
-  const endpoint = `marketplace/nearbyProducts?${queryParams}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`nearby-products?${queryParams}`);
+  return response;
 };
 
+/**
+ * FIXED: Get nearby businesses using correct Azure Function endpoint
+ */
 export const getNearbyBusinesses = async (latitude, longitude, radius = 10, businessType = null) => {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new Error('Valid coordinates required');
@@ -972,62 +1053,41 @@ export const getNearbyBusinesses = async (latitude, longitude, radius = 10, busi
     queryParams += `&businessType=${encodeURIComponent(businessType)}`;
   }
   
-  const endpoint = `marketplace/nearby-businesses?${queryParams}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`get_nearby_businesses?${queryParams}`);
+  return response;
 };
 
+/**
+ * ENHANCED: Geocode address using correct Azure Function endpoint
+ */
 export const geocodeAddress = async (address) => {
   if (!address) {
     throw new Error('Address is required');
   }
   
-  const endpoint = `marketplace/geocode?address=${encodeURIComponent(address)}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`geocode?address=${encodeURIComponent(address)}`);
+  return response;
 };
 
+/**
+ * ENHANCED: Reverse geocode coordinates using correct Azure Function endpoint
+ */
 export const reverseGeocode = async (latitude, longitude) => {
   if (typeof latitude !== 'number' || typeof longitude !== 'number') {
     throw new Error('Valid coordinates required');
   }
   
-  const endpoint = `marketplace/reverseGeocode?lat=${latitude}&lon=${longitude}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`reverse-geocode?lat=${latitude}&lon=${longitude}`);
+  return response;
 };
 
 // ==========================================
-// UTILITY FUNCTIONS
+// MESSAGING FUNCTIONS
 // ==========================================
 
-export const speechToText = async (audioUrl, language = 'en-US') => {
-  if (!audioUrl) {
-    throw new Error('Audio URL is required');
-  }
-
-  const endpoint = 'marketplace/speechToText';
-  const response = await apiRequest(endpoint, {
-    method: 'POST',
-    body: JSON.stringify({ audioUrl, language }),
-  });
-
-  const text = response.text || '';
-  return text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim();
-};
-
-export const getAzureMapsKey = async () => {
-  const endpoint = 'marketplace/maps-config';
-  const data = await apiRequest(endpoint);
-  
-  if (!data.azureMapsKey) {
-    throw new Error('No Azure Maps key returned from server');
-  }
-  
-  return data.azureMapsKey;
-};
-
-// ==========================================
-// MESSAGING FUNCTIONALITY
-// ==========================================
-
+/**
+ * FIXED: Messaging functions using correct Azure Function endpoints
+ */
 export const getNegotiateToken = async () => {
   const userEmail = await AsyncStorage.getItem('userEmail');
   
@@ -1035,11 +1095,11 @@ export const getNegotiateToken = async () => {
     throw new Error('User email is required for messaging');
   }
   
-  const endpoint = 'marketplace/signalr-negotiate';
-  return apiRequest(endpoint, {
+  const response = await apiRequest('signalr-negotiate', {
     method: 'POST',
     body: JSON.stringify({ userId: userEmail }),
   });
+  return response;
 };
 
 export const fetchConversations = async (userId) => {
@@ -1047,8 +1107,8 @@ export const fetchConversations = async (userId) => {
     throw new Error('User ID is required');
   }
   
-  const endpoint = 'marketplace/messages/getUserConversations';
-  return apiRequest(endpoint);
+  const response = await apiRequest('conversations');
+  return response;
 };
 
 export const fetchMessages = async (chatId, userId) => {
@@ -1056,8 +1116,8 @@ export const fetchMessages = async (chatId, userId) => {
     throw new Error('Chat ID is required');
   }
   
-  const endpoint = `marketplace/messages/getMessages/${chatId}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`get-messages?chatId=${encodeURIComponent(chatId)}`);
+  return response;
 };
 
 export const sendMessage = async (chatId, message, senderId) => {
@@ -1065,8 +1125,7 @@ export const sendMessage = async (chatId, message, senderId) => {
     throw new Error('Chat ID and message are required');
   }
   
-  const endpoint = 'marketplace/messages/sendMessage';
-  return apiRequest(endpoint, {
+  const response = await apiRequest('send-message', {
     method: 'POST',
     body: JSON.stringify({
       chatId,
@@ -1074,6 +1133,7 @@ export const sendMessage = async (chatId, message, senderId) => {
       senderId,
     }),
   });
+  return response;
 };
 
 export const startConversation = async (sellerId, plantId, message, sender) => {
@@ -1081,8 +1141,7 @@ export const startConversation = async (sellerId, plantId, message, sender) => {
     throw new Error('Seller ID, message, and sender are required');
   }
   
-  const endpoint = 'marketplace/messages/createChatRoom';
-  return apiRequest(endpoint, {
+  const response = await apiRequest('create-chat', {
     method: 'POST',
     body: JSON.stringify({
       receiver: sellerId,
@@ -1091,6 +1150,7 @@ export const startConversation = async (sellerId, plantId, message, sender) => {
       sender,
     }),
   });
+  return response;
 };
 
 export const markMessagesAsRead = async (conversationId, messageIds = []) => {
@@ -1124,19 +1184,14 @@ export const sendTypingIndicator = async (conversationId, isTyping) => {
 };
 
 /**
- * Send an order-related message (auto chat for order events)
- * If a conversation exists, sends a message. Otherwise, starts a new conversation.
- * @param {string} recipientId - The user or business to message
- * @param {string} message - The message text
- * @param {string} senderId - The sender's user id/email
- * @param {object} [context] - Optional context (e.g. orderId, confirmationNumber)
- * @returns {Promise<object>} - Result of sending/starting conversation
+ * ENHANCED: Send an order-related message (auto chat for order events)
  */
 export const sendOrderMessage = async (recipientId, message, senderId, context = {}) => {
-  if (!recipientId || !message || !senderId) throw new Error('recipientId, message, and senderId are required');
-  // Try to find an existing conversation
+  if (!recipientId || !message || !senderId) {
+    throw new Error('recipientId, message, and senderId are required');
+  }
+  
   try {
-    // Fetch all conversations for sender
     const conversations = await fetchConversations(senderId);
     let conversation = null;
     if (Array.isArray(conversations)) {
@@ -1145,29 +1200,29 @@ export const sendOrderMessage = async (recipientId, message, senderId, context =
       );
     }
     if (conversation) {
-      // Send message in existing conversation
       return await sendMessage(conversation.id, message, senderId);
     } else {
-      // Start new conversation
       return await startConversation(recipientId, context?.orderId || null, message, senderId);
     }
   } catch (err) {
-    // Fallback: try to start conversation
     return await startConversation(recipientId, context?.orderId || null, message, senderId);
   }
 };
 
 // ==========================================
-// REVIEWS FUNCTIONALITY
+// REVIEWS FUNCTIONS
 // ==========================================
 
+/**
+ * FIXED: Reviews functions using correct Azure Function endpoints
+ */
 export const fetchReviews = async (targetType, targetId) => {
   if (!targetType || !targetId) {
     throw new Error('Target type and ID are required');
   }
   
-  const endpoint = `marketplace/reviews/${targetType}/${targetId}`;
-  return apiRequest(endpoint);
+  const response = await apiRequest(`reviews-get?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`);
+  return response;
 };
 
 export const submitReview = async (targetId, targetType, reviewData) => {
@@ -1179,11 +1234,15 @@ export const submitReview = async (targetId, targetType, reviewData) => {
     throw new Error('Rating and text are required for review');
   }
   
-  const endpoint = `submitreview/${targetType}/${targetId}`;
-  return apiRequest(endpoint, {
+  const response = await apiRequest('reviews-submit', {
     method: 'POST',
-    body: JSON.stringify(reviewData),
+    body: JSON.stringify({
+      targetId,
+      targetType,
+      ...reviewData
+    }),
   });
+  return response;
 };
 
 export const deleteReview = async (targetType, targetId, reviewId) => {
@@ -1191,8 +1250,46 @@ export const deleteReview = async (targetType, targetId, reviewId) => {
     throw new Error('Target type, target ID, and review ID are required');
   }
   
-  const endpoint = `marketplace/reviews/${targetType}/${targetId}/${reviewId}`;
-  return apiRequest(endpoint, { method: 'DELETE' });
+  const response = await apiRequest('reviews-delete', {
+    method: 'DELETE',
+    body: JSON.stringify({ targetType, targetId, reviewId })
+  });
+  return response;
+};
+
+// ==========================================
+// UTILITY FUNCTIONS
+// ==========================================
+
+/**
+ * ENHANCED: Get Azure Maps configuration using correct endpoint
+ */
+export const getAzureMapsKey = async () => {
+  const response = await apiRequest('maps-config');
+  
+  if (!response.azureMapsKey && !response.subscriptionKey) {
+    throw new Error('No Azure Maps key returned from server');
+  }
+  
+  return response.azureMapsKey || response.subscriptionKey;
+};
+
+/**
+ * ENHANCED: Speech to text conversion using correct Azure Function endpoint
+ */
+export const speechToText = async (audioUrl, language = 'he-IL') => {
+  if (!audioUrl) {
+    throw new Error('Audio URL is required');
+  }
+  
+  // Updated to use the correct endpoint URL format
+  const response = await apiRequest('marketplace/speechtotext', {
+    method: 'POST',
+    body: JSON.stringify({ audioUrl, language }),
+  });
+  
+  const text = response.text || '';
+  return text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim();
 };
 
 // ==========================================
@@ -1200,38 +1297,62 @@ export const deleteReview = async (targetType, targetId, reviewId) => {
 // ==========================================
 
 export default {
+  // Core marketplace functions
   getAll,
   getSpecific,
-  wishProduct,
   createProduct,
   createPlant,
   updateProduct,
   deleteProduct,
   markAsSold,
+  wishProduct,
+  
+  // User functions
   fetchUserProfile,
-  fetchBusinessProfile,
   updateUserProfile,
   getUserListings,
   getUserWishlist,
-  uploadImage,
+  
+  // Business functions
+  getAllBusinesses,
+  fetchBusinessProfile,
+  fetchBusinessInventory,
+  purchaseBusinessProduct,
+  
+  // Location functions
   getNearbyProducts,
-  getNearbyBusinesses, 
+  getNearbyBusinesses,
   geocodeAddress,
   reverseGeocode,
-  speechToText,
-  getAzureMapsKey,
+  
+  // Messaging functions
   getNegotiateToken,
   fetchConversations,
   fetchMessages,
   sendMessage,
   startConversation,
   markMessagesAsRead,
+  sendTypingIndicator,
+  sendOrderMessage,
+  
+  // Reviews functions
   fetchReviews,
   submitReview,
   deleteReview,
-  purchaseBusinessProduct,
-  setAuthToken,
+  
+  // Image functions
+  uploadImage,
+  
+  // Utility functions
+  getAzureMapsKey,
+  speechToText,
   clearMarketplaceCache,
-  sendTypingIndicator,
-  sendOrderMessage
+  setAuthToken,
+  
+  // Helper functions for internal use
+  processBusinessProductImages,
+  processIndividualProductImages,
+  convertInventoryToProducts,
+  processIndividualProducts,
+  calculateDistance,
 };
