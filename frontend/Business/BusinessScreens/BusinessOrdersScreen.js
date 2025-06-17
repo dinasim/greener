@@ -1,731 +1,377 @@
-// Business/BusinessScreens/BusinessOrdersScreen.js - ENHANCED with Components
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+// Business/BusinessScreens/BusinessOrdersScreen.js
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
+  SafeAreaView,
   FlatList,
   TouchableOpacity,
-  SafeAreaView,
-  ActivityIndicator,
+  TextInput,
   RefreshControl,
   Alert,
-  TextInput,
-  Animated,
-  Platform,
-  Linking,
+  ActivityIndicator,
+  StatusBar,
+  ScrollView,
 } from 'react-native';
-import { 
-  MaterialIcons, 
-  MaterialCommunityIcons,
-  Ionicons 
-} from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
-import { format } from 'date-fns';
-
-// Import Components from memory
+import { MaterialIcons } from '@expo/vector-icons';
+import { getBusinessOrders, updateOrderStatus } from '../services/businessApi'; // Fixed: Corrected import path from api to services
 import OrderDetailModal from '../components/OrderDetailModal';
-import CustomerDetailModal from '../components/CustomerDetailModal';
-
-// Import API services
-import { getBusinessOrders, updateOrderStatus, getBusinessCustomers } from '../services/businessOrderApi';
-import { sendOrderMessage } from '../../marketplace/services/marketplaceApi';
+import * as Linking from 'expo-linking';
 
 export default function BusinessOrdersScreen({ navigation, route }) {
-  const { businessId: routeBusinessId } = route.params || {};
-  
-  // State variables
+  const { businessId } = route.params || {};
   const [orders, setOrders] = useState([]);
-  const [filteredOrders, setFilteredOrders] = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [businessId, setBusinessId] = useState(routeBusinessId);
-  const [currentFilter, setCurrentFilter] = useState('all');
-  const [currentSort, setCurrentSort] = useState('date-desc');
+  const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [filteredOrders, setFilteredOrders] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('all');
   
-  // Modal states - ENHANCED with memory components
+  // NEW: Modal state
   const [selectedOrder, setSelectedOrder] = useState(null);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
-  const [orderDetailModalVisible, setOrderDetailModalVisible] = useState(false);
-  const [customerDetailModalVisible, setCustomerDetailModalVisible] = useState(false);
-  
-  const [summary, setSummary] = useState({});
-  const [lastRefresh, setLastRefresh] = useState(new Date());
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [businessInfo, setBusinessInfo] = useState({});
-  
-  // Animation refs
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
-  const refreshAnim = useRef(new Animated.Value(0)).current;
-  
-  // Auto-refresh interval
-  const refreshInterval = useRef(null);
+  const [showOrderModal, setShowOrderModal] = useState(false);
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
-  // Initialize business ID and load data
   useEffect(() => {
-    const initializeData = async () => {
-      try {
-        let id = businessId;
-        if (!id) {
-          const email = await AsyncStorage.getItem('userEmail');
-          const storedBusinessId = await AsyncStorage.getItem('businessId');
-          id = storedBusinessId || email;
-          setBusinessId(id);
-        }
-        
-        // Load business info from storage for modal
-        const savedProfile = await AsyncStorage.getItem('businessProfile');
-        if (savedProfile) {
-          setBusinessInfo(JSON.parse(savedProfile));
-        }
-        
-        if (id) {
-          await Promise.all([
-            fetchOrders(id),
-            loadCustomers(id)
-          ]);
-          startAutoRefresh();
-        }
-        
-        // Entrance animation
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(slideAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-        ]).start();
-        
-      } catch (error) {
-        console.error('Error initializing:', error);
-        Alert.alert('Error', 'Failed to load orders. Please try again.');
-      }
-    };
-    
-    initializeData();
-    
-    return () => {
-      stopAutoRefresh();
-    };
-  }, [businessId]);
+    loadOrders();
+  }, []);
 
-  // Auto-refresh when screen comes into focus
-  useFocusEffect(
-    useCallback(() => {
-      if (businessId) {
-        fetchOrders(businessId, true); // Silent refresh
-        loadCustomers(businessId);
-        startAutoRefresh();
-      }
-      
-      return () => {
-        stopAutoRefresh();
-      };
-    }, [businessId])
-  );
-
-  // Load customers for modal integration
-  const loadCustomers = async (id = businessId) => {
-    if (!id) return;
-    
-    try {
-      const customerData = await getBusinessCustomers(id);
-      setCustomers(customerData || []);
-      console.log(`Loaded ${customerData?.length || 0} customers`);
-    } catch (error) {
-      console.error('Error loading customers:', error);
-    }
-  };
-
-  // Auto-refresh functionality
-  const startAutoRefresh = () => {
-    if (!autoRefreshEnabled) return;
-    
-    stopAutoRefresh(); // Clear any existing interval
-    
-    refreshInterval.current = setInterval(() => {
-      if (autoRefreshEnabled && businessId && !loading && !refreshing) {
-        console.log('Auto-refreshing orders...');
-        fetchOrders(businessId, true); // Silent refresh
-      }
-    }, 30000); // Refresh every 30 seconds
-  };
-
-  const stopAutoRefresh = () => {
-    if (refreshInterval.current) {
-      clearInterval(refreshInterval.current);
-      refreshInterval.current = null;
-    }
-  };
-
-  // Toggle auto-refresh
-  const toggleAutoRefresh = () => {
-    setAutoRefreshEnabled(!autoRefreshEnabled);
-    if (!autoRefreshEnabled) {
-      startAutoRefresh();
-    } else {
-      stopAutoRefresh();
-    }
-  };
-
-  // Filter and sort orders
   useEffect(() => {
-    if (!orders.length) {
-      setFilteredOrders([]);
-      return;
+    // Filter orders based on search query and status
+    let filtered = orders;
+    
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(order => order.status === statusFilter);
     }
-
-    let result = [...orders];
-
-    // Apply search filter
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(
-        order => 
-          order.customerName?.toLowerCase().includes(query) || 
-          order.customerEmail?.toLowerCase().includes(query) ||
-          order.confirmationNumber?.toLowerCase().includes(query) ||
-          order.id?.toLowerCase().includes(query)
+    
+    if (searchQuery.trim()) {
+      filtered = filtered.filter(order =>
+        order.orderId?.toString().includes(searchQuery) ||
+        order.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        order.items?.some(item => 
+          item.name?.toLowerCase().includes(searchQuery.toLowerCase())
+        )
       );
     }
-
-    // Apply status filter
-    if (currentFilter !== 'all') {
-      result = result.filter(order => order.status === currentFilter);
-    }
-
-    // Apply sort
-    switch (currentSort) {
-      case 'date-asc':
-        result.sort((a, b) => new Date(a.orderDate) - new Date(b.orderDate));
-        break;
-      case 'date-desc':
-        result.sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate));
-        break;
-      case 'price-asc':
-        result.sort((a, b) => a.total - b.total);
-        break;
-      case 'price-desc':
-        result.sort((a, b) => b.total - a.total);
-        break;
-      case 'customer-asc':
-        result.sort((a, b) => a.customerName?.localeCompare(b.customerName) || 0);
-        break;
-    }
-
-    setFilteredOrders(result);
-  }, [orders, searchQuery, currentFilter, currentSort]);
-
-  // Fetch orders from API with enhanced error handling
-  const fetchOrders = useCallback(async (id = businessId, silent = false) => {
-    if (!id) return;
     
+    setFilteredOrders(filtered);
+  }, [searchQuery, orders, statusFilter]);
+
+  const loadOrders = async () => {
     try {
-      if (!silent) {
-        setLoading(true);
-        
-        // Refresh animation
-        Animated.timing(refreshAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: Platform.OS !== 'web',
-        }).start();
-      }
-      setRefreshing(true);
-      
-      console.log('Fetching orders for business:', id);
-      const response = await getBusinessOrders(id, {
-        status: currentFilter === 'all' ? undefined : currentFilter,
-        limit: 100
-      });
-      
-      setOrders(response.orders || []);
-      setSummary(response.summary || {});
-      setLastRefresh(new Date());
-      
-      console.log(`Loaded ${response.orders?.length || 0} orders`);
-      
-      // Success animation
-      if (!silent) {
-        Animated.timing(refreshAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: Platform.OS !== 'web',
-        }).start();
-      }
-      
-    } catch (error) {
-      console.error('Error fetching orders:', error);
-      if (!silent) {
-        Alert.alert('Connection Error', 'Failed to load orders. Please check your connection and try again.');
-      }
+      setError(null);
+      const orderData = await getBusinessOrders();
+      const orderList = orderData?.orders || [];
+      setOrders(orderList);
+      setFilteredOrders(orderList);
+    } catch (err) {
+      setError('Failed to load orders');
+      console.error('Orders error:', err);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
       setRefreshing(false);
     }
-  }, [businessId, currentFilter]);
-
-  // Handle pull-to-refresh
-  const handleRefresh = useCallback(() => {
-    Promise.all([
-      fetchOrders(),
-      loadCustomers()
-    ]);
-  }, [fetchOrders]);
-
-  // ENHANCED: Update order status with modal integration
-  const handleUpdateOrderStatus = async (orderId, newStatus) => {
-    try {
-      setLoading(true);
-      // Optimistic update
-      setOrders(prev => prev.map(order => 
-        order.id === orderId ? { ...order, status: newStatus } : order
-      ));
-      setSelectedOrder(prev => prev ? { ...prev, status: newStatus } : null);
-      const response = await updateOrderStatus(orderId, newStatus);
-      // Send auto message to consumer in chat if status is confirmed or completed
-      try {
-        // Find the order details (from latest orders or selectedOrder)
-        const order = (response && response.order) || orders.find(o => o.id === orderId) || selectedOrder;
-        if (order && (newStatus === 'confirmed' || newStatus === 'completed')) {
-          const recipientId = order.customerEmail;
-          const senderId = businessId;
-          let msg = '';
-          if (newStatus === 'confirmed') {
-            msg = `Your order ${order.confirmationNumber} has been confirmed!\nPickup token: ${order.confirmationNumber}`;
-          } else if (newStatus === 'completed') {
-            msg = `Your order ${order.confirmationNumber} has been picked up. Thank you for shopping local!`;
-          }
-          if (msg) {
-            await sendOrderMessage(recipientId, msg, senderId, { orderId: order.id, confirmationNumber: order.confirmationNumber });
-          }
-        }
-      } catch (msgErr) {
-        console.warn('Failed to send auto order message to consumer:', msgErr);
-      }
-      // ...existing code...
-    } catch (error) {
-      console.error('Error updating order status:', error);
-      Alert.alert('Error', 'Failed to update order status. Please try again.');
-      
-      // Revert optimistic update
-      await fetchOrders(businessId, true);
-    } finally {
-      setLoading(false);
-      setOrderDetailModalVisible(false);
-    }
   };
 
-  // ENHANCED: Contact customer with modal integration
-  const handleContactCustomer = (order, method = 'auto') => {
-    if (method === 'chat') {
-      // Navigate directly to chat/messages screen
-      navigation.navigate('MessagesScreen', {
-        recipientId: order.customerEmail,
-        recipientName: order.customerName,
-        context: {
-          type: 'order',
-          orderId: order.id,
-          confirmationNumber: order.confirmationNumber
-        }
-      });
-      return;
-    }
-
-    if (method === 'auto') {
-      const options = [];
-      
-      if (order.customerPhone) {
-        options.push({
-          text: '📱 Call Customer',
-          onPress: () => Linking.openURL(`tel:${order.customerPhone}`)
-        });
-        
-        options.push({
-          text: '💬 Send SMS', 
-          onPress: () => {
-            const message = `Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup at ${businessInfo.businessName || 'our store'}!`;
-            Linking.openURL(`sms:${order.customerPhone}?body=${encodeURIComponent(message)}`);
-          }
-        });
-      }
-      
-      if (order.customerEmail) {
-        options.push({
-          text: '📧 Send Email',
-          onPress: () => {
-            const subject = `Order ${order.confirmationNumber} Update`;
-            const body = `Hi ${order.customerName},\n\nYour order is ready for pickup!\n\nOrder: ${order.confirmationNumber}\nTotal: $${order.total.toFixed(2)}\n\nThank you,\n${businessInfo.businessName || 'Your Plant Store'}`;
-            Linking.openURL(`mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
-          }
-        });
-      }
-      
-      // Always add chat option
-      options.push({
-        text: '💬 Chat with Customer',
-        onPress: () => handleContactCustomer(order, 'chat')
-      });
-      
-      options.push({ text: 'Cancel', style: 'cancel' });
-      
-      Alert.alert(
-        `Contact ${order.customerName}`,
-        `Order: ${order.confirmationNumber}`,
-        options
-      );
-    } else {
-      // Handle specific contact methods
-      switch (method) {
-        case 'call':
-          if (order.customerPhone) {
-            Linking.openURL(`tel:${order.customerPhone}`);
-          }
-          break;
-        case 'sms':
-          if (order.customerPhone) {
-            const message = `Hi ${order.customerName}, regarding your order ${order.confirmationNumber}...`;
-            Linking.openURL(`sms:${order.customerPhone}?body=${encodeURIComponent(message)}`);
-          }
-          break;
-        case 'email':
-          if (order.customerEmail) {
-            const subject = `Order ${order.confirmationNumber}`;
-            Linking.openURL(`mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}`);
-          }
-          break;
-        case 'message':
-          handleContactCustomer(order, 'chat');
-          break;
-      }
-    }
+  const onRefresh = () => {
+    setRefreshing(true);
+    loadOrders();
   };
 
-  // Navigate to messages
-  const navigateToMessages = (order) => {
-    // This would navigate to the existing messaging system
-    navigation.navigate('MessagesScreen', {
-      recipientId: order.customerEmail,
-      recipientName: order.customerName,
-      context: {
-        type: 'order',
-        orderId: order.id,
-        confirmationNumber: order.confirmationNumber
-      }
-    });
-  };
-
-  // ENHANCED: View order details using OrderDetailModal
-  const handleOrderPress = (order) => {
-    setSelectedOrder(order);
-    setOrderDetailModalVisible(true);
-  };
-
-  // ENHANCED: View customer details using CustomerDetailModal
-  const handleCustomerPress = (order) => {
-    // Find customer in customers array or create minimal customer object
-    let customer = customers.find(c => c.email === order.customerEmail);
-    
-    if (!customer) {
-      customer = {
-        id: order.customerEmail,
-        email: order.customerEmail,
-        name: order.customerName,
-        phone: order.customerPhone,
-        orders: [order],
-        totalSpent: order.total,
-        orderCount: 1,
-        lastOrderDate: order.orderDate,
-        firstPurchaseDate: order.orderDate
-      };
-    }
-    
-    setSelectedCustomer(customer);
-    setCustomerDetailModalVisible(true);
-  };
-
-  // Handle view all orders for customer
-  const handleViewCustomerOrders = (customer) => {
-    setCustomerDetailModalVisible(false);
-    setCurrentFilter('all');
-    setSearchQuery(customer.email);
-  };
-
-  // Handle add customer note
-  const handleAddCustomerNote = (customer) => {
-    Alert.alert(
-      'Add Customer Note',
-      'This feature will be available soon',
-      [{ text: 'OK' }]
-    );
-  };
-
-  // Print receipt functionality
-  const handlePrintReceipt = (order) => {
-    Alert.alert(
-      'Print Receipt',
-      'Receipt printing will be available soon',
-      [{ text: 'OK' }]
-    );
-  };
-
-  // Quick actions for orders
-  const getQuickActions = (order) => {
-    const actions = [];
-    
-    switch (order.status) {
-      case 'pending':
-        actions.push({
-          label: 'Confirm',
-          icon: 'check',
-          color: '#2196F3',
-          action: () => handleUpdateOrderStatus(order.id, 'confirmed')
-        });
-        break;
-      case 'confirmed':
-        actions.push({
-          label: 'Ready',
-          icon: 'shopping-bag',
-          color: '#9C27B0',
-          action: () => handleUpdateOrderStatus(order.id, 'ready')
-        });
-        break;
-      case 'ready':
-        actions.push({
-          label: 'Complete',
-          icon: 'check-circle',
-          color: '#4CAF50',
-          action: () => handleUpdateOrderStatus(order.id, 'completed')
-        });
-        break;
-    }
-    
-    return actions;
-  };
-
-  // Get status color
   const getStatusColor = (status) => {
     switch (status) {
-      case 'pending': return '#FFA000';
+      case 'completed': return '#4CAF50';
+      case 'pending': return '#FF9800';
       case 'confirmed': return '#2196F3';
       case 'ready': return '#9C27B0';
-      case 'completed': return '#4CAF50';
       case 'cancelled': return '#F44336';
-      default: return '#757575';
+      default: return '#9E9E9E';
     }
   };
 
-  // Get status icon
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'pending': return 'hourglass-empty';
-      case 'confirmed': return 'check-circle-outline';
-      case 'ready': return 'shopping-bag';
-      case 'completed': return 'check-circle';
-      case 'cancelled': return 'cancel';
-      default: return 'help-outline';
-    }
-  };
-
-  // Format date with better handling
-  const formatDate = (dateString) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const diffHours = (now - date) / (1000 * 60 * 60);
-      
-      if (diffHours < 24) {
-        return format(date, 'h:mm a');
-      } else if (diffHours < 48) {
-        return 'Yesterday ' + format(date, 'h:mm a');
-      } else {
-        return format(date, 'MMM dd, h:mm a');
-      }
-    } catch (error) {
-      return dateString;
-    }
-  };
-
-  // Get priority badge
-  const getPriorityInfo = (order) => {
-    const hoursOld = (new Date() - new Date(order.orderDate)) / (1000 * 60 * 60);
-    const isHighValue = order.total > 100;
-    const isUrgent = hoursOld > 24 && order.status === 'pending';
-    
-    if (isUrgent) return { color: '#F44336', text: 'URGENT', icon: 'priority-high' };
-    if (isHighValue) return { color: '#FF9800', text: 'HIGH VALUE', icon: 'star' };
-    return null;
-  };
-
-  // ENHANCED: Render order item with better design and quick actions
-  const renderOrderItem = ({ item, index }) => {
-    const priority = getPriorityInfo(item);
-    const quickActions = getQuickActions(item);
-    
-    return (
-      <Animated.View
-        style={[
-          styles.orderCard,
-          {
-            opacity: fadeAnim,
-            transform: [{
-              translateY: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [50, 0],
-              }),
-            }],
-          }
-        ]}
-      >
-        <TouchableOpacity 
-          style={styles.orderCardContent}
-          onPress={() => handleOrderPress(item)}
-          activeOpacity={0.7}
-        >
-          {/* Priority Badge */}
-          {priority && (
-            <View style={[styles.priorityBadge, { backgroundColor: priority.color }]}>
-              <MaterialIcons name={priority.icon} size={12} color="#fff" />
-              <Text style={styles.priorityText}>{priority.text}</Text>
-            </View>
-          )}
-          
-          {/* Order Header */}
-          <View style={styles.orderHeader}>
-            <View style={styles.orderIdContainer}>
-              <Text style={styles.orderId}>#{item.confirmationNumber}</Text>
-              <Text style={styles.orderDate}>{formatDate(item.orderDate)}</Text>
-            </View>
-            
-            <View style={[
-              styles.statusBadge, 
-              { backgroundColor: getStatusColor(item.status) }
-            ]}>
-              <MaterialIcons name={getStatusIcon(item.status)} size={14} color="#fff" />
-              <Text style={styles.statusText}>
-                {item.status.charAt(0).toUpperCase() + item.status.slice(1)}
-              </Text>
-            </View>
-          </View>
-          
-          {/* Customer Info with Press Handler */}
-          <TouchableOpacity 
-            style={styles.customerSection}
-            onPress={() => handleCustomerPress(item)}
-          >
-            <View style={styles.customerInfo}>
-              <MaterialIcons name="person" size={16} color="#757575" />
-              <Text style={styles.customerName}>{item.customerName}</Text>
-              <MaterialIcons name="arrow-forward-ios" size={12} color="#ccc" />
-            </View>
-            <TouchableOpacity 
-              style={styles.contactButton}
-              onPress={(e) => {
-                e.stopPropagation();
-                handleContactCustomer(item);
-              }}
-            >
-              <MaterialIcons name="phone" size={16} color="#4CAF50" />
-            </TouchableOpacity>
-          </TouchableOpacity>
-          
-          {/* Order Items Preview */}
-          <View style={styles.orderItemsPreview}>
-            <Text style={styles.itemsHeader}>
-              {item.totalQuantity || item.items?.reduce((sum, i) => sum + (i.quantity || 0), 0)} items
-            </Text>
-            <View style={styles.itemsList}>
-              {item.items?.slice(0, 2).map((orderItem, idx) => (
-                <Text key={idx} style={styles.itemPreview} numberOfLines={1}>
-                  {orderItem.quantity}x {orderItem.name}
-                </Text>
-              ))}
-              {item.items?.length > 2 && (
-                <Text style={styles.moreItems}>
-                  +{item.items.length - 2} more...
-                </Text>
-              )}
-            </View>
-          </View>
-          
-          {/* Order Footer with Quick Actions */}
-          <View style={styles.orderFooter}>
-            <View style={styles.orderActions}>
-              {quickActions.map((action, idx) => (
-                <TouchableOpacity 
-                  key={idx}
-                  style={[styles.actionButton, { backgroundColor: action.color }]}
-                  onPress={(e) => {
-                    e.stopPropagation();
-                    action.action();
-                  }}
-                >
-                  <MaterialIcons name={action.icon} size={16} color="#fff" />
-                  <Text style={styles.actionButtonText}>{action.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            
-            <Text style={styles.orderTotal}>${item.total?.toFixed(2)}</Text>
-          </View>
-        </TouchableOpacity>
-      </Animated.View>
+  const handleOrderPress = (order) => {
+    Alert.alert(
+      `Order #${order.orderId}`,
+      `Customer: ${order.customerName}\nStatus: ${order.status}\nTotal: ₪${order.totalAmount}`,
+      [
+        { text: 'Close', style: 'cancel' },
+        { text: 'View Details', onPress: () => console.log('View order details') }
+      ]
     );
   };
 
-  // Render filter options
-  const renderFilterOptions = () => (
-    <View style={styles.filterContainer}>
-      <Text style={styles.filterTitle}>Filter Orders</Text>
-      <View style={styles.filterOptions}>
-        {[
-          { key: 'all', label: 'All', count: orders.length },
-          { key: 'pending', label: 'Pending', count: summary.pendingCount || 0 },
-          { key: 'confirmed', label: 'Confirmed', count: summary.statusCounts?.confirmed || 0 },
-          { key: 'ready', label: 'Ready', count: summary.readyCount || 0 },
-          { key: 'completed', label: 'Completed', count: summary.completedCount || 0 }
-        ].map((filter) => (
+  const handleUpdateStatus = async (orderId, newStatus) => {
+    setIsUpdatingStatus(true);
+    try {
+      await updateOrderStatus(orderId, newStatus);
+      Alert.alert('Success', 'Order status updated successfully');
+      loadOrders();
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update order status');
+      console.error('Update status error:', err);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const renderStatusFilters = () => {
+    const statuses = [
+      { key: 'all', label: 'All', count: orders.length },
+      { key: 'pending', label: 'Pending', count: orders.filter(o => o.status === 'pending').length },
+      { key: 'confirmed', label: 'Confirmed', count: orders.filter(o => o.status === 'confirmed').length },
+      { key: 'ready', label: 'Ready', count: orders.filter(o => o.status === 'ready').length },
+      { key: 'completed', label: 'Completed', count: orders.filter(o => o.status === 'completed').length },
+    ];
+
+    return (
+      <ScrollView 
+        horizontal 
+        showsHorizontalScrollIndicator={false}
+        style={styles.statusFilters}
+        contentContainerStyle={styles.statusFiltersContent}
+      >
+        {statuses.map((status) => (
           <TouchableOpacity
-            key={filter.key}
+            key={status.key}
             style={[
-              styles.filterOption,
-              currentFilter === filter.key && styles.filterOptionActive,
-              { backgroundColor: currentFilter === filter.key ? getStatusColor(filter.key) : '#f5f5f5' }
+              styles.statusFilter,
+              statusFilter === status.key && styles.activeStatusFilter
             ]}
-            onPress={() => setCurrentFilter(filter.key)}
+            onPress={() => setStatusFilter(status.key)}
           >
             <Text style={[
-              styles.filterOptionText,
-              currentFilter === filter.key && styles.filterOptionTextActive
+              styles.statusFilterText,
+              statusFilter === status.key && styles.activeStatusFilterText
             ]}>
-              {filter.label}
+              {status.label}
             </Text>
             <Text style={[
-              styles.filterCount,
-              currentFilter === filter.key && styles.filterCountActive
+              styles.statusFilterCount,
+              statusFilter === status.key && styles.activeStatusFilterCount
             ]}>
-              {filter.count}
+              {status.count}
             </Text>
           </TouchableOpacity>
         ))}
+      </ScrollView>
+    );
+  };
+
+  const handleQuickStatusUpdate = async (orderId, newStatus) => {
+    setIsUpdatingStatus(true);
+    try {
+      await updateOrderStatus(orderId, newStatus);
+      Alert.alert('Success', `Order status updated to ${newStatus}`);
+      loadOrders();
+    } catch (err) {
+      Alert.alert('Error', 'Failed to update order status');
+      console.error('Update status error:', err);
+    } finally {
+      setIsUpdatingStatus(false);
+    }
+  };
+
+  const handleContactCustomer = (order) => {
+    Alert.alert(
+      'Contact Customer',
+      `Choose how to contact ${order.customerName}`,
+      [
+        {
+          text: 'Call',
+          onPress: () => {
+            if (order.customerPhone) {
+              Linking.openURL(`tel:${order.customerPhone}`);
+            } else {
+              Alert.alert('No Phone', 'Customer phone number not available');
+            }
+          }
+        },
+        {
+          text: 'Email',
+          onPress: () => {
+            if (order.customerEmail) {
+              Linking.openURL(`mailto:${order.customerEmail}`);
+            } else {
+              Alert.alert('No Email', 'Customer email not available');
+            }
+          }
+        },
+        {
+          text: 'Message',
+          onPress: () => {
+            // Navigate to chat/messaging screen
+            navigation.navigate('CustomerChat', { 
+              orderId: order.id,
+              customerName: order.customerName 
+            });
+          }
+        },
+        { text: 'Cancel', style: 'cancel' }
+      ]
+    );
+  };
+
+  const handlePrintReceipt = (order) => {
+    Alert.alert('Print Receipt', `Printing receipt for order #${order.orderId}...`);
+    // Implement receipt printing logic here
+  };
+
+  const renderOrderItem = ({ item }) => (
+    <TouchableOpacity 
+      style={styles.orderItem}
+      onPress={() => {
+        setSelectedOrder(item);
+        setShowOrderModal(true);
+      }}
+    >
+      <View style={styles.orderHeader}>
+        <View style={styles.orderInfo}>
+          <Text style={styles.orderNumber}>Order #{item.orderId || item.id}</Text>
+          <Text style={styles.orderDate}>
+            {new Date(item.orderDate).toLocaleDateString()}
+          </Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
+          <Text style={styles.statusText}>{item.status}</Text>
+        </View>
       </View>
+      
+      <View style={styles.orderDetails}>
+        <View style={styles.customerInfo}>
+          <MaterialIcons name="person" size={16} color="#666" />
+          <Text style={styles.customerName}>{item.customerName || 'Unknown Customer'}</Text>
+        </View>
+        
+        <View style={styles.orderValue}>
+          <MaterialIcons name="monetization-on" size={16} color="#4CAF50" />
+          <Text style={styles.orderAmount}>₪{item.totalAmount || 0}</Text>
+        </View>
+      </View>
+      
+      {item.items && item.items.length > 0 && (
+        <View style={styles.orderItems}>
+          <Text style={styles.itemsLabel}>Items:</Text>
+          <Text style={styles.itemsList}>
+            {item.items.slice(0, 2).map(i => i.name).join(', ')}
+            {item.items.length > 2 && ` +${item.items.length - 2} more`}
+          </Text>
+        </View>
+      )}
+      
+      {/* NEW: Quick Action Buttons */}
+      <View style={styles.orderActions}>
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.viewButton]}
+          onPress={(e) => {
+            e.stopPropagation();
+            setSelectedOrder(item);
+            setShowOrderModal(true);
+          }}
+        >
+          <MaterialIcons name="visibility" size={16} color="#2196F3" />
+          <Text style={[styles.actionText, { color: '#2196F3' }]}>View</Text>
+        </TouchableOpacity>
+        
+        {item.status === 'pending' && (
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.confirmButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleQuickStatusUpdate(item.id, 'confirmed');
+            }}
+          >
+            <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+            <Text style={[styles.actionText, { color: '#4CAF50' }]}>Confirm</Text>
+          </TouchableOpacity>
+        )}
+        
+        {item.status === 'confirmed' && (
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.readyButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleQuickStatusUpdate(item.id, 'ready');
+            }}
+          >
+            <MaterialIcons name="local-shipping" size={16} color="#FF9800" />
+            <Text style={[styles.actionText, { color: '#FF9800' }]}>Ready</Text>
+          </TouchableOpacity>
+        )}
+        
+        {item.status === 'ready' && (
+          <TouchableOpacity 
+            style={[styles.actionButton, styles.completeButton]}
+            onPress={(e) => {
+              e.stopPropagation();
+              handleQuickStatusUpdate(item.id, 'completed');
+            }}
+          >
+            <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
+            <Text style={[styles.actionText, { color: '#4CAF50' }]}>Complete</Text>
+          </TouchableOpacity>
+        )}
+        
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.contactButton]}
+          onPress={(e) => {
+            e.stopPropagation();
+            handleContactCustomer(item);
+          }}
+        >
+          <MaterialIcons name="message" size={16} color="#9C27B0" />
+          <Text style={[styles.actionText, { color: '#9C27B0' }]}>Contact</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+
+  const renderEmptyState = () => (
+    <View style={styles.emptyState}>
+      <MaterialIcons name="assignment" size={64} color="#e0e0e0" />
+      <Text style={styles.emptyTitle}>No Orders Yet</Text>
+      <Text style={styles.emptyText}>
+        When customers place orders, they'll appear here
+      </Text>
+      <TouchableOpacity 
+        style={styles.createFirstOrderButton}
+        onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}
+      >
+        <MaterialIcons name="add" size={20} color="#fff" />
+        <Text style={styles.createFirstOrderText}>Create First Order</Text>
+      </TouchableOpacity>
     </View>
   );
 
-  if (loading && orders.length === 0) {
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Orders</Text>
+      <TouchableOpacity 
+        style={styles.createOrderButton}
+        onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}
+      >
+        <MaterialIcons name="add" size={24} color="#216a94" />
+      </TouchableOpacity>
+    </View>
+  );
+
+  if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Orders</Text>
+          <View style={styles.placeholder} />
+        </View>
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" color="#216a94" />
           <Text style={styles.loadingText}>Loading orders...</Text>
         </View>
       </SafeAreaView>
@@ -734,138 +380,76 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enhanced Header */}
-      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-        <View style={styles.headerTop}>
-          <TouchableOpacity 
-            onPress={() => navigation.goBack()}
-            style={styles.headerButton}
-          >
-            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      
+      {/* Header with Create Order Button */}
+      {renderHeader()}
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <MaterialIcons name="search" size={20} color="#666" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search orders..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery ? (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <MaterialIcons name="close" size={20} color="#666" />
           </TouchableOpacity>
-          
-          <View style={styles.headerCenter}>
-            <Text style={styles.headerTitle}>Orders</Text>
-            <Text style={styles.headerSubtitle}>
-              {filteredOrders.length} orders • Last updated {formatDate(lastRefresh.toISOString())}
-            </Text>
-          </View>
-          
-          <View style={styles.headerActions}>
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={toggleAutoRefresh}
-            >
-              <MaterialIcons 
-                name={autoRefreshEnabled ? "sync" : "sync-disabled"} 
-                size={24} 
-                color={autoRefreshEnabled ? "#4CAF50" : "#999"} 
-              />
-            </TouchableOpacity>
-            
-            <TouchableOpacity 
-              style={styles.headerButton}
-              onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}
-            >
-              <MaterialIcons name="add" size={24} color="#4CAF50" />
-            </TouchableOpacity>
-          </View>
+        ) : null}
+      </View>
+
+      {/* Status Filters */}
+      {renderStatusFilters()}
+
+      {/* Order Stats */}
+      <View style={styles.statsContainer}>
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{orders.length}</Text>
+          <Text style={styles.statLabel}>Total Orders</Text>
         </View>
-        
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <MaterialIcons name="search" size={20} color="#4CAF50" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search orders, customers, confirmation numbers..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#999"
-          />
-          {searchQuery ? (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <MaterialIcons name="clear" size={20} color="#999" />
-            </TouchableOpacity>
-          ) : null}
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>
+            {orders.filter(o => o.status === 'pending').length}
+          </Text>
+          <Text style={styles.statLabel}>Pending</Text>
         </View>
-      </Animated.View>
-      
-      {/* Filter Options */}
-      {renderFilterOptions()}
-      
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>
+            ₪{orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + (o.totalAmount || 0), 0)}
+          </Text>
+          <Text style={styles.statLabel}>Revenue</Text>
+        </View>
+      </View>
+
       {/* Orders List */}
       <FlatList
         data={filteredOrders}
         renderItem={renderOrderItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.listContainer}
+        keyExtractor={(item) => item.id || item.orderId}
+        style={styles.ordersList}
+        ListEmptyComponent={renderEmptyState}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#4CAF50']}
-            tintColor="#4CAF50"
-          />
-        }
-        ListEmptyComponent={
-          <Animated.View style={[styles.emptyContainer, { opacity: fadeAnim }]}>
-            <MaterialCommunityIcons name="clipboard-list-outline" size={64} color="#e0e0e0" />
-            <Text style={styles.emptyText}>
-              {searchQuery || currentFilter !== 'all'
-                ? "No orders match your filters"
-                : "No orders yet"}
-            </Text>
-            <Text style={styles.emptySubtext}>
-              {searchQuery || currentFilter !== 'all'
-                ? "Try adjusting your search or filters"
-                : "Orders will appear here when customers place them"}
-            </Text>
-            {(searchQuery || currentFilter !== 'all') && (
-              <TouchableOpacity
-                style={styles.resetFiltersButton}
-                onPress={() => {
-                  setCurrentFilter('all');
-                  setSearchQuery('');
-                }}
-              >
-                <Text style={styles.resetFiltersText}>Reset Filters</Text>
-              </TouchableOpacity>
-            )}
-          </Animated.View>
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         showsVerticalScrollIndicator={false}
       />
 
-      {/* ENHANCED: Order Detail Modal Integration */}
-      <OrderDetailModal
-        visible={orderDetailModalVisible}
-        order={selectedOrder}
-        onClose={() => setOrderDetailModalVisible(false)}
-        onUpdateStatus={handleUpdateOrderStatus}
-        onContactCustomer={handleContactCustomer}
-        onPrintReceipt={handlePrintReceipt}
-        businessInfo={businessInfo}
-      />
-
-      {/* ENHANCED: Customer Detail Modal Integration */}
-      <CustomerDetailModal
-        visible={customerDetailModalVisible}
-        customer={selectedCustomer}
-        onClose={() => setCustomerDetailModalVisible(false)}
-        onContactCustomer={(customer, method) => {
-          // Find the customer's latest order for contact context
-          const latestOrder = orders
-            .filter(order => order.customerEmail === customer.email)
-            .sort((a, b) => new Date(b.orderDate) - new Date(a.orderDate))[0];
-          
-          if (latestOrder) {
-            handleContactCustomer(latestOrder, method);
-          }
-        }}
-        onViewOrders={handleViewCustomerOrders}
-        onAddNote={handleAddCustomerNote}
-        businessId={businessId}
-      />
+      {/* Order Detail Modal */}
+      {selectedOrder && (
+        <OrderDetailModal
+          visible={showOrderModal}
+          order={selectedOrder}
+          onClose={() => setShowOrderModal(false)}
+          onUpdateStatus={handleUpdateStatus}
+          onContactCustomer={handleContactCustomer}
+          onPrintReceipt={() => handlePrintReceipt(selectedOrder)}
+          isLoading={isUpdatingStatus}
+          businessInfo={{ businessName: 'Your Plant Store', address: 'Store Location' }}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -875,150 +459,152 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f8f9fa',
   },
-  loadingContainer: {
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#216a94',
+    flex: 1,
+    textAlign: 'center',
+  },
+  createOrderButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+  },
+  placeholder: {
+    width: 40,
+  },
+  centered: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#666',
   },
-  header: {
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#fff',
+    margin: 16,
     paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-    elevation: 2,
+    paddingVertical: 12,
+    borderRadius: 12,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  headerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f9f3',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 2,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
+    marginLeft: 12,
     fontSize: 16,
     color: '#333',
   },
-  filterContainer: {
-    backgroundColor: '#fff',
-    paddingVertical: 12,
+  statusFilters: {
+    maxHeight: 60,
+    marginBottom: 16,
+  },
+  statusFiltersContent: {
     paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
   },
-  filterTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  filterOptions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  filterOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    backgroundColor: '#f5f5f5',
-  },
-  filterOptionActive: {
-    backgroundColor: '#4CAF50',
-  },
-  filterOptionText: {
-    fontSize: 12,
-    color: '#666',
-    fontWeight: '500',
-  },
-  filterOptionTextActive: {
-    color: '#fff',
-  },
-  filterCount: {
-    fontSize: 11,
-    color: '#999',
-    marginLeft: 4,
-  },
-  filterCountActive: {
-    color: '#fff',
-  },
-  listContainer: {
-    padding: 16,
-    paddingBottom: 100,
-  },
-  orderCard: {
+  statusFilter: {
     backgroundColor: '#fff',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    alignItems: 'center',
+  },
+  activeStatusFilter: {
+    backgroundColor: '#216a94',
+    borderColor: '#216a94',
+  },
+  statusFilterText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#666',
+  },
+  activeStatusFilterText: {
+    color: '#fff',
+  },
+  statusFilterCount: {
+    fontSize: 10,
+    color: '#999',
+    marginTop: 2,
+  },
+  activeStatusFilterCount: {
+    color: '#fff',
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    marginBottom: 16,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: '#fff',
+    padding: 16,
+    marginHorizontal: 4,
     borderRadius: 12,
-    marginBottom: 12,
-    elevation: 2,
+    alignItems: 'center',
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    overflow: 'hidden',
+    shadowRadius: 2,
   },
-  orderCardContent: {
-    padding: 16,
-  },
-  priorityBadge: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderBottomLeftRadius: 8,
-  },
-  priorityText: {
-    color: '#fff',
-    fontSize: 10,
+  statNumber: {
+    fontSize: 20,
     fontWeight: 'bold',
-    marginLeft: 2,
+    color: '#216a94',
+  },
+  statLabel: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  ordersList: {
+    flex: 1,
+    paddingHorizontal: 16,
+  },
+  orderItem: {
+    backgroundColor: '#fff',
+    padding: 16,
+    marginBottom: 8,
+    borderRadius: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   orderHeader: {
     flexDirection: 'row',
@@ -1026,41 +612,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
   },
-  orderIdContainer: {
+  orderInfo: {
     flex: 1,
   },
-  orderId: {
+  orderNumber: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: '#333',
   },
   orderDate: {
     fontSize: 12,
-    color: '#757575',
+    color: '#666',
     marginTop: 2,
   },
   statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
     paddingVertical: 4,
+    paddingHorizontal: 8,
     borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   statusText: {
+    fontSize: 10,
     color: '#fff',
-    fontWeight: '500',
-    fontSize: 12,
-    marginLeft: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase',
   },
-  customerSection: {
+  orderDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
-    backgroundColor: '#f9f9f9',
-    paddingHorizontal: 8,
+    marginBottom: 8,
   },
   customerInfo: {
     flexDirection: 'row',
@@ -1068,99 +650,116 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   customerName: {
-    color: '#424242',
     fontSize: 14,
-    marginLeft: 8,
-    marginRight: 8,
-    fontWeight: '500',
-    flex: 1,
-  },
-  contactButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f9f3',
-  },
-  orderItemsPreview: {
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 12,
-  },
-  itemsHeader: {
-    fontSize: 12,
-    fontWeight: '600',
     color: '#666',
+    marginLeft: 6,
+  },
+  orderValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  orderAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#4CAF50',
+    marginLeft: 4,
+  },
+  orderItems: {
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    paddingTop: 8,
+    marginTop: 8,
+  },
+  itemsLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '600',
     marginBottom: 4,
   },
   itemsList: {
-    gap: 2,
-  },
-  itemPreview: {
-    fontSize: 13,
-    color: '#424242',
-  },
-  moreItems: {
-    color: '#757575',
     fontSize: 12,
-    fontStyle: 'italic',
+    color: '#999',
   },
-  orderFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#666',
+    marginTop: 16,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  createFirstOrderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#216a94',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 16,
+  },
+  createFirstOrderText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   orderActions: {
     flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
     gap: 8,
   },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    flex: 1,
+    justifyContent: 'center',
+    minHeight: 32,
   },
-  actionButtonText: {
-    color: '#fff',
+  viewButton: {
+    backgroundColor: '#e3f2fd',
+    borderColor: '#2196F3',
+  },
+  confirmButton: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4CAF50',
+  },
+  readyButton: {
+    backgroundColor: '#fff3e0',
+    borderColor: '#FF9800',
+  },
+  completeButton: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4CAF50',
+  },
+  contactButton: {
+    backgroundColor: '#f3e5f5',
+    borderColor: '#9C27B0',
+  },
+  actionText: {
+    marginLeft: 4,
     fontSize: 12,
     fontWeight: '600',
-    marginLeft: 4,
-  },
-  orderTotal: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  emptyContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  resetFiltersButton: {
-    marginTop: 24,
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 24,
-  },
-  resetFiltersText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
   },
 });

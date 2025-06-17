@@ -451,6 +451,5 @@ export default {
   generateBusinessReport,
   createAnalyticsStream,
   getAnalyticsSummary,
-  triggerAutoRefresh,
-  checkAnalyticsApiHealth
+  triggerAutoRefresh
 };

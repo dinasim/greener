@@ -101,6 +101,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 business_name = req_body.get('businessName', '').strip()
                 description = req_body.get('description', '').strip()
                 
+                # ADDED: Log user's actual business hours and social media data
+                user_business_hours = req_body.get('businessHours', [])
+                user_social_media = req_body.get('socialMedia', {})
+                
+                logging.info(f"📅 User provided business hours: {json.dumps(user_business_hours)}")
+                logging.info(f"📱 User provided social media: {json.dumps(user_social_media)}")
+                
                 # FIXED: Handle address/location properly
                 address_data = req_body.get('address', {})
                 location_data = req_body.get('location', {})
@@ -145,8 +152,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "website": req_body.get('website', ''),
                     "category": req_body.get('category', req_body.get('businessType', 'Plant Store')),
                     
-                    # FIXED: Business hours from signup data or defaults
-                    "businessHours": req_body.get('businessHours', []),
+                    # FIXED: Business hours from user input - PRIORITIZE USER DATA
+                    "businessHours": user_business_hours if user_business_hours else [],
                     "openingHours": req_body.get('openingHours', {
                         "monday": "9:00-18:00",
                         "tuesday": "9:00-18:00", 
@@ -157,8 +164,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                         "sunday": "Closed"
                     }),
                     
-                    # FIXED: Social media and settings
-                    "socialMedia": req_body.get('socialMedia', {}),
+                    # FIXED: Social media from user input - PRIORITIZE USER DATA
+                    "socialMedia": user_social_media if user_social_media else {},
                     "settings": req_body.get('settings', {
                         "notifications": True,
                         "messages": True,
@@ -206,9 +213,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "lastUpdated": datetime.now().isoformat()
                 }
                 
+                # ADDED: Log the final business hours and social media data being saved
+                logging.info(f"💾 Saving business hours to database: {json.dumps(business_profile['businessHours'])}")
+                logging.info(f"💾 Saving social media to database: {json.dumps(business_profile['socialMedia'])}")
+                
                 # Save to database
                 result = business_container.create_item(business_profile)
                 logging.info(f"✅ Created business profile: {business_id}")
+                
+                # ADDED: Verify data was saved correctly by reading it back
+                saved_profile = business_container.read_item(item=business_id, partition_key=business_id)
+                logging.info(f"✅ Verified saved business hours: {json.dumps(saved_profile.get('businessHours', []))}")
+                logging.info(f"✅ Verified saved social media: {json.dumps(saved_profile.get('socialMedia', {}))}")
                 
                 return create_success_response({
                     "message": "Business profile created successfully",
@@ -219,23 +235,44 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 }, 201)
                 
             except exceptions.CosmosResourceExistsError:
-                # Check if this is actually a duplicate or a race condition
-                logging.warning(f"CosmosResourceExistsError for business {business_id} - checking if profile actually exists")
+                # FIXED: When user already exists, UPDATE the existing record instead of just returning it
+                logging.warning(f"Business record already exists for {business_id} - updating with complete business profile data")
                 
                 try:
-                    # Try to read the existing profile
+                    # Get the existing profile
                     existing_profile = business_container.read_item(item=business_id, partition_key=business_id)
-                    logging.info(f"Business profile actually exists: {business_id}")
+                    logging.info(f"Found existing business record: {business_id}")
                     
-                    # Return the existing profile instead of an error
+                    # FIXED: Update the existing profile with all the business profile data
+                    # Preserve important existing fields
+                    business_profile['_rid'] = existing_profile.get('_rid')
+                    business_profile['_self'] = existing_profile.get('_self')
+                    business_profile['_etag'] = existing_profile.get('_etag')
+                    business_profile['_attachments'] = existing_profile.get('_attachments')
+                    business_profile['_ts'] = existing_profile.get('_ts')
+                    business_profile['createdAt'] = existing_profile.get('createdAt', business_profile['createdAt'])
+                    
+                    # CRITICAL: Log what we're updating
+                    logging.info(f"📅 Updating existing record with business hours: {json.dumps(business_profile['businessHours'])}")
+                    logging.info(f"📱 Updating existing record with social media: {json.dumps(business_profile['socialMedia'])}")
+                    
+                    # Replace the existing item with complete business profile data
+                    result = business_container.replace_item(item=business_id, body=business_profile)
+                    logging.info(f"✅ Updated existing business record with complete profile data: {business_id}")
+                    
+                    # ADDED: Verify the update was successful
+                    updated_profile = business_container.read_item(item=business_id, partition_key=business_id)
+                    logging.info(f"✅ Verified updated business hours: {json.dumps(updated_profile.get('businessHours', []))}")
+                    logging.info(f"✅ Verified updated social media: {json.dumps(updated_profile.get('socialMedia', {}))}")
+                    
                     return create_success_response({
-                        "message": "Business profile already exists - returning existing profile",
+                        "message": "Business profile updated successfully with complete data",
                         "businessId": business_id,
-                        "business": existing_profile,
-                        "profile": existing_profile,
+                        "business": result,
+                        "profile": result,
                         "success": True,
-                        "existed": True
-                    }, 200)  # Return 200 instead of 409 for signup flow
+                        "updated": True  # Indicate this was an update, not a create
+                    }, 200)
                     
                 except exceptions.CosmosResourceNotFoundError:
                     # Profile doesn't actually exist, retry creation
@@ -255,9 +292,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                         logging.error(f"Failed to create business profile on retry: {str(retry_error)}")
                         return create_error_response(f"Failed to create business profile: {str(retry_error)}", 500)
                 
-                except Exception as check_error:
-                    logging.error(f"Error checking existing profile: {str(check_error)}")
-                    return create_error_response(f"Error checking existing profile: {str(check_error)}", 500)
+                except Exception as update_error:
+                    logging.error(f"Error updating existing business profile: {str(update_error)}")
+                    return create_error_response(f"Failed to update existing business profile: {str(update_error)}", 500)
             except Exception as e:
                 logging.error(f"Error creating business profile: {str(e)}")
                 return create_error_response(f"Failed to create business profile: {str(e)}", 500)
@@ -290,6 +327,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 # Get existing profile
                 existing_profile = business_container.read_item(item=business_id, partition_key=business_id)
                 
+                # ADDED: Log update operations for business hours and social media
+                if 'businessHours' in req_body:
+                    logging.info(f"📅 Updating business hours from: {json.dumps(existing_profile.get('businessHours', []))} to: {json.dumps(req_body['businessHours'])}")
+                if 'socialMedia' in req_body:
+                    logging.info(f"📱 Updating social media from: {json.dumps(existing_profile.get('socialMedia', {}))} to: {json.dumps(req_body['socialMedia'])}")
+                
                 # FIXED: Update fields (only update fields that are provided)
                 updatable_fields = [
                     'businessName', 'description', 'address', 'location', 'phone', 'contactPhone', 
@@ -309,6 +352,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 # Save updated profile
                 result = business_container.replace_item(item=business_id, body=existing_profile)
                 logging.info(f"✅ Updated business profile: {business_id}")
+                
+                # ADDED: Verify update was saved correctly
+                updated_profile = business_container.read_item(item=business_id, partition_key=business_id)
+                if 'businessHours' in req_body:
+                    logging.info(f"✅ Verified updated business hours: {json.dumps(updated_profile.get('businessHours', []))}")
+                if 'socialMedia' in req_body:
+                    logging.info(f"✅ Verified updated social media: {json.dumps(updated_profile.get('socialMedia', {}))}")
                 
                 return create_success_response({
                     "message": "Business profile updated successfully",

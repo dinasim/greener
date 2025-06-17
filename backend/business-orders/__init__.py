@@ -2,17 +2,12 @@
 import logging
 import json
 import azure.functions as func
-from azure.cosmos import CosmosClient
-import os
 
 # Import standardized helpers
 import sys
 sys.path.append('..')
 from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response
-
-# Database connection details for marketplace
-MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+from db_helpers import get_container
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business orders function processed a request.')
@@ -22,7 +17,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(func.HttpResponse("", status_code=200))
     
     try:
-        # FIXED: Get business ID using standardized function
+        # Get business ID using standardized function
         business_id = get_user_id_from_request(req)
         
         if not business_id:
@@ -34,20 +29,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         status_filter = req.params.get('status', 'all').lower()
         limit = int(req.params.get('limit', 50))
         
-        # Connect to marketplace database
+        # FIXED: Use standardized container access
         try:
-            # Parse connection string
-            params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
-            account_endpoint = params.get('AccountEndpoint')
-            account_key = params.get('AccountKey')
-            
-            if not account_endpoint or not account_key:
-                raise ValueError("Invalid marketplace connection string")
-            
-            # Create client and get container
-            client = CosmosClient(account_endpoint, credential=account_key)
-            database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
-            orders_container = database.get_container_client("orders")
+            orders_container = get_container("orders")
             
             # Build query based on status filter
             if status_filter == 'all':
@@ -62,17 +46,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             logging.info(f"Executing orders query for businessId: {business_id}, status: {status_filter}")
             
-            # Execute query
+            # Execute query - using partition key so no cross-partition needed
             orders = list(orders_container.query_items(
                 query=query,
                 parameters=parameters,
-                enable_cross_partition_query=True,
+                enable_cross_partition_query=False,  # Using partition key
                 max_item_count=limit
             ))
             
             logging.info(f"Found {len(orders)} orders for business {business_id}")
             
-            # FIXED: Format orders with all required fields
+            # Format orders with all required fields
             formatted_orders = []
             for order in orders:
                 formatted_order = {
@@ -106,7 +90,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             completed_orders = len([o for o in formatted_orders if o["status"] == "completed"])
             cancelled_orders = len([o for o in formatted_orders if o["status"] == "cancelled"])
             
-            # FIXED: Return consistent response structure
+            # Return consistent response structure
             response_data = {
                 "success": True,
                 "businessId": business_id,

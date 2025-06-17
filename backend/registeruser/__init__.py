@@ -31,6 +31,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         kids = data.get('kids', '')
         location = data.get('location', None)
         plantLocations = data.get('plantLocations', [])
+        
+        # FIXED: Get notification tokens and settings
+        fcmToken = data.get('fcmToken', None)
+        webPushSubscription = data.get('webPushSubscription', None)
+        expoPushToken = data.get('expoPushToken', None)
+        notificationSettings = data.get('notificationSettings', {})
 
         if not (username and password and email):
             return func.HttpResponse(
@@ -47,6 +53,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=409, mimetype='application/json')
 
         hashed_pw = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
+        
+        # FIXED: Create comprehensive user document with proper location handling
         user_doc = {
             "id": email,
             "username": username,
@@ -56,11 +64,48 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "intersted": intersted,
             "animals": animals,
             "kids": kids,
-            "location": location,
             "plantLocations": plantLocations,
+            # FIXED: Properly structure location data with coordinates and address
+            "location": {
+                "city": location.get('city', '') if location else '',
+                "street": location.get('street', '') if location else '',
+                "houseNumber": location.get('houseNumber', '') if location else '',
+                "latitude": location.get('latitude') if location else None,
+                "longitude": location.get('longitude') if location else None,
+                "formattedAddress": location.get('formattedAddress', '') if location else '',
+                "country": location.get('country', 'Israel') if location else 'Israel',
+                "postalCode": location.get('postalCode', '') if location else ''
+            } if location else None,
+            # FIXED: Add notification tokens and settings
+            "fcmToken": fcmToken,
+            "webPushSubscription": webPushSubscription,
+            "expoPushToken": expoPushToken,
+            "notificationSettings": {
+                "enabled": notificationSettings.get('enabled', True),
+                "wateringReminders": notificationSettings.get('wateringReminders', True),
+                "marketplaceUpdates": notificationSettings.get('marketplaceUpdates', False),
+                "platform": notificationSettings.get('platform', 'web')
+            },
+            # Add timestamps
+            "createdAt": data.get('createdAt', ''),
+            "updatedAt": data.get('updatedAt', '')
         }
+        
         user_container.create_item(user_doc)
-        resp = func.HttpResponse(json.dumps({"message": "User registered successfully."}), status_code=201, mimetype='application/json')
+        
+        # FIXED: Return user data including location info for verification
+        response_data = {
+            "message": "User registered successfully.",
+            "user": {
+                "email": email,
+                "name": name,
+                "hasLocation": bool(location and location.get('latitude') and location.get('longitude')),
+                "locationCity": location.get('city') if location else None,
+                "hasNotificationTokens": bool(fcmToken or webPushSubscription)
+            }
+        }
+        
+        resp = func.HttpResponse(json.dumps(response_data), status_code=201, mimetype='application/json')
         return add_cors_headers(resp)
     except Exception as e:
         return func.HttpResponse(

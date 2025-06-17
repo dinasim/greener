@@ -104,6 +104,27 @@ def create_user_document(user_info, is_update=False):
         user_doc["createdAt"] = current_time
         user_doc["updatedAt"] = current_time
     
+    # FIXED: Handle location data consistently for both user types
+    location_data = user_info.get("location") or user_info.get("address")
+    if location_data:
+        # Ensure location is properly structured with all required fields
+        structured_location = {
+            "city": location_data.get('city', '') if isinstance(location_data, dict) else '',
+            "street": location_data.get('street', '') if isinstance(location_data, dict) else '',
+            "houseNumber": location_data.get('houseNumber', '') if isinstance(location_data, dict) else '',
+            "latitude": location_data.get('latitude') if isinstance(location_data, dict) else None,
+            "longitude": location_data.get('longitude') if isinstance(location_data, dict) else None,
+            "formattedAddress": location_data.get('formattedAddress', '') if isinstance(location_data, dict) else '',
+            "country": location_data.get('country', 'Israel') if isinstance(location_data, dict) else 'Israel',
+            "postalCode": location_data.get('postalCode', '') if isinstance(location_data, dict) else ''
+        }
+        
+        # Only include location if it has coordinates or city
+        if structured_location.get('latitude') or structured_location.get('longitude') or structured_location.get('city'):
+            user_doc["location"] = structured_location
+            if user_type == 'business':
+                user_doc["address"] = structured_location  # Business users also get address field
+    
     # FIXED: Add fields based on user type
     if user_type == 'business':
         # Business-specific fields only
@@ -113,9 +134,9 @@ def create_user_document(user_info, is_update=False):
             "description": user_info.get("description", ""),
             "contactPhone": user_info.get("contactPhone") or user_info.get("phone"),
             "phone": user_info.get("phone") or user_info.get("contactPhone"),
-            "address": user_info.get("address", {}),
-            "location": user_info.get("location", {}),
+            # FIXED: Properly handle business hours from frontend
             "businessHours": user_info.get("businessHours", []),
+            # FIXED: Properly handle social media from frontend
             "socialMedia": user_info.get("socialMedia", {}),
             "status": "active",
             "businessId": user_info["email"],
@@ -128,6 +149,10 @@ def create_user_document(user_info, is_update=False):
             "expoPushToken": user_info.get("expoPushToken"),
         }
         user_doc.update(business_fields)
+        
+        # FIXED: Log business hours and social media data being saved
+        logging.info(f"📅 Saving business hours to database: {json.dumps(user_info.get('businessHours', []))}")
+        logging.info(f"📱 Saving social media to database: {json.dumps(user_info.get('socialMedia', {}))}")
         
         # FIXED: Set up proper notification settings for business users
         if "notificationSettings" in user_info:
@@ -144,11 +169,11 @@ def create_user_document(user_info, is_update=False):
             "animals": user_info.get("animals"),
             "kids": user_info.get("kids"),
             "intersted": user_info.get("intersted"),
-            "location": user_info.get("location"),
             "googleId": user_info.get("googleId"),
             "fcmToken": user_info.get("fcmToken"),
             "webPushSubscription": user_info.get("webPushSubscription"),
             "expoPushToken": user_info.get("expoPushToken"),
+            "plantLocations": user_info.get("plantLocations", []),
         }
         user_doc.update(consumer_fields)
     

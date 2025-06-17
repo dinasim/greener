@@ -85,6 +85,9 @@ export default function SignupLocationReq({ navigation }) {
               onChange={handleLocationChange}
               required={true}
               showConfirmButton={false} // We'll handle confirmation with our own button
+              alwaysShowMap={true}
+              placeholder="Enter your location in Israel"
+              showToastFeedback={true}
             />
           </View>
         </Animated.View>

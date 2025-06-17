@@ -2,17 +2,12 @@
 import logging
 import json
 import azure.functions as func
-from azure.cosmos import CosmosClient
-import os
 
 # Import standardized helpers
 import sys
 sys.path.append('..')
 from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response
-
-# Database connection details for marketplace
-MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+from db_helpers import get_container
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business customers function processed a request.')
@@ -22,7 +17,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(func.HttpResponse("", status_code=200))
     
     try:
-        # FIXED: Get business ID using standardized function
+        # Get business ID using standardized function
         business_id = get_user_id_from_request(req)
         
         if not business_id:
@@ -30,32 +25,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Processing customers request for business: {business_id}")
         
-        # Connect to marketplace database
+        # FIXED: Use standardized container access
         try:
-            # Parse connection string
-            params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
-            account_endpoint = params.get('AccountEndpoint')
-            account_key = params.get('AccountKey')
-            
-            if not account_endpoint or not account_key:
-                raise ValueError("Invalid marketplace connection string")
-            
-            # Create client and get containers
-            client = CosmosClient(account_endpoint, credential=account_key)
-            database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
-            orders_container = database.get_container_client("orders")
+            orders_container = get_container("orders")
             
             # Get all orders for this business to extract customer data
             orders_query = "SELECT * FROM c WHERE c.businessId = @businessId"
             orders = list(orders_container.query_items(
                 query=orders_query,
                 parameters=[{"name": "@businessId", "value": business_id}],
-                enable_cross_partition_query=True
+                enable_cross_partition_query=False  # Using partition key
             ))
             
             logging.info(f"Found {len(orders)} orders for business {business_id}")
             
-            # FIXED: Aggregate customer data from orders
+            # Aggregate customer data from orders
             customers_map = {}
             
             for order in orders:
@@ -117,7 +101,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             total_revenue = sum(c["totalSpent"] for c in customers_list)
             avg_order_value = total_revenue / sum(c["orderCount"] for c in customers_list) if customers_list else 0
             
-            # FIXED: Return consistent response structure
+            # Return consistent response structure
             response_data = {
                 "success": True,
                 "businessId": business_id,

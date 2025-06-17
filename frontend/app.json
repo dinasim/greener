@@ -27,6 +27,8 @@
       "bundleIdentifier": "com.dinasim.greener",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search.",
+        "NSLocationWhenInUseUsageDescription": "This app needs location access to help you find nearby services and set your business location.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs location access to help you find nearby services and set your business location.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -52,7 +54,9 @@
       ],
       "edgeToEdge": true,
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
       ]
     },
     "web": {
@@ -71,7 +75,17 @@
       }
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "This app needs location access to help you find nearby services and set your business location.",
+          "locationAlwaysPermission": "This app needs location access to help you find nearby services and set your business location.",
+          "locationWhenInUsePermission": "This app needs location access to help you find nearby services and set your business location.",
+          "isIosBackgroundLocationEnabled": false,
+          "isAndroidBackgroundLocationEnabled": false
+        }
+      ]
     ]
   }
 }

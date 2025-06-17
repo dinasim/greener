@@ -29,8 +29,7 @@ import { useFocusEffect } from '@react-navigation/native';
 // FIXED: Import proper business services instead of manual API calls
 import { 
   getBusinessProfile,
-  createBusinessProfile,
-  checkApiHealth 
+  createBusinessProfile
 } from '../services/businessApi';
 
 const { width, height } = Dimensions.get('window');
@@ -67,7 +66,7 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         thursday: { open: '09:00', close: '17:00', isClosed: false },
         friday: { open: '09:00', close: '17:00', isClosed: false },
         saturday: { open: '10:00', close: '16:00', isClosed: false },
-        sunday: { open: '10:00', close: '16:00', isClosed: true },
+        sunday: { open: '10:00', close: '16:00', isClosed: false }, // FIXED: Remove default closed for Sunday
       },
       socialMedia: {
         website: '',
@@ -238,108 +237,128 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     
     try {
       console.log('📡 Loading REAL settings for business:', currentBusinessId);
-      
-      // Check API health first
-      const healthCheck = await checkApiHealth();
-      if (!healthCheck.healthy) {
-        throw new Error('Settings services are currently unavailable');
-      }
-      setNetworkConnected(true);
-      
-      // Load REAL business profile from backend
-      const profileData = await getBusinessProfile(currentBusinessId);
-      console.log('✅ REAL Business profile loaded:', Object.keys(profileData));
-      
-      // Map backend data to settings structure
-      const mappedSettings = {
-        notifications: {
-          newOrders: profileData.settings?.notifications ?? true,
-          lowStock: profileData.settings?.lowStockThreshold !== undefined,
-          customerMessages: profileData.settings?.Messages ?? true,
-          dailyReports: false,
-          weeklyReports: true,
-          emailNotifications: true,
-          pushNotifications: profileData.settings?.notifications ?? true,
-        },
-        business: {
-          businessName: profileData.businessName || '',
-          businessType: profileData.businessType || 'nursery',
-          description: profileData.description || '',
-          contactEmail: profileData.contactEmail || profileData.email || '',
-          contactPhone: profileData.contactPhone || '',
-          website: profileData.socialMedia?.website || '',
-          address: {
-            street: profileData.address?.street || '',
-            city: profileData.address?.city || '',
-            postalCode: profileData.address?.postalCode || '',
-            country: profileData.address?.country || 'United States',
+      // Directly load from backend, no health check
+      try {
+        const profileData = await getBusinessProfile(currentBusinessId);
+        console.log('✅ REAL Business profile loaded:', Object.keys(profileData));
+        // Map backend data to settings structure
+        const mappedSettings = {
+          notifications: {
+            newOrders: profileData.settings?.notifications ?? true,
+            lowStock: profileData.settings?.lowStockThreshold !== undefined,
+            customerMessages: profileData.settings?.Messages ?? true,
+            dailyReports: false,
+            weeklyReports: true,
+            emailNotifications: true,
+            pushNotifications: profileData.settings?.notifications ?? true,
           },
-          businessHours: profileData.businessHours || settings.business.businessHours,
-          socialMedia: {
+          business: {
+            businessName: profileData.businessName || '',
+            businessType: profileData.businessType || 'nursery',
+            description: profileData.description || '',
+            contactEmail: profileData.contactEmail || profileData.email || '',
+            contactPhone: profileData.contactPhone || '',
             website: profileData.socialMedia?.website || '',
-            instagram: profileData.socialMedia?.instagram || '',
-            facebook: profileData.socialMedia?.facebook || '',
+            address: {
+              street: profileData.address?.street || '',
+              city: profileData.address?.city || '',
+              postalCode: profileData.address?.postalCode || '',
+              country: profileData.address?.country || 'United States',
+            },
+            businessHours: profileData.businessHours || settings.business.businessHours,
+            socialMedia: {
+              website: profileData.socialMedia?.website || '',
+              instagram: profileData.socialMedia?.instagram || '',
+              facebook: profileData.socialMedia?.facebook || '',
+            },
           },
-        },
-        inventory: {
-          lowStockThreshold: profileData.settings?.lowStockThreshold || 5,
-          autoReorder: false,
-          trackExpiry: true,
-          autoUpdatePrices: false,
-        },
-        orders: {
-          autoConfirm: false,
-          requireDeposit: false,
-          maxOrderQuantity: 100,
-          orderTimeout: 24,
-          allowCancellation: true,
-          sendConfirmationEmail: true,
-        },
-        privacy: {
-          shareAnalytics: true,
-          allowReviews: profileData.isVerified ?? true,
-          visibleInDirectory: true,
-          showBusinessHours: true,
-          showContactInfo: true,
-          allowDirectMessages: profileData.settings?.Messages ?? true,
+          inventory: {
+            lowStockThreshold: profileData.settings?.lowStockThreshold || 5,
+            autoReorder: false,
+            trackExpiry: true,
+            autoUpdatePrices: false,
+          },
+          orders: {
+            autoConfirm: false,
+            requireDeposit: false,
+            maxOrderQuantity: 100,
+            orderTimeout: 24,
+            allowCancellation: true,
+            sendConfirmationEmail: true,
+          },
+          privacy: {
+            shareAnalytics: true,
+            allowReviews: profileData.isVerified ?? true,
+            visibleInDirectory: true,
+            showBusinessHours: true,
+            showContactInfo: true,
+            allowDirectMessages: profileData.settings?.Messages ?? true,
+          }
+        };
+        setSettings(mappedSettings);
+        setOriginalSettings(JSON.parse(JSON.stringify(mappedSettings)));
+        setHasUnsavedChanges(false);
+        // Cache the settings
+        await AsyncStorage.setItem('businessSettings', JSON.stringify(mappedSettings));
+        if (!silentRefresh) {
+          Animated.sequence([
+            Animated.timing(saveAnim, {
+              toValue: 1,
+              duration: 200,
+              useNativeDriver: Platform.OS !== 'web',
+            }),
+            Animated.timing(saveAnim, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: Platform.OS !== 'web',
+            }),
+          ]).start();
         }
-      };
-      
-      setSettings(mappedSettings);
-      setOriginalSettings(JSON.parse(JSON.stringify(mappedSettings)));
-      setHasUnsavedChanges(false);
-      
-      if (!silentRefresh) {
-        // Success feedback animation
-        Animated.sequence([
-          Animated.timing(saveAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(saveAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-        ]).start();
+      } catch (err) {
+        console.error('❌ Error loading REAL settings:', err);
+        setNetworkConnected(false);
+        // Error categorization and user messaging
+        let errorMessage = 'Unable to load settings';
+        let useCache = false;
+        if (err.message.includes('network') || err.message.includes('fetch') || err.message.includes('timeout')) {
+          errorMessage = 'Network connection failed. Please check your internet connection.';
+          useCache = true;
+        } else if (err.message.includes('401') || err.message.includes('403')) {
+          errorMessage = 'Authentication failed. Please log in again.';
+        } else {
+          errorMessage = err.message || 'An unexpected error occurred';
+          useCache = true;
+        }
+        // Try to load cached settings as fallback
+        if (useCache) {
+          try {
+            const cachedSettings = await AsyncStorage.getItem('businessSettings');
+            if (cachedSettings && !silentRefresh) {
+              console.log('📱 Loading settings from cache as fallback...');
+              const parsed = JSON.parse(cachedSettings);
+              setSettings(parsed);
+              setOriginalSettings(JSON.parse(JSON.stringify(parsed)));
+              setHasUnsavedChanges(false);
+              
+              Alert.alert(
+                'Offline Mode', 
+                'Using cached settings. Some features may be limited until reconnected.',
+                [{ text: 'OK', style: 'default' }]
+              );
+              return;
+            }
+          } catch (cacheError) {
+            console.warn('Failed to load cached settings:', cacheError);
+          }
+        }
+        if (!silentRefresh) {
+          setError(errorMessage);
+        }
       }
-      
-    } catch (err) {
-      console.error('❌ Error loading REAL settings:', err);
-      setNetworkConnected(false);
-      
-      const errorMessage = err.message.includes('network') || err.message.includes('fetch') 
-        ? 'Network connection failed. Please check your internet connection.'
-        : err.message.includes('401') || err.message.includes('403')
-        ? 'Authentication failed. Please log in again.'
-        : err.message || 'Unable to load settings';
-      
-      if (!silentRefresh) {
-        setError(errorMessage);
-      }
+    } catch (error) {
+      setError('Unable to load settings');
     }
-  }, [settings.business.businessHours]);
+  }, [settings.business.businessHours, saveAnim]);
 
   // ===== SAVE SETTINGS - REAL BACKEND ONLY =====
   const saveSettings = useCallback(async () => {
@@ -353,14 +372,7 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       setError(null);
       
       console.log('💾 Saving REAL settings to backend...');
-      
-      // Check API health first
-      const healthCheck = await checkApiHealth();
-      if (!healthCheck.healthy) {
-        throw new Error('Settings services are currently unavailable');
-      }
-      
-      // Map settings to backend format
+      // No health check, just try to save
       const businessProfileData = {
         id: businessId,
         email: userEmail,
@@ -502,6 +514,81 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       ]
     );
   }, [originalSettings]);
+
+  // ===== REAL LOGOUT FUNCTIONALITY =====
+  const handleLogout = useCallback(async () => {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out of your business account?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setIsLoading(true);
+              console.log('🚪 Signing out business user...');
+              
+              // Clear all stored business data
+              await Promise.all([
+                AsyncStorage.removeItem('userEmail'),
+                AsyncStorage.removeItem('businessId'),
+                AsyncStorage.removeItem('userType'),
+                AsyncStorage.removeItem('isBusinessUser'),
+                AsyncStorage.removeItem('businessProfile'),
+                AsyncStorage.removeItem('businessSettings'),
+                AsyncStorage.removeItem('googleAuthToken'),
+                AsyncStorage.removeItem('userName')
+              ]);
+              
+              console.log('✅ Business user signed out successfully');
+              
+              // Navigate to welcome screen
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'PersonaSelection' }]
+              });
+              
+            } catch (error) {
+              console.error('❌ Error during logout:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            } finally {
+              setIsLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  }, [navigation]);
+
+  // ===== REAL NAVIGATION HANDLERS =====
+  const handleBusinessProfileEdit = useCallback(() => {
+    navigation.navigate('BusinessProfileScreen', { businessId });
+  }, [businessId, navigation]);
+
+  const handleNotificationSettings = useCallback(() => {
+    navigation.navigate('NotificationSettingsScreen', { businessId });
+  }, [businessId, navigation]);
+
+  const handleBusinessAnalytics = useCallback(() => {
+    navigation.navigate('BusinessAnalyticsScreen', { businessId });
+  }, [businessId, navigation]);
+
+  const handleCustomerManagement = useCallback(() => {
+    navigation.navigate('CustomerListScreen', { businessId });
+  }, [businessId, navigation]);
+
+  const handleInventoryManagement = useCallback(() => {
+    navigation.navigate('AddInventoryScreen', { 
+      businessId,
+      showInventory: true 
+    });
+  }, [businessId, navigation]);
+
+  const handleOrderManagement = useCallback(() => {
+    navigation.navigate('BusinessOrdersScreen', { businessId });
+  }, [businessId, navigation]);
 
   // ===== RENDER SECTION TABS =====
   const renderSectionTabs = () => {
@@ -930,6 +1017,84 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           />
         </View>
       ))}
+
+      {/* ADDED: Quick Action Buttons Section */}
+      <Text style={styles.sectionSubtitle}>Quick Actions</Text>
+      
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleBusinessProfileEdit}
+      >
+        <MaterialIcons name="edit" size={20} color="#2196F3" />
+        <Text style={styles.actionButtonText}>Edit Business Profile</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleNotificationSettings}
+      >
+        <MaterialIcons name="notifications" size={20} color="#FF9800" />
+        <Text style={styles.actionButtonText}>Notification Settings</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleBusinessAnalytics}
+      >
+        <MaterialIcons name="analytics" size={20} color="#9C27B0" />
+        <Text style={styles.actionButtonText}>Business Analytics</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleCustomerManagement}
+      >
+        <MaterialIcons name="people" size={20} color="#4CAF50" />
+        <Text style={styles.actionButtonText}>Customer Management</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleInventoryManagement}
+      >
+        <MaterialIcons name="inventory" size={20} color="#607D8B" />
+        <Text style={styles.actionButtonText}>Inventory Management</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={styles.actionButton}
+        onPress={handleOrderManagement}
+      >
+        <MaterialIcons name="receipt" size={20} color="#795548" />
+        <Text style={styles.actionButtonText}>Order Management</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
+      </TouchableOpacity>
+
+      {/* ADDED: Reset and Logout Buttons */}
+      <Text style={styles.sectionSubtitle}>Account Actions</Text>
+      
+      <TouchableOpacity 
+        style={[styles.actionButton, styles.dangerButton]}
+        onPress={handleResetSettings}
+      >
+        <MaterialIcons name="refresh" size={20} color="#FF5722" />
+        <Text style={[styles.actionButtonText, styles.dangerText]}>Reset All Settings</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#FF5722" />
+      </TouchableOpacity>
+
+      <TouchableOpacity 
+        style={[styles.actionButton, styles.logoutButton]}
+        onPress={handleLogout}
+      >
+        <MaterialIcons name="logout" size={20} color="#F44336" />
+        <Text style={[styles.actionButtonText, styles.logoutText]}>Sign Out</Text>
+        <MaterialIcons name="arrow-forward-ios" size={16} color="#F44336" />
+      </TouchableOpacity>
     </View>
   );
 
@@ -1436,5 +1601,45 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginTop: 8,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginBottom: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+    flex: 1,
+    marginLeft: 12,
+  },
+  dangerButton: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#F44336',
+  },
+  dangerText: {
+    color: '#D32F2F',
+    fontWeight: '600',
+  },
+  logoutButton: {
+    backgroundColor: '#FFEBEE',
+    borderColor: '#F44336',
+  },
+  logoutText: {
+    color: '#D32F2F',
+    fontWeight: '600',
   },
 });

@@ -6,7 +6,7 @@
         "direction": "in",
         "name": "req",
         "methods": ["get", "post", "patch", "options"],
-        "route": "business/orders"
+        "route": "business-orders"
       },
       {
         "type": "http",

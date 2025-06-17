@@ -59,24 +59,39 @@ const CrossPlatformImagePicker = ({
       // Validate file size
       validateImageSize(file.size);
       
-      // Convert to base64 for display and upload
-      const base64 = await fileToBase64(file);
-      
-      // Create blob URL for immediate preview
-      const previewUri = URL.createObjectURL(file);
-      
-      const imageData = {
-        uri: previewUri,
-        base64: base64.split(',')[1], // Remove data:image/jpeg;base64, prefix
-        type: file.type,
-        name: file.name,
-        size: file.size,
-        width: null, // Will be determined by image load
-        height: null
-      };
-      
-      // Call success callback
-      onImageSelected?.(imageData);
+      // FIXED: Upload to Azure instead of creating local blob
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', 'plant');
+        formData.append('contentType', file.type);
+
+        const uploadResponse = await fetch('https://usersfunctions.azurewebsites.net/api/marketplace/uploadImage', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (uploadResponse.ok) {
+          const result = await uploadResponse.json();
+          // Use Azure URL directly
+          const imageData = {
+            uri: result.url, // Use Azure URL
+            base64: null, // Not needed for Azure URLs
+            type: file.type,
+            name: file.name,
+            size: file.size,
+            width: null,
+            height: null
+          };
+          
+          onImageSelected?.(imageData);
+        } else {
+          throw new Error('Upload failed');
+        }
+      } catch (uploadError) {
+        console.error('Image upload error:', uploadError);
+        throw new Error('Failed to upload image. Please try again.');
+      }
       
       // Reset input
       event.target.value = '';

@@ -143,18 +143,133 @@ class BusinessFirebaseNotificationService {
     });
   }
 
-  // Request notification permission
+  // Enhanced permission request with better UX
   async requestPermission() {
     if (Platform.OS === 'web') {
-      if (Notification.permission === 'granted') return true;
-      if (Notification.permission === 'denied') return false;
+      // Check current permission status
+      const currentPermission = Notification.permission;
+      console.log('🔔 Current notification permission:', currentPermission);
       
-      const permission = await Notification.requestPermission();
-      return permission === 'granted';
+      if (currentPermission === 'granted') {
+        return true;
+      }
+      
+      if (currentPermission === 'denied') {
+        // Permission was explicitly denied or blocked
+        console.warn('🚫 Notification permission is denied/blocked');
+        this.showPermissionBlockedGuidance();
+        return false;
+      }
+      
+      // Permission is 'default' - we can request it
+      if (currentPermission === 'default') {
+        try {
+          console.log('📱 Requesting notification permission...');
+          const permission = await Notification.requestPermission();
+          console.log('📱 Permission result:', permission);
+          
+          if (permission === 'denied') {
+            this.showPermissionDeniedGuidance();
+          }
+          
+          return permission === 'granted';
+        } catch (error) {
+          console.error('❌ Error requesting permission:', error);
+          this.showPermissionErrorGuidance();
+          return false;
+        }
+      }
+      
+      return false;
     } else {
       // Mobile permission is handled during initialization
       return this.isInitialized;
     }
+  }
+
+  // Show guidance when permission is blocked
+  showPermissionBlockedGuidance() {
+    // This will be handled by the UI component
+    window.dispatchEvent(new CustomEvent('notificationPermissionBlocked', {
+      detail: {
+        message: 'Notifications are blocked. Please reset permissions in your browser.',
+        instructions: [
+          '1. Click the lock icon (🔒) or info icon (ℹ️) in the address bar',
+          '2. Find "Notifications" and change it to "Allow"',
+          '3. Refresh the page and try again',
+          'Or go to Chrome Settings > Privacy and Security > Site Settings > Notifications'
+        ]
+      }
+    }));
+  }
+
+  // Show guidance when permission is denied
+  showPermissionDeniedGuidance() {
+    window.dispatchEvent(new CustomEvent('notificationPermissionDenied', {
+      detail: {
+        message: 'Notification permission was denied.',
+        instructions: [
+          'You can enable notifications later in your browser settings',
+          'Click the lock icon in the address bar to change permissions'
+        ]
+      }
+    }));
+  }
+
+  // Show guidance when there's an error
+  showPermissionErrorGuidance() {
+    window.dispatchEvent(new CustomEvent('notificationPermissionError', {
+      detail: {
+        message: 'There was an error requesting notification permission.',
+        instructions: [
+          'Please try refreshing the page',
+          'Check if your browser supports notifications',
+          'Make sure you\'re using HTTPS'
+        ]
+      }
+    }));
+  }
+
+  // Check if permission can be requested
+  canRequestPermission() {
+    if (Platform.OS !== 'web') return true;
+    
+    // Check if notifications are supported
+    if (!('Notification' in window)) {
+      return false;
+    }
+    
+    // Check if permission is in default state (can be requested)
+    return Notification.permission === 'default';
+  }
+
+  // Get permission status with detailed info
+  getPermissionStatus() {
+    if (Platform.OS !== 'web') {
+      return {
+        status: this.isInitialized ? 'granted' : 'denied',
+        canRequest: !this.isInitialized,
+        isBlocked: false,
+        isSupported: true
+      };
+    }
+
+    if (!('Notification' in window)) {
+      return {
+        status: 'unsupported',
+        canRequest: false,
+        isBlocked: false,
+        isSupported: false
+      };
+    }
+
+    const permission = Notification.permission;
+    return {
+      status: permission,
+      canRequest: permission === 'default',
+      isBlocked: permission === 'denied',
+      isSupported: true
+    };
   }
 
   // Get FCM token

@@ -9,19 +9,24 @@ import {
   ActivityIndicator,
   SafeAreaView,
   ScrollView,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Import components
 import WateringNotificationSettings from '../components/WateringNotificationSettings';
+import NotificationPermissionGuide from '../components/NotificationPermissionGuide';
 
 // Import hooks
 import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
+import businessFirebaseNotificationService from '../services/BusinessFirebaseNotificationService';
 
 const NotificationSettingsScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [businessId, setBusinessId] = useState(null);
+  const [showPermissionGuide, setShowPermissionGuide] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState(null);
   const [notificationStats, setNotificationStats] = useState({
     hasPermission: false,
     tokenType: null,
@@ -42,13 +47,71 @@ const NotificationSettingsScreen = ({ navigation }) => {
 
   useEffect(() => {
     loadBusinessId();
+    setupPermissionEventListeners();
+    
+    return () => {
+      removePermissionEventListeners();
+    };
   }, []);
 
   useEffect(() => {
     if (businessId) {
       checkNotificationStatus();
+      checkPermissionStatus();
     }
   }, [businessId, isInitialized, hasPermission, token]);
+
+  const setupPermissionEventListeners = () => {
+    if (Platform.OS !== 'web') return;
+
+    const handlePermissionBlocked = (event) => {
+      console.log('🚫 Permission blocked event received:', event.detail);
+      setPermissionStatus(businessFirebaseNotificationService.getPermissionStatus());
+      setShowPermissionGuide(true);
+    };
+
+    const handlePermissionDenied = (event) => {
+      console.log('❌ Permission denied event received:', event.detail);
+      setPermissionStatus(businessFirebaseNotificationService.getPermissionStatus());
+      setShowPermissionGuide(true);
+    };
+
+    const handlePermissionError = (event) => {
+      console.log('⚠️ Permission error event received:', event.detail);
+      Alert.alert(
+        'Permission Error',
+        event.detail.message,
+        [{ text: 'OK' }]
+      );
+    };
+
+    const handleRetryPermission = async () => {
+      console.log('🔄 Retrying permission request...');
+      await handleSetupNotifications();
+    };
+
+    window.addEventListener('notificationPermissionBlocked', handlePermissionBlocked);
+    window.addEventListener('notificationPermissionDenied', handlePermissionDenied);
+    window.addEventListener('notificationPermissionError', handlePermissionError);
+    window.addEventListener('retryNotificationPermission', handleRetryPermission);
+  };
+
+  const removePermissionEventListeners = () => {
+    if (Platform.OS !== 'web') return;
+
+    window.removeEventListener('notificationPermissionBlocked', () => {});
+    window.removeEventListener('notificationPermissionDenied', () => {});
+    window.removeEventListener('notificationPermissionError', () => {});
+    window.removeEventListener('retryNotificationPermission', () => {});
+  };
+
+  const checkPermissionStatus = () => {
+    if (Platform.OS === 'web') {
+      const status = businessFirebaseNotificationService.getPermissionStatus();
+      setPermissionStatus(status);
+      console.log('🔔 Permission status:', status);
+    }
+  };
 
   const loadBusinessId = async () => {
     try {
@@ -87,6 +150,23 @@ const NotificationSettingsScreen = ({ navigation }) => {
     try {
       setIsLoading(true);
       
+      // Check permission status first
+      if (Platform.OS === 'web') {
+        const status = businessFirebaseNotificationService.getPermissionStatus();
+        
+        if (status.isBlocked) {
+          setPermissionStatus(status);
+          setShowPermissionGuide(true);
+          return;
+        }
+        
+        if (!status.canRequest && status.status !== 'granted') {
+          setPermissionStatus(status);
+          setShowPermissionGuide(true);
+          return;
+        }
+      }
+      
       // Initialize Firebase if not already done
       if (!isInitialized) {
         const initialized = await initialize(businessId);
@@ -94,6 +174,14 @@ const NotificationSettingsScreen = ({ navigation }) => {
           Alert.alert('Setup Failed', 'Failed to initialize notifications');
           return;
         }
+      }
+
+      // Try to request permission
+      const permissionGranted = await businessFirebaseNotificationService.requestPermission();
+      
+      if (!permissionGranted) {
+        // Permission was denied or blocked - the service will trigger appropriate events
+        return;
       }
 
       // Register for default watering notifications at 7:00 AM
@@ -107,6 +195,7 @@ const NotificationSettingsScreen = ({ navigation }) => {
         );
         
         await checkNotificationStatus();
+        await checkPermissionStatus();
       } else {
         Alert.alert(
           'Setup Failed',
@@ -286,6 +375,13 @@ const NotificationSettingsScreen = ({ navigation }) => {
             • Test notifications help ensure your setup is working correctly
           </Text>
         </View>
+
+        {/* Permission Guide Modal */}
+        <NotificationPermissionGuide 
+          visible={showPermissionGuide}
+          permissionStatus={permissionStatus}
+          onClose={() => setShowPermissionGuide(false)}
+        />
       </ScrollView>
     </SafeAreaView>
   );

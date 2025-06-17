@@ -10,7 +10,8 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
-  Switch
+  Switch,
+  ScrollView
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -226,6 +227,7 @@ const WateringChecklistScreen = ({ navigation }) => {
           }]}
           onPress={() => handleMarkWatered(item.id, item.name)}
           disabled={!item.needsWatering}
+          accessibilityLabel={`Mark ${item.name} as watered`}
         >
           <MaterialCommunityIcons 
             name="water" 
@@ -236,83 +238,6 @@ const WateringChecklistScreen = ({ navigation }) => {
       </View>
     );
   };
-
-  const renderHeader = () => (
-    <View style={styles.header}>
-      {weather ? (
-        <View style={styles.weatherCard}>
-          <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
-          <View style={styles.weatherInfo}>
-            <Text style={styles.weatherLocation}>{weather.location}</Text>
-            <Text style={styles.weatherCondition}>
-              {weather.temperature}°C, {weather.condition}
-            </Text>
-            {weather.rainToday ? (
-              <Text style={styles.weatherNote}>
-                🌧️ It rained today - some plants may not need watering
-              </Text>
-            ) : null}
-          </View>
-        </View>
-      ) : null}
-
-      <View style={styles.summaryCards}>
-        <View style={styles.summaryCard}>
-          <Text style={styles.summaryNumber}>{checklist.length}</Text>
-          <Text style={styles.summaryLabel}>Total Plants</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={[styles.summaryNumber, { color: '#FF9800' }]}>
-            {checklist.filter(p => p.needsWatering).length}
-          </Text>
-          <Text style={styles.summaryLabel}>Need Watering</Text>
-        </View>
-        <View style={styles.summaryCard}>
-          <Text style={[styles.summaryNumber, { color: '#F44336' }]}>
-            {checklist.filter(p => p.overdueDays > 0).length}
-          </Text>
-          <Text style={styles.summaryLabel}>Overdue</Text>
-        </View>
-      </View>
-
-      <View style={styles.filterRow}>
-        <View style={styles.filterButtons}>
-          {['all', 'needs-watering', 'overdue'].map(filter => (
-            <TouchableOpacity
-              key={filter}
-              style={[styles.filterButton, selectedFilter === filter && styles.filterButtonActive]}
-              onPress={() => setSelectedFilter(filter)}
-            >
-              <Text style={[
-                styles.filterButtonText,
-                selectedFilter === filter && styles.filterButtonTextActive
-              ]}>
-                {filter === 'all' ? 'All' : 
-                 filter === 'needs-watering' ? 'Need Water' : 'Overdue'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        
-        <TouchableOpacity 
-          style={styles.sortButton}
-          onPress={() => {
-            const options = [
-              { text: 'Priority', value: 'priority' },
-              { text: 'Name', value: 'name' },
-              { text: 'Last Watered', value: 'last-watered' }
-            ];
-            // You could implement a picker here or cycle through options
-            const currentIndex = options.findIndex(opt => opt.value === sortBy);
-            const nextIndex = (currentIndex + 1) % options.length;
-            setSortBy(options[nextIndex].value);
-          }}
-        >
-          <MaterialIcons name="sort" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -325,6 +250,14 @@ const WateringChecklistScreen = ({ navigation }) => {
           ? 'No plants need watering right now'
           : 'No plants are overdue for watering'}
       </Text>
+      <TouchableOpacity 
+        style={styles.addPlantButton}
+        onPress={() => navigation.navigate('AddPlantScreen')}
+        accessibilityLabel="Add a new plant"
+      >
+        <MaterialCommunityIcons name="plus-circle" size={24} color="#4CAF50" />
+        <Text style={styles.addPlantButtonText}>Add Plant</Text>
+      </TouchableOpacity>
     </View>
   );
 
@@ -358,11 +291,114 @@ const WateringChecklistScreen = ({ navigation }) => {
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* FIXED: Single header component with proper structure */}
+      <View style={styles.screenHeader}>
+        <TouchableOpacity 
+          style={styles.backButton} 
+          onPress={() => navigation.goBack()}
+          accessible={true}
+          accessibilityLabel="Go back"
+        >
+          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
+        </TouchableOpacity>
+        
+        <Text style={styles.screenTitle}>Watering Checklist</Text>
+        
+        <TouchableOpacity 
+          style={styles.routeButton}
+          onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
+        >
+          <MaterialCommunityIcons name="routes" size={24} color="#216a94" />
+        </TouchableOpacity>
+      </View>
+
       <FlatList
         data={filteredPlants}
         renderItem={renderPlantItem}
         keyExtractor={(item) => item.id}
-        ListHeaderComponent={renderHeader}
+        ListHeaderComponent={() => (
+          <>
+            {/* Weather card */}
+            {weather && (
+              <View style={styles.weatherCard}>
+                <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
+                <View style={styles.weatherInfo}>
+                  <Text style={styles.weatherLocation}>{weather.location}</Text>
+                  <Text style={styles.weatherCondition}>
+                    {weather.temperature}°C, {weather.condition}
+                  </Text>
+                  {weather.rainToday ? (
+                    <Text style={styles.weatherNote}>
+                      🌧️ It rained today - some plants may not need watering
+                    </Text>
+                  ) : null}
+                </View>
+              </View>
+            )}
+
+            {/* Summary cards */}
+            <View style={styles.summaryCards}>
+              <View style={styles.summaryCard}>
+                <Text style={styles.summaryNumber}>{checklist.length}</Text>
+                <Text style={styles.summaryLabel}>Total Plants</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={[styles.summaryNumber, { color: '#FF9800' }]}>
+                  {checklist.filter(p => p.needsWatering).length}
+                </Text>
+                <Text style={styles.summaryLabel}>Need Watering</Text>
+              </View>
+              <View style={styles.summaryCard}>
+                <Text style={[styles.summaryNumber, { color: '#F44336' }]}>
+                  {checklist.filter(p => p.overdueDays > 0).length}
+                </Text>
+                <Text style={styles.summaryLabel}>Overdue</Text>
+              </View>
+            </View>
+
+            {/* Filter and sort controls */}
+            <View style={styles.filterRow}>
+              <View style={styles.filterButtons}>
+                {['all', 'needs-watering', 'overdue'].map(filter => (
+                  <TouchableOpacity
+                    key={filter}
+                    style={[styles.filterButton, selectedFilter === filter && styles.filterButtonActive]}
+                    onPress={() => setSelectedFilter(filter)}
+                    accessibilityLabel={`Filter plants: ${filter === 'all' ? 'All' : filter === 'needs-watering' ? 'Need Water' : 'Overdue'}`}
+                  >
+                    <Text style={[
+                      styles.filterButtonText,
+                      selectedFilter === filter && styles.filterButtonTextActive
+                    ]}>
+                      {filter === 'all' ? 'All' : 
+                       filter === 'needs-watering' ? 'Need Water' : 'Overdue'}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.sortButton}
+                onPress={() => {
+                  const options = [
+                    { text: 'Priority', value: 'priority' },
+                    { text: 'Name', value: 'name' },
+                    { text: 'Last Watered', value: 'last-watered' }
+                  ];
+                  const currentIndex = options.findIndex(opt => opt.value === sortBy);
+                  const nextIndex = (currentIndex + 1) % options.length;
+                  setSortBy(options[nextIndex].value);
+                }}
+                accessibilityLabel="Sort plants"
+              >
+                <MaterialIcons name="sort" size={20} color="#666" />
+              </TouchableOpacity>
+            </View>
+
+            {/* Divider */}
+            <View style={styles.divider} />
+          </>
+        )}
         ListEmptyComponent={renderEmptyState}
         refreshControl={
           <RefreshControl
@@ -372,7 +408,7 @@ const WateringChecklistScreen = ({ navigation }) => {
             tintColor="#4CAF50"
           />
         }
-        contentContainerStyle={filteredPlants.length === 0 ? styles.emptyListContainer : null}
+        contentContainerStyle={filteredPlants.length === 0 ? styles.emptyListContainer : { paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       />
     </SafeAreaView>
@@ -382,7 +418,7 @@ const WateringChecklistScreen = ({ navigation }) => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F5F5F5',
+    backgroundColor: '#f8f9fa',
   },
   loadingContainer: {
     flex: 1,
@@ -426,18 +462,51 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-  header: {
-    padding: 16,
-    backgroundColor: '#FFFFFF',
-    marginBottom: 8,
-  },
-  weatherCard: {
+  screenHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#E8F5E8',
-    borderRadius: 8,
-    marginBottom: 16,
+    justifyContent: 'space-between',
+    backgroundColor: '#fff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    zIndex: 100,
+  },
+  backButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f9f3',
+  },
+  screenTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#216a94',
+    flex: 1,
+    textAlign: 'center',
+  },
+  routeButton: {
+    padding: 8,
+    borderRadius: 20,
+    backgroundColor: '#f0f9f3',
+  },
+  weatherCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    margin: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
   weatherInfo: {
     marginLeft: 12,
@@ -462,6 +531,7 @@ const styles = StyleSheet.create({
   summaryCards: {
     flexDirection: 'row',
     justifyContent: 'space-around',
+    marginHorizontal: 16,
     marginBottom: 16,
   },
   summaryCard: {
@@ -481,6 +551,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginHorizontal: 16,
+    marginBottom: 8,
   },
   filterButtons: {
     flexDirection: 'row',
@@ -507,6 +579,12 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 6,
     backgroundColor: '#F0F0F0',
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#E0E0E0',
+    marginHorizontal: 16,
+    marginBottom: 8,
   },
   plantItem: {
     flexDirection: 'row',
@@ -586,6 +664,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 20,
+  },
+  addPlantButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#4CAF50',
+    borderRadius: 6,
+  },
+  addPlantButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
   },
 });
 

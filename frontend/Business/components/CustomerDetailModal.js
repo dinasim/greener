@@ -33,6 +33,7 @@ export default function CustomerDetailModal({
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const contactMenuAnim = useRef(new Animated.Value(0)).current;
+  const modalContentRef = useRef(null); // Accessibility fix
   
   useEffect(() => {
     if (visible && customer) {
@@ -69,13 +70,9 @@ export default function CustomerDetailModal({
   // Get customer tier
   const getCustomerTier = (customer) => {
     if (!customer) return 'new';
-    const totalSpent = customer.totalSpent || 0;
     const orderCount = customer.orderCount || 0;
-    
-    if (totalSpent >= 500 || orderCount >= 10) return 'vip';
-    if (totalSpent >= 200 || orderCount >= 5) return 'premium';
-    if (orderCount >= 2) return 'regular';
-    return 'new';
+    if (orderCount <= 1) return 'new';
+    return 'regular';
   };
 
   // Get tier color
@@ -209,15 +206,27 @@ export default function CustomerDetailModal({
   const tier = getCustomerTier(customer);
   const tierColor = getTierColor(tier);
 
+  // Accessibility fix: blur focus if inside modal before closing (web only)
+  function handleCloseModal() {
+    if (typeof document !== 'undefined' && modalContentRef.current) {
+      const active = document.activeElement;
+      if (active && modalContentRef.current.contains(active)) {
+        active.blur();
+      }
+    }
+    onClose();
+  }
+
   return (
     <Modal
       visible={visible}
       animationType="none"
       transparent={true}
-      onRequestClose={onClose}
+      onRequestClose={handleCloseModal}
     >
       <View style={styles.overlay}>
         <Animated.View 
+          ref={modalContentRef} // Attach ref here
           style={[
             styles.modalContainer,
             {

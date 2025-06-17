@@ -1,6 +1,7 @@
 # http_helpers.py
 import azure.functions as func
 import json
+from datetime import datetime
 
 def add_cors_headers(response):
     """Add comprehensive CORS headers to response"""
@@ -34,51 +35,66 @@ def create_error_response(message, status_code=400):
     )
     return add_cors_headers(response)
 
+# Standardized header validation and user ID extraction
 def get_user_id_from_request(req):
     """
-    FIXED: Extract user ID from request using multiple fallback methods
-    This function standardizes user ID extraction across all endpoints
+    FIXED: Standardized function to extract user ID from request headers
+    Priority order: X-User-Email > X-Business-ID > query params
     """
-    # Method 1: Try X-User-Email header (primary method)
+    # Try headers first (most reliable)
     user_id = req.headers.get('X-User-Email')
-    if user_id:
-        return user_id.strip()
     
-    # Method 2: Try X-Business-ID header (for business accounts)
-    user_id = req.headers.get('X-Business-ID')
-    if user_id:
-        return user_id.strip()
+    if not user_id:
+        user_id = req.headers.get('X-Business-ID')
     
-    # Method 3: Try route parameters (for URL-based IDs)
-    user_id = req.route_params.get('businessId')
-    if user_id:
-        return user_id.strip()
+    if not user_id:
+        # Try query parameters as fallback
+        user_id = req.params.get('businessId') or req.params.get('userId')
     
-    user_id = req.route_params.get('userId')
-    if user_id:
-        return user_id.strip()
+    if not user_id:
+        # Try route parameters last
+        user_id = req.route_params.get('businessId') or req.route_params.get('userId')
     
-    # Method 4: Try query parameters as fallback
-    user_id = req.params.get('businessId')
-    if user_id:
-        return user_id.strip()
+    return user_id
+
+def validate_business_authentication(req):
+    """
+    FIXED: Standardized business authentication validation
+    Returns (business_id, error_response) - error_response is None if valid
+    """
+    business_id = get_user_id_from_request(req)
     
-    user_id = req.params.get('userId')
-    if user_id:
-        return user_id.strip()
+    if not business_id:
+        return None, create_error_response(
+            "Business authentication required. Please provide X-User-Email or X-Business-ID header", 
+            401
+        )
     
-    # Method 5: Try request body (for POST requests)
-    try:
-        body = req.get_json()
-        if body:
-            user_id = body.get('businessId') or body.get('userId') or body.get('email')
-            if user_id:
-                return user_id.strip()
-    except (ValueError, AttributeError):
-        pass
+    return business_id, None
+
+def create_standardized_response(data, success=True, status_code=200, message=None):
+    """
+    FIXED: Standardized response format for all business endpoints
+    """
+    response_data = {
+        "success": success,
+        "data": data,
+        "timestamp": datetime.utcnow().isoformat()
+    }
     
-    # If all methods fail, return None
-    return None
+    if message:
+        response_data["message"] = message
+    
+    if not success and isinstance(data, str):
+        response_data["error"] = data
+        response_data["data"] = None
+    
+    response = func.HttpResponse(
+        body=json.dumps(response_data, default=str),
+        status_code=status_code,
+        mimetype="application/json"
+    )
+    return add_cors_headers(response)
 
 def extract_user_id(req):
     """Legacy function - redirect to new standardized function"""

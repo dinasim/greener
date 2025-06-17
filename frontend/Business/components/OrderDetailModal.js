@@ -38,6 +38,7 @@ export default function OrderDetailModal({
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const statusMenuAnim = useRef(new Animated.Value(0)).current;
+  const modalContentRef = useRef(null); // Accessibility fix
   
   useEffect(() => {
     if (visible && order) {
@@ -265,15 +266,27 @@ export default function OrderDetailModal({
 
   const statusOptions = getNextStatusOptions(order.status);
 
+  // Accessibility fix: blur focus if inside modal before closing (web only)
+  function handleCloseModal() {
+    if (typeof document !== 'undefined' && modalContentRef.current) {
+      const active = document.activeElement;
+      if (active && modalContentRef.current.contains(active)) {
+        active.blur();
+      }
+    }
+    onClose();
+  }
+
   return (
     <Modal
       visible={visible}
       animationType="none"
       transparent={true}
-      onRequestClose={onClose}
+      onRequestClose={handleCloseModal}
     >
       <View style={styles.overlay}>
         <Animated.View 
+          ref={modalContentRef} // Attach ref here
           style={[
             styles.modalContainer,
             {

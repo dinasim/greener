@@ -1,9 +1,9 @@
-// Business/services/businessMarketplaceApi.js - NEW: Marketplace-specific business functions
+// Business/services/businessMarketplaceApi.js - FIXED: Clean business marketplace API
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-// Reuse utility functions from businessApi
+// Enhanced headers with proper business context
 const getEnhancedHeaders = async () => {
   try {
     const [userEmail, userType, businessId, authToken] = await Promise.all([
@@ -31,6 +31,7 @@ const getEnhancedHeaders = async () => {
   }
 };
 
+// Enhanced API request function with retry logic
 const apiRequest = async (url, options = {}, retries = 3, context = 'Request') => {
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -57,8 +58,12 @@ const apiRequest = async (url, options = {}, retries = 3, context = 'Request') =
   }
 };
 
+// ==========================================
+// BUSINESS MARKETPLACE FUNCTIONS
+// ==========================================
+
 /**
- * Get Business Marketplace Profile - FIXED endpoint
+ * Get Business Marketplace Profile
  */
 export const getBusinessMarketplaceProfile = async (businessId) => {
   try {
@@ -108,7 +113,7 @@ export const getBusinessMarketplaceProducts = async (businessId) => {
     console.log('🛒 Loading marketplace products for business:', businessId);
     const headers = await getEnhancedHeaders();
     
-    const url = `${API_BASE_URL}/business-inventory`;
+    const url = `${API_BASE_URL}/business-inventory-get`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
@@ -186,6 +191,10 @@ export const getAllBusinesses = async (filters = {}) => {
     throw error;
   }
 };
+
+// ==========================================
+// EXPORTS
+// ==========================================
 
 export default {
   getBusinessMarketplaceProfile,

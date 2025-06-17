@@ -22,8 +22,31 @@ import { useFocusEffect } from '@react-navigation/native';
 
 // Import API services
 import { getBusinessInventory } from '../services/businessApi';
-import { createOrder } from '../services/businessOrderApi';
-import { sendOrderMessage } from '../../marketplace/services/marketplaceApi';
+import { createOrder, getHeaders } from '../services/businessOrderApi';
+import { sendOrderMessage, API_BASE_URL } from '../../marketplace/services/marketplaceApi';
+
+// NEW: Customer lookup API function
+const lookupCustomerProfile = async (searchValue, searchType = 'email') => {
+  try {
+    const headers = await getHeaders();
+    
+    // Use the existing user-profile endpoint that we found in the backend
+    const response = await fetch(`${API_BASE_URL}/user-profile/${encodeURIComponent(searchValue)}`, {
+      method: 'GET',
+      headers,
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data.user || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Error looking up customer profile:', error);
+    return null;
+  }
+};
 
 export default function CreateOrderScreen({ navigation, route }) {
   const { businessId: routeBusinessId } = route.params || {};
@@ -54,6 +77,11 @@ export default function CreateOrderScreen({ navigation, route }) {
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
+  
+  // NEW: Add customer profile lookup state
+  const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+  const [foundCustomerProfile, setFoundCustomerProfile] = useState(null);
+  const [customerLookupMode, setCustomerLookupMode] = useState('manual'); // 'manual' or 'lookup'
   
   // Initialize
   useEffect(() => {
@@ -96,7 +124,7 @@ export default function CreateOrderScreen({ navigation, route }) {
     }, [businessId])
   );
 
-  // Load inventory
+  // Load inventory - FIXED DATA TYPE ERROR
   const loadInventory = async (id = businessId, silent = false) => {
     if (!id) return;
     
@@ -107,11 +135,36 @@ export default function CreateOrderScreen({ navigation, route }) {
       }
       
       console.log('Loading inventory for order creation...');
-      const inventoryData = await getBusinessInventory(id);
+      const inventoryResponse = await getBusinessInventory(id);
+      
+      // FIXED: Ensure we access the inventory array correctly and handle different response structures
+      let inventoryArray = [];
+      
+      if (inventoryResponse && inventoryResponse.success) {
+        // Response has success flag - get inventory from response
+        inventoryArray = inventoryResponse.inventory || inventoryResponse.data || [];
+      } else if (Array.isArray(inventoryResponse)) {
+        // Response is directly an array
+        inventoryArray = inventoryResponse;
+      } else if (inventoryResponse && inventoryResponse.inventory) {
+        // Response has inventory property
+        inventoryArray = inventoryResponse.inventory;
+      } else if (inventoryResponse && inventoryResponse.data) {
+        // Response has data property
+        inventoryArray = inventoryResponse.data;
+      }
+      
+      // FIXED: Ensure inventoryArray is actually an array before filtering
+      if (!Array.isArray(inventoryArray)) {
+        console.warn('Inventory data is not an array:', inventoryArray);
+        inventoryArray = [];
+      }
       
       // Filter only active items with stock
-      const availableItems = inventoryData.filter(item => 
-        item.status === 'active' && item.quantity > 0
+      const availableItems = inventoryArray.filter(item => 
+        item && 
+        item.status === 'active' && 
+        (item.quantity || 0) > 0
       );
       
       setInventory(availableItems);
@@ -119,6 +172,8 @@ export default function CreateOrderScreen({ navigation, route }) {
       
     } catch (error) {
       console.error('Error loading inventory:', error);
+      // FIXED: Set empty array on error to prevent further filter errors
+      setInventory([]);
       if (!silent) {
         Alert.alert('Error', 'Failed to load inventory. Please try again.');
       }
@@ -144,7 +199,102 @@ export default function CreateOrderScreen({ navigation, route }) {
     return name.includes(query) || scientificName.includes(query);
   });
 
-  // Handle customer info change
+  // NEW: Search for existing customer by phone or email
+  const searchCustomerProfile = async (searchValue, searchType = 'email') => {
+    try {
+      setIsSearchingCustomer(true);
+      console.log(`🔍 Searching for customer by ${searchType}:`, searchValue);
+      
+      const headers = await getHeaders();
+      
+      // Use the existing user-profile endpoint that we found in the backend
+      // The backend accepts both email and ID in the same endpoint
+      const response = await fetch(`${API_BASE_URL}/user-profile/${encodeURIComponent(searchValue)}`, {
+        method: 'GET',
+        headers,
+      });
+      
+      if (response.ok) {
+        const userData = await response.json();
+        if (userData && userData.user) {
+          const profile = userData.user;
+          setFoundCustomerProfile({
+            id: profile.id || profile.email,
+            email: profile.email,
+            name: profile.name,
+            phone: profile.phone || profile.contactPhone || '',
+            hasGreenerProfile: true,
+            profileImage: profile.profileImage || profile.avatar,
+            joinDate: profile.joinDate || profile.createdAt
+          });
+          
+          // Auto-fill customer info
+          setCustomerInfo(prev => ({
+            ...prev,
+            email: profile.email,
+            name: profile.name,
+            phone: profile.phone || profile.contactPhone || prev.phone,
+            greenerProfileId: profile.id || profile.email // NEW: Store profile ID
+          }));
+          
+          console.log('✅ Found existing Greener customer profile');
+          return true;
+        }
+      }
+      
+      console.log('⚠️ No existing Greener profile found');
+      setFoundCustomerProfile(null);
+      return false;
+      
+    } catch (error) {
+      console.error('Error searching customer profile:', error);
+      return false;
+    } finally {
+      setIsSearchingCustomer(false);
+    }
+  };
+
+  // NEW: Handle customer lookup by phone (for walk-in customers)
+  const handlePhoneLookup = async (phoneNumber) => {
+    if (!phoneNumber || phoneNumber.length < 10) {
+      Alert.alert('Invalid Phone', 'Please enter a valid phone number');
+      return;
+    }
+    
+    const found = await searchCustomerProfile(phoneNumber, 'phone');
+    if (!found) {
+      Alert.alert(
+        'Customer Not Found',
+        'This customer doesn\'t have a Greener app profile yet. You can still create the order, but chat functionality will be limited.',
+        [
+          { text: 'Continue Anyway', style: 'default' },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    }
+  };
+
+  // NEW: Handle customer lookup by email
+  const handleEmailLookup = async (email) => {
+    if (!email || !/\S+@\S+\.\S+/.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
+      return;
+    }
+    
+    const found = await searchCustomerProfile(email, 'email');
+    if (!found) {
+      Alert.alert(
+        'Customer Not Found',
+        'This customer doesn\'t have a Greener app profile yet. You can still create the order, but chat functionality will be limited.',
+        [
+          { text: 'Continue Anyway', style: 'default' },
+          { text: 'Cancel', style: 'cancel' }
+        ]
+      );
+    }
+  };
+
+  // ENHANCED: Updated customer info change handler
   const handleCustomerInfoChange = (field, value) => {
     setCustomerInfo(prev => ({
       ...prev,
@@ -157,6 +307,14 @@ export default function CreateOrderScreen({ navigation, route }) {
         ...prev,
         [field]: null
       }));
+    }
+    
+    // NEW: Auto-search when email is entered (debounced)
+    if (field === 'email' && value.includes('@') && value.length > 5) {
+      clearTimeout(window.emailSearchTimeout);
+      window.emailSearchTimeout = setTimeout(() => {
+        searchCustomerProfile(value, 'email');
+      }, 1000);
     }
   };
 
@@ -296,10 +454,11 @@ export default function CreateOrderScreen({ navigation, route }) {
     return Object.keys(newErrors).length === 0;
   };
 
-  // Submit order
+  // ENHANCED: Updated submit order with profile ID
   const handleSubmitOrder = async () => {
     if (!validateForm()) return;
     setIsSubmitting(true);
+    
     try {
       const orderData = {
         businessId,
@@ -308,24 +467,46 @@ export default function CreateOrderScreen({ navigation, route }) {
         customerPhone: customerInfo.phone.trim(),
         communicationPreference: customerInfo.communicationPreference,
         notes: customerInfo.notes.trim(),
+        // NEW: Include customer profile ID for chat integration
+        customerProfileId: customerInfo.greenerProfileId || null,
+        hasGreenerProfile: !!foundCustomerProfile,
         items: selectedItems.map(item => ({
           id: item.id,
           quantity: item.quantity
         }))
       };
-      console.log('Submitting order:', orderData);
+      
+      console.log('Submitting order with profile integration:', orderData);
       const result = await createOrder(orderData);
+      
       // Store last created order
       setLastCreatedOrder(result.order);
-      // Send auto message to business in chat
+      
+      // NEW: Enhanced messaging for profile-linked customers
       try {
-        const senderId = customerInfo.email.trim();
-        const recipientId = businessId;
-        const orderMsg = `New order received from ${customerInfo.name.trim()} (${customerInfo.email.trim()}) for pickup.\nOrder: ${result.order.confirmationNumber}\nTotal: $${result.order.total.toFixed(2)}`;
-        await sendOrderMessage(recipientId, orderMsg, senderId, { orderId: result.order.id, confirmationNumber: result.order.confirmationNumber });
+        const senderId = businessId;
+        const recipientId = customerInfo.greenerProfileId || customerInfo.email.trim();
+        
+        let orderMsg;
+        if (foundCustomerProfile) {
+          // Customer has Greener profile - send rich message
+          orderMsg = `📦 New order confirmation for pickup!\n\nOrder: ${result.order.confirmationNumber}\nTotal: $${result.order.total.toFixed(2)}\nEstimated pickup: 2+ hours\n\nYou can track this order in your Greener app. Please bring your confirmation number for pickup.`;
+        } else {
+          // No profile - basic notification
+          orderMsg = `Order created: ${result.order.confirmationNumber} for ${customerInfo.name.trim()}.\nTotal: $${result.order.total.toFixed(2)}\nCustomer pickup required.`;
+        }
+        
+        await sendOrderMessage(recipientId, orderMsg, senderId, { 
+          orderId: result.order.id, 
+          confirmationNumber: result.order.confirmationNumber,
+          hasCustomerProfile: !!foundCustomerProfile
+        });
+        
+        console.log('✅ Order message sent successfully');
       } catch (msgErr) {
-        console.warn('Failed to send auto order message to business:', msgErr);
+        console.warn('Failed to send order message:', msgErr);
       }
+
       // Show success animation
       setShowSuccessAnimation(true);
       
@@ -465,6 +646,137 @@ export default function CreateOrderScreen({ navigation, route }) {
     </Animated.View>
   );
 
+  // NEW: Customer lookup section render
+  const renderCustomerLookup = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>
+        <MaterialIcons name="person-search" size={20} color="#4CAF50" />
+        {' '}Find Customer Profile
+      </Text>
+      
+      <View style={styles.customerForm}>
+        <View style={styles.lookupModeContainer}>
+          <Text style={styles.label}>Lookup Method</Text>
+          <View style={styles.lookupModeButtons}>
+            <TouchableOpacity
+              style={[
+                styles.lookupModeButton,
+                customerLookupMode === 'phone' && styles.lookupModeButtonActive
+              ]}
+              onPress={() => setCustomerLookupMode('phone')}
+            >
+              <MaterialIcons name="phone" size={16} color={customerLookupMode === 'phone' ? '#fff' : '#666'} />
+              <Text style={[
+                styles.lookupModeText,
+                customerLookupMode === 'phone' && styles.lookupModeTextActive
+              ]}>Phone</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.lookupModeButton,
+                customerLookupMode === 'email' && styles.lookupModeButtonActive
+              ]}
+              onPress={() => setCustomerLookupMode('email')}
+            >
+              <MaterialIcons name="email" size={16} color={customerLookupMode === 'email' ? '#fff' : '#666'} />
+              <Text style={[
+                styles.lookupModeText,
+                customerLookupMode === 'email' && styles.lookupModeTextActive
+              ]}>Email</Text>
+            </TouchableOpacity>
+            
+            <TouchableOpacity
+              style={[
+                styles.lookupModeButton,
+                customerLookupMode === 'manual' && styles.lookupModeButtonActive
+              ]}
+              onPress={() => setCustomerLookupMode('manual')}
+            >
+              <MaterialIcons name="edit" size={16} color={customerLookupMode === 'manual' ? '#fff' : '#666'} />
+              <Text style={[
+                styles.lookupModeText,
+                customerLookupMode === 'manual' && styles.lookupModeTextActive
+              ]}>Manual</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        {customerLookupMode === 'phone' && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Customer Phone Number</Text>
+            <View style={styles.lookupInputContainer}>
+              <TextInput
+                style={styles.input}
+                value={customerInfo.phone}
+                onChangeText={(text) => handleCustomerInfoChange('phone', text)}
+                placeholder="+1 (555) 123-4567"
+                keyboardType="phone-pad"
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={styles.lookupButton}
+                onPress={() => handlePhoneLookup(customerInfo.phone)}
+                disabled={isSearchingCustomer}
+              >
+                {isSearchingCustomer ? (
+                  <ActivityIndicator size="small" color="#4CAF50" />
+                ) : (
+                  <MaterialIcons name="search" size={20} color="#4CAF50" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        
+        {customerLookupMode === 'email' && (
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Customer Email</Text>
+            <View style={styles.lookupInputContainer}>
+              <TextInput
+                style={styles.input}
+                value={customerInfo.email}
+                onChangeText={(text) => handleCustomerInfoChange('email', text)}
+                placeholder="customer@example.com"
+                keyboardType="email-address"
+                autoCapitalize="none"
+                placeholderTextColor="#999"
+              />
+              <TouchableOpacity
+                style={styles.lookupButton}
+                onPress={() => handleEmailLookup(customerInfo.email)}
+                disabled={isSearchingCustomer}
+              >
+                {isSearchingCustomer ? (
+                  <ActivityIndicator size="small" color="#4CAF50" />
+                ) : (
+                  <MaterialIcons name="search" size={20} color="#4CAF50" />
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+        
+        {/* Customer Profile Found Indicator */}
+        {foundCustomerProfile && (
+          <View style={styles.customerProfileFound}>
+            <View style={styles.customerProfileHeader}>
+              <MaterialIcons name="verified-user" size={20} color="#4CAF50" />
+              <Text style={styles.customerProfileTitle}>Greener Customer Found!</Text>
+            </View>
+            <View style={styles.customerProfileInfo}>
+              <Text style={styles.customerProfileName}>{foundCustomerProfile.name}</Text>
+              <Text style={styles.customerProfileEmail}>{foundCustomerProfile.email}</Text>
+              <Text style={styles.customerProfileNote}>
+                Chat functionality will be available for this order
+              </Text>
+            </View>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
@@ -526,7 +838,10 @@ export default function CreateOrderScreen({ navigation, route }) {
           }
           showsVerticalScrollIndicator={false}
         >
-          {/* Customer Information Section */}
+          {/* NEW: Customer Lookup Section - FIRST */}
+          {renderCustomerLookup()}
+
+          {/* Customer Information Section - UPDATED */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>
               <MaterialIcons name="person" size={20} color="#4CAF50" />
@@ -534,56 +849,61 @@ export default function CreateOrderScreen({ navigation, route }) {
             </Text>
             
             <View style={styles.customerForm}>
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  Customer Email <Text style={styles.required}>*</Text>
-                </Text>
-                <TextInput
-                  style={[styles.input, errors.email && styles.inputError]}
-                  value={customerInfo.email}
-                  onChangeText={(text) => handleCustomerInfoChange('email', text)}
-                  placeholder="customer@example.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  placeholderTextColor="#999"
-                />
-                {errors.email && (
-                  <Text style={styles.errorText}>
-                    <MaterialIcons name="error" size={14} color="#f44336" /> {errors.email}
-                  </Text>
-                )}
-              </View>
+              {customerLookupMode === 'manual' && (
+                <>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>
+                      Customer Email <Text style={styles.required}>*</Text>
+                    </Text>
+                    <TextInput
+                      style={[styles.input, errors.email && styles.inputError]}
+                      value={customerInfo.email}
+                      onChangeText={(text) => handleCustomerInfoChange('email', text)}
+                      placeholder="customer@example.com"
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      placeholderTextColor="#999"
+                    />
+                    {errors.email && (
+                      <Text style={styles.errorText}>
+                        <MaterialIcons name="error" size={14} color="#f44336" /> {errors.email}
+                      </Text>
+                    )}
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>
-                  Customer Name <Text style={styles.required}>*</Text>
-                </Text>
-                <TextInput
-                  style={[styles.input, errors.name && styles.inputError]}
-                  value={customerInfo.name}
-                  onChangeText={(text) => handleCustomerInfoChange('name', text)}
-                  placeholder="John Doe"
-                  placeholderTextColor="#999"
-                />
-                {errors.name && (
-                  <Text style={styles.errorText}>
-                    <MaterialIcons name="error" size={14} color="#f44336" /> {errors.name}
-                  </Text>
-                )}
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>
+                      Customer Name <Text style={styles.required}>*</Text>
+                    </Text>
+                    <TextInput
+                      style={[styles.input, errors.name && styles.inputError]}
+                      value={customerInfo.name}
+                      onChangeText={(text) => handleCustomerInfoChange('name', text)}
+                      placeholder="John Doe"
+                      placeholderTextColor="#999"
+                    />
+                    {errors.name && (
+                      <Text style={styles.errorText}>
+                        <MaterialIcons name="error" size={14} color="#f44336" /> {errors.name}
+                      </Text>
+                    )}
+                  </View>
 
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>Phone Number (Optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  value={customerInfo.phone}
-                  onChangeText={(text) => handleCustomerInfoChange('phone', text)}
-                  placeholder="+1 (555) 123-4567"
-                  keyboardType="phone-pad"
-                  placeholderTextColor="#999"
-                />
-              </View>
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.label}>Phone Number (Optional)</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={customerInfo.phone}
+                      onChangeText={(text) => handleCustomerInfoChange('phone', text)}
+                      placeholder="+1 (555) 123-4567"
+                      keyboardType="phone-pad"
+                      placeholderTextColor="#999"
+                    />
+                  </View>
+                </>
+              )}
 
+              {/* Communication Preference - Always Show */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>Communication Preference</Text>
                 <View style={styles.preferenceContainer}>
@@ -1141,5 +1461,86 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     opacity: 0.8,
+  },
+  lookupModeContainer: {
+    marginBottom: 16,
+  },
+  lookupModeButtons: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  lookupModeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  lookupModeButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  lookupModeText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 4,
+  },
+  lookupModeTextActive: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  lookupInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lookupButton: {
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: '#f0f9f3',
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+  },
+  customerProfileFound: {
+    backgroundColor: '#f0f9f3',
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#4CAF50',
+    marginTop: 16,
+  },
+  customerProfileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  customerProfileTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#4CAF50',
+    marginLeft: 8,
+  },
+  customerProfileInfo: {
+    marginLeft: 28,
+  },
+  customerProfileName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+  },
+  customerProfileEmail: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  customerProfileNote: {
+    fontSize: 12,
+    color: '#4CAF50',
+    fontStyle: 'italic',
+    marginTop: 4,
   },
 });

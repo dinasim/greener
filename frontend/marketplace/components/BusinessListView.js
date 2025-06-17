@@ -50,26 +50,67 @@ const BusinessListView = ({
     return `${rating.toFixed(1)} ★ (${reviewCount} reviews)`;
   };
 
-  // Format business hours
+  // Format business hours with better web display
   const formatBusinessHours = (hours) => {
     if (!hours) return 'Hours not specified';
     if (typeof hours === 'string') return hours;
     if (hours.isOpen24Hours) return 'Open 24 hours';
+    
+    // Handle array of business hours (today's hours)
+    if (Array.isArray(hours)) {
+      const today = new Date();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayName = dayNames[today.getDay()];
+      
+      const todayHours = hours.find(h => h.day?.toLowerCase() === todayName.toLowerCase());
+      if (todayHours) {
+        if (todayHours.isClosed) return 'Closed today';
+        return `${todayHours.open || '9:00'} - ${todayHours.close || '17:00'}`;
+      }
+    }
+    
+    // Handle single hours object
+    if (hours.isClosed) return 'Closed';
     return `${hours.open || '9:00'} - ${hours.close || '17:00'}`;
   };
 
-  // Get business status color
-  const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'open':
-        return '#4CAF50';
-      case 'closed':
-        return '#f44336';
-      case 'busy':
-        return '#FF9800';
-      default:
-        return '#757575';
+  // Get business status with better logic
+  const getBusinessStatus = (business) => {
+    // Check if business has current status
+    if (business.currentStatus) return business.currentStatus;
+    if (business.status && business.status !== 'active') return business.status;
+    
+    // Determine status from business hours
+    const hours = business.hours || business.businessHours;
+    if (!hours) return 'unknown';
+    
+    if (Array.isArray(hours)) {
+      const today = new Date();
+      const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayName = dayNames[today.getDay()];
+      
+      const todayHours = hours.find(h => h.day?.toLowerCase() === todayName.toLowerCase());
+      if (todayHours) {
+        if (todayHours.isClosed) return 'closed';
+        
+        // Check if currently open
+        const now = today.getHours() * 60 + today.getMinutes();
+        const openTime = parseTimeToMinutes(todayHours.open);
+        const closeTime = parseTimeToMinutes(todayHours.close);
+        
+        if (now >= openTime && now <= closeTime) return 'open';
+        return 'closed';
+      }
     }
+    
+    return 'unknown';
+  };
+
+  // Helper to parse time to minutes
+  const parseTimeToMinutes = (timeString) => {
+    if (!timeString) return 0;
+    const [hours, minutes] = timeString.split(':').map(Number);
+    return hours * 60 + (minutes || 0);
   };
 
   // Render individual business item

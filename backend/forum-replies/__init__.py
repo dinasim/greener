@@ -16,6 +16,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     GET: Retrieve replies for a topic
     POST: Create new reply
     PUT: Update reply (vote, mark as answer)
+    DELETE: Delete a reply by replyId
     """
     
     logging.info('Plant Care Forum Replies function processed a request.')
@@ -29,6 +30,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return handle_create_reply(req)
         elif method == "PUT":
             return handle_update_reply(req)
+        elif method == "DELETE":
+            return handle_delete_reply(req)
         else:
             return func.HttpResponse(
                 json.dumps({"error": "Method not allowed"}),
@@ -326,6 +329,60 @@ def handle_update_reply(req: func.HttpRequest) -> func.HttpResponse:
         logging.error(f"Error updating forum reply: {str(e)}")
         return func.HttpResponse(
             json.dumps({"error": f"Failed to update reply: {str(e)}"}),
+            status_code=500,
+            mimetype="application/json"
+        )
+
+def handle_delete_reply(req: func.HttpRequest) -> func.HttpResponse:
+    """Delete a forum reply by replyId"""
+    try:
+        reply_id = req.params.get('replyId')
+        category = req.params.get('category')
+        if not reply_id or not category:
+            return func.HttpResponse(
+                json.dumps({"error": "Missing replyId or category parameter"}),
+                status_code=400,
+                mimetype="application/json"
+            )
+        container = get_container("forum")
+        # Find the reply (need partition key: category)
+        query = "SELECT * FROM c WHERE c.type = 'reply' AND c.id = @id AND c.category = @category"
+        items = list(container.query_items(
+            query=query,
+            parameters=[{"name": "@id", "value": reply_id}, {"name": "@category", "value": category}],
+            enable_cross_partition_query=False
+        ))
+        if not items:
+            return func.HttpResponse(
+                json.dumps({"error": "Reply not found"}),
+                status_code=404,
+                mimetype="application/json"
+            )
+        reply = items[0]
+        # Delete the reply using id and partition key (category)
+        container.delete_item(item=reply_id, partition_key=category)
+        # Optionally decrement parent topic's reply count
+        try:
+            topic_query = "SELECT * FROM c WHERE c.id = @topicId AND c.type = 'topic' AND c.category = @category"
+            topic_items = list(container.query_items(
+                query=topic_query,
+                parameters=[{"name": "@topicId", "value": reply.get('topicId')}, {"name": "@category", "value": category}],
+                enable_cross_partition_query=False
+            ))
+            if topic_items:
+                topic = topic_items[0]
+                topic['replies'] = max(0, topic.get('replies', 1) - 1)
+                container.replace_item(item=topic['id'], body=topic)
+        except Exception as e:
+            logging.warning(f"Failed to update topic reply count after deleting reply: {str(e)}")
+        return func.HttpResponse(
+            json.dumps({"success": True, "message": "Reply deleted"}),
+            status_code=200,
+            mimetype="application/json"
+        )
+    except Exception as e:
+        return func.HttpResponse(
+            json.dumps({"error": f"Failed to delete reply: {str(e)}"}),
             status_code=500,
             mimetype="application/json"
         )

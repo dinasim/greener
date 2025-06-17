@@ -193,7 +193,8 @@ const MessagesScreen = () => {
 
       // FIXED: Try business profile - using correct backend endpoint and field names
       try {
-        const businessResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/business-profile/${userEmail}`, {
+        // FIXED: Use correct deployed route from function.json
+        const businessResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/business/${userEmail}/profile`, {
           method: 'GET',
           headers,
         });

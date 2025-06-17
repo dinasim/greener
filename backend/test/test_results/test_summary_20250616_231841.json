@@ -1,0 +1,131 @@
+{
+  "summary": {
+    "total": 24,
+    "passed": 7,
+    "failed": 17,
+    "errors": 0,
+    "timestamp": "2025-06-16T23:18:41.836917"
+  },
+  "results": {
+    "test_register_user": {
+      "status": "FAIL",
+      "duration": 0.40909790992736816,
+      "timestamp": "2025-06-16T23:18:13.721673"
+    },
+    "test_login": {
+      "status": "FAIL",
+      "duration": 0.4060935974121094,
+      "timestamp": "2025-06-16T23:18:14.127767"
+    },
+    "test_save_user": {
+      "status": "PASS",
+      "duration": 1.3092725276947021,
+      "timestamp": "2025-06-16T23:18:09.007405"
+    },
+    "test_user_profile": {
+      "status": "FAIL",
+      "duration": 0.7932953834533691,
+      "timestamp": "2025-06-16T23:18:09.800701"
+    },
+    "test_notification_settings": {
+      "status": "FAIL",
+      "duration": 0.7885894775390625,
+      "timestamp": "2025-06-16T23:18:10.589290"
+    },
+    "test_register_device_token": {
+      "status": "FAIL",
+      "duration": 0.4050455093383789,
+      "timestamp": "2025-06-16T23:18:10.994335"
+    },
+    "test_pending_notifications": {
+      "status": "FAIL",
+      "duration": 0.379854679107666,
+      "timestamp": "2025-06-16T23:18:11.374190"
+    },
+    "test_mark_notification_read": {
+      "status": "FAIL",
+      "duration": 0.3946413993835449,
+      "timestamp": "2025-06-16T23:18:11.768832"
+    },
+    "test_user_plants": {
+      "status": "FAIL",
+      "duration": 1.5427405834197998,
+      "timestamp": "2025-06-16T23:18:13.311572"
+    },
+    "test_business_profile": {
+      "status": "PASS",
+      "duration": 3.5077669620513916,
+      "timestamp": "2025-06-16T23:18:17.635534"
+    },
+    "test_business_inventory": {
+      "status": "FAIL",
+      "duration": 1.293787956237793,
+      "timestamp": "2025-06-16T23:18:18.929322"
+    },
+    "test_business_orders": {
+      "status": "FAIL",
+      "duration": 1.633298397064209,
+      "timestamp": "2025-06-16T23:18:20.562621"
+    },
+    "test_business_analytics": {
+      "status": "PASS",
+      "duration": 2.0588812828063965,
+      "timestamp": "2025-06-16T23:18:22.621502"
+    },
+    "test_business_dashboard": {
+      "status": "PASS",
+      "duration": 1.5337262153625488,
+      "timestamp": "2025-06-16T23:18:24.155228"
+    },
+    "test_watering_checklist": {
+      "status": "FAIL",
+      "duration": 0.5802915096282959,
+      "timestamp": "2025-06-16T23:18:24.735520"
+    },
+    "test_business_weather_get": {
+      "status": "FAIL",
+      "duration": 0.3732278347015381,
+      "timestamp": "2025-06-16T23:18:25.108747"
+    },
+    "test_geocode": {
+      "status": "FAIL",
+      "duration": 0.3798043727874756,
+      "timestamp": "2025-06-16T23:18:25.489564"
+    },
+    "test_reverse_geocode": {
+      "status": "FAIL",
+      "duration": 0.39110755920410156,
+      "timestamp": "2025-06-16T23:18:25.880672"
+    },
+    "test_plant_search": {
+      "status": "FAIL",
+      "duration": 0.38970160484313965,
+      "timestamp": "2025-06-16T23:18:26.270373"
+    },
+    "test_identify_plant": {
+      "status": "FAIL",
+      "duration": 0.3900015354156494,
+      "timestamp": "2025-06-16T23:18:26.660375"
+    },
+    "test_disease_check": {
+      "status": "PASS",
+      "duration": 1.5018680095672607,
+      "timestamp": "2025-06-16T23:18:28.162243"
+    },
+    "test_weather_get": {
+      "status": "PASS",
+      "duration": 12.190871953964233,
+      "timestamp": "2025-06-16T23:18:40.353115"
+    },
+    "test_ai_plant_care_chat": {
+      "status": "PASS",
+      "duration": 0.7281756401062012,
+      "timestamp": "2025-06-16T23:18:41.081291"
+    },
+    "test_chat_history": {
+      "status": "FAIL",
+      "duration": 0.7486124038696289,
+      "timestamp": "2025-06-16T23:18:41.829903"
+    }
+  }
+}

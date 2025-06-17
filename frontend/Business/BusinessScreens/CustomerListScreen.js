@@ -30,8 +30,7 @@ import KPIWidget from '../components/KPIWidget';
 
 // Import REAL API services - NO MOCK DATA  
 import { 
-  getBusinessCustomers,
-  checkApiHealth 
+  getBusinessCustomers
 } from '../services/businessApi';
 import { 
   getBusinessOrders,
@@ -178,13 +177,6 @@ export default function CustomerListScreen({ navigation, route }) {
     try {
       console.log('📡 Loading REAL customers for business:', currentBusinessId);
       
-      // Check API health first
-      const healthCheck = await checkApiHealth();
-      if (!healthCheck.healthy) {
-        throw new Error('Customer services are currently unavailable');
-      }
-      setNetworkConnected(true);
-      
       // Load REAL customer data from backend
       const customerData = await getBusinessCustomers(currentBusinessId);
       console.log('✅ REAL Customer data loaded:', customerData.length, 'customers');
@@ -244,18 +236,13 @@ export default function CustomerListScreen({ navigation, route }) {
     
     const now = new Date();
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const ninetyDaysAgo = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
     
     const stats = {
       totalCustomers: customerData.length,
       newCustomers: customerData.filter(c => 
         c.firstPurchaseDate && new Date(c.firstPurchaseDate) >= thirtyDaysAgo
       ).length,
-      regularCustomers: customerData.filter(c => (c.orderCount || 0) >= 3).length,
-      vipCustomers: customerData.filter(c => (c.totalSpent || 0) >= 200).length,
-      inactiveCustomers: customerData.filter(c => 
-        !c.lastOrderDate || new Date(c.lastOrderDate) < ninetyDaysAgo
-      ).length,
+      regularCustomers: customerData.filter(c => (c.orderCount || 0) > 1).length,
       totalRevenue: customerData.reduce((sum, c) => sum + (c.totalSpent || 0), 0),
       averageOrderValue: customerData.length > 0 ? 
         customerData.reduce((sum, c) => sum + (c.totalSpent || 0), 0) / 
@@ -295,15 +282,7 @@ export default function CustomerListScreen({ navigation, route }) {
         );
         break;
       case 'regular':
-        filtered = filtered.filter(c => (c.orderCount || 0) >= 3);
-        break;
-      case 'vip':
-        filtered = filtered.filter(c => (c.totalSpent || 0) >= 200);
-        break;
-      case 'inactive':
-        filtered = filtered.filter(c => 
-          !c.lastOrderDate || new Date(c.lastOrderDate) < ninetyDaysAgo
-        );
+        filtered = filtered.filter(c => (c.orderCount || 0) > 1);
         break;
       default:
         // 'all' - no additional filtering
@@ -439,9 +418,9 @@ export default function CustomerListScreen({ navigation, route }) {
       </SafeAreaView>
     );
   }
-  
+
   // ===== ERROR STATE - ANDROID OPTIMIZED =====
-  if (error && !customers.length) {
+  if (error && !isLoading && customers.length === 0) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar backgroundColor="#f5f7fa" barStyle="dark-content" />
@@ -544,11 +523,10 @@ export default function CustomerListScreen({ navigation, route }) {
           />
           
           <KPIWidget
-            title="VIP"
-            value={customerStats.vipCustomers}
-            icon="star"
-            color="#9C27B0"
-            subtitle="$200+ spent"
+            title="Regular"
+            value={customerStats.regularCustomers}
+            icon="account-check"
+            color="#FF9800"
             autoRefresh={true}
           />
           

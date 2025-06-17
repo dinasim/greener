@@ -3,6 +3,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
+/**
+ * FIXED: Business Order API with corrected endpoint names and standardized error handling
+ */
+
 // Helper function to get headers with authentication
 const getHeaders = async () => {
   try {
@@ -67,9 +71,11 @@ const handleResponse = async (response, context = 'API Request') => {
 };
 
 /**
+ * CRITICAL FIX: Correct all business order endpoint routing
+ */
+
+/**
  * FIXED: Create a new order for pickup with correct route
- * @param {Object} orderData Order data
- * @returns {Promise<Object>} Created order response
  */
 export const createOrder = async (orderData) => {
   if (!orderData) {
@@ -92,9 +98,9 @@ export const createOrder = async (orderData) => {
     console.log('Creating order:', orderData);
     const headers = await getHeaders();
     
-    // FIXED: Use correct route from backend
-    const url = `${API_BASE_URL}/business/orders/create`;
-    console.log('Create Order URL:', url);
+    // FIXED: Use correct backend function name
+    const url = `${API_BASE_URL}/business-order-create`;
+    console.log('FIXED Create Order URL:', url);
     
     const response = await fetch(url, {
       method: 'POST',
@@ -103,7 +109,6 @@ export const createOrder = async (orderData) => {
     });
     
     const data = await handleResponse(response, 'Create Order');
-    
     console.log('Order created successfully:', data);
     return data;
   } catch (error) {
@@ -142,9 +147,9 @@ export const getBusinessOrders = async (businessId, options = {}) => {
       queryParams.append('offset', options.offset);
     }
     
-    // FIXED: Use correct route from backend
-    const url = `${API_BASE_URL}/business/orders?${queryParams.toString()}`;
-    console.log('Get Orders URL:', url);
+    // FIXED: Use correct backend function name
+    const url = `${API_BASE_URL}/business-orders-get?${queryParams.toString()}`;
+    console.log('FIXED Get Orders URL:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -167,25 +172,15 @@ export const getBusinessOrders = async (businessId, options = {}) => {
     console.log(`Business orders loaded: ${orders.length} orders`);
     return {
       orders,
+      totalOrders: data.totalOrders || orders.length,
+      pendingOrders: data.pendingOrders || orders.filter(o => o.status === 'pending').length,
+      completedOrders: data.completedOrders || orders.filter(o => o.status === 'completed').length,
       summary: data.summary || {},
-      pagination: data.pagination || {},
-      filters: data.filters || {}
+      pagination: data.pagination || {}
     };
   } catch (error) {
     console.error('Error getting business orders:', error);
-    
-    // Return empty array instead of throwing for order listing
-    if (error.message.includes('404') || error.message.includes('not found')) {
-      console.log('No orders found, returning empty array');
-      return {
-        orders: [],
-        summary: {},
-        pagination: {},
-        filters: {}
-      };
-    }
-    
-    throw new Error(`Failed to get orders: ${error.message}`);
+    throw new Error(`Failed to get business orders: ${error.message}`);
   }
 };
 
@@ -196,21 +191,17 @@ export const getBusinessOrders = async (businessId, options = {}) => {
  * @returns {Promise<Object>} Updated order
  */
 export const updateOrderStatus = async (orderId, newStatus) => {
-  if (!orderId) {
-    throw new Error('Order ID is required');
-  }
-  
-  if (!newStatus) {
-    throw new Error('New status is required');
+  if (!orderId || !newStatus) {
+    throw new Error('Order ID and new status are required');
   }
   
   try {
     console.log('Updating order status:', orderId, 'to', newStatus);
     const headers = await getHeaders();
     
-    // FIXED: Use correct route from backend
-    const url = `${API_BASE_URL}/business/orders`;
-    console.log('Update Order Status URL:', url);
+    // FIXED: Use correct backend function name for updates
+    const url = `${API_BASE_URL}/business-orders`;
+    console.log('FIXED Update Order Status URL:', url);
     
     const response = await fetch(url, {
       method: 'PATCH',
@@ -222,7 +213,6 @@ export const updateOrderStatus = async (orderId, newStatus) => {
     });
     
     const data = await handleResponse(response, 'Update Order Status');
-    
     console.log('Order status updated successfully:', data);
     return data;
   } catch (error) {
@@ -245,9 +235,9 @@ export const getBusinessCustomers = async (businessId) => {
     console.log('Getting business customers for:', businessId);
     const headers = await getHeaders();
     
-    // FIXED: Use correct route from backend
-    const url = `${API_BASE_URL}/business/customers`;
-    console.log('Get Customers URL:', url);
+    // FIXED: Use correct backend function name
+    const url = `${API_BASE_URL}/business-customers`;
+    console.log('FIXED Get Customers URL:', url);
     
     const response = await fetch(url, {
       method: 'GET',
@@ -258,7 +248,6 @@ export const getBusinessCustomers = async (businessId) => {
     
     // Handle different response formats
     let customers = [];
-    
     if (data.customers && Array.isArray(data.customers)) {
       customers = data.customers;
     } else if (Array.isArray(data)) {
@@ -272,7 +261,7 @@ export const getBusinessCustomers = async (businessId) => {
   } catch (error) {
     console.error('Error getting business customers:', error);
     
-    // Return empty array instead of throwing for customer listing
+    // Return empty array for 404 or "not found" errors
     if (error.message.includes('404') || error.message.includes('not found')) {
       console.log('No customers found, returning empty array');
       return [];

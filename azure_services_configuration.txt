@@ -1,0 +1,463 @@
+# GREENER BACKEND - AZURE SERVICES & CONFIGURATION DOCUMENTATION
+# Generated: June 17, 2025
+# Complete Azure infrastructure and environment configuration
+
+## AZURE COSMOS DB DATABASES & CONTAINERS
+══════════════════════════════════════════════════════════════════
+
+### PRIMARY DATABASE: GreenerDB
+┌─────────────────────────────────────────────────────────────────┐
+│ Database Name: GreenerDB                                        │
+│ Purpose: Main user data and plant collections                  │
+│ Connection: COSMOS_URI + COSMOS_KEY                             │
+│ Environment Variables:                                          │
+│   • COSMOS_URI = https://greener-database.documents.azure.com  │
+│   • COSMOS_KEY = Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTm... │
+│   • COSMOS_DATABASE_NAME = GreenerDB                           │
+└─────────────────────────────────────────────────────────────────┘
+
+CONTAINERS IN GreenerDB:
+┌──────────────────────┬─────────────────┬─────────────────────────┐
+│ Container Name       │ Partition Key   │ Purpose                 │
+├──────────────────────┼─────────────────┼─────────────────────────┤
+│ Users                │ /id             │ User accounts & profiles│
+│ userPlants           │ /email          │ User plant collections  │
+│ userPlantsLocation   │ /email          │ Plant location data     │
+│ Plants               │ /id             │ Master plant database   │
+│ israelCities         │ /id             │ Supported cities list   │
+└──────────────────────┴─────────────────┴─────────────────────────┘
+
+### MARKETPLACE DATABASE: greener-marketplace-db
+┌─────────────────────────────────────────────────────────────────┐
+│ Database Name: greener-marketplace-db                           │
+│ Purpose: Marketplace, business data, and commerce              │
+│ Connection: COSMOSDB__MARKETPLACE_CONNECTION_STRING             │
+│ Environment Variables:                                          │
+│   • COSMOSDB__MARKETPLACE_CONNECTION_STRING = AccountEndpoint=..│
+│   • COSMOSDB_MARKETPLACE_DATABASE_NAME = greener-marketplace-db│
+└─────────────────────────────────────────────────────────────────┘
+
+CONTAINERS IN greener-marketplace-db:
+┌─────────────────────────────┬──────────────────┬─────────────────────────────┐
+│ Container Name              │ Partition Key    │ Purpose                     │
+├─────────────────────────────┼──────────────────┼─────────────────────────────┤
+│ marketplace_plants          │ /category        │ Marketplace product listings│
+│ marketplace_conversations   │ /id              │ Chat conversations          │
+│ marketplace_messages        │ /conversationId  │ Chat messages               │
+│ marketplace_reviews         │ /sellerId        │ Product/seller reviews      │
+│ marketplace_wishlists       │ /userId          │ User wishlist items         │
+│ business_users              │ /id              │ Business profiles           │
+│ business_customers          │ /id              │ Business customer data      │
+│ business_transactions       │ /businessId      │ Business transactions       │
+│ inventory                   │ /businessId      │ Business inventory          │
+│ orders                      │ /businessId      │ Business orders             │
+│ watering_notifications      │ /businessId      │ Watering reminders          │
+│ forum                       │ /category        │ Community forum topics      │
+└─────────────────────────────┴──────────────────┴─────────────────────────────┘
+
+## AZURE BLOB STORAGE
+══════════════════════════════════════════════════════════════════
+
+### PLANT PHOTOS STORAGE
+┌─────────────────────────────────────────────────────────────────┐
+│ Storage Account: photos12                                       │
+│ Container: plants-photos                                        │
+│ Purpose: Plant image storage and CDN                           │
+│ Connection String: DefaultEndpointsProtocol=https;AccountName=  │
+│   photos12;AccountKey=CMXo64vRFiKhDZNvzUGi2j/kZLSjS8cLmbJQ...  │
+│ Access: Public read for plant images                           │
+│ Features: Image resizing, format optimization                  │
+└─────────────────────────────────────────────────────────────────┘
+
+### USER UPLOADS STORAGE
+┌─────────────────────────────────────────────────────────────────┐
+│ Purpose: User-uploaded photos, profile images, product images  │
+│ Functions: upload-image, uploadUserPlantPhoto                  │
+│ Features: Image validation, virus scanning, format conversion  │
+│ Access Control: Private with signed URLs                       │
+└─────────────────────────────────────────────────────────────────┘
+
+## AZURE MAPS SERVICES
+══════════════════════════════════════════════════════════════════
+
+### COST-OPTIMIZED MAPPING
+┌─────────────────────────────────────────────────────────────────┐
+│ Account Name: greener-marketplace-maps                         │
+│ Purpose: Location services for marketplace and businesses      │
+│ Environment Variable: AZURE_MAPS_MARKETPLACE_KEY               │
+│ Features: Geocoding, reverse geocoding, location search        │
+│ Cost Optimization: 7-day caching, rate limiting (1 sec)        │
+│ Functions: geocode, reverse-geocode, maps-config               │
+│ Usage Guidelines:                                               │
+│   • Cache results for 7 days minimum                          │
+│   • Rate limit: 500ms between calls                           │
+│   • Max 50 requests per minute                                │
+│   • Batch similar requests when possible                      │
+└─────────────────────────────────────────────────────────────────┘
+
+### SUPPORTED REGIONS
+┌─────────────────────────────────────────────────────────────────┐
+│ Primary Region: Israel (29.5-33.4°N, 34.2-35.9°E)            │
+│ Secondary: Global coverage with reduced accuracy               │
+│ Fallback: Coordinate-only mode for unsupported regions        │
+└─────────────────────────────────────────────────────────────────┘
+
+## EXTERNAL API INTEGRATIONS
+══════════════════════════════════════════════════════════════════
+
+### GOOGLE GEMINI AI
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Google Generative AI                                  │
+│ Model: gemini-1.5-flash                                        │
+│ Environment Variable: GOOGLE_KEY                               │
+│ Key: AIzaSyDaj4uxYtaVndDVu6YTIeZpbL8yZiF8mgk                  │
+│ Functions: plantDetailsInJson, addUserPlant, identifyPlantPhoto│
+│          diseaseCheck, ai-plant-care-chat                      │
+│ Features: Plant identification, disease diagnosis, care advice │
+│ Rate Limits: Built-in request throttling                      │
+└─────────────────────────────────────────────────────────────────┘
+
+### OPENWEATHER API
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: OpenWeatherMap (Free Tier)                           │
+│ Environment Variable: OPENWEATHER_API_KEY                      │
+│ Rate Limit: 1000 calls/day (free tier)                        │
+│ Functions: weather-get, business-weather-get                   │
+│ Features: Location-based weather, plant care recommendations  │
+│ Caching: 30-minute cache to minimize API usage                │
+└─────────────────────────────────────────────────────────────────┘
+
+### AZURE COGNITIVE SERVICES
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Speech-to-Text                                        │
+│ Function: speechToText                                         │
+│ Languages: Hebrew (he-IL), English (en-US)                    │
+│ Features: Voice search, accessibility support                 │
+│ Environment Variable: AZURE_SPEECH_KEY                        │
+└─────────────────────────────────────────────────────────────────┘
+
+## NOTIFICATION SERVICES
+══════════════════════════════════════════════════════════════════
+
+### AZURE NOTIFICATION HUB
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Azure Notification Hub                               │
+│ Environment Variables:                                         │
+│   • NH_NAMESPACE = Notification Hub namespace                 │
+│   • HUB_NAME = Hub name                                       │
+│   • AZURE_NH_FULL_ACCESS_KEY = Full access key               │
+│ Purpose: Cross-platform push notifications                    │
+│ Functions: registerWebPush, register_device_token             │
+│ Platforms: iOS, Android, Web Push                             │
+└─────────────────────────────────────────────────────────────────┘
+
+### FIREBASE CLOUD MESSAGING
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Firebase Cloud Messaging                             │
+│ Functions: plantSupportReminders, send_watering_notifications  │
+│ Features: Mobile push notifications, scheduled reminders      │
+│ Configuration: Firebase Admin SDK initialization              │
+│ Purpose: Plant care reminders, watering notifications         │
+└─────────────────────────────────────────────────────────────────┘
+
+### WEB PUSH NOTIFICATIONS
+┌─────────────────────────────────────────────────────────────────┐
+│ VAPID Keys (from app.json):                                   │
+│ Public Key: BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6Cd... │
+│ Purpose: Browser push notifications                           │
+│ Features: Real-time alerts, offline notifications             │
+└─────────────────────────────────────────────────────────────────┘
+
+## SIGNALR SERVICE
+══════════════════════════════════════════════════════════════════
+
+### REAL-TIME COMMUNICATION
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Azure SignalR Service                                │
+│ Function: signalr-negotiate                                   │
+│ Purpose: Real-time messaging, chat, typing indicators         │
+│ Features: Connection negotiation, message broadcasting        │
+│ Client Support: Web, mobile, cross-platform                  │
+└─────────────────────────────────────────────────────────────────┘
+
+## AZURE FUNCTIONS CONFIGURATION
+══════════════════════════════════════════════════════════════════
+
+### RUNTIME CONFIGURATION
+┌─────────────────────────────────────────────────────────────────┐
+│ Runtime: Python 3.9+                                          │
+│ Host: host.json configuration                                 │
+│ Dependencies: requirements.txt                                 │
+│ Authentication: Anonymous (with custom headers)               │
+│ CORS: Enabled for cross-origin requests                       │
+│ Logging: Azure Application Insights integration               │
+└─────────────────────────────────────────────────────────────────┘
+
+### FUNCTION APP SETTINGS (Environment Variables)
+┌─────────────────────────────────────────────────────────────────┐
+│ Database Configuration:                                        │
+│   • COSMOS_URI                                                │
+│   • COSMOS_KEY                                                │
+│   • COSMOS_DATABASE_NAME                                      │
+│   • COSMOSDB__MARKETPLACE_CONNECTION_STRING                   │
+│   • COSMOSDB_MARKETPLACE_DATABASE_NAME                        │
+│   • COSMOSDB_KEY (fallback)                                   │
+│                                                               │
+│ External API Keys:                                            │
+│   • GOOGLE_KEY (Gemini AI)                                    │
+│   • OPENWEATHER_API_KEY                                       │
+│   • AZURE_MAPS_MARKETPLACE_KEY                                │
+│   • AZURE_SPEECH_KEY                                          │
+│                                                               │
+│ Notification Services:                                        │
+│   • NH_NAMESPACE                                              │
+│   • HUB_NAME                                                  │
+│   • AZURE_NH_FULL_ACCESS_KEY                                  │
+│                                                               │
+│ Container Names (Optional Overrides):                         │
+│   • COSMOS_CONTAINER_USER_PLANTS = userPlants                 │
+│   • COSMOS_CONTAINER_USERS = Users                            │
+│   • COSMOS_CONTAINER_PLANTS = Plants                          │
+└─────────────────────────────────────────────────────────────────┘
+
+## OAUTH & AUTHENTICATION
+══════════════════════════════════════════════════════════════════
+
+### GOOGLE OAUTH (from app.json)
+┌─────────────────────────────────────────────────────────────────┐
+│ Expo Client ID: 241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr │
+│ Web Client ID: 241318918547-d2qq18eqm12h44f9eshvpifr1vql7lpr  │
+│ iOS Client ID: 241318918547-cmj5p79839ci9kdrgjmbuskpfu6j4e6h  │
+│ Android Client ID: 241318918547-tctcf9f11ii3ndn0ilohgqbjpjbej9a8│
+│ Purpose: User authentication, profile access                  │
+│ Scopes: Profile, email, basic user information               │
+└─────────────────────────────────────────────────────────────────┘
+
+### CUSTOM AUTHENTICATION HEADERS
+┌─────────────────────────────────────────────────────────────────┐
+│ X-User-Email: User's email address (primary identifier)       │
+│ X-User-Type: user | business | admin                          │
+│ X-Business-ID: Business identifier for business users         │
+│ X-API-Version: API version for compatibility                  │
+│ X-Client: greener-mobile (client identification)              │
+│ Authorization: Bearer token for OAuth authentication          │
+└─────────────────────────────────────────────────────────────────┘
+
+## TIMER FUNCTIONS & SCHEDULING
+══════════════════════════════════════════════════════════════════
+
+### SCHEDULED AUTOMATION
+┌─────────────────────────────────────────────────────────────────┐
+│ daily_watering_update:                                         │
+│   • Trigger: Daily at 06:00 UTC                              │
+│   • Purpose: Update watering schedules, send reminders       │
+│   • Databases: GreenerDB + greener-marketplace-db            │
+│                                                               │
+│ plantSupportReminders:                                        │
+│   • Trigger: Daily                                           │
+│   • Purpose: Send plant care reminders                       │
+│   • Service: Firebase notifications                          │
+│                                                               │
+│ send_watering_notifications:                                   │
+│   • Trigger: Configurable timer                              │
+│   • Purpose: Automated watering alerts                       │
+│   • Services: Firebase + Azure Notification Hub              │
+└─────────────────────────────────────────────────────────────────┘
+
+## EXPO/REACT NATIVE CONFIGURATION
+══════════════════════════════════════════════════════════════════
+
+### APP CONFIGURATION (from app.json)
+┌─────────────────────────────────────────────────────────────────┐
+│ App Name: Greener                                             │
+│ Bundle ID: com.dinasim.greener                                │
+│ Package: com.yourname.greener                                 │
+│ Version: 1.0.0                                                │
+│ Platforms: iOS, Android, Web                                  │
+│ URL Scheme: greener://                                        │
+└─────────────────────────────────────────────────────────────────┘
+
+### PERMISSIONS & CAPABILITIES
+┌─────────────────────────────────────────────────────────────────┐
+│ iOS Permissions:                                              │
+│   • NSMicrophoneUsageDescription: Voice search                │
+│   • NSLocationWhenInUseUsageDescription: Location services    │
+│   • NSLocationAlwaysAndWhenInUseUsageDescription: GPS tracking│
+│                                                               │
+│ Android Permissions:                                          │
+│   • RECORD_AUDIO: Voice search functionality                 │
+│   • ACCESS_FINE_LOCATION: Precise location                   │
+│   • ACCESS_COARSE_LOCATION: Approximate location             │
+│                                                               │
+│ Web Features:                                                 │
+│   • Web Push Notifications                                   │
+│   • Camera access for plant photos                           │
+│   • Microphone for voice search                              │
+└─────────────────────────────────────────────────────────────────┘
+
+## PERFORMANCE & CACHING STRATEGIES
+══════════════════════════════════════════════════════════════════
+
+### CACHING LAYERS
+┌─────────────────────────────────────────────────────────────────┐
+│ Azure Maps:                                                   │
+│   • Duration: 7 days                                         │
+│   • Max Size: 1000 entries per cache type                    │
+│   • Types: Location cache, reverse geocode cache             │
+│                                                               │
+│ Weather Data:                                                 │
+│   • Duration: 30 minutes                                     │
+│   • Purpose: Minimize OpenWeatherMap API calls               │
+│                                                               │
+│ Plant Data:                                                   │
+│   • Gemini AI responses cached in Cosmos DB                  │
+│   • Auto-refresh for incomplete data                         │
+│                                                               │
+│ Business Analytics:                                           │
+│   • Dashboard data: 5 minutes                                │
+│   • Reports: 1 hour                                          │
+│   • Real-time updates via SignalR                            │
+└─────────────────────────────────────────────────────────────────┘
+
+### RATE LIMITING
+┌─────────────────────────────────────────────────────────────────┐
+│ Azure Maps: 1 second between calls, max 50/minute            │
+│ OpenWeatherMap: 1000 calls/day (free tier)                   │
+│ Gemini AI: Built-in request throttling                       │
+│ Function Apps: No explicit limits (pay-per-use)              │
+└─────────────────────────────────────────────────────────────────┘
+
+## MONITORING & LOGGING
+══════════════════════════════════════════════════════════════════
+
+### APPLICATION INSIGHTS
+┌─────────────────────────────────────────────────────────────────┐
+│ Service: Azure Application Insights                           │
+│ Purpose: Function monitoring, error tracking, performance     │
+│ Features: Real-time metrics, exception tracking, custom events│
+│ Integration: Automatic with Azure Functions                   │
+└─────────────────────────────────────────────────────────────────┘
+
+### LOGGING STRATEGY
+┌─────────────────────────────────────────────────────────────────┐
+│ Levels: INFO, WARNING, ERROR                                  │
+│ Function Entry/Exit: All functions log start/completion       │
+│ Error Details: Full stack traces with context                 │
+│ Performance: API call timing, database query performance      │
+│ Security: Authentication failures, suspicious activity        │
+└─────────────────────────────────────────────────────────────────┘
+
+## SECURITY CONFIGURATION
+══════════════════════════════════════════════════════════════════
+
+### DATA PROTECTION
+┌─────────────────────────────────────────────────────────────────┐
+│ Encryption: TLS 1.2+ for all communications                  │
+│ Passwords: bcrypt hashing for user passwords                 │
+│ Secrets: Azure Key Vault integration recommended             │
+│ API Keys: Environment variables only, never in code          │
+│ Input Validation: All user inputs sanitized and validated    │
+└─────────────────────────────────────────────────────────────────┘
+
+### CORS CONFIGURATION
+┌─────────────────────────────────────────────────────────────────┐
+│ Allowed Origins: * (development), specific domains (production)│
+│ Allowed Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS       │
+│ Allowed Headers: Content-Type, Authorization, X-*             │
+│ Credentials: true for authenticated requests                  │
+└─────────────────────────────────────────────────────────────────┘
+
+## DEPLOYMENT CONFIGURATION
+══════════════════════════════════════════════════════════════════
+
+### AZURE FUNCTION APP
+┌─────────────────────────────────────────────────────────────────┐
+│ Name: usersfunctions                                          │
+│ URL: https://usersfunctions.azurewebsites.net                 │
+│ Runtime Stack: Python 3.9                                    │
+│ Plan: Consumption (pay-per-use)                               │
+│ Region: Compatible with Cosmos DB and other services          │
+└─────────────────────────────────────────────────────────────────┘
+
+### DEVELOPMENT TOOLS
+┌─────────────────────────────────────────────────────────────────┐
+│ Azure Functions Core Tools: Local development and testing     │
+│ VS Code Extensions: Azure Functions, Python                   │
+│ Testing: Dedicated test functions and endpoints               │
+│ CI/CD: Azure DevOps or GitHub Actions (recommended)          │
+└─────────────────────────────────────────────────────────────────┘
+
+## COST OPTIMIZATION STRATEGIES
+══════════════════════════════════════════════════════════════════
+
+### COST CONTROL MEASURES
+┌─────────────────────────────────────────────────────────────────┐
+│ Azure Maps: Aggressive caching (7 days), rate limiting        │
+│ OpenWeatherMap: Free tier only, 30-minute caching            │
+│ Cosmos DB: Partitioned containers, efficient queries          │
+│ Function Apps: Consumption plan, optimized cold starts       │
+│ Storage: Standard tier, lifecycle policies for old data      │
+│ Notifications: Batch notifications, targeted delivery        │
+└─────────────────────────────────────────────────────────────────┘
+
+### RESOURCE SHARING
+┌─────────────────────────────────────────────────────────────────┐
+│ Single Function App: All functions in one app for efficiency  │
+│ Shared Storage: One storage account for all image types       │
+│ Connection Pooling: Reuse database connections where possible │
+│ Cache Sharing: Global caches for frequently accessed data     │
+└─────────────────────────────────────────────────────────────────┘
+
+## BACKUP & DISASTER RECOVERY
+══════════════════════════════════════════════════════════════════
+
+### BACKUP STRATEGY
+┌─────────────────────────────────────────────────────────────────┐
+│ Cosmos DB: Automatic backups every 4 hours                   │
+│ Blob Storage: Geo-redundant storage (GRS)                    │
+│ Function Code: Source control with GitHub/Azure DevOps       │
+│ Configuration: Infrastructure as Code (ARM/Bicep templates)   │
+└─────────────────────────────────────────────────────────────────┘
+
+### DISASTER RECOVERY
+┌─────────────────────────────────────────────────────────────────┐
+│ RTO (Recovery Time Objective): 4 hours                       │
+│ RPO (Recovery Point Objective): 4 hours (Cosmos DB backup)   │
+│ Multi-region: Cosmos DB supports failover                    │
+│ Function Apps: Can be redeployed to different regions        │
+└─────────────────────────────────────────────────────────────────┘
+
+## ENVIRONMENT-SPECIFIC CONFIGURATIONS
+══════════════════════════════════════════════════════════════════
+
+### DEVELOPMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Local Development: local.settings.json                       │
+│ Database: Development Cosmos DB instance (optional)          │
+│ APIs: Development keys with higher rate limits               │
+│ Logging: Verbose logging for debugging                       │
+└─────────────────────────────────────────────────────────────────┘
+
+### PRODUCTION
+┌─────────────────────────────────────────────────────────────────┐
+│ Configuration: Azure Function App Settings                   │
+│ Database: Production Cosmos DB with scaling                  │
+│ APIs: Production keys with rate limiting                     │
+│ Logging: Error and warning level only                        │
+│ Monitoring: Full Application Insights integration            │
+└─────────────────────────────────────────────────────────────────┘
+
+# Forum & Community Data
+- **Database:** greener-marketplace-db
+- **Container:** forum
+- **Partition Key:** /category
+- **Data Types:**
+  - Forum topics: type = 'topic'
+  - Forum replies: type = 'reply'
+- **Endpoints:**
+  - Topics: /api/plant-care-forum (GET, POST, DELETE, PATCH/PUT)
+  - Replies: /api/forum-replies (GET, POST)
+- **Notes:**
+  - Both topics and replies are stored in the same container, differentiated by the 'type' field.
+  - PATCH/PUT is supported for editing topics.
+  - Advanced reply features (edit/delete) can be added as needed.

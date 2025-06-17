@@ -8,7 +8,7 @@ from azure.cosmos import CosmosClient, PartitionKey, exceptions
 _db_clients = {}
 _container_cache = {}
 
-# FIXED: Comprehensive container name mapping
+# FIXED: Comprehensive container name mapping including all new containers
 CONTAINER_NAME_MAPPING = {
     # Marketplace containers (handle both dash and underscore variants)
     "marketplace-plants": "marketplace_plants",
@@ -21,11 +21,13 @@ CONTAINER_NAME_MAPPING = {
     "marketplace_messages": "marketplace_messages", 
     "marketplace_reviews": "marketplace_reviews",
     "marketplace_wishlists": "marketplace_wishlists",
+    "marketplace_rating": "marketplace_rating",
     
     # Business containers
     "business_users": "business_users",
     "business_customers": "business_customers",
     "business_transactions": "business_transactions",
+    "business_staff": "business_staff",
     "inventory": "inventory",
     "orders": "orders",
     "watering_notifications": "watering_notifications",
@@ -34,26 +36,69 @@ CONTAINER_NAME_MAPPING = {
     "users": "users",
     "Users": "Users",
     
+    # Authentication and preferences
+    "authentication": "authentication",
+    "Preferences": "Preferences",
+    
+    # Notification containers
+    "notifications": "notifications",
+    "notification_history": "notification_history",
+    
+    # Product and rating containers
+    "product_rating": "product_rating",
+    
+    # AI and chat containers
+    "plant-care-chat": "plant-care-chat",
+    
+    # Weather data
+    "Weather_data": "Weather_data",
+    
     # Forum container
     "forum": "forum"
 }
 
 # FIXED: Complete partition key mapping for all containers
 PARTITION_KEY_MAPPING = {
+    # Marketplace containers
     "marketplace_plants": "/category",
     "marketplace_conversations": "/id", 
     "marketplace_messages": "/conversationId",
     "marketplace_reviews": "/sellerId",
     "marketplace_wishlists": "/userId",
+    "marketplace_rating": "/productId",
+    
+    # Business containers
     "business_users": "/id",
-    "business_customers": "/id", 
+    "business_customers": "/businessId", 
     "business_transactions": "/businessId",
+    "business_staff": "/businessId",
     "inventory": "/businessId",
     "orders": "/businessId",
     "watering_notifications": "/businessId",
+    
+    # User containers  
     "users": "/id",
     "Users": "/id",
-    "forum": "/category"  # Forum uses category as partition key
+    
+    # Authentication and preferences
+    "authentication": "/userId",
+    "Preferences": "/userId",
+    
+    # Notification containers
+    "notifications": "/userId",
+    "notification_history": "/userId",
+    
+    # Product and rating containers
+    "product_rating": "/productId",
+    
+    # AI and chat containers
+    "plant-care-chat": "/userId",
+    
+    # Weather data
+    "Weather_data": "/location",
+    
+    # Forum container
+    "forum": "/category"
 }
 
 def get_database_client():

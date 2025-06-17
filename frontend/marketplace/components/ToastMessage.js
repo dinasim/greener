@@ -1,6 +1,6 @@
 // components/ToastMessage.js
 import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, Animated, StyleSheet, Platform } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 /**
@@ -23,8 +23,11 @@ const ToastMessage = ({
   // Animation values
   const opacity = useRef(new Animated.Value(0)).current;
   const translateY = useRef(new Animated.Value(-20)).current;
-  
-  // Determine icon and background color based on type
+
+  // Determine if we can use native driver (not on web)
+  const useNativeDriver = Platform.OS !== 'web';
+
+  // Determine icon and color based on type
   const getIconAndColor = () => {
     switch (type) {
       case 'success':
@@ -67,12 +70,12 @@ const ToastMessage = ({
         Animated.timing(opacity, {
           toValue: 1,
           duration: 300,
-          useNativeDriver: true
+          useNativeDriver
         }),
         Animated.timing(translateY, {
           toValue: 0,
           duration: 300,
-          useNativeDriver: true
+          useNativeDriver
         })
       ]).start();
       
@@ -83,12 +86,12 @@ const ToastMessage = ({
           Animated.timing(opacity, {
             toValue: 0,
             duration: 300,
-            useNativeDriver: true
+            useNativeDriver
           }),
           Animated.timing(translateY, {
             toValue: -20,
             duration: 300,
-            useNativeDriver: true
+            useNativeDriver
           })
         ]).start(() => {
           if (onHide) onHide();
@@ -104,7 +107,7 @@ const ToastMessage = ({
     return () => {
       if (hideTimeout) clearTimeout(hideTimeout);
     };
-  }, [visible, duration, opacity, translateY, onHide]);
+  }, [visible, duration, opacity, translateY, onHide, useNativeDriver]);
   
   if (!visible && opacity._value === 0) return null;
   
@@ -113,14 +116,16 @@ const ToastMessage = ({
       style={[
         styles.container,
         {
+          backgroundColor,
           opacity,
           transform: [{ translateY }],
-          backgroundColor
         }
       ]}
     >
-      <MaterialIcons name={icon} size={24} color={textColor} />
-      <Text style={[styles.message, { color: textColor }]}>{message}</Text>
+      <MaterialIcons name={icon} size={20} color={textColor} style={styles.icon} />
+      <Text style={[styles.message, { color: textColor }]} numberOfLines={2}>
+        {message}
+      </Text>
     </Animated.View>
   );
 };
@@ -128,29 +133,38 @@ const ToastMessage = ({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    top: 60,
+    top: 50,
     left: 20,
     right: 20,
-    backgroundColor: '#333',
-    borderRadius: 8,
-    padding: 16,
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 5,
-    zIndex: 1000,
-    maxWidth: Dimensions.get('window').width - 40
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 8,
+    zIndex: 9999,
+    // Use boxShadow instead of shadow* properties for web compatibility
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.15)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 4,
+        elevation: 5,
+      }
+    }),
+  },
+  icon: {
+    marginRight: 12,
   },
   message: {
     flex: 1,
-    marginLeft: 12,
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '500',
-    color: '#fff'
-  }
+    lineHeight: 18,
+  },
 });
 
 export default ToastMessage;

@@ -1,0 +1,91 @@
+{
+  "summary": {
+    "total": 16,
+    "passed": 7,
+    "failed": 9,
+    "errors": 0,
+    "timestamp": "2025-06-16T23:45:55.203461"
+  },
+  "results": {
+    "test_register_user": {
+      "status": "PASS",
+      "duration": 1.1010098457336426,
+      "timestamp": "2025-06-16T23:45:40.207718"
+    },
+    "test_login": {
+      "status": "PASS",
+      "duration": 0.975630521774292,
+      "timestamp": "2025-06-16T23:45:41.183349"
+    },
+    "test_save_user": {
+      "status": "PASS",
+      "duration": 1.5197851657867432,
+      "timestamp": "2025-06-16T23:45:42.703134"
+    },
+    "test_user_profile": {
+      "status": "FAIL",
+      "duration": 0.6034445762634277,
+      "timestamp": "2025-06-16T23:45:37.464006"
+    },
+    "test_user_plants": {
+      "status": "FAIL",
+      "duration": 1.6415326595306396,
+      "timestamp": "2025-06-16T23:45:39.105539"
+    },
+    "test_business_profile": {
+      "status": "PASS",
+      "duration": 1.47566819190979,
+      "timestamp": "2025-06-16T23:45:44.178802"
+    },
+    "test_business_inventory": {
+      "status": "FAIL",
+      "duration": 0.8077402114868164,
+      "timestamp": "2025-06-16T23:45:44.986542"
+    },
+    "test_geocode": {
+      "status": "FAIL",
+      "duration": 0.3923354148864746,
+      "timestamp": "2025-06-16T23:45:45.378878"
+    },
+    "test_reverse_geocode": {
+      "status": "FAIL",
+      "duration": 0.3809700012207031,
+      "timestamp": "2025-06-16T23:45:45.759848"
+    },
+    "test_plant_search": {
+      "status": "FAIL",
+      "duration": 0.3805074691772461,
+      "timestamp": "2025-06-16T23:45:46.140355"
+    },
+    "test_identify_plant": {
+      "status": "FAIL",
+      "duration": 0.4014909267425537,
+      "timestamp": "2025-06-16T23:45:46.541846"
+    },
+    "test_disease_check": {
+      "status": "PASS",
+      "duration": 1.6750757694244385,
+      "timestamp": "2025-06-16T23:45:48.216922"
+    },
+    "test_weather_get": {
+      "status": "PASS",
+      "duration": 1.0159032344818115,
+      "timestamp": "2025-06-16T23:45:49.232825"
+    },
+    "test_ai_plant_care_chat": {
+      "status": "PASS",
+      "duration": 4.592539548873901,
+      "timestamp": "2025-06-16T23:45:53.825365"
+    },
+    "test_chat_history": {
+      "status": "FAIL",
+      "duration": 0.6257138252258301,
+      "timestamp": "2025-06-16T23:45:54.451078"
+    },
+    "test_notification_settings": {
+      "status": "FAIL",
+      "duration": 0.7483835220336914,
+      "timestamp": "2025-06-16T23:45:55.199462"
+    }
+  }
+}
