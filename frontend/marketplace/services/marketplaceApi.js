@@ -260,7 +260,7 @@ export const fetchBusinessProfile = async (businessId) => {
   }
   
   // FIXED: Use correct backend endpoint from documentation - get_business_profile
-  const response = await apiRequest(`get_business_profile/${encodeURIComponent(businessId)}`);
+  const response = await apiRequest(`marketplace/business/${encodeURIComponent(businessId)}/profile`);
   
   // Update unified cache
   await AsyncStorage.setItem('unified_business_profile', JSON.stringify({
