@@ -51,8 +51,19 @@ class UniversalNotificationManager {
     this.settings = {};
     this.isInitialized = false;
     this.fcmToken = null;
+    this.token = null; // Add missing token property
+    this.hasPermission = false; // Add missing hasPermission property
     this.retryCount = 0;
     this.maxRetries = 3;
+    this.messaging = null; // Add missing messaging property
+    this.notificationQueue = []; // Add missing notificationQueue property
+    this.statistics = { // Add missing statistics property
+      sentCount: 0,
+      receivedCount: 0,
+      queuedNotifications: 0,
+      lastSent: null,
+      lastReceived: null
+    };
     
     // Use separate endpoints for different user types
     this.apiEndpoints = {
@@ -72,7 +83,15 @@ class UniversalNotificationManager {
     });
   }
 
-  async initialize() {
+  async initialize(userType = null, userId = null, businessId = null) {
+    // Update instance properties if new values provided
+    if (userType) this.userType = userType;
+    if (userId) this.userId = userId;
+    if (businessId) this.businessId = businessId;
+    
+    // Update storage key and API endpoints based on new userType
+    this.storageKey = `notification_settings_${this.userType}${this.businessId ? `_${this.businessId}` : ''}${this.userId ? `_${this.userId}` : ''}`;
+    
     try {
       console.log(`🔄 Initializing notifications for ${this.userType}...`);
       
@@ -83,14 +102,12 @@ class UniversalNotificationManager {
       await this.initializeFirebase();
       
       // Request permissions if needed
-      if (!this.hasPermission()) {
+      if (!this.hasPermission) {
         await this.requestPermission();
       }
       
-      // Register for notifications with appropriate service
-      if (this.hasPermission()) {
-        await this.registerForNotifications();
-      }
+      // Set token reference for getStatus method
+      this.token = this.fcmToken;
       
       this.isInitialized = true;
       console.log(`✅ ${this.userType} notifications initialized`);
@@ -324,7 +341,7 @@ class UniversalNotificationManager {
       // Get token
       if (this.hasPermission) {
         this.fcmToken = await (await import('firebase/messaging')).getToken(this.messaging, {
-          vapidKey: "BKx8nYqV8L5L5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5"
+          vapidKey: "BKx8nYqV8L5L5r5r5r5r5r5r5r5r5r5r5r5r5r5r5"
         });
         
         if (this.fcmToken) {
