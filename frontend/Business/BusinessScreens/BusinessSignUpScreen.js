@@ -175,7 +175,7 @@ export default function BusinessSignUpScreen({ navigation }) {
     'Other'
   ]);
   
-  // Notification hook
+  // Notification hook - fix initialization parameters
   const {
     requestPermission,
     subscribeToTopic,
@@ -183,13 +183,16 @@ export default function BusinessSignUpScreen({ navigation }) {
     getToken,
     deleteToken,
     onMessage,
-    setBackgroundMessageHandler
-  } = useUniversalNotifications();
+    setBackgroundMessageHandler,
+    initialize
+  } = useUniversalNotifications('business', formData.email, formData.email); // Pass business email as both userId and businessId
 
   // Initialize notifications on component mount
   useEffect(() => {
     const initializeNotifications = async () => {
       try {
+        // Initialize with business type and email
+        await initialize('business', formData.email, formData.email);
         await requestPermission();
         console.log('✅ Notification permissions granted for business signup');
       } catch (error) {
@@ -197,8 +200,11 @@ export default function BusinessSignUpScreen({ navigation }) {
       }
     };
 
-    initializeNotifications();
-  }, []);
+    // Only initialize if we have an email
+    if (formData.email) {
+      initializeNotifications();
+    }
+  }, [formData.email, initialize, requestPermission]);
 
   // Show toast message
   const showToast = (message, type = 'info') => {

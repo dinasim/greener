@@ -14,12 +14,17 @@ export const useUniversalNotifications = (userType = 'user', userId = null, busi
   const [isLoading, setIsLoading] = useState(true);
 
   // Initialize the notification manager
-  const initialize = useCallback(async () => {
+  const initialize = useCallback(async (userTypeParam = null, userIdParam = null, businessIdParam = null) => {
     try {
       setIsLoading(true);
       setError(null);
       
-      const success = await universalNotificationManager.initialize(userType, userId, businessId);
+      // Use provided parameters or fall back to hook parameters
+      const actualUserType = userTypeParam || userType;
+      const actualUserId = userIdParam || userId;
+      const actualBusinessId = businessIdParam || businessId;
+      
+      const success = await universalNotificationManager.initialize(actualUserType, actualUserId, actualBusinessId);
       
       if (success) {
         const status = universalNotificationManager.getStatus();
