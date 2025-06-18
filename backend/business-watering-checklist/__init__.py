@@ -47,11 +47,14 @@ def get_watering_checklist(business_id):
         # Process watering schedule for each plant
         current_date = datetime.utcnow()
         checklist = []
+        auto_watered_by_rain = []
         needs_watering_count = 0
         
         for item in items:
             watering_schedule = item.get('wateringSchedule', {})
             water_days = item.get('plantInfo', {}).get('water_days', 7)
+            site = item.get('site', '').lower() if 'site' in item else item.get('plantInfo', {}).get('site', '').lower()
+            auto_watered = watering_schedule.get('autoWateredByRain', False)
             
             # Initialize watering schedule if not exists
             if not watering_schedule:
@@ -60,11 +63,12 @@ def get_watering_checklist(business_id):
                     'activeWaterDays': water_days,
                     'lastWatered': None,
                     'needsWatering': True,
-                    'lastWateringUpdate': current_date.strftime('%Y-%m-%d')
+                    'lastWateringUpdate': current_date.strftime('%Y-%m-%d'),
+                    'autoWateredByRain': False
                 }
             
             # Calculate if plant needs watering
-            needs_watering = watering_schedule.get('activeWaterDays', water_days) <= 0
+            needs_watering = watering_schedule.get('activeWaterDays', water_days) <= 0 and not auto_watered
             
             # Get plant image
             plant_image = item.get('mainImage')
@@ -77,6 +81,7 @@ def get_watering_checklist(business_id):
                 'scientificName': item.get('scientific_name', ''),
                 'quantity': item.get('quantity', 0),
                 'location': item.get('location', {}),
+                'site': site,
                 'waterDays': water_days,
                 'activeWaterDays': watering_schedule.get('activeWaterDays', water_days),
                 'lastWatered': watering_schedule.get('lastWatered'),
@@ -84,18 +89,23 @@ def get_watering_checklist(business_id):
                 'priority': 'high' if watering_schedule.get('activeWaterDays', water_days) < 0 else 'normal',
                 'overdueDays': max(0, -watering_schedule.get('activeWaterDays', 0)) if needs_watering else 0,
                 'image': plant_image,
-                # REMOVED: barcode field - no longer needed
+                'autoWateredByRain': auto_watered,
                 'plantId': f"PLT-{item['id'][:8]}"  # Simple plant identifier instead of barcode
             }
             
-            checklist.append(plant_item)
-            
-            if needs_watering:
-                needs_watering_count += 1
+            if auto_watered and site == 'outdoor':
+                auto_watered_by_rain.append(plant_item)
+            else:
+                checklist.append(plant_item)
+                
+                if needs_watering:
+                    needs_watering_count += 1
         
         return {
             'checklist': checklist,
+            'autoWateredByRain': auto_watered_by_rain,
             'totalCount': len(checklist),
+            'autoWateredCount': len(auto_watered_by_rain),
             'needsWateringCount': needs_watering_count,
             'timestamp': current_date.isoformat()
         }

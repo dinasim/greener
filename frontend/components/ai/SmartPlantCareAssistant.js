@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import GreenerLogo from '../../assets/icon.png';
 import { getBusinessInventory, getBusinessProfile } from '../../Business/services/businessApi';
-// Add import for global plant search
+
 const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 
 const { width, height } = Dimensions.get('window');
@@ -53,6 +53,7 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
   const [chatStarted, setChatStarted] = useState(false);
   const [hasExistingChat, setHasExistingChat] = useState(false);
   const [lastChatHistory, setLastChatHistory] = useState([]);
+  const [persona, setPersona] = useState('business'); // 'business' or 'consumer'
   const scrollViewRef = useRef(null);
   const plantSearchDebounce = useRef(null);
   
@@ -88,14 +89,58 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     }
   }, [visible]);
 
+  // Detect persona and set name on mount
+  useEffect(() => {
+    const detectPersonaAndSetName = async () => {
+      let personaType = 'business';
+      let name = '';
+      try {
+        const storedPersona = await AsyncStorage.getItem('persona');
+        if (storedPersona === 'consumer') {
+          personaType = 'consumer';
+          // Fallback: get name from AsyncStorage or use email
+          const userName = await AsyncStorage.getItem('userName');
+          const userEmail = await AsyncStorage.getItem('userEmail');
+          name = userName || userEmail || 'there';
+        } else {
+          // Business logic (default)
+          const profile = await getBusinessProfile();
+          name = profile?.contactName || profile?.name || profile?.businessName || 'there';
+        }
+      } catch (e) {
+        name = 'there';
+      }
+      setPersona(personaType);
+      setOwnerName(name);
+    };
+    if (visible) detectPersonaAndSetName();
+  }, [visible]);
+
   // Fetch inventory for plant picker
   const fetchInventoryPlants = async () => {
     setIsInventoryLoading(true);
     try {
       const userEmail = await AsyncStorage.getItem('userEmail');
       if (!userEmail) throw new Error('No user email found');
-      const inv = await getBusinessInventory(userEmail);
-      const plants = (inv.inventory || inv || []).filter(item => (item.productType === 'plant' || item.category === 'Plants'));
+      let plants = [];
+      if (persona === 'consumer') {
+        // Fetch user plants for consumer
+        const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getalluserplants?email=${encodeURIComponent(userEmail)}`);
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          data.forEach(locationObj => {
+            if (locationObj.plants && Array.isArray(locationObj.plants)) {
+              locationObj.plants.forEach(p => {
+                plants.push({ ...p, name: p.nickname || p.common_name, mainImage: p.image_url });
+              });
+            }
+          });
+        }
+      } else {
+        // Business inventory
+        const inv = await getBusinessInventory(userEmail);
+        plants = (inv.inventory || inv || []).filter(item => (item.productType === 'plant' || item.category === 'Plants'));
+      }
       setInventoryPlants(plants);
     } catch (e) {
       setInventoryPlants([]);
@@ -218,22 +263,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
   useEffect(() => {
     setHasExistingChat(chatHistory.length > 0);
   }, [chatHistory.length]);
-
-  // Fetch business profile and set owner name and logo on mount
-  useEffect(() => {
-    const fetchOwnerName = async () => {
-      try {
-        const profile = await getBusinessProfile();
-        const name = profile?.contactName || profile?.name || profile?.businessName || 'there';
-        setOwnerName(name);
-        setBusinessLogo(profile?.logo || null);
-      } catch (e) {
-        setOwnerName('there');
-        setBusinessLogo(null);
-      }
-    };
-    if (visible) fetchOwnerName();
-  }, [visible]);
 
   // Show welcome screen only if chat is empty and user hasn't started chat
   useEffect(() => {
@@ -807,7 +836,7 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
               >
                 <MaterialIcons name="inventory" size={20} color={plantTab === 'inventory' ? '#4CAF50' : '#888'} />
                 <Text style={[styles.modalTabText, plantTab === 'inventory' && styles.modalTabTextActive]}>
-                  My Plants
+                  {persona === 'consumer' ? 'My Plants' : 'Business Inventory'}
                 </Text>
               </TouchableOpacity>
               

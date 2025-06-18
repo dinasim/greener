@@ -161,6 +161,26 @@ export default function ForumTopicDetail({ route, navigation }) {
   const showToast = (message, type = 'info') => setToast({ visible: true, message, type });
   const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
 
+  // Add this handler inside the ForumTopicDetail component
+  const handleVoteReply = async (replyId, delta) => {
+    try {
+      // Call backend to update vote (implement endpoint as needed)
+      const res = await fetch(`${API_BASE_URL}/forum-replies/vote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ replyId, delta })
+      });
+      if (res.ok) {
+        // Optimistically update UI
+        setReplies(prev => prev.map(r => r.id === replyId ? { ...r, votes: (r.votes || 0) + delta } : r));
+      } else {
+        showToast('Failed to vote on reply.', 'error');
+      }
+    } catch (err) {
+      showToast('Failed to vote on reply.', 'error');
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.centered}><ActivityIndicator size="large" color="#4CAF50" /></View>
@@ -228,9 +248,19 @@ export default function ForumTopicDetail({ route, navigation }) {
                     <Text style={styles.replyAuthor}>{reply.author || 'Anonymous'}</Text>
                     <Text style={styles.replyTime}>{reply.timestamp ? new Date(reply.timestamp).toLocaleString() : ''}</Text>
                   </View>
+                  {/* Voting buttons */}
+                  <View style={{ alignItems: 'center', marginRight: 8 }}>
+                    <TouchableOpacity onPress={() => handleVoteReply(reply.id, 1)} style={{ padding: 2 }}>
+                      <MaterialIcons name="thumb-up" size={20} color="#4CAF50" />
+                    </TouchableOpacity>
+                    <Text style={{ fontSize: 13, color: '#333', fontWeight: '600', textAlign: 'center' }}>{reply.votes || 0}</Text>
+                    <TouchableOpacity onPress={() => handleVoteReply(reply.id, -1)} style={{ padding: 2 }}>
+                      <MaterialIcons name="thumb-down" size={20} color="#e53935" />
+                    </TouchableOpacity>
+                  </View>
                   {/* Delete button for reply author or topic author */}
                   {(reply.author === userEmail || topic?.author === userEmail) && (
-                    <TouchableOpacity onPress={() => deleteReply(reply.id, reply.category)} style={{ marginLeft: 8 }}>
+                    <TouchableOpacity onPress={() => deleteReply(reply.id, reply.category)} style={{ marginLeft: 4 }}>
                       <MaterialIcons name="delete" size={20} color="#f44336" />
                     </TouchableOpacity>
                   )}

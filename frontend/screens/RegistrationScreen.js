@@ -95,23 +95,15 @@ export default function RegistrationScreen({ navigation }) {
         updateFormData('fcmToken', fcmToken);
       }
 
-      console.log('🔔 Notification tokens obtained:', {
-        platform: Platform.OS,
-        webPushToken: webPushToken?.substring(0, 20) + '...' || null,
-        fcmToken: fcmToken?.substring(0, 20) + '...' || null
-      });
-
       // Combine registration fields and context fields
       const registrationData = {
-        username,
-        password,
-        email,
-        // The following are pulled from your FormContext
+        username: username || '',
+        password: password || '',
+        email: email || '',
         name: formData.name || '',
         intersted: formData.intersted || '',
         animals: formData.animals || '',
         kids: formData.kids || '',
-        // FIXED: Ensure location data includes coordinates and address
         location: formData.userLocation ? {
           city: formData.userLocation.city || '',
           street: formData.userLocation.street || '',
@@ -123,7 +115,6 @@ export default function RegistrationScreen({ navigation }) {
           postalCode: formData.userLocation.postalCode || ''
         } : null,
         plantLocations: formData.plantLocations || [],
-        // Add notification tokens
         expoPushToken: null, // deprecated
         webPushSubscription: webPushToken || formData.webPushSubscription || null,
         fcmToken: fcmToken || formData.fcmToken || null,
@@ -133,7 +124,8 @@ export default function RegistrationScreen({ navigation }) {
           marketplaceUpdates: false,
           platform: Platform.OS
         },
-        // Add timestamps for tracking
+        type: 'consumer',
+        platform: Platform.OS,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
@@ -161,17 +153,7 @@ export default function RegistrationScreen({ navigation }) {
       
       if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-      // Save important data to AsyncStorage for marketplace integration
-      await AsyncStorage.setItem('userEmail', email);
-      await AsyncStorage.setItem('userName', username);
-      
-      if (webPushToken) {
-        await AsyncStorage.setItem('webPushToken', webPushToken);
-      }
-      if (fcmToken) {
-        await AsyncStorage.setItem('fcmToken', fcmToken);
-      }
-
+      // Do not save any user data to AsyncStorage (except session token if needed)
       console.log('✅ Registration successful');
       setSuccessMsg('Registration successful! You can now log in.');
       setLoading(false);

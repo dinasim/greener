@@ -15,12 +15,12 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import LocationPicker from '../../marketplace/components/LocationPicker';
 import { useForm } from '../../context/FormContext';
-import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
+import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 import ToastMessage from '../../marketplace/components/ToastMessage';
 import { colors, spacing, typography, borderRadius, getShadow, getWebSafeShadow } from '../../marketplace/services/theme';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import LocationPicker from '../../marketplace/components/LocationPicker';
 
 // Safe ImagePicker import
 let ImagePicker;
@@ -87,23 +87,30 @@ const checkBusinessExists = async (url, options = {}, context = 'Request') => {
       timeout: 10000, // Shorter timeout for single check
       ...options
     });
-    
     // Simple response handling - just check if it exists or not
     if (response.status === 404) {
       console.log('✅ Business profile not found - ready for signup');
       return { exists: false };
     }
-    
     if (response.ok) {
-      const data = await response.json();
+      let data = null;
+      try {
+        const text = await response.text();
+        if (text) {
+          data = JSON.parse(text);
+        } else {
+          throw new Error('Empty response from server');
+        }
+      } catch (err) {
+        console.warn('Failed to parse JSON:', err);
+        throw new Error('Invalid response from server');
+      }
       console.log('⚠️ Business profile already exists');
       return { exists: true, data };
     }
-    
     // For other errors, log and assume doesn't exist (allow signup)
     console.warn(`⚠️ Check failed with status ${response.status}, assuming business doesn't exist`);
     return { exists: false };
-    
   } catch (error) {
     console.warn(`⚠️ Network error during check: ${error.message}, assuming business doesn't exist`);
     return { exists: false }; // On error, allow signup to proceed
@@ -168,14 +175,30 @@ export default function BusinessSignUpScreen({ navigation }) {
     'Other'
   ]);
   
-  // Firebase notifications hook
+  // Notification hook
   const {
-    isInitialized,
-    hasPermission,
-    token,
-    initialize,
-    registerForWateringNotifications
-  } = useBusinessFirebaseNotifications(formData.email);
+    requestPermission,
+    subscribeToTopic,
+    unsubscribeFromTopic,
+    getToken,
+    deleteToken,
+    onMessage,
+    setBackgroundMessageHandler
+  } = useUniversalNotifications();
+
+  // Initialize notifications on component mount
+  useEffect(() => {
+    const initializeNotifications = async () => {
+      try {
+        await requestPermission();
+        console.log('✅ Notification permissions granted for business signup');
+      } catch (error) {
+        console.warn('⚠️ Notification permission denied:', error);
+      }
+    };
+
+    initializeNotifications();
+  }, []);
 
   // Show toast message
   const showToast = (message, type = 'info') => {
@@ -251,7 +274,19 @@ export default function BusinessSignUpScreen({ navigation }) {
         });
 
         if (uploadResponse.ok) {
-          const result = await uploadResponse.json();
+          let result = null;
+          try {
+            const text = await uploadResponse.text();
+            if (text) {
+              result = JSON.parse(text);
+            } else {
+              throw new Error('Empty response from server');
+            }
+          } catch (err) {
+            console.warn('Failed to parse JSON:', err);
+            Alert.alert('Error', 'Invalid response from server.');
+            return;
+          }
           handleChange('logo', result.url); // Use Azure URL
         } else {
           throw new Error('Upload failed');
@@ -493,198 +528,59 @@ export default function BusinessSignUpScreen({ navigation }) {
   // OPTIMAL: Simplified single-step signup using enhanced API
   const handleSubmit = async () => {
     if (!validateStep(currentStep)) return;
-    
-    // Prevent multiple submissions
-    if (isLoading) {
-      console.log('🔒 Business creation already in progress');
-      return;
-    }
-    
+    if (isLoading) return;
     setIsLoading(true);
-    showToast('Creating your business account. Please wait while we set up everything for you...', 'info');
-    
+    showToast('Creating your business account. Please wait...', 'info');
     try {
-      console.log('🚀 Starting business signup process...');
+      // Prepare business registration data
+      const businessData = await prepareBusinessData();
       
-      // STEP 1: Initialize Firebase notifications
-      showToast('Setting up notifications...', 'info');
-      try {
-        await initialize(formData.email);
-        console.log('✅ Firebase notifications initialized');
-      } catch (notifError) {
-        console.warn('⚠️ Firebase notifications failed:', notifError);
-      }
-      
-      // STEP 2: Create basic user account FIRST
-      showToast('Creating user account...', 'info');
-      await createUserAccount();
-      console.log('✅ User account created');
-      
-      // STEP 3: Update local storage immediately after user creation
-      console.log('💾 Updating local storage after user creation...');
-      updateFormData('email', formData.email);
-      updateFormData('businessId', formData.email);
-      
-      await AsyncStorage.setItem('userEmail', formData.email);
-      await AsyncStorage.setItem('userType', 'business');
-      await AsyncStorage.setItem('businessId', formData.email);
-      await AsyncStorage.setItem('isBusinessUser', 'true');
-      await AsyncStorage.setItem('userName', formData.contactName);
-      
-      // STEP 4: Create business profile (SINGLE CALL)
-      showToast('Creating business profile...', 'info');
-      const businessData = await prepareBusinessData(); // FIXED: await the async function
-      console.log('🏢 Creating business profile - SINGLE ATTEMPT');
-      
-      const result = await createBusinessProfile(businessData);
-      console.log('✅ Business profile created:', result?.businessId || 'success');
-      
-      // STEP 5: Initialize SignalR service NOW that user exists
-      showToast('Connecting to real-time services...', 'info');
-      try {
-        // Import SignalR service dynamically to avoid early initialization
-        const { initializeSignalRAfterSignup } = await import('../../marketplace/services/signalRservice');
-        await initializeSignalRAfterSignup(formData.email);
-        console.log('✅ SignalR service initialized successfully');
-      } catch (signalRError) {
-        console.warn('⚠️ SignalR initialization failed (will work in offline mode):', signalRError.message);
-        // Don't fail the entire signup for SignalR issues
-      }
-      
-      // STEP 6: Set up business notifications if available
-      if (hasPermission && token) {
-        try {
-          showToast('Configuring business notifications...', 'info');
-          await registerForWateringNotifications('07:00');
-          console.log('✅ Business notifications configured');
-        } catch (notificationError) {
-          console.warn('⚠️ Failed to setup notifications:', notificationError);
-        }
-      }
-      
-      setIsLoading(false);
-      console.log('✅ Business signup completed successfully');
-      
-      // STEP 7: Show success and navigate
-      showToast('🎉 Business account created successfully! Welcome to Greener!', 'success');
-      
-      // SIMPLIFIED: Navigate directly to the new choice screen
-      const showInventoryChoiceDialog = () => {
-        console.log('✅ Business signup completed, navigating to choice screen');
-        showToast('🎉 Business account created successfully! Welcome to Greener!', 'success');
-        
-        // Navigate to the dedicated choice screen
-        setTimeout(() => {
-          navigation.replace('BusinessInventoryChoiceScreen', {
-            businessId: formData.email,
-            businessName: formData.businessName,
-            isNewUser: true
-          });
-        }, 1500);
-      };
-      
-      // Show inventory choice dialog after successful creation
-      setTimeout(() => {
-        showInventoryChoiceDialog();
-      }, 1500);
-      
-    } catch (error) {
-      console.error('❌ Error during business signup:', error);
-      setIsLoading(false);
-      
-      // Better error messages based on error type
-      let errorMessage = 'Could not create your business account.';
-      let errorDetails = error.message;
-      
-      if (error.message.includes('Business creation failed')) {
-        errorMessage = 'Failed to create business profile. This may be due to a network issue.';
-      } else if (error.message.includes('User creation failed')) {
-        errorMessage = 'Failed to create user account. Please check your information and try again.';
-      } else if (error.message.includes('timeout') || error.message.includes('network')) {
-        errorMessage = 'Network timeout. Please check your connection and try again.';
-      } else if (error.message.includes('already exists')) {
-        errorMessage = 'A business account with this email already exists.';
-      }
-      
-      showToast(errorMessage, 'error');
-      
-      Alert.alert(
-        'Business Signup Failed', 
-        `${errorMessage}\n\nPlease try again. If the problem persists, contact support.\n\nTechnical details: ${errorDetails}`,
-        [
-          { text: 'OK', style: 'default' },
-          { 
-            text: 'Retry', 
-            style: 'default',
-            onPress: () => {
-              // Reset loading state and allow retry
-              setIsLoading(false);
-            }
-          }
-        ]
-      );
-    }
-  };
-
-  // OPTIMAL: Simplified user creation (only what's needed for main user table)
-  const createUserAccount = async () => {
-    try {
-      console.log('👤 Creating basic user account');
-      
-      const userData = {
-        email: formData.email,
-        type: 'business',
-        name: formData.contactName,
-        businessName: formData.businessName,
-        businessType: formData.businessType,
-        // FIXED: Include business hours and social media in user creation
-        description: formData.description,
-        phone: formData.phone,
-        contactPhone: formData.phone,
-        businessHours: Object.entries(formData.businessHours).map(([day, hours]) => ({
-          day: day,
-          hours: hours.isOpen ? `${hours.openTime}-${hours.closeTime}` : 'Closed',
-          isOpen: hours.isOpen
-        })),
-        socialMedia: formData.socialMedia,
-        location: formData.location,
-        fcmToken: token || null,
-        platform: Platform.OS,
-        notificationSettings: {
-          enabled: true,
-          wateringReminders: true,
-          orderUpdates: true,
-          marketplaceUpdates: true,
-          reviewNotifications: true,
-          promotionalEmails: false,
-          platform: Platform.OS
-        },
-      };
-      
-      console.log('📅 Business hours being sent to saveUser:', JSON.stringify(userData.businessHours));
-      console.log('📱 Social media being sent to saveUser:', JSON.stringify(userData.socialMedia));
-      
-      const response = await fetch(`${API_BASE_URL}/saveUser`, {
+      // Use the registeruser_business endpoint as requested
+      const res = await fetch('https://usersfunctions.azurewebsites.net/api/registeruser_business', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Email': formData.email,
-          'X-User-Type': 'business',
-        },
-        body: JSON.stringify(userData)
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: businessData.email,
+          password: formData.password,
+          businessName: businessData.businessName,
+          contactName: businessData.contactName,
+          phone: businessData.phone,
+          businessType: businessData.businessType,
+          description: businessData.description,
+          location: businessData.location,
+          businessHours: businessData.businessHours,
+          socialMedia: businessData.socialMedia,
+          logo: businessData.logo,
+          notificationSettings: businessData.notificationSettings,
+          fcmToken: businessData.fcmToken,
+          webPushSubscription: businessData.webPushSubscription,
+          expoPushToken: businessData.expoPushToken,
+          platform: businessData.platform,
+          createdAt: businessData.createdAt,
+          updatedAt: businessData.updatedAt
+        })
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`User creation failed: ${response.status} - ${errorText}`);
+      let data = null;
+      try {
+        const text = await res.text();
+        if (text) {
+          data = JSON.parse(text);
+        } else {
+          throw new Error('Empty response from server');
+        }
+      } catch (err) {
+        throw new Error('Invalid response from server');
       }
-
-      const result = await response.json();
-      console.log('✅ Basic user account created with business data');
-      return result;
+      if (!res.ok) throw new Error(data.error || 'Business registration failed');
+      
+      setIsLoading(false);
+      showToast('🎉 Business account created successfully! Welcome to Greener!', 'success');
+      setTimeout(() => {
+        navigation.replace('BusinessSignInScreen');
+      }, 1500);
     } catch (error) {
-      console.error('❌ Error creating user account:', error);
-      throw error;
+      setIsLoading(false);
+      showToast(error.message || 'Could not create your business account.', 'error');
     }
   };
 
@@ -725,8 +621,19 @@ export default function BusinessSignUpScreen({ navigation }) {
         const errorText = await uploadResponse.text();
         throw new Error(`Logo upload failed: ${uploadResponse.status} - ${errorText}`);
       }
-
-      const uploadResult = await uploadResponse.json();
+      let uploadResult = null;
+      try {
+        const text = await uploadResponse.text();
+        if (text) {
+          uploadResult = JSON.parse(text);
+        } else {
+          throw new Error('Empty response from server');
+        }
+      } catch (err) {
+        console.error('Failed to parse logo upload response:', err);
+        showToast('Logo upload failed, invalid server response', 'warning');
+        return null;
+      }
       console.log('✅ Logo uploaded to Azure Storage:', uploadResult.url);
       
       // Clean up the blob URL
@@ -749,6 +656,14 @@ export default function BusinessSignUpScreen({ navigation }) {
       logoUrl = await uploadLogoToAzureStorage(logoUrl);
     }
 
+    // Get notification token from universal notifications
+    let notificationToken = null;
+    try {
+      notificationToken = await getToken();
+    } catch (error) {
+      console.warn('⚠️ Could not get notification token:', error);
+    }
+
     // FIXED: Convert user's business hours input to proper format
     const formatBusinessHours = () => {
       return Object.entries(formData.businessHours).map(([day, hours]) => ({
@@ -760,7 +675,13 @@ export default function BusinessSignUpScreen({ navigation }) {
 
     // FIXED: Clean up social media URLs and format properly
     const formatSocialMedia = () => {
-      const social = {};
+      const social = {
+        website: '',
+        facebook: '',
+        instagram: '',
+        twitter: '',
+        whatsapp: ''
+      };
       if (formData.socialMedia.website && formData.socialMedia.website.trim()) {
         social.website = formData.socialMedia.website.trim();
       }
@@ -814,7 +735,6 @@ export default function BusinessSignUpScreen({ navigation }) {
       website: formData.socialMedia.website?.trim() || '',
       
       // Status and verification
-      status: 'active',
       type: 'business',
       platform: Platform.OS,
       isVerified: false,
@@ -837,10 +757,10 @@ export default function BusinessSignUpScreen({ navigation }) {
         platform: Platform.OS
       },
       
-      // Token fields for notifications
-      fcmToken: token || null,
+      // Token fields for notifications - use universal token
+      fcmToken: notificationToken,
       webPushSubscription: null,
-      expoPushToken: null,
+      expoPushToken: notificationToken,
       
       // Timestamps
       createdAt: new Date().toISOString(),

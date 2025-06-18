@@ -14,25 +14,26 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Use the proper Firebase notifications hook
-import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
+// Use the universal notifications hook
+import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 
 const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
   const [isEnabled, setIsEnabled] = useState(false);
   const [notificationTime, setNotificationTime] = useState(new Date(new Date().setHours(7, 0, 0, 0)));
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [smartWeatherWatering, setSmartWeatherWatering] = useState(false);
 
-  // Use Firebase notifications hook
+  // Use universal notifications hook
   const {
     isInitialized,
     hasPermission,
-    token,
-    initialize,
-    registerForWateringNotifications,
-    sendTestNotification,
-    getNotificationInfo
-  } = useBusinessFirebaseNotifications(businessId);
+    getToken,
+    requestPermission,
+    subscribeToTopic,
+    unsubscribeFromTopic,
+    onMessage
+  } = useUniversalNotifications();
 
   useEffect(() => {
     loadSettings();
@@ -45,9 +46,9 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
     try {
       const enabled = await AsyncStorage.getItem('wateringNotificationsEnabled');
       const time = await AsyncStorage.getItem('wateringNotificationTime');
-      
+      const smartWeather = await AsyncStorage.getItem('smartWeatherWatering');
       setIsEnabled(enabled === 'true');
-      
+      setSmartWeatherWatering(smartWeather === 'true');
       if (time) {
         const [hours, minutes] = time.split(':').map(Number);
         const date = new Date();
@@ -195,6 +196,15 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
     }
   };
 
+  const handleToggleSmartWeather = async (enabled) => {
+    setSmartWeatherWatering(enabled);
+    await AsyncStorage.setItem('smartWeatherWatering', enabled.toString());
+    if (onSettingsChange) {
+      onSettingsChange({ smartWeatherWatering: enabled });
+    }
+    // TODO: Optionally update backend business profile here
+  };
+
   const formatTime = (time) => {
     return time.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
@@ -283,6 +293,22 @@ const WateringNotificationSettings = ({ businessId, onSettingsChange }) => {
             </TouchableOpacity>
           </>
         )}
+
+        <View style={styles.settingRow}>
+          <View style={styles.settingInfo}>
+            <Text style={styles.settingLabel}>Smart Weather Watering</Text>
+            <Text style={styles.settingDescription}>
+              Automatically skip watering for outdoor plants if rain is expected
+            </Text>
+          </View>
+          <Switch
+            value={smartWeatherWatering}
+            onValueChange={handleToggleSmartWeather}
+            thumbColor={smartWeatherWatering ? '#4CAF50' : '#f4f3f4'}
+            trackColor={{ false: '#767577', true: '#81b0ff' }}
+            disabled={isLoading}
+          />
+        </View>
 
         {!hasPermission && (
           <View style={styles.permissionWarning}>

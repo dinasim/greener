@@ -1,4 +1,4 @@
-// Business/BusinessNavigation.js - FIXED VERSION WITH ALL MISSING SCREENS ADDED
+// Business/BusinessNavigation.js - UPDATED VERSION
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -13,7 +13,6 @@ import BusinessInventoryScreen from './BusinessScreens/BusinessInventoryScreen';
 import BusinessHomeScreen from './BusinessScreens/BusinessHomeScreen';
 import BusinessProfileScreen from './BusinessScreens/BusinessProfileScreen';
 import BusinessOrdersScreen from './BusinessScreens/BusinessOrdersScreen';
-import BusinessAnalyticsScreen from './BusinessScreens/BusinessAnalyticsScreen';
 import BusinessSettingsScreen from './BusinessScreens/BusinessSettingsScreen';
 import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import CreateOrderScreen from './BusinessScreens/CreateOrderScreen';
@@ -32,7 +31,7 @@ import BusinessCustomersScreen from './BusinessScreens/BusinessCustomersScreen';
 // Import the missing screens that exist but weren't imported
 import WateringRouteScreen from './BusinessScreens/WateringRouteScreen';
 import BusinessNotificationsScreen from './BusinessScreens/BusinessNotificationsScreen';
-import BusinessReportsScreen from './BusinessScreens/BusinessReportsScreen';
+import BusinessInsightsScreen from './BusinessScreens/BusinessInsightsScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -109,7 +108,7 @@ const BusinessTabs = () => {
   );
 };
 
-// Main Business Stack Navigator - FIXED WITH ALL MISSING SCREENS
+// Main Business Stack Navigator - UPDATED WITH NEW FLOW
 const BusinessNavigation = () => {
   return (
     <Stack.Navigator
@@ -176,11 +175,6 @@ const BusinessNavigation = () => {
       
       {/* Individual Screens */}
       <Stack.Screen 
-        name="BusinessAnalyticsScreen" 
-        component={BusinessAnalyticsScreen} 
-        options={{ title: 'Analytics' }} 
-      />
-      <Stack.Screen 
         name="CustomerListScreen" 
         component={CustomerListScreen}
         options={{ title: 'Customers' }}
@@ -218,13 +212,6 @@ const BusinessNavigation = () => {
         name="BusinessNotificationsScreen" 
         component={BusinessNotificationsScreen}
         options={{ title: 'Business Notifications' }}
-      />
-      
-      {/* Reports Screen */}
-      <Stack.Screen 
-        name="BusinessReportsScreen" 
-        component={BusinessReportsScreen}
-        options={{ title: 'Business Reports' }}
       />
       
       {/* Forum Screens - FIXED: Added missing ForumTopicDetail */}
@@ -281,6 +268,11 @@ const BusinessNavigation = () => {
         name="BusinessCustomersScreen" 
         component={BusinessCustomersScreen}
         options={{ title: 'Customers' }}
+      />
+      <Stack.Screen 
+        name="BusinessInsightsScreen" 
+        component={BusinessInsightsScreen}
+        options={{ title: 'Business Insights' }}
       />
     </Stack.Navigator>
   );

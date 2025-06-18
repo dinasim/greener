@@ -29,7 +29,7 @@ import AddSiteScreen from '../screens/AddSiteScreen';
 import ForumScreen from '../screens/ForumScreen';
 import SearchScreen from '../screens/SearchScreen';
 import AddOptionsScreen from '../screens/AddOptionsScreen';
-import NotificationSettingsScreen from '../screens/NotificationSettingsScreen';
+import EnhancedNotificationSettingsScreen from '../screens/EnhancedNotificationSettingsScreen';
 import UserSettingsScreen from '../screens/UserSettingsScreen';
 import ForumTopicDetail from '../screens/ForumTopicDetail';
 
@@ -99,7 +99,7 @@ export default function AppNavigator() {
         <Stack.Screen name="Home" component={withBackground(HomeScreen)} />
         <Stack.Screen name="UserPlantDetail" component={withBackground(UserPlantDetails)} />
         <Stack.Screen name="UserSettings" component={withBackground(UserSettingsScreen)} />
-        <Stack.Screen name="NotificationSettings" component={withBackground(NotificationSettingsScreen)} />
+        <Stack.Screen name="NotificationSettings" component={withBackground(EnhancedNotificationSettingsScreen)} />
 
         {/* Navigate to the marketplace (MainTabs) after home */}
         <Stack.Screen 

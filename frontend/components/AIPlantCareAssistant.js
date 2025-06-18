@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useCurrentUserType } from '../utils/authUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width, height } = Dimensions.get('window');
@@ -29,15 +30,16 @@ const GEMINI_VISION_API_URL = 'https://generativelanguage.googleapis.com/v1beta/
 export default function AIPlantCareAssistant({ 
   visible, 
   onClose, 
-  userPlants = [],
-  currentLocation = null 
 }) {
+  const { userType, userProfile } = useCurrentUserType();
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [chatHistory, setChatHistory] = useState([]);
+  const [userPlants, setUserPlants] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
   
   const scrollViewRef = useRef(null);
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -388,6 +390,40 @@ Respond in a friendly, knowledgeable tone with emoji use for visual appeal. Keep
       </Text>
     </View>
   );
+
+  // Fetch user data on mount and when visible
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!userProfile || !userProfile.email) return;
+      // Fetch plants for consumer
+      if (userType === 'consumer') {
+        try {
+          const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getalluserplants?email=${encodeURIComponent(userProfile.email)}`);
+          const data = await res.json();
+          let allPlants = [];
+          if (Array.isArray(data)) {
+            data.forEach(locationObj => {
+              if (locationObj.plants && Array.isArray(locationObj.plants)) {
+                locationObj.plants.forEach(p => {
+                  allPlants.push({ ...p, location: p.location || locationObj.location });
+                });
+              }
+            });
+          }
+          setUserPlants(allPlants);
+        } catch {
+          setUserPlants([]);
+        }
+        setCurrentLocation(userProfile.location || null);
+      } else if (userType === 'business') {
+        // For business, fetch inventory and business location if needed
+        // ...business logic here if required...
+        setUserPlants([]); // or business inventory
+        setCurrentLocation(userProfile.location || null);
+      }
+    };
+    if (visible && userProfile && userType) fetchUserData();
+  }, [visible, userProfile, userType]);
 
   if (!visible) return null;
 

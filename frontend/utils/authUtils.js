@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
+import React, { useState, useEffect } from 'react';
 /**
  * Authentication utilities for working with Google Sign-In
  * and accessing authentication tokens for API requests
@@ -105,6 +105,47 @@ export const setAuthToken = async (token) => {
     console.error('Error setting auth token:', error);
   }
 };
+
+/**
+ * Custom hook to get the current user type ('business' or 'consumer')
+ * and user profile from AsyncStorage and marketplace API
+ * @returns {Object} userType, userProfile, loading
+ */
+export function useCurrentUserType() {
+  const [userType, setUserType] = useState(null); // 'business' | 'consumer' | null
+  const [userProfile, setUserProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function loadUserType() {
+      setLoading(true);
+      try {
+        const userEmail = await AsyncStorage.getItem('userEmail');
+        if (!userEmail) {
+          setUserType(null);
+          setUserProfile(null);
+          setLoading(false);
+          return;
+        }
+        const response = await fetchUserProfile(userEmail);
+        const user = response && response.user ? response.user : null;
+        setUserProfile(user);
+        if (user && user.type) {
+          setUserType(user.type); // 'business' or 'consumer'
+        } else {
+          setUserType('consumer'); // fallback
+        }
+      } catch (e) {
+        setUserType('consumer');
+        setUserProfile(null);
+      }
+      setLoading(false);
+    }
+    loadUserType();
+  }, []);
+
+  return { userType, userProfile, loading };
+}
 
 export default {
   getAuthToken,

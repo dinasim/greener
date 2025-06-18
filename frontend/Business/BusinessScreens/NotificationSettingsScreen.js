@@ -19,8 +19,7 @@ import WateringNotificationSettings from '../components/WateringNotificationSett
 import NotificationPermissionGuide from '../components/NotificationPermissionGuide';
 
 // Import hooks
-import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
-import businessFirebaseNotificationService from '../services/BusinessFirebaseNotificationService';
+import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 
 const NotificationSettingsScreen = ({ navigation }) => {
   const [isLoading, setIsLoading] = useState(true);
@@ -34,16 +33,22 @@ const NotificationSettingsScreen = ({ navigation }) => {
     lastUpdate: null
   });
 
-  // Use Firebase notifications hook
+  // Use universal notifications hook
   const {
     isInitialized,
     hasPermission,
     token,
+    requestPermission,
+    getPermissionStatus,
+    getToken,
+    subscribeToTopic,
+    unsubscribeFromTopic,
+    onMessage,
     initialize,
     registerForWateringNotifications,
     sendTestNotification,
     getNotificationInfo
-  } = useBusinessFirebaseNotifications(businessId);
+  } = useUniversalNotifications();
 
   useEffect(() => {
     loadBusinessId();
@@ -66,13 +71,15 @@ const NotificationSettingsScreen = ({ navigation }) => {
 
     const handlePermissionBlocked = (event) => {
       console.log('🚫 Permission blocked event received:', event.detail);
-      setPermissionStatus(businessFirebaseNotificationService.getPermissionStatus());
+      const status = getPermissionStatus();
+      setPermissionStatus(status);
       setShowPermissionGuide(true);
     };
 
     const handlePermissionDenied = (event) => {
       console.log('❌ Permission denied event received:', event.detail);
-      setPermissionStatus(businessFirebaseNotificationService.getPermissionStatus());
+      const status = getPermissionStatus();
+      setPermissionStatus(status);
       setShowPermissionGuide(true);
     };
 
@@ -105,11 +112,13 @@ const NotificationSettingsScreen = ({ navigation }) => {
     window.removeEventListener('retryNotificationPermission', () => {});
   };
 
-  const checkPermissionStatus = () => {
-    if (Platform.OS === 'web') {
-      const status = businessFirebaseNotificationService.getPermissionStatus();
+  const checkPermissionStatus = async () => {
+    try {
+      const status = await getPermissionStatus();
       setPermissionStatus(status);
       console.log('🔔 Permission status:', status);
+    } catch (error) {
+      console.error('Error checking permission status:', error);
     }
   };
 
@@ -152,22 +161,22 @@ const NotificationSettingsScreen = ({ navigation }) => {
       
       // Check permission status first
       if (Platform.OS === 'web') {
-        const status = businessFirebaseNotificationService.getPermissionStatus();
+        const status = await getPermissionStatus();
         
-        if (status.isBlocked) {
+        if (status && status.isBlocked) {
           setPermissionStatus(status);
           setShowPermissionGuide(true);
           return;
         }
         
-        if (!status.canRequest && status.status !== 'granted') {
+        if (status && !status.canRequest && status.status !== 'granted') {
           setPermissionStatus(status);
           setShowPermissionGuide(true);
           return;
         }
       }
       
-      // Initialize Firebase if not already done
+      // Initialize notifications if not already done
       if (!isInitialized) {
         const initialized = await initialize(businessId);
         if (!initialized) {
@@ -177,10 +186,11 @@ const NotificationSettingsScreen = ({ navigation }) => {
       }
 
       // Try to request permission
-      const permissionGranted = await businessFirebaseNotificationService.requestPermission();
+      const permissionGranted = await requestPermission();
       
       if (!permissionGranted) {
-        // Permission was denied or blocked - the service will trigger appropriate events
+        // Permission was denied or blocked
+        setShowPermissionGuide(true);
         return;
       }
 

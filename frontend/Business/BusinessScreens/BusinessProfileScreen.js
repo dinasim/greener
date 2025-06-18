@@ -16,6 +16,7 @@ import {
   TextInput
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from 'react-native-vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -265,12 +266,14 @@ export default function BusinessProfileScreen({ navigation, route }) {
               style={styles.logoContainer}
               onPress={isEditing ? handleImagePicker : null}
               disabled={!isEditing}
+              activeOpacity={isEditing ? 0.7 : 1}
             >
               <Image 
                 source={{ 
                   uri: profile?.logo || DEFAULT_BUSINESS_IMAGE 
                 }} 
                 style={styles.businessLogo}
+                resizeMode="cover"
                 onError={() => {
                   if (isEditing) {
                     setEditedProfile(prev => ({ ...prev, logo: DEFAULT_BUSINESS_IMAGE }));
@@ -283,7 +286,6 @@ export default function BusinessProfileScreen({ navigation, route }) {
                 </View>
               )}
             </TouchableOpacity>
-            
             {isEditing ? (
               <TextInput
                 style={styles.businessNameInput}
@@ -293,20 +295,13 @@ export default function BusinessProfileScreen({ navigation, route }) {
                 multiline={false}
               />
             ) : (
-              <Text style={styles.businessName}>
+              <Text style={styles.businessName} numberOfLines={1}>
                 {profile?.businessName || 'Business Name'}
               </Text>
             )}
-            
-            <Text style={styles.businessType}>
-              {profile?.businessType || 'Plant Business'}
-            </Text>
-            
+            <Text style={styles.businessType}>{profile?.businessType || 'Plant Business'}</Text>
             <Text style={styles.memberSince}>
-              Member since {new Date(profile?.joinDate || Date.now()).toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long' 
-              })}
+              Member since {new Date(profile?.joinDate || Date.now()).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
             </Text>
           </View>
         </View>
@@ -436,12 +431,11 @@ export default function BusinessProfileScreen({ navigation, route }) {
         {/* Social Media */}
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
-            <MaterialIcons name="share-variant" size={20} color="#4CAF50" />
+            <MaterialIcons name="share" size={20} color="#4CAF50" />
             <Text style={styles.sectionTitle}>Social Media</Text>
           </View>
-          
           <View style={styles.socialField}>
-            <MaterialIcons name="instagram" size={20} color="#E4405F" />
+            <MaterialCommunityIcons name="instagram" size={20} color="#E4405F" />
             {isEditing ? (
               <TextInput
                 style={styles.socialInput}
@@ -455,9 +449,8 @@ export default function BusinessProfileScreen({ navigation, route }) {
               </Text>
             )}
           </View>
-          
           <View style={styles.socialField}>
-            <MaterialIcons name="facebook" size={20} color="#1877F2" />
+            <MaterialCommunityIcons name="facebook" size={20} color="#1877F2" />
             {isEditing ? (
               <TextInput
                 style={styles.socialInput}
@@ -601,9 +594,9 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   businessLogo: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: '#e0e0e0',
   },
   editLogoOverlay: {

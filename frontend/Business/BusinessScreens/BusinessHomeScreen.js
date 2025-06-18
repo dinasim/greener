@@ -35,6 +35,9 @@ import { smartNotifications } from '../components/SmartNotifications';
 
 // Import API services
 import { getBusinessDashboard } from '../services/businessApi';
+import BusinessInsightsScreen from './BusinessInsightsScreen';
+
+const DEFAULT_BUSINESS_IMAGE = 'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
 export default function BusinessHomeScreen({ navigation }) {
   const [dashboardData, setDashboardData] = useState(null);
@@ -192,8 +195,8 @@ export default function BusinessHomeScreen({ navigation }) {
     navigation.navigate('BusinessProfileScreen', { businessId });
   };
 
-  const handleAnalytics = () => {
-    navigation.navigate('BusinessAnalyticsScreen', { businessId });
+  const handleInsights = () => {
+    navigation.navigate('BusinessInsightsScreen', { businessId });
   };
 
   const handleWateringChecklist = () => {
@@ -364,7 +367,8 @@ export default function BusinessHomeScreen({ navigation }) {
                    data?.businessProfile?.businessType || 
                    data?.business?.businessType || 
                    'Plant Business',
-      businessLogo: getBusinessLogo(),
+      // Use logo field, fallback to default
+      logo: data?.businessProfile?.logo || data?.businessInfo?.logo || data?.business?.logo || DEFAULT_BUSINESS_IMAGE,
       email: data?.businessInfo?.email || 
              data?.businessProfile?.email || 
              data?.business?.email || 
@@ -378,7 +382,13 @@ export default function BusinessHomeScreen({ navigation }) {
                    data?.business?.reviewCount || 0,
       joinDate: data?.businessInfo?.joinDate || 
                 data?.businessProfile?.joinDate || 
-                data?.business?.createdAt
+                data?.business?.createdAt,
+      address: data?.businessInfo?.address || data?.businessProfile?.address || data?.business?.address || '',
+      phone: data?.businessInfo?.phone || data?.businessProfile?.phone || data?.business?.phone || '',
+      website: data?.businessInfo?.website || data?.businessProfile?.website || data?.business?.website || '',
+      facebook: data?.businessInfo?.facebook || data?.businessProfile?.facebook || data?.business?.facebook || '',
+      instagram: data?.businessInfo?.instagram || data?.businessProfile?.instagram || data?.business?.instagram || '',
+      twitter: data?.businessInfo?.twitter || data?.businessProfile?.twitter || data?.business?.twitter || '',
     };
   };
 
@@ -392,20 +402,21 @@ export default function BusinessHomeScreen({ navigation }) {
           <MaterialIcons name="arrow-back" size={24} color="#216a94" />
         </TouchableOpacity>
         <View style={styles.profileSection}>
-          <Image 
-            source={businessInfo.businessLogo ? 
-              { uri: businessInfo.businessLogo } : 
-              require('../../assets/business-placeholder.png')
-            } 
-            style={styles.logo}
-            onError={() => {
-              console.warn('Failed to load business logo, using placeholder');
-            }}
-          />
+          <TouchableOpacity onPress={handleProfile} style={styles.profileAvatarButton} accessibilityLabel="View Profile">
+            <Image
+              source={businessInfo.logo ? { uri: businessInfo.logo } : require('../../assets/business-placeholder.png')}
+              style={styles.logo}
+              onError={(e) => {
+                // fallback to default image if error
+                e.target && (e.target.src = DEFAULT_BUSINESS_IMAGE);
+              }}
+            />
+          </TouchableOpacity>
           <View style={styles.businessInfo}>
             <Text style={styles.businessName} numberOfLines={1}>
               {businessInfo.businessName}
             </Text>
+            <Text style={styles.businessType}>{businessInfo.businessType}</Text>
             <Text style={styles.welcomeText}>Welcome back!</Text>
             <View style={styles.ratingContainer}>
               {businessInfo.rating > 0 && (
@@ -420,17 +431,20 @@ export default function BusinessHomeScreen({ navigation }) {
           </View>
         </View>
         <View style={styles.headerActions}>
-          <TouchableOpacity style={styles.headerButton} onPress={handleSettings}>
+          <TouchableOpacity style={styles.headerButton} onPress={() => navigation.navigate('BusinessInsightsScreen', { businessId })} accessibilityLabel="Insights">
+            <MaterialIcons name="insights" size={24} color="#216a94" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={handleSettings} accessibilityLabel="Settings">
             <MaterialIcons name="settings" size={24} color="#216a94" />
           </TouchableOpacity>
         </View>
       </View>
 
-      <ScrollView 
-        style={styles.scrollView} 
+      <ScrollView
+        style={styles.scrollView}
         refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
+          <RefreshControl
+            refreshing={refreshing}
             onRefresh={onRefresh}
             colors={['#216a94']}
             tintColor="#216a94"
@@ -455,7 +469,7 @@ export default function BusinessHomeScreen({ navigation }) {
             icon="cash"
             format="currency"
             color="#216a94"
-            onPress={handleAnalytics}
+            onPress={handleInsights}
           />
           
           <KPIWidget
@@ -465,7 +479,7 @@ export default function BusinessHomeScreen({ navigation }) {
             icon="trending-up"
             format="currency"
             color="#4CAF50"
-            onPress={handleAnalytics}
+            onPress={handleInsights}
           />
           
           <KPIWidget
@@ -641,70 +655,14 @@ export default function BusinessHomeScreen({ navigation }) {
 
           <TouchableOpacity 
             style={styles.actionTab}
-            onPress={handleAnalytics}
+            onPress={handleInsights}
           >
-            <View style={[styles.actionTabIcon, { backgroundColor: '#795548' }]}>
-              <MaterialIcons name="analytics" size={24} color="#fff" />
+            <View style={[styles.actionTabIcon, { backgroundColor: '#4CAF50' }]}>
+              <MaterialIcons name="insights" size={24} color="#fff" />
             </View>
             <View style={styles.actionTabContent}>
-              <Text style={styles.actionTabTitle}>Business Analytics</Text>
-              <Text style={styles.actionTabDescription}>View sales reports and insights</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionTab}
-            onPress={() => navigation.navigate('BusinessReportsScreen', { businessId })}
-          >
-            <View style={[styles.actionTabIcon, { backgroundColor: '#607D8B' }]}>
-              <MaterialCommunityIcons name="file-chart" size={24} color="#fff" />
-            </View>
-            <View style={styles.actionTabContent}>
-              <Text style={styles.actionTabTitle}>Business Reports</Text>
-              <Text style={styles.actionTabDescription}>Generate detailed business reports</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionTab}
-            onPress={() => navigation.navigate('BusinessNotificationsScreen', { businessId })}
-          >
-            <View style={[styles.actionTabIcon, { backgroundColor: '#FFC107' }]}>
-              <MaterialCommunityIcons name="bell" size={24} color="#fff" />
-            </View>
-            <View style={styles.actionTabContent}>
-              <Text style={styles.actionTabTitle}>Notifications</Text>
-              <Text style={styles.actionTabDescription}>Manage business alerts and reminders</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionTab}
-            onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
-          >
-            <View style={[styles.actionTabIcon, { backgroundColor: '#3F51B5' }]}>
-              <MaterialCommunityIcons name="map-marker-path" size={24} color="#fff" />
-            </View>
-            <View style={styles.actionTabContent}>
-              <Text style={styles.actionTabTitle}>Route Optimization</Text>
-              <Text style={styles.actionTabDescription}>Optimize delivery and service routes</Text>
-            </View>
-            <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            style={styles.actionTab}
-            onPress={() => navigation.navigate('BusinessWeatherScreen', { businessId })}
-          >
-            <View style={[styles.actionTabIcon, { backgroundColor: '#009688' }]}>
-              <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#fff" />
-            </View>
-            <View style={styles.actionTabContent}>
-              <Text style={styles.actionTabTitle}>Weather Insights</Text>
-              <Text style={styles.actionTabDescription}>Weather-based plant care recommendations</Text>
+              <Text style={styles.actionTabTitle}>Business Insights</Text>
+              <Text style={styles.actionTabDescription}>Analytics, reports, and trends in one place</Text>
             </View>
             <MaterialIcons name="chevron-right" size={24} color="#ccc" />
           </TouchableOpacity>
@@ -786,13 +744,47 @@ export default function BusinessHomeScreen({ navigation }) {
               <Text style={styles.businessCardLabel}>Email: </Text>
               {businessInfo.email}
             </Text>
+            {businessInfo.phone ? (
+              <Text style={styles.businessCardItem}>
+                <Text style={styles.businessCardLabel}>Phone: </Text>
+                <Text style={{color:'#216a94'}} onPress={() => Linking.openURL(`tel:${businessInfo.phone}`)}>{businessInfo.phone}</Text>
+              </Text>
+            ) : null}
+            {businessInfo.address ? (
+              <Text style={styles.businessCardItem}>
+                <Text style={styles.businessCardLabel}>Address: </Text>
+                {typeof businessInfo.address === 'string' ? businessInfo.address :
+                  `${businessInfo.address.street || ''} ${businessInfo.address.houseNumber || ''}, ${businessInfo.address.city || ''}, ${businessInfo.address.country || ''}`.replace(/^[,\s]+|[,\s]+$/g, '')}
+              </Text>
+            ) : null}
+            {businessInfo.website ? (
+              <Text style={styles.businessCardItem}>
+                <MaterialCommunityIcons name="web" size={16} color="#216a94" />
+                <Text style={styles.businessCardLabel}> Website: </Text>
+                <Text style={{color:'#216a94'}} onPress={() => Linking.openURL(businessInfo.website)}>{businessInfo.website.replace(/^https?:\/\//, '')}</Text>
+              </Text>
+            ) : null}
+            <View style={{flexDirection:'row',alignItems:'center',marginTop:4}}>
+              {businessInfo.facebook ? (
+                <TouchableOpacity onPress={() => Linking.openURL(businessInfo.facebook)} style={{marginRight:8}}>
+                  <FontAwesome name="facebook-square" size={20} color="#1877f3" />
+                </TouchableOpacity>
+              ) : null}
+              {businessInfo.instagram ? (
+                <TouchableOpacity onPress={() => Linking.openURL(businessInfo.instagram)} style={{marginRight:8}}>
+                  <FontAwesome name="instagram" size={20} color="#C13584" />
+                </TouchableOpacity>
+              ) : null}
+              {businessInfo.twitter ? (
+                <TouchableOpacity onPress={() => Linking.openURL(businessInfo.twitter)} style={{marginRight:8}}>
+                  <FontAwesome name="twitter" size={20} color="#1da1f2" />
+                </TouchableOpacity>
+              ) : null}
+            </View>
             {businessInfo.joinDate && (
               <Text style={styles.businessCardItem}>
                 <Text style={styles.businessCardLabel}>Member since: </Text>
-                {new Date(businessInfo.joinDate).toLocaleDateString('en-US', { 
-                  year: 'numeric', 
-                  month: 'long' 
-                })}
+                {new Date(businessInfo.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
               </Text>
             )}
           </View>
@@ -896,6 +888,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
+  profileAvatarButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    overflow: 'hidden',
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#216a94',
+    backgroundColor: '#f0f8ff',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   logo: {
     width: 50,
     height: 50,
@@ -910,6 +914,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     color: '#216a94',
+  },
+  businessType: {
+    fontSize: 14,
+    color: '#00796b',
+    fontWeight: '500',
+    marginTop: 2,
   },
   welcomeText: {
     fontSize: 12,
