@@ -164,15 +164,15 @@ def create_user_document(user_info, is_update=False):
                 "platform": user_info.get("platform", "web")
             }
     else:
-        # Consumer-specific fields only
+        # Consumer-specific fields only, always set defaults if missing
         consumer_fields = {
-            "animals": user_info.get("animals"),
-            "kids": user_info.get("kids"),
-            "intersted": user_info.get("intersted"),
-            "googleId": user_info.get("googleId"),
-            "fcmToken": user_info.get("fcmToken"),
-            "webPushSubscription": user_info.get("webPushSubscription"),
-            "expoPushToken": user_info.get("expoPushToken"),
+            "animals": user_info.get("animals", ""),
+            "kids": user_info.get("kids", ""),
+            "intersted": user_info.get("intersted", ""),
+            "googleId": user_info.get("googleId", ""),
+            "fcmToken": user_info.get("fcmToken", None),
+            "webPushSubscription": user_info.get("webPushSubscription", None),
+            "expoPushToken": user_info.get("expoPushToken", None),
             "plantLocations": user_info.get("plantLocations", []),
         }
         user_doc.update(consumer_fields)

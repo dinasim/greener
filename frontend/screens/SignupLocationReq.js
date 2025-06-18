@@ -11,12 +11,13 @@ import {
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
 import { useForm } from "../context/FormContext";
-import LocationPicker from "../marketplace/components/LocationPicker";
+import LocationPicker from '../marketplace/components/LocationPicker';
 
 export default function SignupLocationReq({ navigation }) {
   const [saving, setSaving] = useState(false);
   const { updateFormData } = useForm();
   const [selectedLocation, setSelectedLocation] = useState(null);
+  const [formErrors, setFormErrors] = useState({});
   const scaleAnim = new Animated.Value(0.95);
 
   useEffect(() => {
@@ -29,10 +30,7 @@ export default function SignupLocationReq({ navigation }) {
   }, []);
 
   const handleLocationChange = (location) => {
-    console.log('📍 Location selected:', location);
     setSelectedLocation(location);
-    
-    // Update form data with the complete location object
     updateFormData("userLocation", {
       city: location.city || '',
       street: location.street || '',
@@ -42,6 +40,7 @@ export default function SignupLocationReq({ navigation }) {
       formattedAddress: location.formattedAddress || '',
       country: location.country || 'Israel'
     });
+    // Optionally validate here and setFormErrors if needed
   };
 
   const handleContinue = async () => {
@@ -78,21 +77,16 @@ export default function SignupLocationReq({ navigation }) {
               Help us provide personalized plant care advice for your area 🌿
             </Text>
           </View>
-          
           <View style={styles.locationSection}>
             <LocationPicker
               value={selectedLocation}
               onChange={handleLocationChange}
-              required={true}
-              showConfirmButton={false} // We'll handle confirmation with our own button
+              placeholder="Enter your address in Israel"
               alwaysShowMap={true}
-              placeholder="Enter your location in Israel"
-              showToastFeedback={true}
             />
           </View>
         </Animated.View>
       </ScrollView>
-      
       <View style={styles.footer}>
         <TouchableOpacity
           style={[styles.nextButton, !locationReady && { opacity: 0.5 }]}

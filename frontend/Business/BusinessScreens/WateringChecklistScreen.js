@@ -33,6 +33,7 @@ const WateringChecklistScreen = ({ navigation }) => {
   const [weather, setWeather] = useState(null);
   const [selectedFilter, setSelectedFilter] = useState('all'); // 'all', 'needs-watering', 'overdue'
   const [sortBy, setSortBy] = useState('priority'); // 'priority', 'name', 'last-watered'
+  const [showRainSkipped, setShowRainSkipped] = useState(false);
 
   // Load business ID on mount
   useEffect(() => {
@@ -158,6 +159,10 @@ const WateringChecklistScreen = ({ navigation }) => {
 
     return filtered;
   };
+
+  const getRainSkippedPlants = () => checklist.filter(
+    plant => plant.site === 'outdoor' && plant.autoWateredByRain
+  );
 
   const renderPlantItem = ({ item }) => {
     const priorityColor = item.overdueDays > 0 ? '#F44336' : 
@@ -287,7 +292,7 @@ const WateringChecklistScreen = ({ navigation }) => {
     );
   }
 
-  const filteredPlants = getFilteredAndSortedPlants();
+  const filteredPlants = showRainSkipped ? getRainSkippedPlants() : getFilteredAndSortedPlants();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -309,6 +314,32 @@ const WateringChecklistScreen = ({ navigation }) => {
           onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
         >
           <MaterialCommunityIcons name="routes" size={24} color="#216a94" />
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 8, marginBottom: 4 }}>
+        <TouchableOpacity
+          style={{
+            backgroundColor: !showRainSkipped ? '#4CAF50' : '#E0E0E0',
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderRadius: 20,
+            marginRight: 8,
+          }}
+          onPress={() => setShowRainSkipped(false)}
+        >
+          <Text style={{ color: !showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Checklist</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={{
+            backgroundColor: showRainSkipped ? '#4CAF50' : '#E0E0E0',
+            paddingHorizontal: 16,
+            paddingVertical: 8,
+            borderRadius: 20,
+          }}
+          onPress={() => setShowRainSkipped(true)}
+        >
+          <Text style={{ color: showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Auto-Watered by Rain</Text>
         </TouchableOpacity>
       </View>
 

@@ -42,10 +42,10 @@ export default function InterestPage({ navigation }) {
   }, []);
 
   const toggleInterest = (option) => {
-    updateFormData("Intersted", option);
+    updateFormData("intersted", option); // FIXED: use lowercase 'intersted' to match backend
   };
 
-  const isSelected = (option) => formData.Intersted === option;
+  const isSelected = (option) => formData.intersted === option; // FIXED: use lowercase
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -105,15 +105,15 @@ export default function InterestPage({ navigation }) {
         <TouchableOpacity
           style={[
             styles.nextButton,
-            (!formData.Intersted || formData.Intersted === "") && { backgroundColor: "#bdbdbd" }
+            (!formData.intersted || formData.intersted === "") && { backgroundColor: "#bdbdbd" }
           ]}
           onPress={() => {
-            if (formData.Intersted && formData.Intersted !== "") {
+            if (formData.intersted && formData.intersted !== "") {
               navigation.navigate("SignupAnimals");
             }
           }}
-          activeOpacity={(!formData.Intersted || formData.Intersted === "") ? 1 : 0.7}
-          disabled={!formData.Intersted || formData.Intersted === ""}
+          activeOpacity={(!formData.intersted || formData.intersted === "") ? 1 : 0.7}
+          disabled={!formData.intersted || formData.intersted === ""}
         >
           <Text style={styles.nextButtonText}>Continue</Text>
         </TouchableOpacity>

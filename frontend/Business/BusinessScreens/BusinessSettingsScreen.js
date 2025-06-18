@@ -18,6 +18,7 @@ import {
   BackHandler,
   KeyboardAvoidingView,
   Keyboard,
+  Image
 } from 'react-native';
 import { 
   MaterialCommunityIcons, 
@@ -41,9 +42,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       newOrders: true,
       lowStock: true,
       customerMessages: true,
-      dailyReports: false,
-      weeklyReports: true,
-      emailNotifications: true,
       pushNotifications: true,
     },
     business: {
@@ -76,9 +74,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     },
     inventory: {
       lowStockThreshold: 5,
-      autoReorder: false,
-      trackExpiry: true,
-      autoUpdatePrices: false,
     },
     orders: {
       autoConfirm: false,
@@ -88,14 +83,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       allowCancellation: true,
       sendConfirmationEmail: true,
     },
-    privacy: {
-      shareAnalytics: true,
-      allowReviews: true,
-      visibleInDirectory: true,
-      showBusinessHours: true,
-      showContactInfo: true,
-      allowDirectMessages: true,
-    }
   });
   
   const [isLoading, setIsLoading] = useState(true);
@@ -247,9 +234,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
             newOrders: profileData.settings?.notifications ?? true,
             lowStock: profileData.settings?.lowStockThreshold !== undefined,
             customerMessages: profileData.settings?.Messages ?? true,
-            dailyReports: false,
-            weeklyReports: true,
-            emailNotifications: true,
             pushNotifications: profileData.settings?.notifications ?? true,
           },
           business: {
@@ -271,12 +255,10 @@ export default function BusinessSettingsScreen({ navigation, route }) {
               instagram: profileData.socialMedia?.instagram || '',
               facebook: profileData.socialMedia?.facebook || '',
             },
+            logo: profileData.logo || null,
           },
           inventory: {
             lowStockThreshold: profileData.settings?.lowStockThreshold || 5,
-            autoReorder: false,
-            trackExpiry: true,
-            autoUpdatePrices: false,
           },
           orders: {
             autoConfirm: false,
@@ -286,14 +268,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
             allowCancellation: true,
             sendConfirmationEmail: true,
           },
-          privacy: {
-            shareAnalytics: true,
-            allowReviews: profileData.isVerified ?? true,
-            visibleInDirectory: true,
-            showBusinessHours: true,
-            showContactInfo: true,
-            allowDirectMessages: profileData.settings?.Messages ?? true,
-          }
         };
         setSettings(mappedSettings);
         setOriginalSettings(JSON.parse(JSON.stringify(mappedSettings)));
@@ -571,10 +545,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     navigation.navigate('NotificationSettingsScreen', { businessId });
   }, [businessId, navigation]);
 
-  const handleBusinessAnalytics = useCallback(() => {
-    navigation.navigate('BusinessAnalyticsScreen', { businessId });
-  }, [businessId, navigation]);
-
   const handleCustomerManagement = useCallback(() => {
     navigation.navigate('CustomerListScreen', { businessId });
   }, [businessId, navigation]);
@@ -597,7 +567,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       { key: 'business', label: 'Business', icon: 'business' },
       { key: 'inventory', label: 'Inventory', icon: 'inventory' },
       { key: 'orders', label: 'Orders', icon: 'receipt' },
-      { key: 'privacy', label: 'Privacy', icon: 'security' },
     ];
 
     return (
@@ -646,19 +615,11 @@ export default function BusinessSettingsScreen({ navigation, route }) {
               {key === 'newOrders' && 'New Orders'}
               {key === 'lowStock' && 'Low Stock Alerts'}
               {key === 'customerMessages' && 'Customer Messages'}
-              {key === 'dailyReports' && 'Daily Reports'}
-              {key === 'weeklyReports' && 'Weekly Reports'}
-              {key === 'emailNotifications' && 'Email Notifications'}
-              {key === 'pushNotifications' && 'Push Notifications'}
             </Text>
             <Text style={styles.settingDescription}>
               {key === 'newOrders' && 'Get notified when new orders arrive'}
               {key === 'lowStock' && 'Alert when inventory runs low'}
               {key === 'customerMessages' && 'Notify when customers send messages'}
-              {key === 'dailyReports' && 'Daily business summary reports'}
-              {key === 'weeklyReports' && 'Weekly business performance reports'}
-              {key === 'emailNotifications' && 'Receive notifications via email'}
-              {key === 'pushNotifications' && 'Enable all push notifications'}
             </Text>
           </View>
           <Switch
@@ -753,6 +714,20 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         />
       </View>
       
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Website</Text>
+        <TextInput
+          style={styles.textInput}
+          value={settings.business.website}
+          onChangeText={(value) => handleSettingChange('business', 'website', value)}
+          placeholder="https://your-website.com"
+          placeholderTextColor="#999"
+          keyboardType="url"
+          autoCapitalize="none"
+        />
+      </View>
+      
+      {/* Address fields */}
       <Text style={styles.sectionSubtitle}>Address</Text>
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>Street Address</Text>
@@ -764,7 +739,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           placeholderTextColor="#999"
         />
       </View>
-      
       <View style={styles.addressRow}>
         <View style={styles.addressInput}>
           <Text style={styles.inputLabel}>City</Text>
@@ -787,8 +761,40 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           />
         </View>
       </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Country</Text>
+        <TextInput
+          style={styles.textInput}
+          value={settings.business.address.country}
+          onChangeText={(value) => handleSettingChange('business', 'address', value, 'country')}
+          placeholder="Country"
+          placeholderTextColor="#999"
+        />
+      </View>
       
+      {/* Social Media */}
       <Text style={styles.sectionSubtitle}>Social Media</Text>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Instagram</Text>
+        <TextInput
+          style={styles.textInput}
+          value={settings.business.socialMedia.instagram}
+          onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'instagram')}
+          placeholder="@username"
+          placeholderTextColor="#999"
+          autoCapitalize="none"
+        />
+      </View>
+      <View style={styles.inputGroup}>
+        <Text style={styles.inputLabel}>Facebook</Text>
+        <TextInput
+          style={styles.textInput}
+          value={settings.business.socialMedia.facebook}
+          onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'facebook')}
+          placeholder="Page name"
+          placeholderTextColor="#999"
+        />
+      </View>
       <View style={styles.inputGroup}>
         <Text style={styles.inputLabel}>Website</Text>
         <TextInput
@@ -802,68 +808,35 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         />
       </View>
       
-      <View style={styles.socialRow}>
-        <View style={styles.socialInput}>
-          <Text style={styles.inputLabel}>Instagram</Text>
-          <TextInput
-            style={styles.textInput}
-            value={settings.business.socialMedia.instagram}
-            onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'instagram')}
-            placeholder="@username"
-            placeholderTextColor="#999"
-            autoCapitalize="none"
-          />
-        </View>
-        <View style={styles.socialInput}>
-          <Text style={styles.inputLabel}>Facebook</Text>
-          <TextInput
-            style={styles.textInput}
-            value={settings.business.socialMedia.facebook}
-            onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'facebook')}
-            placeholder="Page name"
-            placeholderTextColor="#999"
-          />
-        </View>
-      </View>
-      
+      {/* Business Hours */}
       <Text style={styles.sectionSubtitle}>Business Hours</Text>
       {Object.entries(settings.business.businessHours).map(([day, hours]) => (
         <View key={day} style={styles.businessHourItem}>
           <View style={styles.dayInfo}>
-            <Text style={styles.dayName}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
-            <Switch
-              value={!hours.isClosed}
-              onValueChange={(value) => handleBusinessHoursChange(day, 'isClosed', !value)}
-              trackColor={{ false: '#ddd', true: '#4CAF50' }}
-              thumbColor={!hours.isClosed ? '#fff' : '#f4f3f4'}
-              ios_backgroundColor="#ddd"
-            />
+            <Text style={styles.dayLabel}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
           </View>
-          {!hours.isClosed && (
-            <View style={styles.hoursInputs}>
-              <View style={styles.timeInput}>
-                <Text style={styles.timeLabel}>Open</Text>
-                <TextInput
-                  style={styles.timeTextInput}
-                  value={hours.open}
-                  onChangeText={(value) => handleBusinessHoursChange(day, 'open', value)}
-                  placeholder="09:00"
-                  placeholderTextColor="#999"
-                />
-              </View>
-              <Text style={styles.timeSeparator}>-</Text>
-              <View style={styles.timeInput}>
-                <Text style={styles.timeLabel}>Close</Text>
-                <TextInput
-                  style={styles.timeTextInput}
-                  value={hours.close}
-                  onChangeText={(value) => handleBusinessHoursChange(day, 'close', value)}
-                  placeholder="17:00"
-                  placeholderTextColor="#999"
-                />
-              </View>
+          <View style={styles.hoursRow}>
+            <View style={styles.timeInput}>
+              <Text style={styles.timeLabel}>Open</Text>
+              <TextInput
+                style={styles.timeTextInput}
+                value={hours.open}
+                onChangeText={(value) => handleBusinessHoursChange(day, 'open', value)}
+                placeholder="09:00"
+                placeholderTextColor="#999"
+              />
             </View>
-          )}
+            <View style={styles.timeInput}>
+              <Text style={styles.timeLabel}>Close</Text>
+              <TextInput
+                style={styles.timeTextInput}
+                value={hours.close}
+                onChangeText={(value) => handleBusinessHoursChange(day, 'close', value)}
+                placeholder="17:00"
+                placeholderTextColor="#999"
+              />
+            </View>
+          </View>
         </View>
       ))}
     </View>
@@ -889,32 +862,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         />
         <Text style={styles.inputHint}>Alert when stock falls below this number</Text>
       </View>
-      
-      {Object.entries(settings.inventory)
-        .filter(([key]) => key !== 'lowStockThreshold' && key !== 'enableBarcode') // Remove barcode toggle
-        .map(([key, value]) => (
-        <View key={key} style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>
-              {key === 'autoReorder' && 'Auto Reorder'}
-              {key === 'trackExpiry' && 'Track Expiry Dates'}
-              {key === 'autoUpdatePrices' && 'Auto Update Prices'}
-            </Text>
-            <Text style={styles.settingDescription}>
-              {key === 'autoReorder' && 'Automatically create reorder suggestions'}
-              {key === 'trackExpiry' && 'Monitor product expiration dates'}
-              {key === 'autoUpdatePrices' && 'Update prices based on market data'}
-            </Text>
-          </View>
-          <Switch
-            value={value}
-            onValueChange={(newValue) => handleSettingChange('inventory', key, newValue)}
-            trackColor={{ false: '#ddd', true: '#4CAF50' }}
-            thumbColor={value ? '#fff' : '#f4f3f4'}
-            ios_backgroundColor="#ddd"
-          />
-        </View>
-      ))}
     </View>
   );
 
@@ -980,124 +927,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     </View>
   );
 
-  // ===== RENDER PRIVACY SETTINGS =====
-  const renderPrivacySettings = () => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>
-        <MaterialIcons name="security" size={20} color="#4CAF50" />
-        {' '}Privacy & Visibility
-      </Text>
-      
-      {Object.entries(settings.privacy).map(([key, value]) => (
-        <View key={key} style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>
-              {key === 'shareAnalytics' && 'Share Analytics'}
-              {key === 'allowReviews' && 'Allow Customer Reviews'}
-              {key === 'visibleInDirectory' && 'Visible in Directory'}
-              {key === 'showBusinessHours' && 'Show Business Hours'}
-              {key === 'showContactInfo' && 'Show Contact Information'}
-              {key === 'allowDirectMessages' && 'Allow Direct Messages'}
-            </Text>
-            <Text style={styles.settingDescription}>
-              {key === 'shareAnalytics' && 'Share anonymous analytics to improve services'}
-              {key === 'allowReviews' && 'Allow customers to leave reviews'}
-              {key === 'visibleInDirectory' && 'Show business in public directory'}
-              {key === 'showBusinessHours' && 'Display business hours publicly'}
-              {key === 'showContactInfo' && 'Show contact information to customers'}
-              {key === 'allowDirectMessages' && 'Allow customers to message you directly'}
-            </Text>
-          </View>
-          <Switch
-            value={value}
-            onValueChange={(newValue) => handleSettingChange('privacy', key, newValue)}
-            trackColor={{ false: '#ddd', true: '#4CAF50' }}
-            thumbColor={value ? '#fff' : '#f4f3f4'}
-            ios_backgroundColor="#ddd"
-          />
-        </View>
-      ))}
-
-      {/* ADDED: Quick Action Buttons Section */}
-      <Text style={styles.sectionSubtitle}>Quick Actions</Text>
-      
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleBusinessProfileEdit}
-      >
-        <MaterialIcons name="edit" size={20} color="#2196F3" />
-        <Text style={styles.actionButtonText}>Edit Business Profile</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleNotificationSettings}
-      >
-        <MaterialIcons name="notifications" size={20} color="#FF9800" />
-        <Text style={styles.actionButtonText}>Notification Settings</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleBusinessAnalytics}
-      >
-        <MaterialIcons name="analytics" size={20} color="#9C27B0" />
-        <Text style={styles.actionButtonText}>Business Analytics</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleCustomerManagement}
-      >
-        <MaterialIcons name="people" size={20} color="#4CAF50" />
-        <Text style={styles.actionButtonText}>Customer Management</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleInventoryManagement}
-      >
-        <MaterialIcons name="inventory" size={20} color="#607D8B" />
-        <Text style={styles.actionButtonText}>Inventory Management</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={styles.actionButton}
-        onPress={handleOrderManagement}
-      >
-        <MaterialIcons name="receipt" size={20} color="#795548" />
-        <Text style={styles.actionButtonText}>Order Management</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#666" />
-      </TouchableOpacity>
-
-      {/* ADDED: Reset and Logout Buttons */}
-      <Text style={styles.sectionSubtitle}>Account Actions</Text>
-      
-      <TouchableOpacity 
-        style={[styles.actionButton, styles.dangerButton]}
-        onPress={handleResetSettings}
-      >
-        <MaterialIcons name="refresh" size={20} color="#FF5722" />
-        <Text style={[styles.actionButtonText, styles.dangerText]}>Reset All Settings</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#FF5722" />
-      </TouchableOpacity>
-
-      <TouchableOpacity 
-        style={[styles.actionButton, styles.logoutButton]}
-        onPress={handleLogout}
-      >
-        <MaterialIcons name="logout" size={20} color="#F44336" />
-        <Text style={[styles.actionButtonText, styles.logoutText]}>Sign Out</Text>
-        <MaterialIcons name="arrow-forward-ios" size={16} color="#F44336" />
-      </TouchableOpacity>
-    </View>
-  );
-
   // ===== RENDER ACTIVE SECTION =====
   const renderActiveSection = () => {
     switch (activeSection) {
@@ -1109,8 +938,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         return renderInventorySettings();
       case 'orders':
         return renderOrdersSettings();
-      case 'privacy':
-        return renderPrivacySettings();
       default:
         return renderNotificationsSettings();
     }
@@ -1406,6 +1233,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 18,
@@ -1523,12 +1351,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  dayName: {
+  dayLabel: {
     fontSize: 16,
     fontWeight: '500',
     color: '#333',
   },
-  hoursInputs: {
+  hoursRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 12,
@@ -1550,11 +1378,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     backgroundColor: '#fafafa',
-  },
-  timeSeparator: {
-    fontSize: 16,
-    color: '#666',
-    marginHorizontal: 12,
   },
   footer: {
     position: 'absolute',
@@ -1641,5 +1464,51 @@ const styles = StyleSheet.create({
   logoutText: {
     color: '#D32F2F',
     fontWeight: '600',
+  },
+  logoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  logoImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#4CAF50',
+  },
+  logoPlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0f9f3',
+  },
+  logoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: '#4CAF50',
+  },
+  logoButtonText: {
+    color: '#fff',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  profileSection: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    marginBottom: 16,
   },
 });

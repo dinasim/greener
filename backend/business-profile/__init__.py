@@ -5,6 +5,7 @@ import azure.functions as func
 from azure.cosmos import CosmosClient, exceptions
 import os
 from datetime import datetime
+import bcrypt
 
 def add_cors_headers(response):
     """Add CORS headers to response"""
@@ -170,6 +171,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                         "notifications": True,
                         "messages": True,
                         "lowStockThreshold": 5,
+                        "smartWeatherWatering": req_body.get('smartWeatherWatering', False)  # ADDED
                     }),
                     
                     # FIXED: Payment and verification
@@ -338,12 +340,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     'businessName', 'description', 'address', 'location', 'phone', 'contactPhone', 
                     'website', 'category', 'businessType', 'logo', 'openingHours', 'businessHours',
                     'socialMedia', 'settings', 'paymentMethods', 'fcmToken', 'webPushSubscription',
-                    'expoPushToken', 'notificationSettings'
+                    'expoPushToken', 'notificationSettings', 'smartWeatherWatering' # ADDED
                 ]
                 
                 for field in updatable_fields:
                     if field in req_body:
-                        existing_profile[field] = req_body[field]
+                        if field == 'smartWeatherWatering':
+                            # Update inside settings
+                            existing_profile.setdefault('settings', {})['smartWeatherWatering'] = req_body['smartWeatherWatering']
+                        else:
+                            existing_profile[field] = req_body[field]
                         logging.info(f"Updated field {field} for business {business_id}")
                 
                 existing_profile['updatedAt'] = datetime.now().isoformat()

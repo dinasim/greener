@@ -44,25 +44,130 @@ const firebaseConfig = {
 };
 
 class UniversalNotificationManager {
-  constructor() {
+  constructor(userType = 'user', userId = null, businessId = null) {
+    this.userType = userType;
+    this.userId = userId;
+    this.businessId = businessId;
+    this.settings = {};
     this.isInitialized = false;
-    this.hasPermission = false;
-    this.token = null;
-    this.userType = 'user'; // 'user' or 'business'
-    this.userId = null;
-    this.businessId = null;
-    this.messaging = null;
-    this.settings = this.getDefaultSettings();
-    this.notificationQueue = [];
-    this.statistics = {
-      sentCount: 0,
-      queuedNotifications: 0,
-      lastSent: null
+    this.fcmToken = null;
+    this.retryCount = 0;
+    this.maxRetries = 3;
+    
+    // Use separate endpoints for different user types
+    this.apiEndpoints = {
+      consumer: 'https://usersfunctions.azurewebsites.net/api/consumer-notification-settings',
+      business: 'https://usersfunctions.azurewebsites.net/api/business-notification-settings',
+      user: 'https://usersfunctions.azurewebsites.net/api/consumer-notification-settings' // Default to consumer
     };
+    
+    // Use separate storage keys for different user types
+    this.storageKey = `notification_settings_${userType}${businessId ? `_${businessId}` : ''}${userId ? `_${userId}` : ''}`;
+    
+    console.log(`🔔 UniversalNotificationManager initialized for ${userType}`, {
+      userId,
+      businessId,
+      storageKey: this.storageKey,
+      endpoint: this.apiEndpoints[userType]
+    });
+  }
+
+  async initialize() {
+    try {
+      console.log(`🔄 Initializing notifications for ${this.userType}...`);
+      
+      // Load settings from appropriate storage
+      await this.loadSettings();
+      
+      // Initialize Firebase
+      await this.initializeFirebase();
+      
+      // Request permissions if needed
+      if (!this.hasPermission()) {
+        await this.requestPermission();
+      }
+      
+      // Register for notifications with appropriate service
+      if (this.hasPermission()) {
+        await this.registerForNotifications();
+      }
+      
+      this.isInitialized = true;
+      console.log(`✅ ${this.userType} notifications initialized`);
+      return true;
+    } catch (error) {
+      console.error(`❌ Failed to initialize ${this.userType} notifications:`, error);
+      this.isInitialized = false;
+      return false;
+    }
+  }
+
+  async loadSettings() {
+    try {
+      // Load from local storage first
+      const localSettings = await AsyncStorage.getItem(this.storageKey);
+      if (localSettings) {
+        this.settings = { ...this.getDefaultSettings(), ...JSON.parse(localSettings) };
+      } else {
+        this.settings = this.getDefaultSettings();
+      }
+      
+      // Sync with server
+      await this.syncSettingsWithServer();
+      
+      console.log(`📋 ${this.userType} settings loaded:`, this.settings);
+    } catch (error) {
+      console.error(`❌ Error loading ${this.userType} settings:`, error);
+      this.settings = this.getDefaultSettings();
+    }
+  }
+
+  async syncSettingsWithServer() {
+    try {
+      const endpoint = this.apiEndpoints[this.userType];
+      const identifier = this.userType === 'business' ? this.businessId : this.userId;
+      
+      if (!endpoint || !identifier) {
+        console.warn(`⚠️ Cannot sync ${this.userType} settings - missing endpoint or identifier`);
+        return;
+      }
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-User-Type': this.userType
+      };
+      
+      if (this.userType === 'business') {
+        headers['X-Business-ID'] = this.businessId;
+        headers['X-User-Email'] = this.businessId; // Business uses email as ID
+      } else {
+        headers['X-User-Email'] = this.userId;
+      }
+      
+      const queryParam = this.userType === 'business' ? 
+        `businessId=${encodeURIComponent(identifier)}` : 
+        `userEmail=${encodeURIComponent(identifier)}`;
+      
+      const response = await fetch(`${endpoint}?${queryParam}`, {
+        method: 'GET',
+        headers
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.settings && Object.keys(data.settings).length > 0) {
+          this.settings = { ...this.settings, ...data.settings };
+          await AsyncStorage.setItem(this.storageKey, JSON.stringify(this.settings));
+          console.log(`✅ ${this.userType} settings synced from server`);
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error syncing ${this.userType} settings:`, error);
+    }
   }
 
   getDefaultSettings() {
-    return {
+    const baseSettings = {
       // Universal settings
       enabled: true,
       soundEnabled: true,
@@ -75,73 +180,132 @@ class UniversalNotificationManager {
         end: '07:00'
       },
       
-      // User-specific settings
-      wateringReminders: true,
-      plantCare: true,
-      diseaseAlerts: true,
-      forumReplies: true,
-      marketplaceUpdates: false,
-      directMessages: true,
-      appUpdates: true,
-      
-      // Business-specific settings
-      newOrders: true,
-      lowStock: true,
-      customerMessages: true,
-      paymentReceived: true,
-      dailyReports: false,
-      businessUpdates: true,
-      
-      // Advanced settings
-      batchNotifications: false,
-      maxNotificationsPerHour: 10,
-      customTones: {},
-      
       // Platform specific
       platform: Platform.OS,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      userType: this.userType
     };
+
+    // User-specific settings (consumers)
+    if (this.userType === 'user' || this.userType === 'consumer') {
+      return {
+        ...baseSettings,
+        // Consumer-specific notification types
+        wateringReminders: true,
+        plantCare: true,
+        diseaseAlerts: true,
+        forumReplies: true,
+        marketplaceUpdates: false,
+        directMessages: true,
+        appUpdates: false,
+        notificationTime: '08:00', // 8 AM default for consumers
+        
+        // Advanced settings
+        batchNotifications: false,
+        maxNotificationsPerHour: 5,
+        customTones: {}
+      };
+    }
+
+    // Business-specific settings
+    if (this.userType === 'business') {
+      return {
+        ...baseSettings,
+        // Business-specific notification types
+        newOrders: true,
+        lowStock: true,
+        customerMessages: true,
+        wateringReminders: true, // Business watering reminders
+        paymentReceived: true,
+        dailyReports: false,
+        businessUpdates: true,
+        notificationTime: '07:00', // 7 AM default for business
+        
+        // Business advanced settings
+        batchNotifications: true,
+        maxNotificationsPerHour: 20,
+        customTones: {},
+        enableLowStockAlerts: true,
+        enableSuccessNotifications: true,
+        pollingInterval: 60
+      };
+    }
+
+    return baseSettings;
   }
 
-  async initialize(userType = 'user', userId = null, businessId = null) {
+  async updateSettings(newSettings) {
     try {
-      console.log(`🔔 Initializing Universal Notification Manager for ${userType}`);
+      this.settings = { ...this.settings, ...newSettings, lastUpdated: new Date().toISOString() };
       
-      this.userType = userType;
-      this.userId = userId;
-      this.businessId = businessId;
+      // Save locally
+      await AsyncStorage.setItem(this.storageKey, JSON.stringify(this.settings));
       
-      // Load settings
-      await this.loadSettings();
+      // Update server
+      await this.saveSettingsToServer();
       
-      // Initialize platform-specific services
-      if (Platform.OS === 'web') {
-        await this.initializeWeb();
-      } else {
-        await this.initializeMobile();
-      }
-      
-      // Setup message handlers
-      this.setupMessageHandlers();
-      
-      // Process queued notifications
-      await this.processNotificationQueue();
-      
-      this.isInitialized = true;
-      console.log('✅ Universal Notification Manager initialized successfully');
-      
+      console.log(`✅ ${this.userType} notification settings updated`);
       return true;
     } catch (error) {
-      console.error('❌ Failed to initialize Universal Notification Manager:', error);
+      console.error(`❌ Failed to update ${this.userType} settings:`, error);
       return false;
     }
   }
 
-  async initializeWeb() {
+  async saveSettingsToServer() {
     try {
-      // Dynamic import for web Firebase
-      const { initializeApp, getApps } = await import('firebase/app');
-      const { getMessaging, getToken, onMessage } = await import('firebase/messaging');
+      const endpoint = this.apiEndpoints[this.userType];
+      const identifier = this.userType === 'business' ? this.businessId : this.userId;
+      
+      if (!endpoint || !identifier) {
+        console.warn(`⚠️ Cannot save ${this.userType} settings - missing endpoint or identifier`);
+        return false;
+      }
+      
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-User-Type': this.userType
+      };
+      
+      const payload = {
+        ...this.settings,
+        fcmTokens: this.fcmToken ? [this.fcmToken] : [],
+        deviceTokens: this.fcmToken ? [this.fcmToken] : []
+      };
+      
+      if (this.userType === 'business') {
+        headers['X-Business-ID'] = identifier;
+        headers['X-User-Email'] = identifier;
+        payload.businessId = identifier;
+      } else {
+        headers['X-User-Email'] = identifier;
+        payload.userEmail = identifier;
+      }
+      
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(payload)
+      });
+      
+      if (response.ok) {
+        console.log(`✅ ${this.userType} settings saved to server`);
+        return true;
+      } else {
+        console.error(`❌ Failed to save ${this.userType} settings: ${response.status}`);
+        return false;
+      }
+    } catch (error) {
+      console.error(`❌ Error saving ${this.userType} settings:`, error);
+      return false;
+    }
+  }
+
+  async initializeFirebase() {
+    try {
+      // Dynamic import for Firebase
+      const firebase = await import('firebase/app');
+      const { initializeApp, getApps } = firebase;
       
       // Initialize Firebase app if not already done
       let app;
@@ -152,81 +316,57 @@ class UniversalNotificationManager {
       }
       
       // Initialize messaging
-      this.messaging = getMessaging(app);
+      this.messaging = (await import('firebase/messaging')).getMessaging(app);
       
       // Request permission
       await this.requestPermission();
       
       // Get token
       if (this.hasPermission) {
-        this.token = await getToken(this.messaging, {
-          vapidKey: "BKx8nYqV8L5L5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5"
+        this.fcmToken = await (await import('firebase/messaging')).getToken(this.messaging, {
+          vapidKey: "BKx8nYqV8L5L5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5r5"
         });
         
-        if (this.token) {
-          await this.updateTokenOnServer(this.token);
+        if (this.fcmToken) {
+          await this.updateTokenOnServer(this.fcmToken);
         }
       }
       
+      // Setup message handlers
+      this.setupMessageHandlers();
+      
       return true;
     } catch (error) {
-      console.error('❌ Web Firebase initialization failed:', error);
+      console.error('❌ Firebase initialization failed:', error);
       throw error;
     }
   }
 
-  async initializeMobile() {
-    try {
-      // Dynamic import for mobile Firebase
-      const messaging = (await import('@react-native-firebase/messaging')).default;
-      this.messaging = messaging;
-      
-      // Request permission
-      const authStatus = await messaging().requestPermission();
-      this.hasPermission = authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-                         authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      
-      if (!this.hasPermission) {
-        throw new Error('Push notification permission not granted');
-      }
-      
-      // Get token
-      this.token = await messaging().getToken();
-      
-      if (this.token) {
-        await this.updateTokenOnServer(this.token);
-      }
-      
-      return true;
-    } catch (error) {
-      console.error('❌ Mobile Firebase initialization failed:', error);
-      throw error;
-    }
-  }
-
-  async requestPermission() {
-    try {
-      if (Platform.OS === 'web') {
-        if (!('Notification' in window)) {
-          throw new Error('This browser does not support notifications');
+  requestPermission() {
+    return new Promise(async (resolve, reject) => {
+      try {
+        if (Platform.OS === 'web') {
+          if (!('Notification' in window)) {
+            throw new Error('This browser does not support notifications');
+          }
+          
+          const permission = await Notification.requestPermission();
+          this.hasPermission = permission === 'granted';
+          
+          if (permission === 'denied') {
+            this.showPermissionGuidance();
+          }
+        } else {
+          // Mobile permission is handled during initialization
+          this.hasPermission = true;
         }
         
-        const permission = await Notification.requestPermission();
-        this.hasPermission = permission === 'granted';
-        
-        if (permission === 'denied') {
-          this.showPermissionGuidance();
-        }
-        
-        return this.hasPermission;
-      } else {
-        // Mobile permission is handled during initialization
-        return this.hasPermission;
+        resolve(this.hasPermission);
+      } catch (error) {
+        console.error('❌ Permission request failed:', error);
+        reject(error);
       }
-    } catch (error) {
-      console.error('❌ Permission request failed:', error);
-      return false;
-    }
+    });
   }
 
   setupMessageHandlers() {
@@ -420,66 +560,6 @@ class UniversalNotificationManager {
     }
   }
 
-  async loadSettings() {
-    try {
-      const settingsKey = `notification_settings_${this.userType}${this.businessId ? `_${this.businessId}` : ''}`;
-      const savedSettings = await AsyncStorage.getItem(settingsKey);
-      
-      if (savedSettings) {
-        this.settings = { ...this.getDefaultSettings(), ...JSON.parse(savedSettings) };
-      }
-      
-      console.log('✅ Notification settings loaded');
-    } catch (error) {
-      console.error('❌ Failed to load settings:', error);
-      this.settings = this.getDefaultSettings();
-    }
-  }
-
-  async updateSettings(newSettings) {
-    try {
-      this.settings = { ...this.settings, ...newSettings, lastUpdated: new Date().toISOString() };
-      
-      const settingsKey = `notification_settings_${this.userType}${this.businessId ? `_${this.businessId}` : ''}`;
-      await AsyncStorage.setItem(settingsKey, JSON.stringify(this.settings));
-      
-      // Update server
-      await this.syncSettingsWithServer();
-      
-      console.log('✅ Notification settings updated');
-      return true;
-    } catch (error) {
-      console.error('❌ Failed to update settings:', error);
-      return false;
-    }
-  }
-
-  async syncSettingsWithServer() {
-    try {
-      const endpoint = this.userType === 'business' 
-        ? 'business-notification-settings' 
-        : 'notification_settings';
-      
-      await fetch(`https://usersfunctions.azurewebsites.net/api/${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Email': this.userId,
-          'X-User-Type': this.userType,
-          ...(this.businessId && { 'X-Business-ID': this.businessId })
-        },
-        body: JSON.stringify({
-          [this.userType === 'business' ? 'businessId' : 'email']: this.userType === 'business' ? this.businessId : this.userId,
-          settings: this.settings
-        })
-      });
-      
-      console.log('✅ Settings synced with server');
-    } catch (error) {
-      console.error('❌ Failed to sync settings with server:', error);
-    }
-  }
-
   isQuietHours() {
     if (!this.settings.quietHours.enabled) return false;
     
@@ -570,13 +650,35 @@ class UniversalNotificationManager {
   }
 
   async cleanup() {
-    console.log('🧹 Cleaning up Universal Notification Manager');
-    
-    // Clear any intervals or listeners
-    this.notificationQueue = [];
-    this.isInitialized = false;
-    this.hasPermission = false;
-    this.token = null;
+    try {
+      // Remove local storage
+      await AsyncStorage.removeItem(this.storageKey);
+      await AsyncStorage.removeItem(`fcm_token_${Platform.OS}_${this.userType}`);
+      
+      // Cancel all scheduled notifications for this user type
+      if (Platform.OS !== 'web') {
+        const scheduledNotifications = await Notifications.getAllScheduledNotificationsAsync();
+        
+        for (const notification of scheduledNotifications) {
+          const data = notification.content.data;
+          if (data && data.userType === this.userType) {
+            if (this.userType === 'business' && data.businessId === this.businessId) {
+              await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+            } else if (this.userType !== 'business' && data.userEmail === this.userId) {
+              await Notifications.cancelScheduledNotificationAsync(notification.identifier);
+            }
+          }
+        }
+      }
+      
+      this.isInitialized = false;
+      this.fcmToken = null;
+      this.settings = {};
+      
+      console.log(`🧹 ${this.userType} notifications cleaned up`);
+    } catch (error) {
+      console.error(`❌ Error cleaning up ${this.userType} notifications:`, error);
+    }
   }
 }
 

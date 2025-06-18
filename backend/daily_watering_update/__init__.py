@@ -121,7 +121,20 @@ def update_daily_watering_schedule():
             query="SELECT * FROM c WHERE c.productType = 'plant' AND c.status = 'active'",
             enable_cross_partition_query=True
         ))
-        
+
+        # Load all business profiles for smartWeatherWatering setting
+        business_profiles = {}
+        try:
+            business_container = database.get_container_client("business_users")
+            for b in businesses:
+                try:
+                    profile = business_container.read_item(item=b['id'], partition_key=b['id'])
+                    business_profiles[b['id']] = profile
+                except Exception:
+                    continue
+        except Exception as e:
+            logging.warning(f'Could not load business profiles for smartWeatherWatering: {str(e)}')
+
         updated_count = 0
         initialized_count = 0
         current_date = datetime.now(timezone.utc)
@@ -167,19 +180,30 @@ def update_daily_watering_schedule():
                     if last_update == today_str:
                         continue  # Already updated today
                 
+                # Get business smartWeatherWatering setting
+                smart_weather = False
+                profile = business_profiles.get(business_id)
+                if profile:
+                    smart_weather = profile.get('settings', {}).get('smartWeatherWatering', False)
+                
+                # Get plant site (indoor/outdoor)
+                site = item.get('site', '').lower() if 'site' in item else item.get('plantInfo', {}).get('site', '').lower()
+                
                 # Update watering schedule
-                if it_rained:
-                    # Reset to full watering cycle if it rained
+                if smart_weather and site == 'outdoor' and it_rained:
+                    # Auto-watered by rain for outdoor plants
                     watering_schedule['activeWaterDays'] = water_days
                     watering_schedule['weatherAffected'] = True
                     watering_schedule['needsWatering'] = False
-                    logging.debug(f'Rain detected - reset watering for plant {item.get("id", "unknown")}')
+                    watering_schedule['autoWateredByRain'] = True
+                    logging.debug(f'Auto-watered by rain (smartWeather) for outdoor plant {item.get("id", "unknown")}')
                 else:
-                    # Decrease active water days by 1
+                    # Normal logic
                     current_active_days = watering_schedule.get('activeWaterDays', water_days)
                     watering_schedule['activeWaterDays'] = max(0, current_active_days - 1)
                     watering_schedule['weatherAffected'] = False
                     watering_schedule['needsWatering'] = watering_schedule['activeWaterDays'] <= 0
+                    watering_schedule['autoWateredByRain'] = False
                 
                 watering_schedule['lastWateringUpdate'] = today_str
                 watering_schedule['updatedAt'] = current_date.isoformat()

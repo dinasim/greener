@@ -528,37 +528,38 @@ const LocationPicker = ({
       
       const addressData = await reverseGeocode(location.latitude, location.longitude);
       
-      if (addressData) {
-        const locationData = {
-          ...addressData,
-          isGPS: false,
-          isMapSelection: true,
-        };
-        
-        setSelectedLocation(locationData);
-        setSearchText(addressData.formattedAddress);
-        onChange(locationData);
-        console.log('✅ Map location set with address');
-      } else {
-        // Fallback to coordinates
-        const fallbackData = {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          formattedAddress: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`,
-          city: 'Selected Location',
-          country: 'Israel',
-          isGPS: false,
-          isMapSelection: true,
-        };
-        
-        setSelectedLocation(fallbackData);
-        setSearchText(fallbackData.formattedAddress);
-        onChange(fallbackData);
-        console.log('📍 Map location set with coordinates');
-      }
+      // Ensure city is always a string
+      const cityString = typeof addressData.city === 'string'
+        ? addressData.city
+        : (addressData.city?.name || addressData.city?.label || 'Selected Location');
+      const locationData = {
+        ...addressData,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        city: cityString,
+        formattedAddress: addressData.formattedAddress || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`,
+        isGPS: false,
+        isMapSelection: true,
+      };
+      
+      setSelectedLocation(locationData);
+      setSearchText(locationData.formattedAddress);
+      onChange(locationData);
+      console.log('✅ Map location set with address');
     } catch (error) {
-      console.error('❌ Map location select error:', error);
-      showToast('Failed to process map location', 'error');
+      // Fallback if reverse geocoding fails
+      const fallbackData = {
+        latitude: location.latitude,
+        longitude: location.longitude,
+        city: 'Selected Location',
+        formattedAddress: `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`,
+        isGPS: false,
+        isMapSelection: true,
+      };
+      setSelectedLocation(fallbackData);
+      setSearchText(fallbackData.formattedAddress);
+      onChange(fallbackData);
+      console.log('📍 Map location set with coordinates');
     } finally {
       setLoading(false);
     }
@@ -1007,6 +1008,13 @@ const LocationPicker = ({
            >
              <MaterialIcons name="close" size={24} color="#333" />
            </TouchableOpacity>
+         </View>
+
+         {/* User instruction message */}
+         <View style={{padding: 12, backgroundColor: '#f8f9fa'}}>
+           <Text style={{color: '#666', fontSize: 13, textAlign: 'center'}}>
+             Double tap on the map to pin your location, then press Confirm.
+           </Text>
          </View>
 
          <CrossPlatformAzureMapView

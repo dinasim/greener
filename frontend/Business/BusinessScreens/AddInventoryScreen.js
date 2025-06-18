@@ -39,7 +39,7 @@ try {
   };
 }
 
-import { searchPlantsForBusiness as searchPlants, createInventoryItem, getBusinessInventory, updateInventoryItem } from '../services/businessApi';
+import { searchPlantsForBusiness as searchPlants, createInventoryItem, getBusinessInventory, updateInventoryItem } from '../services/businessPlantApi';
 import { uploadImage } from '../../marketplace/services/marketplaceApi'; // Import image upload function
 import SpeechToTextComponent from '../../marketplace/components/SpeechToTextComponent';
 import config from '../../marketplace/services/config'; // Import config for API_BASE_URL
@@ -837,6 +837,8 @@ export default function AddInventoryScreen({ navigation, route }) {
           mainImage: imageData[0],
           images: imageData,
           imageUrls: imageData,
+          // NEW: Include site information
+          site: formData.site || 'indoor',
         };
       } else {
         // For tools and accessories
@@ -2313,7 +2315,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
     marginHorizontal: 4,
-    backgroundColor: '#f5f5f5',
+       backgroundColor: '#f5f5f5',
     borderWidth: 1,
     borderColor: '#e0e0e0',
     alignItems: 'center',

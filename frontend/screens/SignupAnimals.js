@@ -98,7 +98,6 @@ export default function KidsAnimalsScreen({ navigation }) {
           </View>
         </Animated.View>
       </ScrollView>
-
       <View style={styles.footer}>
         <TouchableOpacity
           style={[

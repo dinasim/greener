@@ -10,83 +10,64 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
-  Alert,
   ScrollView,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm } from '../../context/FormContext';
+import ToastMessage from '../../marketplace/components/ToastMessage';
 
 export default function BusinessSignInScreen({ navigation }) {
   const { updateFormData } = useForm();
-  
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
+
   const handleSignIn = async () => {
-    // Validate form
     if (!email.trim()) {
-      setError('Email is required');
+      setToast({ visible: true, message: 'Email is required', type: 'error' });
       return;
     }
-    
     if (!password) {
-      setError('Password is required');
+      setToast({ visible: true, message: 'Password is required', type: 'error' });
       return;
     }
-    
     setIsLoading(true);
-    setError(null);
-    
+    setToast({ visible: false, message: '', type: 'info' });
     try {
-      // Call authentication API (placeholder)
-      const userData = await authenticateUser(email, password);
-      
-      if (userData) {
-        // Check if this is a business account
-        const businessData = await getBusinessData(email);
-        
-        if (!businessData) {
-          setError('This is not a business account. Please sign in as a consumer.');
-          setIsLoading(false);
-          return;
-        }
-        
-        // Store authentication data
-        await AsyncStorage.setItem('userEmail', email);
-        await AsyncStorage.setItem('userType', 'business');
-        await AsyncStorage.setItem('businessId', email);
-        
-        // Update form context
-        updateFormData('email', email);
-        updateFormData('businessId', email);
-        
-        // Navigate to business home
-        navigation.navigate('BusinessHomeScreen');
-      } else {
-        setError('Invalid email or password');
+      // Use the new business-login endpoint for business authentication
+      const res = await fetch('https://usersfunctions.azurewebsites.net/api/business-login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (!res.ok || !data || !data.success || !data.business) {
+        setToast({ visible: true, message: data.error || 'Invalid business credentials', type: 'error' });
+        setIsLoading(false);
+        return;
       }
+      
+      // Set persona to business for proper AI assistant behavior
+      await AsyncStorage.setItem('persona', 'business');
+      await AsyncStorage.setItem('userEmail', data.email);
+      await AsyncStorage.setItem('businessId', data.email);
+      
+      // Update form context
+      updateFormData('email', data.email);
+      updateFormData('businessId', data.email);
+      navigation.navigate('BusinessHomeScreen');
     } catch (err) {
       console.error('Sign in error:', err);
-      setError('Authentication failed. Please try again.');
+      setToast({ visible: true, message: 'Authentication failed. Please try again.', type: 'error' });
     } finally {
       setIsLoading(false);
     }
   };
-  
-  // Placeholder functions for backend interactions
-  const authenticateUser = async (email, password) => {
-    // This would connect to the authentication API
-    return { email };
-  };
-  
-  const getBusinessData = async (email) => {
-    // This would fetch business data from the backend
-    return { email, businessName: 'Test Business' };
-  };
-  
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
@@ -98,14 +79,7 @@ export default function BusinessSignInScreen({ navigation }) {
             <MaterialCommunityIcons name="store" size={28} color="#216a94" />
             <Text style={styles.headerTitle}>Business Sign In</Text>
           </View>
-          
           <View style={styles.formContainer}>
-            {error && (
-              <View style={styles.errorContainer}>
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-            
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Business Email</Text>
               <TextInput
@@ -162,6 +136,13 @@ export default function BusinessSignInScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </ScrollView>
+        <ToastMessage
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={() => setToast(prev => ({ ...prev, visible: false }))}
+          duration={3000}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -192,16 +173,6 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     paddingHorizontal: 20,
-  },
-  errorContainer: {
-    backgroundColor: '#ffebee',
-    padding: 10,
-    borderRadius: 6,
-    marginBottom: 20,
-  },
-  errorText: {
-    color: '#c62828',
-    textAlign: 'center',
   },
   inputGroup: {
     marginBottom: 20,

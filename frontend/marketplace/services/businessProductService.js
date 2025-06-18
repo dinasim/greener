@@ -1,92 +1,35 @@
-// services/businessProductService.js - NEW: Separate API for Business Products
+// services/businessProductService.js - Updated: Official API Endpoints
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
 /**
- * Get specific business product details
- * Business products use a different API endpoint than individual products
+ * Get specific business product details by productId and businessId
+ * Uses /business-inventory-get?businessId=... and filters for the product
  */
-export const getBusinessProduct = async (productId) => {
+export const getBusinessProduct = async (productId, businessId) => {
+  if (!productId || !businessId) throw new Error('Product ID and Business ID are required');
   try {
+    const headers = { 'Content-Type': 'application/json' };
     const userEmail = await AsyncStorage.getItem('userEmail');
     const token = await AsyncStorage.getItem('googleAuthToken');
-    
-    const headers = {
-      'Content-Type': 'application/json',
+    if (userEmail) headers['X-User-Email'] = userEmail;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Business-ID'] = businessId;
+
+    const url = `${API_BASE_URL}/business-inventory-get?businessId=${encodeURIComponent(businessId)}`;
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) throw new Error(`Failed to fetch business inventory: ${response.status}`);
+    const data = await response.json();
+    const inventory = data.inventory || data.items || data.data || [];
+    const product = inventory.find(item => item.id === productId || item._id === productId);
+    if (!product) throw new Error('Product not found in business inventory');
+    return {
+      ...product,
+      isBusinessListing: true,
+      sellerType: 'business',
+      businessId,
     };
-    
-    if (userEmail) {
-      headers['X-User-Email'] = userEmail;
-    }
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    console.log(`Fetching business product: ${productId}`);
-    
-    // Try business products endpoint first
-    const businessResponse = await fetch(`${API_BASE_URL}/marketplace/business/products/${productId}`, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (businessResponse.ok) {
-      const data = await businessResponse.json();
-      console.log('Business product data:', data);
-      
-      // Transform business product data to match expected format
-      return {
-        ...data,
-        isBusinessListing: true,
-        sellerType: 'business',
-        businessInfo: data.businessInfo || {
-          name: data.businessName,
-          type: data.businessType,
-          verified: data.verified || false
-        },
-        availability: data.availability || {
-          inStock: data.inStock !== false,
-          quantity: data.quantity || 1
-        },
-        seller: {
-          ...data.seller,
-          isBusiness: true,
-          businessName: data.businessName || data.seller?.businessName
-        }
-      };
-    }
-    
-    // If business endpoint fails, try inventory endpoint
-    console.log('Business endpoint failed, trying inventory endpoint');
-    const inventoryResponse = await fetch(`${API_BASE_URL}/marketplace/inventory/${productId}`, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (inventoryResponse.ok) {
-      const data = await inventoryResponse.json();
-      console.log('Inventory product data:', data);
-      
-      return {
-        ...data,
-        isBusinessListing: true,
-        sellerType: 'business',
-        businessInfo: data.businessInfo || {
-          name: data.businessName,
-          type: data.businessType || 'Business',
-          verified: data.verified || false
-        },
-        availability: data.availability || {
-          inStock: data.inStock !== false,
-          quantity: data.quantity || 1
-        }
-      };
-    }
-    
-    throw new Error('Business product not found in any endpoint');
-    
   } catch (error) {
     console.error('Error fetching business product:', error);
     throw error;
@@ -95,127 +38,54 @@ export const getBusinessProduct = async (productId) => {
 
 /**
  * Enhanced getSpecific function that handles both individual and business products
+ * If productType is 'business', requires businessId
  */
-export const getSpecificProduct = async (productId, productType = 'auto') => {
+export const getSpecificProduct = async (productId, productType = 'auto', businessId = null) => {
+  if (!productId) throw new Error('Product ID is required');
+  if (productType === 'business') {
+    if (!businessId) throw new Error('Business ID is required for business product');
+    return await getBusinessProduct(productId, businessId);
+  }
+  // Individual product
   try {
-    // If we know it's a business product, go directly to business API
-    if (productType === 'business') {
-      return await getBusinessProduct(productId);
+    const headers = { 'Content-Type': 'application/json' };
+    const userEmail = await AsyncStorage.getItem('userEmail');
+    const token = await AsyncStorage.getItem('googleAuthToken');
+    if (userEmail) headers['X-User-Email'] = userEmail;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const response = await fetch(`${API_BASE_URL}/marketplace/products/specific/${productId}`, { method: 'GET', headers });
+    if (response.ok) {
+      const data = await response.json();
+      return { ...data, isBusinessListing: false, sellerType: 'individual' };
     }
-    
-    // Try individual product first (original API)
-    if (productType === 'individual' || productType === 'auto') {
-      try {
-        const userEmail = await AsyncStorage.getItem('userEmail');
-        const token = await AsyncStorage.getItem('googleAuthToken');
-        
-        const headers = {
-          'Content-Type': 'application/json',
-        };
-        
-        if (userEmail) {
-          headers['X-User-Email'] = userEmail;
-        }
-        
-        if (token) {
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-        
-        console.log(`Fetching individual product: ${productId}`);
-        const response = await fetch(`${API_BASE_URL}/marketplace/products/specific/${productId}`, {
-          method: 'GET',
-          headers,
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          console.log('Individual product data:', data);
-          
-          // Mark as individual product
-          return {
-            ...data,
-            isBusinessListing: false,
-            sellerType: 'individual'
-          };
-        }
-        
-        // If individual product not found and auto-detect, try business
-        if (productType === 'auto') {
-          console.log('Individual product not found, trying business endpoints');
-          return await getBusinessProduct(productId);
-        }
-        
-        throw new Error('Individual product not found');
-        
-      } catch (individualError) {
-        if (productType === 'auto') {
-          console.log('Individual product failed, trying business:', individualError.message);
-          return await getBusinessProduct(productId);
-        }
-        throw individualError;
-      }
+    if (productType === 'auto' && businessId) {
+      // Try business if auto
+      return await getBusinessProduct(productId, businessId);
     }
-    
-    throw new Error('Invalid product type specified');
-    
+    throw new Error('Individual product not found');
   } catch (error) {
-    console.error('Error in getSpecificProduct:', error);
+    if (productType === 'auto' && businessId) {
+      return await getBusinessProduct(productId, businessId);
+    }
     throw error;
   }
 };
 
 /**
- * Get business profile/seller information
+ * Get business profile/seller information (public)
  */
 export const getBusinessProfile = async (businessId) => {
+  if (!businessId) throw new Error('Business ID is required');
   try {
+    const headers = { 'Content-Type': 'application/json' };
     const userEmail = await AsyncStorage.getItem('userEmail');
     const token = await AsyncStorage.getItem('googleAuthToken');
-    
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (userEmail) {
-      headers['X-User-Email'] = userEmail;
-    }
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // FIXED: Add business ID to headers for authentication
-    if (businessId) {
-      headers['X-Business-ID'] = businessId;
-    }
-    
-    const response = await fetch(`${API_BASE_URL}/business-profile`, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (!response.ok) {
-      // If business-profile fails, try the alternative endpoint
-      if (response.status === 404) {
-        console.log('Trying alternative business profile endpoint...');
-        const altResponse = await fetch(`${API_BASE_URL}/get_business_profile/${encodeURIComponent(businessId)}`, {
-          method: 'GET',
-          headers,
-        });
-        
-        if (!altResponse.ok) {
-          throw new Error(`Failed to fetch business profile: ${altResponse.status}`);
-        }
-        
-        return await altResponse.json();
-      }
-      
-      throw new Error(`Failed to fetch business profile: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
-    
+    if (userEmail) headers['X-User-Email'] = userEmail;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    const url = `${API_BASE_URL}/get_business_profile/${encodeURIComponent(businessId)}`;
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) throw new Error(`Failed to fetch business profile: ${response.status}`);
+    return await response.json();
   } catch (error) {
     console.error('Error fetching business profile:', error);
     throw error;
@@ -226,45 +96,19 @@ export const getBusinessProfile = async (businessId) => {
  * Get business inventory/products
  */
 export const getBusinessInventory = async (businessId, filters = {}) => {
+  if (!businessId) throw new Error('Business ID is required');
   try {
+    const headers = { 'Content-Type': 'application/json' };
     const userEmail = await AsyncStorage.getItem('userEmail');
     const token = await AsyncStorage.getItem('googleAuthToken');
-    
-    const headers = {
-      'Content-Type': 'application/json',
-    };
-    
-    if (userEmail) {
-      headers['X-User-Email'] = userEmail;
-    }
-    
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
-    
-    // Build query parameters
-    const queryParams = new URLSearchParams();
-    Object.keys(filters).forEach(key => {
-      if (filters[key] !== undefined && filters[key] !== null) {
-        queryParams.append(key, filters[key]);
-      }
-    });
-    
-    const queryString = queryParams.toString();
-    const url = `${API_BASE_URL}/business-inventory${queryString ? `?${queryString}` : ''}`;
-    
-    const response = await fetch(url, {
-      method: 'GET',
-      headers,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch business inventory: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    return data;
-    
+    if (userEmail) headers['X-User-Email'] = userEmail;
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    headers['X-Business-ID'] = businessId;
+    const queryParams = new URLSearchParams({ businessId, ...filters });
+    const url = `${API_BASE_URL}/business-inventory-get?${queryParams.toString()}`;
+    const response = await fetch(url, { method: 'GET', headers });
+    if (!response.ok) throw new Error(`Failed to fetch business inventory: ${response.status}`);
+    return await response.json();
   } catch (error) {
     console.error('Error fetching business inventory:', error);
     throw error;

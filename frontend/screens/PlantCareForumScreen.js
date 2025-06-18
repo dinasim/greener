@@ -17,6 +17,7 @@ import {
   Image,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { useCurrentUserType } from '../utils/authUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import ToastMessage from '../marketplace/components/ToastMessage';
@@ -24,6 +25,10 @@ import ToastMessage from '../marketplace/components/ToastMessage';
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
 export default function PlantCareForumScreen({ navigation }) {
+  const { userType, userProfile } = useCurrentUserType();
+  const [userPlants, setUserPlants] = useState([]);
+  const [currentLocation, setCurrentLocation] = useState(null);
+
   const [topics, setTopics] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -76,6 +81,37 @@ export default function PlantCareForumScreen({ navigation }) {
     loadUserEmail();
     loadTopics();
   }, [selectedCategory, searchQuery]);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (!userProfile || !userProfile.email) return;
+      if (userType === 'consumer') {
+        try {
+          const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getalluserplants?email=${encodeURIComponent(userProfile.email)}`);
+          const data = await res.json();
+          let allPlants = [];
+          if (Array.isArray(data)) {
+            data.forEach(locationObj => {
+              if (locationObj.plants && Array.isArray(locationObj.plants)) {
+                locationObj.plants.forEach(p => {
+                  allPlants.push({ ...p, location: p.location || locationObj.location });
+                });
+              }
+            });
+          }
+          setUserPlants(allPlants);
+        } catch {
+          setUserPlants([]);
+        }
+        setCurrentLocation(userProfile.location || null);
+      } else if (userType === 'business') {
+        // For business, fetch inventory and business location if needed
+        setUserPlants([]); // or business inventory
+        setCurrentLocation(userProfile.location || null);
+      }
+    };
+    fetchUserData();
+  }, [userProfile, userType]);
 
   const loadUserEmail = async () => {
     try {
@@ -297,7 +333,7 @@ export default function PlantCareForumScreen({ navigation }) {
         author: userEmail,
         tags: newTopic.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
         images: topicImages.map(img => img.url), // Include uploaded image URLs
-        authorType: 'customer'
+        authorType: userType === 'business' ? 'business' : 'customer'
       };
 
       const response = await fetch(`${API_BASE_URL}/plant-care-forum`, {
@@ -921,9 +957,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#fff',
-    paddingHorizontal: 12,
-    paddingVertical: 3, // half of previous 6
-    borderRadius: 10, // half of previous 16
+    paddingHorizontal: 14, // slightly more padding for comfort
+    paddingVertical: 6, // slightly larger than the new style, but less than the original
+    borderRadius: 14,   // between old (16) and new (10)
     marginRight: 8,
     borderWidth: 1,
     borderColor: '#e0e0e0',
@@ -933,46 +969,10 @@ const styles = StyleSheet.create({
     borderColor: '#4CAF50',
   },
   categoryButtonText: {
-    fontSize: 10, // smaller font
+    fontSize: 13, // between old (12) and new (14)
     color: '#666',
     marginLeft: 4,
     fontWeight: '500',
-  },
-  activeCategoryButtonText: {
-    color: '#fff',
-  },
-  topicsContainer: {
-    flex: 1,
-    paddingHorizontal: 16,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-    color: '#666',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 64,
-  },
-  emptyTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
   },
   topicCard: {
     backgroundColor: '#fff',
@@ -1009,14 +1009,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 12,
-    minHeight: 18,
-    height: 22,
+    paddingHorizontal: 9, // between old (12) and new (10)
+    paddingVertical: 3,   // keep as 3 for balance
+    borderRadius: 11,     // between old (12) and new (10)
+    minHeight: 17,        // between old (18) and new (16)
+    height: 21,           // between old (22) and new (20)
   },
   categoryText: {
-    fontSize: 15, // larger font for topic list
+    fontSize: 14, // between old (15) and new (13)
     color: '#2e7d32',
     marginLeft: 6,
   },
