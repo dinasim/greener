@@ -2,9 +2,10 @@ import React, { useState } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform 
 } from 'react-native';
-import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import firebaseNotificationService from '../services/FirebaseNotificationService';
+import { useForm } from "../context/FormContext";
+import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
+import ToastMessage from '../marketplace/components/ToastMessage';
 
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
 
@@ -13,45 +14,18 @@ export default function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
 
   const canLogin = username.trim() && password.trim();
 
-  // Setup Firebase notifications for the user
+  // Setup notifications for the user using universal system
   const setupNotifications = async (email) => {
     try {
-      console.log('🔔 Setting up Firebase notifications...');
+      console.log('🔔 Setting up universal notifications...');
       
-      // Initialize Firebase
-      const initialized = await firebaseNotificationService.initialize();
-      if (!initialized) {
-        console.log('⚠️ Firebase initialization failed - continuing without notifications');
-        return;
-      }
-
-      // Request permission
-      const hasPermission = await firebaseNotificationService.requestPermission();
-      if (!hasPermission) {
-        console.log('⚠️ Notification permission denied - continuing without notifications');
-        return;
-      }
-
-      // Get FCM token
-      const token = await firebaseNotificationService.getToken();
-      if (!token) {
-        console.log('⚠️ Failed to get FCM token - continuing without notifications');
-        return;
-      }
-
-      // Update token on server
-      const tokenUpdated = await firebaseNotificationService.updateTokenOnServer(email, token);
-      if (tokenUpdated) {
-        // Setup token refresh listener
-        firebaseNotificationService.setupTokenRefresh(email);
-        console.log('✅ Notifications setup completed successfully');
-      } else {
-        console.log('⚠️ Failed to update token on server');
-      }
+      // The universal notification system will be initialized automatically
+      // when the user navigates to screens that use it
+      console.log('✅ Notifications will be setup automatically');
 
     } catch (error) {
       console.log('⚠️ Notification setup failed:', error.message);
@@ -60,24 +34,24 @@ export default function LoginScreen({ navigation }) {
   };
 
   const handleLogin = async () => {
-    setErrorMsg('');
+    setToast({ visible: false, message: '', type: 'info' });
     setLoading(true);
-    
     try {
       console.log('🔑 Starting login process...');
-      
       const res = await fetch(LOGIN_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       });
-      
       const data = await res.json();
-      
       if (!res.ok) throw new Error(data.error || 'Login failed');
-
       console.log('✅ Login successful for user:', data.email);
-
+      
+      // Set persona to consumer for proper AI assistant behavior
+      await AsyncStorage.setItem('persona', 'consumer');
+      await AsyncStorage.setItem('userEmail', data.email);
+      await AsyncStorage.setItem('currentUserId', data.email);
+      
       // Update form context with user data
       updateFormData('email', data.email);
       updateFormData('username', data.username);
@@ -85,20 +59,15 @@ export default function LoginScreen({ navigation }) {
       updateFormData('intersted', data.intersted || '');
       updateFormData('animals', data.animals || '');
       updateFormData('kids', data.kids || '');
-
-      // Save to AsyncStorage for marketplace integration
-      await AsyncStorage.setItem('userEmail', data.email);
-      await AsyncStorage.setItem('userName', data.username);
-
+      
       // Setup Firebase notifications (non-blocking)
       setupNotifications(data.email);
-
       setLoading(false);
       navigation.navigate('Home');
     } catch (err) {
       console.error('❌ Login error:', err);
       setLoading(false);
-      setErrorMsg(err.message);
+      setToast({ visible: true, message: err.message || 'Login failed', type: 'error' });
     }
   };
 
@@ -108,8 +77,6 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.container}>
           <Text style={styles.title}>Welcome Back</Text>
           <Text style={styles.subtitle}>Sign in to continue caring for your plants</Text>
-          
-          {errorMsg ? <Text style={styles.errorMsg}>{errorMsg}</Text> : null}
           
           <TextInput
             style={styles.input}
@@ -155,6 +122,13 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.toggleText}>Don't have an account? Register</Text>
           </TouchableOpacity>
         </View>
+        <ToastMessage
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={() => setToast(prev => ({ ...prev, visible: false }))}
+          duration={3000}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -195,5 +169,4 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   toggleText: { color: '#2e7d32', marginTop: 8, fontSize: 15, textAlign: "center" },
-  errorMsg: { color: "#c62828", marginBottom: 10, textAlign: "center" }
 });

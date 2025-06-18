@@ -2,19 +2,14 @@
 import logging
 import json
 import azure.functions as func
-from azure.cosmos import CosmosClient
 from datetime import datetime
-import os
 import uuid
 
 # Import standardized helpers
 import sys
 sys.path.append('..')
 from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response, validate_required_fields, sanitize_input
-
-# Database connection details for marketplace
-MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+from db_helpers import get_container
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business inventory create function processed a request.')
@@ -24,7 +19,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(func.HttpResponse("", status_code=200))
     
     try:
-        # FIXED: Get business ID using standardized function
+        # Get business ID using standardized function
         business_id = get_user_id_from_request(req)
         
         if not business_id:
@@ -41,20 +36,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Creating inventory item for business {business_id}")
         
-        # Connect to marketplace database
+        # FIXED: Use standardized container access
         try:
-            params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
-            account_endpoint = params.get('AccountEndpoint')
-            account_key = params.get('AccountKey')
+            inventory_container = get_container("inventory")
             
-            if not account_endpoint or not account_key:
-                raise ValueError("Invalid marketplace connection string")
-            
-            client = CosmosClient(account_endpoint, credential=account_key)
-            database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
-            inventory_container = database.get_container_client("inventory")
-            
-            # FIXED: Validate required fields
+            # Validate required fields
             required_fields = ['name', 'quantity', 'price']
             try:
                 validate_required_fields(request_body, required_fields)
@@ -65,10 +51,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             inventory_id = str(uuid.uuid4())
             current_time = datetime.utcnow().isoformat()
             
-            # FIXED: Create inventory item with all required fields and proper sanitization
+            # Create inventory item with all required fields
             inventory_item = {
                 "id": inventory_id,
-                "businessId": business_id,  # This is the partition key
+                "businessId": business_id,  # Partition key
                 
                 # Basic product info
                 "name": sanitize_input(request_body.get('name'), 'string', 100),
@@ -114,7 +100,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             created_item = inventory_container.create_item(inventory_item)
             logging.info(f"Created inventory item {inventory_id} for business {business_id}")
             
-            # FIXED: Return consistent response structure
+            # Return consistent response structure
             response_data = {
                 "success": True,
                 "message": "Inventory item created successfully",

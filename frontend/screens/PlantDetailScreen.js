@@ -283,4 +283,13 @@ const styles = StyleSheet.create({
   problemItem: { marginBottom: 10, marginLeft: 6 },
   problemName: { fontSize: 16, fontWeight: '600', color: '#be7d13', flexDirection: 'row', alignItems: 'center' },
   problemDesc: { fontSize: 14, color: '#684e23', marginLeft: 6, marginTop: 2 },
+  imageContainer: {
+    alignItems: "center",
+    marginBottom: 20,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    padding: 15,
+    boxShadow: "0px 8px 8px rgba(0, 0, 0, 0.06)",
+    elevation: 4,
+  },
 });

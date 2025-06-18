@@ -1,4 +1,4 @@
-// components/RadiusControl.js
+// components/RadiusControl.js - FIXED: Web-compatible slider implementation
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -13,9 +13,94 @@ import {
   Platform,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
-import Slider from '@react-native-community/slider';
 
 const { width } = Dimensions.get('window');
+
+// FIXED: Web-compatible slider component to replace @react-native-community/slider
+const WebSlider = ({ value, minimumValue, maximumValue, step, onValueChange, onSlidingComplete, style, minimumTrackTintColor, thumbTintColor }) => {
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="range"
+        min={minimumValue}
+        max={maximumValue}
+        step={step}
+        value={value}
+        onChange={(e) => onValueChange && onValueChange(parseFloat(e.target.value))}
+        onMouseUp={() => onSlidingComplete && onSlidingComplete()}
+        onTouchEnd={() => onSlidingComplete && onSlidingComplete()}
+        style={{
+          width: '100%',
+          height: '40px',
+          background: 'transparent',
+          outline: 'none',
+          appearance: 'none',
+          WebkitAppearance: 'none',
+          cursor: 'pointer',
+          ...style,
+        }}
+        css={`
+          &::-webkit-slider-track {
+            height: 6px;
+            background: linear-gradient(to right, ${minimumTrackTintColor || '#4CAF50'} 0%, ${minimumTrackTintColor || '#4CAF50'} ${((value - minimumValue) / (maximumValue - minimumValue)) * 100}%, #E0E0E0 ${((value - minimumValue) / (maximumValue - minimumValue)) * 100}%, #E0E0E0 100%);
+            border-radius: 3px;
+          }
+          &::-webkit-slider-thumb {
+            appearance: none;
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: ${thumbTintColor || '#4CAF50'};
+            cursor: pointer;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            margin-top: -9px;
+          }
+          &::-moz-range-track {
+            height: 6px;
+            background: #E0E0E0;
+            border-radius: 3px;
+            border: none;
+          }
+          &::-moz-range-thumb {
+            height: 24px;
+            width: 24px;
+            border-radius: 50%;
+            background: ${thumbTintColor || '#4CAF50'};
+            cursor: pointer;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          }
+        `}
+      />
+    );
+  }
+  
+  // Fallback for mobile platforms
+  return (
+    <TextInput
+      style={[{
+        height: 40,
+        borderWidth: 1,
+        borderColor: '#ddd',
+        borderRadius: 4,
+        paddingHorizontal: 8,
+        textAlign: 'center',
+        backgroundColor: '#f9f9f9',
+      }, style]}
+      value={`${value} km`}
+      onChangeText={(text) => {
+        const numValue = parseFloat(text.replace(/[^0-9.]/g, ''));
+        if (!isNaN(numValue) && numValue >= minimumValue && numValue <= maximumValue) {
+          onValueChange && onValueChange(numValue);
+        }
+      }}
+      onBlur={() => onSlidingComplete && onSlidingComplete()}
+      keyboardType="numeric"
+      placeholder={`${minimumValue}-${maximumValue} km`}
+    />
+  );
+};
 
 /**
  * Enhanced RadiusControl component with integrated product list
@@ -213,7 +298,7 @@ const RadiusControl = ({
       {/* Radius controls section */}
       <View style={styles.controlsSection}>
         <View style={styles.sliderContainer}>
-          <Slider
+          <WebSlider
             style={styles.slider}
             minimumValue={1}
             maximumValue={100}
@@ -222,7 +307,6 @@ const RadiusControl = ({
             onValueChange={handleSliderChange}
             onSlidingComplete={handleSliderComplete}
             minimumTrackTintColor="#4CAF50"
-            maximumTrackTintColor="#dddddd"
             thumbTintColor="#4CAF50"
           />
           <View style={styles.sliderLabels}>
@@ -335,13 +419,13 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 16,
     paddingTop: 8,
     paddingBottom: 16,
-    elevation: 8,
+    elevation: 15, // Increased elevation for Android
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    shadowOffset: { width: 0, height: -4 }, // Stronger shadow
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     overflow: 'hidden',
-    zIndex: 10,
+    zIndex: 1000, // Much higher z-index to ensure it's on top
   },
   header: {
     flexDirection: 'row',

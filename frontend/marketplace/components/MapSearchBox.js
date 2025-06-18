@@ -290,12 +290,12 @@ const styles = StyleSheet.create({
     right: 10,
     backgroundColor: '#fff',
     borderRadius: 8,
-    elevation: 4,
+    elevation: 8, // Increased elevation
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    zIndex: 10,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    zIndex: 100, // High z-index but lower than RadiusControl
     overflow: 'hidden',
   },
   iconButton: {

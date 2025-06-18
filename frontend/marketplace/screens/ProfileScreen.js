@@ -1,6 +1,6 @@
-// screens/ProfileScreen.js - Complete fixed version
+// screens/ProfileScreen.js - PERFORMANCE OPTIMIZED VERSION
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, FlatList, 
   ActivityIndicator, SafeAreaView, Alert, ScrollView, Linking
@@ -25,8 +25,25 @@ const ProfileScreen = () => {
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
 
-  // Fetch user profile data from database - no local storage fallback
-  const loadUserProfile = async () => {
+  // FIXED: Memoize expensive computations to prevent re-renders
+  const getAvatarUrl = useCallback(() => {
+    if (!user) return `https://ui-avatars.com/api/?name=User&background=4CAF50&color=fff&size=80`;
+    return user?.avatar?.url || user?.avatar || 
+           `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=4CAF50&color=fff&size=80`;
+  }, [user?.avatar, user?.name]);
+
+  // FIXED: Memoize tab data to prevent unnecessary re-renders
+  const tabData = useMemo(() => [
+    { id: 'myPlants', label: 'My Plants', icon: 'eco', count: user?.plants?.length || 0 },
+    { id: 'favorites', label: 'Favorites', icon: 'favorite', count: user?.favorites?.length || 0 },
+    { id: 'sold', label: 'Sold', icon: 'local-offer', count: user?.soldPlants?.length || 0 },
+    { id: 'reviews', label: 'Reviews', icon: 'star', count: ratingData?.count || 0 }
+  ], [user?.plants?.length, user?.favorites?.length, user?.soldPlants?.length, ratingData?.count]);
+
+  // FIXED: Optimized profile loading with proper cleanup
+  const loadUserProfile = useCallback(async () => {
+    let isMounted = true; // Prevent state updates if component unmounts
+    
     setIsLoading(true);
     setError(null);
     
@@ -44,9 +61,12 @@ const ProfileScreen = () => {
       
       // Step 1: Try to fetch existing marketplace profile
       try {
-        const marketplaceResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/user-profile?userId=${userId}`);
+        // FIXED: Use correct deployed endpoint route
+        const marketplaceResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/users/${encodeURIComponent(userId)}`, {
+          signal: AbortSignal.timeout(10000) // 10 second timeout
+        });
         
-        if (marketplaceResponse.ok) {
+        if (marketplaceResponse.ok && isMounted) {
           const marketplaceData = await marketplaceResponse.json();
           
           if (marketplaceData && marketplaceData.id) {
@@ -178,33 +198,48 @@ const ProfileScreen = () => {
       
     } catch (error) {
       console.error('[ProfileScreen] Critical error loading user profile:', error);
-      setError(`Failed to load profile: ${error.message}`);
-      setUser(null);
+      if (isMounted) {
+        setError(`Failed to load profile: ${error.message}`);
+        setUser(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (isMounted) {
+        setIsLoading(false);
+      }
     }
-  };
+    
+    // Cleanup function
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-  // Enhanced focus effect to check for updates and refresh
+  // FIXED: Optimized focus effect with cleanup
   useFocusEffect(
     useCallback(() => {
+      const controller = new AbortController();
+      
       loadUserProfile();
       console.log("[ProfileScreen] Screen focused, checking for updates");
       
       const checkUpdates = async () => {
         try {
+          if (controller.signal.aborted) return;
+          
           // Check various update flags directly
-          const wishlistUpdated = await AsyncStorage.getItem('WISHLIST_UPDATED');
-          const favoritesUpdated = await AsyncStorage.getItem('FAVORITES_UPDATED');
-          const profileUpdated = await AsyncStorage.getItem('PROFILE_UPDATED');
-          const reviewUpdated = await AsyncStorage.getItem('REVIEW_UPDATED');
-          const productUpdated = await AsyncStorage.getItem('PRODUCT_UPDATED');
+          const [wishlistUpdated, favoritesUpdated, profileUpdated, reviewUpdated, productUpdated] = await Promise.all([
+            AsyncStorage.getItem('WISHLIST_UPDATED'),
+            AsyncStorage.getItem('FAVORITES_UPDATED'),
+            AsyncStorage.getItem('PROFILE_UPDATED'),
+            AsyncStorage.getItem('REVIEW_UPDATED'),
+            AsyncStorage.getItem('PRODUCT_UPDATED')
+          ]);
           
           const needsRefresh = wishlistUpdated || favoritesUpdated || 
                               profileUpdated || reviewUpdated || 
                               productUpdated || route.params?.refresh;
           
-          if (needsRefresh) {
+          if (needsRefresh && !controller.signal.aborted) {
             console.log("[ProfileScreen] Updates detected, refreshing profile");
             // Clear all update flags
             await Promise.all([
@@ -231,24 +266,98 @@ const ProfileScreen = () => {
       
       checkUpdates();
       
-      // Return cleanup function
+      // Cleanup function
       return () => {
-        // Any cleanup needed
+        controller.abort();
       };
-    }, [navigation, route.params?.refresh])
+    }, [loadUserProfile, navigation, route.params?.refresh])
   );
 
-  // Retry loading profile
-  const handleRetry = () => {
-    loadUserProfile();
-  };
+  // FIXED: Memoized tab content renderer to prevent re-renders
+  const renderTabContent = useCallback(() => {
+    const renderEmptyState = (icon, title, subtitle, actionText, onAction) => (
+      <View style={styles.emptyStateContainer}>
+        <MaterialIcons name={icon} size={64} color="#ccc" />
+        <Text style={styles.emptyStateText}>{title}</Text>
+        {subtitle && <Text style={styles.emptyStateTextSecondary}>{subtitle}</Text>}
+        {actionText && onAction && (
+          <TouchableOpacity style={styles.actionButton} onPress={onAction}>
+            <MaterialIcons name="add" size={20} color="#fff" />
+            <Text style={styles.actionButtonText}>{actionText}</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    );
 
-  // Get avatar URL with null safety
-  const getAvatarUrl = () => {
-    if (!user) return `https://ui-avatars.com/api/?name=User&background=4CAF50&color=fff&size=80`;
-    return user?.avatar?.url || user?.avatar || 
-           `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=4CAF50&color=fff&size=80`;
-  };
+    const renderPlantList = (data, emptyIcon, emptyTitle, emptySubtitle, actionText, onAction) => (
+      <View style={styles.plantGrid}>
+        {data?.length === 0 && !isLoading && 
+          renderEmptyState(emptyIcon, emptyTitle, emptySubtitle, actionText, onAction)
+        }
+        
+        <FlatList
+          data={data}
+          renderItem={({ item }) => <PlantCard plant={item} />}
+          keyExtractor={(item) => item.id || `plant-${Math.random()}`}
+          numColumns={2}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingBottom: 80 }}
+          removeClippedSubviews={true} // Performance optimization
+          maxToRenderPerBatch={6} // Render optimization
+          windowSize={10} // Memory optimization
+          ListEmptyComponent={() => isLoading ? (
+            <View style={styles.centerContainer}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+              <Text style={styles.loadingText}>Loading...</Text>
+            </View>
+          ) : null}
+        />
+      </View>
+    );
+
+    switch (activeTab) {
+      case 'myPlants':
+        return renderPlantList(
+          user?.plants, 
+          'eco', 
+          'No plants listed yet', 
+          null,
+          'Add Your First Plant', 
+          () => navigation.navigate('AddPlant')
+        );
+      
+      case 'favorites':
+        return renderPlantList(
+          user?.favorites, 
+          'favorite-border', 
+          'No favorites yet', 
+          'Heart some plants to add them to your favorites!'
+        );
+      
+      case 'sold':
+        return renderPlantList(
+          user?.soldPlants, 
+          'local-offer', 
+          'No plants sold yet', 
+          'Once you sell some plants, they\'ll appear here'
+        );
+      
+      case 'reviews':
+        return (
+          <ReviewsList 
+            targetType="seller"
+            targetId={user?.id}
+            onAddReview={null}
+            onReviewsLoaded={setRatingData}
+            autoLoad={true}
+            hideAddButton={true}
+          />
+        );
+      
+      default:
+        return null;
+    }
+  }, [activeTab, user, isLoading, navigation]);
 
   // Loading state
   if (isLoading) {
@@ -306,127 +415,7 @@ const ProfileScreen = () => {
     );
   }
 
-  // Render tab content
-  const renderTabContent = () => {
-    switch (activeTab) {
-      case 'myPlants':
-        return (
-          <View style={styles.plantGrid}>
-            {user?.plants?.length === 0 && !isLoading && (
-              <View style={styles.emptyStateContainer}>
-                <MaterialIcons name="eco" size={64} color="#ccc" />
-                <Text style={styles.emptyStateText}>
-                  No plants listed yet
-                </Text>
-                <TouchableOpacity 
-                  style={styles.actionButton}
-                  onPress={() => navigation.navigate('AddPlant')}
-                >
-                  <MaterialIcons name="add" size={20} color="#fff" />
-                  <Text style={styles.actionButtonText}>Add Your First Plant</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-            
-            <FlatList
-              data={user?.plants}
-              renderItem={({ item }) => <PlantCard plant={item} />}
-              keyExtractor={item => item.id}
-              numColumns={2}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 80 }}
-              ListEmptyComponent={() => isLoading ? (
-                <View style={styles.centerContainer}>
-                  <ActivityIndicator size="large" color="#4CAF50" />
-                  <Text style={styles.loadingText}>Loading your plants...</Text>
-                </View>
-              ) : null}
-            />
-          </View>
-        );
-      
-      case 'favorites':
-        return (
-          <View style={styles.plantGrid}>
-            {user?.favorites?.length === 0 && !isLoading && (
-              <View style={styles.emptyStateContainer}>
-                <MaterialIcons name="favorite-border" size={64} color="#ccc" />
-                <Text style={styles.emptyStateText}>
-                  No favorites yet
-                </Text>
-                <Text style={styles.emptyStateTextSecondary}>
-                  Heart some plants to add them to your favorites!
-                </Text>
-              </View>
-            )}
-            
-            <FlatList
-              data={user?.favorites}
-              renderItem={({ item }) => <PlantCard plant={item} />}
-              keyExtractor={item => item.id}
-              numColumns={2}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 80 }}
-              ListEmptyComponent={() => isLoading ? (
-                <View style={styles.centerContainer}>
-                  <ActivityIndicator size="large" color="#4CAF50" />
-                  <Text style={styles.loadingText}>Loading your favorites...</Text>
-                </View>
-              ) : null}
-            />
-          </View>
-        );
-      
-      case 'sold':
-        return (
-          <View style={styles.plantGrid}>
-            {user?.soldPlants?.length === 0 && !isLoading && (
-              <View style={styles.emptyStateContainer}>
-                <MaterialIcons name="local-offer" size={64} color="#ccc" />
-                <Text style={styles.emptyStateText}>
-                  No plants sold yet
-                </Text>
-                <Text style={styles.emptyStateTextSecondary}>
-                  Once you sell some plants, they'll appear here
-                </Text>
-              </View>
-            )}
-            
-            <FlatList
-              data={user?.soldPlants}
-              renderItem={({ item }) => <PlantCard plant={item} />}
-              keyExtractor={item => item.id}
-              numColumns={2}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingBottom: 80 }}
-              ListEmptyComponent={() => isLoading ? (
-                <View style={styles.centerContainer}>
-                  <ActivityIndicator size="large" color="#4CAF50" />
-                  <Text style={styles.loadingText}>Loading your sold plants...</Text>
-                </View>
-              ) : null}
-            />
-          </View>
-        );
-      
-      case 'reviews':
-        return (
-          <ReviewsList 
-            targetType="seller"
-            targetId={user?.id}
-            onAddReview={null} // No add review button for self
-            onReviewsLoaded={setRatingData}
-            autoLoad={true}
-            hideAddButton={true}
-          />
-        );
-      
-      default:
-        return null;
-    }
-  };
-
-  // Main render
+  // FIXED: Optimized main render with memoization
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader 
@@ -435,18 +424,23 @@ const ProfileScreen = () => {
         onBackPress={() => navigation.goBack()} 
         onNotificationsPress={() => navigation.navigate('Messages')} 
       />
-      <ScrollView>
+      <ScrollView removeClippedSubviews={true}>
         <View style={styles.profileCard}>
-          <Image source={{ uri: getAvatarUrl() }} style={styles.avatar} />
-          <Text style={styles.userName}>{user.name || 'Unknown User'}</Text>
-          <Text style={styles.userEmail}>{user.email || ''}</Text>
+          <Image 
+            source={{ uri: getAvatarUrl() }} 
+            style={styles.avatar}
+            accessible={true}
+            accessibilityLabel={`${user?.name || 'User'} profile picture`}
+          />
+          <Text style={styles.userName}>{user?.name || 'Unknown User'}</Text>
+          <Text style={styles.userEmail}>{user?.email || ''}</Text>
           <Text style={styles.joinDate}>
-            Joined {user.joinDate ? new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}
+            Joined {user?.joinDate ? new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}
           </Text>
-          {user.bio && <Text style={styles.bio}>{user.bio}</Text>}
+          {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
           
           {/* Social Media Section - with null safety */}
-          {user.socialMedia && (user.socialMedia.instagram || user.socialMedia.facebook) && (
+          {user?.socialMedia && (user.socialMedia.instagram || user.socialMedia.facebook) && (
             <View style={styles.socialMediaSection}>
               <Text style={styles.socialMediaTitle}>Connect with me</Text>
               <View style={styles.socialMediaButtons}>
@@ -457,6 +451,9 @@ const ProfileScreen = () => {
                       const username = user.socialMedia.instagram.replace('@', '');
                       Linking.openURL(`https://instagram.com/${username}`);
                     }}
+                    accessible={true}
+                    accessibilityLabel="Open Instagram profile"
+                    accessibilityRole="button"
                   >
                     <MaterialCommunityIcons name="instagram" size={20} color="#E4405F" />
                     <Text style={styles.socialMediaText}>Instagram</Text>
@@ -472,6 +469,9 @@ const ProfileScreen = () => {
                         : `https://facebook.com/${user.socialMedia.facebook}`;
                       Linking.openURL(profileUrl);
                     }}
+                    accessible={true}
+                    accessibilityLabel="Open Facebook profile"
+                    accessibilityRole="button"
                   >
                     <MaterialCommunityIcons name="facebook" size={20} color="#1877F2" />
                     <Text style={styles.socialMediaText}>Facebook</Text>
@@ -484,6 +484,9 @@ const ProfileScreen = () => {
           <TouchableOpacity 
             style={styles.editProfileButton} 
             onPress={() => navigation.navigate('EditProfile')}
+            accessible={true}
+            accessibilityLabel="Edit profile"
+            accessibilityRole="button"
           >
             <Feather name="edit" size={16} color="#4CAF50" />
             <Text style={styles.editProfileText}>Edit Profile</Text>
@@ -492,11 +495,11 @@ const ProfileScreen = () => {
         
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{user.plants?.length || 0}</Text>
+            <Text style={styles.statValue}>{user?.plants?.length || 0}</Text>
             <Text style={styles.statLabel}>Listings</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statValue}>{user.stats?.salesCount || 0}</Text>
+            <Text style={styles.statValue}>{user?.stats?.salesCount || 0}</Text>
             <Text style={styles.statLabel}>Sold</Text>
           </View>
           <View style={styles.statBox}>
@@ -509,19 +512,23 @@ const ProfileScreen = () => {
         </View>
         
         <View style={styles.tabsContainer}>
-          {['myPlants', 'favorites', 'sold', 'reviews'].map(tab => (
+          {tabData.map(tab => (
             <TouchableOpacity
-              key={tab}
-              style={[styles.tabButton, activeTab === tab && styles.activeTabButton]}
-              onPress={() => setActiveTab(tab)}
+              key={tab.id}
+              style={[styles.tabButton, activeTab === tab.id && styles.activeTabButton]}
+              onPress={() => setActiveTab(tab.id)}
+              accessible={true}
+              accessibilityLabel={`${tab.label} tab`}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: activeTab === tab.id }}
             >
               <MaterialIcons
-                name={tab === 'myPlants' ? 'eco' : tab === 'favorites' ? 'favorite' : tab === 'sold' ? 'local-offer' : 'star'}
+                name={tab.icon}
                 size={24}
-                color={activeTab === tab ? '#4CAF50' : '#666'}
+                color={activeTab === tab.id ? '#4CAF50' : '#666'}
               />
-              <Text style={[styles.tabText, activeTab === tab && styles.activeTabText]}>
-                {tab === 'myPlants' ? 'My Plants' : tab === 'reviews' ? 'Reviews' : tab.charAt(0).toUpperCase() + tab.slice(1)}
+              <Text style={[styles.tabText, activeTab === tab.id && styles.activeTabText]}>
+                {tab.label}
               </Text>
             </TouchableOpacity>
           ))}
@@ -531,16 +538,6 @@ const ProfileScreen = () => {
           {renderTabContent()}
         </View>
       </ScrollView>
-      
-      <TouchableOpacity 
-        style={styles.addPlantButton} 
-        onPress={() => navigation.navigate('AddPlant')}
-        accessible={true}
-        accessibilityLabel="Add a new plant"
-        accessibilityRole="button"
-      >
-        <MaterialIcons name="add" size={30} color="#fff" />
-      </TouchableOpacity>
     </SafeAreaView>
   );
 };
@@ -754,21 +751,6 @@ const styles = StyleSheet.create({
   actionButtonText: { 
     color: '#fff', 
     fontWeight: '600' 
-  },
-  addPlantButton: {
-    position: 'absolute', 
-    bottom: 16, 
-    right: 16, 
-    backgroundColor: '#4CAF50',
-    width: 60, 
-    height: 60, 
-    borderRadius: 30, 
-    padding: 16, 
-    elevation: 4, 
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.2, 
-    shadowRadius: 4,
   },
 });
 

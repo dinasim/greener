@@ -1,5 +1,5 @@
-// Business/components/InventoryTable.js
-import React, { useState, useRef, useCallback } from 'react';
+// Business/components/InventoryTable.js - Production-Optimized Version
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -20,12 +20,16 @@ import {
   MaterialIcons, 
   Ionicons 
 } from '@expo/vector-icons';
+import PropTypes from 'prop-types';
 
 // Import components
 import ProductEditModal from './ProductEditModal';
 import LowStockBanner from './LowStockBanner';
 
-export default function InventoryTable({ 
+// Import theme with shadow helpers
+import theme, { createShadow, getWebSafeShadow } from '../../marketplace/services/theme';
+
+const InventoryTable = React.memo(({ 
   inventory = [], 
   isLoading = false,
   onRefresh = () => {},
@@ -36,7 +40,7 @@ export default function InventoryTable({
   refreshing = false,
   businessId,
   navigation
-}) {
+}) => {
   // State
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('name');
@@ -53,69 +57,110 @@ export default function InventoryTable({
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   
-  // Filter and sort inventory
-  const filteredInventory = inventory
-    .filter(item => {
-      // Search filter
-      if (searchQuery) {
-        const query = searchQuery.toLowerCase();
-        const name = (item.name || item.common_name || '').toLowerCase();
-        const scientific = (item.scientific_name || '').toLowerCase();
-        if (!name.includes(query) && !scientific.includes(query)) {
-          return false;
-        }
+  // Memoize expensive calculations
+  const inventoryAnalytics = useMemo(() => {
+    const analytics = {
+      total: inventory.length,
+      active: 0,
+      inactive: 0,
+      lowStock: 0,
+      discontinued: 0
+    };
+
+    inventory.forEach(item => {
+      const status = item.status || 'active';
+      analytics[status]++;
+      
+      if ((item.quantity || 0) <= (item.minThreshold || 5) && status === 'active') {
+        analytics.lowStock++;
       }
-      
-      // Status filter
-      if (filterStatus !== 'all') {
-        if (filterStatus === 'low-stock') {
-          return (item.quantity || 0) <= (item.minThreshold || 5);
-        }
-        return item.status === filterStatus;
-      }
-      
-      return true;
-    })
-    .sort((a, b) => {
-      let valueA, valueB;
-      
-      switch (sortBy) {
-        case 'name':
-          valueA = (a.name || a.common_name || '').toLowerCase();
-          valueB = (b.name || b.common_name || '').toLowerCase();
-          break;
-        case 'quantity':
-          valueA = a.quantity || 0;
-          valueB = b.quantity || 0;
-          break;
-        case 'price':
-          valueA = a.finalPrice || a.price || 0;
-          valueB = b.finalPrice || b.price || 0;
-          break;
-        case 'status':
-          valueA = a.status || 'active';
-          valueB = b.status || 'active';
-          break;
-        case 'updated':
-          valueA = new Date(a.lastUpdated || a.dateAdded || 0);
-          valueB = new Date(b.lastUpdated || b.dateAdded || 0);
-          break;
-        default:
-          return 0;
-      }
-      
-      if (valueA < valueB) return sortOrder === 'asc' ? -1 : 1;
-      if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
     });
 
+    return analytics;
+  }, [inventory]);
+
+  // Memoized filtered and sorted inventory
+  const filteredInventory = useMemo(() => {
+    return inventory
+      .filter(item => {
+        // Search filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const name = (item.name || item.common_name || '').toLowerCase();
+          const scientific = (item.scientific_name || '').toLowerCase();
+          if (!name.includes(query) && !scientific.includes(query)) {
+            return false;
+          }
+        }
+        
+        // Status filter
+        if (filterStatus !== 'all') {
+          if (filterStatus === 'low-stock') {
+            return (item.quantity || 0) <= (item.minThreshold || 5);
+          }
+          return item.status === filterStatus;
+        }
+        
+        return true;
+      })
+      .sort((a, b) => {
+        let valueA, valueB;
+        
+        switch (sortBy) {
+          case 'name':
+            valueA = (a.name || a.common_name || '').toLowerCase();
+            valueB = (b.name || b.common_name || '').toLowerCase();
+            break;
+          case 'quantity':
+            valueA = a.quantity || 0;
+            valueB = b.quantity || 0;
+            break;
+          case 'price':
+            valueA = a.finalPrice || a.price || 0;
+            valueB = b.finalPrice || b.price || 0;
+            break;
+          case 'status':
+            valueA = a.status || 'active';
+            valueB = b.status || 'active';
+            break;
+          case 'updated':
+            valueA = new Date(a.lastUpdated || a.dateAdded || 0);
+            valueB = new Date(b.lastUpdated || b.dateAdded || 0);
+            break;
+          default:
+            return 0;
+        }
+        
+        if (valueA < valueB) return sortOrder === 'asc' ? -1 : 1;
+        if (valueA > valueB) return sortOrder === 'asc' ? 1 : -1;
+        return 0;
+      });
+  }, [inventory, searchQuery, filterStatus, sortBy, sortOrder]);
+
   // Get low stock items for banner
-  const lowStockItems = inventory.filter(item => 
-    (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
+  const lowStockItems = useMemo(() => 
+    inventory.filter(item => 
+      (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
+    ), [inventory]
   );
 
-  // Handle sort
-  const handleSort = (field) => {
+  // Memoized utility functions
+  const getStatusColor = useCallback((status) => {
+    switch (status) {
+      case 'active': return '#4CAF50';
+      case 'inactive': return '#FF9800';
+      case 'discontinued': return '#F44336';
+      default: return '#757575';
+    }
+  }, []);
+
+  const getSortIcon = useCallback((field) => {
+    if (sortBy !== field) return 'sort';
+    return sortOrder === 'asc' ? 'keyboard-arrow-up' : 'keyboard-arrow-down';
+  }, [sortBy, sortOrder]);
+
+  // Handle sort with animation
+  const handleSort = useCallback((field) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -136,23 +181,23 @@ export default function InventoryTable({
         useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
-  };
+  }, [sortBy, sortOrder, fadeAnim]);
 
   // Handle edit product
-  const handleEditPress = (product) => {
+  const handleEditPress = useCallback((product) => {
     setSelectedProduct(product);
     setEditModalVisible(true);
-  };
+  }, []);
 
   // Handle quick stock edit
-  const handleQuickStockEdit = (product) => {
+  const handleQuickStockEdit = useCallback((product) => {
     setSelectedProduct(product);
     setQuickEditStock((product.quantity || 0).toString());
     setQuickEditModalVisible(true);
-  };
+  }, []);
 
   // Handle quick stock update
-  const handleQuickStockUpdate = async () => {
+  const handleQuickStockUpdate = useCallback(async () => {
     const newStock = parseInt(quickEditStock);
     
     if (isNaN(newStock) || newStock < 0) {
@@ -188,10 +233,10 @@ export default function InventoryTable({
     } catch (error) {
       Alert.alert('Error', `Failed to update stock: ${error.message}`);
     }
-  };
+  }, [selectedProduct, quickEditStock, onUpdateStock, slideAnim]);
 
   // Handle delete with confirmation
-  const handleDeletePress = (product) => {
+  const handleDeletePress = useCallback((product) => {
     Alert.alert(
       'Delete Product',
       `Are you sure you want to delete "${product.name || product.common_name}"? This action cannot be undone.`,
@@ -207,16 +252,16 @@ export default function InventoryTable({
         }
       ]
     );
-  };
+  }, [onDeleteProduct]);
 
   // Toggle bulk action mode
-  const toggleBulkActionMode = () => {
+  const toggleBulkActionMode = useCallback(() => {
     setBulkActionMode(!bulkActionMode);
     setSelectedItems(new Set());
-  };
+  }, [bulkActionMode]);
 
   // Toggle item selection
-  const toggleItemSelection = (itemId) => {
+  const toggleItemSelection = useCallback((itemId) => {
     const newSelection = new Set(selectedItems);
     if (newSelection.has(itemId)) {
       newSelection.delete(itemId);
@@ -224,10 +269,10 @@ export default function InventoryTable({
       newSelection.add(itemId);
     }
     setSelectedItems(newSelection);
-  };
+  }, [selectedItems]);
 
   // Bulk actions
-  const handleBulkAction = (action) => {
+  const handleBulkAction = useCallback((action) => {
     if (selectedItems.size === 0) {
       Alert.alert('No Items Selected', 'Please select items first');
       return;
@@ -269,10 +314,10 @@ export default function InventoryTable({
         setSelectedItems(new Set());
         break;
     }
-  };
+  }, [selectedItems, filteredInventory, onDeleteProduct, onEditProduct]);
 
   // Handle location press
-  const handleLocationPress = (item) => {
+  const handleLocationPress = useCallback((item) => {
     if (item.location?.coordinates) {
       const { latitude, longitude } = item.location.coordinates;
       const url = Platform.select({
@@ -287,94 +332,10 @@ export default function InventoryTable({
         Alert.alert('Error', 'Could not open maps application');
       });
     }
-  };
+  }, []);
 
-  // Get status color
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'active': return '#4CAF50';
-      case 'inactive': return '#FF9800';
-      case 'discontinued': return '#F44336';
-      default: return '#757575';
-    }
-  };
-
-  // Get sort icon
-  const getSortIcon = (field) => {
-    if (sortBy !== field) return 'sort';
-    return sortOrder === 'asc' ? 'keyboard-arrow-up' : 'keyboard-arrow-down';
-  };
-
-  // Render table header
-  const renderTableHeader = () => (
-    <Animated.View 
-      style={[
-        styles.tableHeader,
-        {
-          opacity: fadeAnim,
-          transform: [{ translateX: slideAnim }],
-        }
-      ]}
-    >
-      {bulkActionMode && (
-        <TouchableOpacity 
-          style={styles.headerCell}
-          onPress={() => {
-            if (selectedItems.size === filteredInventory.length) {
-              setSelectedItems(new Set());
-            } else {
-              setSelectedItems(new Set(filteredInventory.map(item => item.id)));
-            }
-          }}
-        >
-          <MaterialIcons 
-            name={selectedItems.size === filteredInventory.length ? 'check-box' : 'check-box-outline-blank'} 
-            size={20} 
-            color="#4CAF50" 
-          />
-        </TouchableOpacity>
-      )}
-      
-      <TouchableOpacity 
-        style={[styles.headerCell, styles.nameCell]} 
-        onPress={() => handleSort('name')}
-      >
-        <Text style={styles.headerText}>Product</Text>
-        <MaterialIcons name={getSortIcon('name')} size={16} color="#666" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.headerCell} 
-        onPress={() => handleSort('quantity')}
-      >
-        <Text style={styles.headerText}>Stock</Text>
-        <MaterialIcons name={getSortIcon('quantity')} size={16} color="#666" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.headerCell} 
-        onPress={() => handleSort('price')}
-      >
-        <Text style={styles.headerText}>Price</Text>
-        <MaterialIcons name={getSortIcon('price')} size={16} color="#666" />
-      </TouchableOpacity>
-      
-      <TouchableOpacity 
-        style={styles.headerCell} 
-        onPress={() => handleSort('status')}
-      >
-        <Text style={styles.headerText}>Status</Text>
-        <MaterialIcons name={getSortIcon('status')} size={16} color="#666" />
-      </TouchableOpacity>
-      
-      <View style={styles.headerCell}>
-        <Text style={styles.headerText}>Actions</Text>
-      </View>
-    </Animated.View>
-  );
-
-  // Render inventory item
-  const renderInventoryItem = ({ item, index }) => (
+  // Optimized inventory item renderer with React.memo
+  const InventoryItem = React.memo(({ item, index, onEdit, onDelete, onQuickStock, onProductPress, isSelected, onToggleSelection }) => (
     <Animated.View
       style={[
         styles.tableRow,
@@ -383,16 +344,18 @@ export default function InventoryTable({
           transform: [{ translateX: slideAnim }],
         },
         index % 2 === 0 && styles.evenRow,
-        selectedItems.has(item.id) && styles.selectedRow,
+        isSelected && styles.selectedRow,
       ]}
     >
       {bulkActionMode && (
         <TouchableOpacity 
           style={styles.tableCell}
-          onPress={() => toggleItemSelection(item.id)}
+          onPress={() => onToggleSelection(item.id)}
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: isSelected }}
         >
           <MaterialIcons 
-            name={selectedItems.has(item.id) ? 'check-box' : 'check-box-outline-blank'} 
+            name={isSelected ? 'check-box' : 'check-box-outline-blank'} 
             size={20} 
             color="#4CAF50" 
           />
@@ -402,6 +365,8 @@ export default function InventoryTable({
       <TouchableOpacity 
         style={[styles.tableCell, styles.nameCell]}
         onPress={() => onProductPress(item)}
+        accessibilityRole="button"
+        accessibilityLabel={`View details for ${item.name || item.common_name}`}
       >
         <View style={styles.productInfo}>
           <View style={styles.productIcon}>
@@ -420,12 +385,13 @@ export default function InventoryTable({
                 {item.scientific_name}
               </Text>
             )}
-            {/* Enhanced product info */}
             <View style={styles.productMetaInfo}>
               {item.location?.coordinates && (
                 <TouchableOpacity 
                   style={styles.metaInfoItem}
                   onPress={() => handleLocationPress(item)}
+                  accessibilityRole="button"
+                  accessibilityLabel="View location on map"
                 >
                   <MaterialIcons name="location-on" size={12} color="#2196F3" />
                   <Text style={styles.metaInfoText}>GPS</Text>
@@ -446,7 +412,9 @@ export default function InventoryTable({
       
       <TouchableOpacity 
         style={styles.tableCell}
-        onPress={() => handleQuickStockEdit(item)}
+        onPress={() => onQuickStock(item)}
+        accessibilityRole="button"
+        accessibilityLabel="Edit stock quantity"
       >
         <View style={styles.stockContainer}>
           <Text style={[
@@ -456,7 +424,7 @@ export default function InventoryTable({
             {item.quantity || 0}
           </Text>
           {(item.quantity || 0) <= (item.minThreshold || 5) && (
-            <MaterialIcons name="warning" size={14} color="#FF9800" />
+            <MaterialIcons name="alert" size={14} color="#FF9800" />
           )}
         </View>
         <Text style={styles.thresholdText}>
@@ -487,14 +455,18 @@ export default function InventoryTable({
         <View style={styles.actionsContainer}>
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={() => handleEditPress(item)}
+            onPress={() => onEdit(item)}
+            accessibilityRole="button"
+            accessibilityLabel="Edit product"
           >
             <MaterialIcons name="edit" size={16} color="#2196F3" />
           </TouchableOpacity>
           
           <TouchableOpacity 
             style={styles.actionButton}
-            onPress={() => handleDeletePress(item)}
+            onPress={() => onDelete(item)}
+            accessibilityRole="button"
+            accessibilityLabel="Delete product"
           >
             <MaterialIcons name="delete" size={16} color="#f44336" />
           </TouchableOpacity>
@@ -508,13 +480,131 @@ export default function InventoryTable({
                 [{ text: 'OK' }]
               );
             }}
+            accessibilityRole="button"
+            accessibilityLabel="View product details"
           >
             <MaterialIcons name="info" size={16} color="#9C27B0" />
           </TouchableOpacity>
         </View>
       </View>
     </Animated.View>
-  );
+  ));
+
+  // Render inventory item with optimization
+  const renderInventoryItem = useCallback(({ item, index }) => (
+    <InventoryItem
+      item={item}
+      index={index}
+      onEdit={handleEditPress}
+      onDelete={handleDeletePress}
+      onQuickStock={handleQuickStockEdit}
+      onProductPress={onProductPress}
+      isSelected={selectedItems.has(item.id)}
+      onToggleSelection={toggleItemSelection}
+    />
+  ), [handleEditPress, handleDeletePress, handleQuickStockEdit, onProductPress, selectedItems, toggleItemSelection]);
+
+  // Memoized filter tabs
+  const filterTabs = useMemo(() => [
+    { key: 'all', label: 'All', count: inventoryAnalytics.total },
+    { key: 'active', label: 'Active', count: inventoryAnalytics.active },
+    { key: 'low-stock', label: 'Low Stock', count: inventoryAnalytics.lowStock },
+    { key: 'inactive', label: 'Inactive', count: inventoryAnalytics.inactive },
+  ], [inventoryAnalytics]);
+
+  // Clear filters handler
+  const handleClearFilters = useCallback(() => {
+    setSearchQuery('');
+    setFilterStatus('all');
+  }, []);
+
+  // Render table header with memoization
+  const renderTableHeader = useCallback(() => (
+    <Animated.View 
+      style={[
+        styles.tableHeader,
+        {
+          opacity: fadeAnim,
+          transform: [{ translateX: slideAnim }],
+        }
+      ]}
+    >
+      {bulkActionMode && (
+        <TouchableOpacity 
+          style={styles.headerCell}
+          onPress={() => {
+            if (selectedItems.size === filteredInventory.length) {
+              setSelectedItems(new Set());
+            } else {
+              setSelectedItems(new Set(filteredInventory.map(item => item.id)));
+            }
+          }}
+          accessibilityRole="checkbox"
+          accessibilityLabel="Select all items"
+        >
+          <MaterialIcons 
+            name={selectedItems.size === filteredInventory.length ? 'check-box' : 'check-box-outline-blank'} 
+            size={20} 
+            color="#4CAF50" 
+          />
+        </TouchableOpacity>
+      )}
+      
+      <TouchableOpacity 
+        style={[styles.headerCell, styles.nameCell]} 
+        onPress={() => handleSort('name')}
+        accessibilityRole="button"
+        accessibilityLabel="Sort by product name"
+      >
+        <Text style={styles.headerText}>Product</Text>
+        <MaterialIcons name={getSortIcon('name')} size={16} color="#666" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.headerCell} 
+        onPress={() => handleSort('quantity')}
+        accessibilityRole="button"
+        accessibilityLabel="Sort by stock quantity"
+      >
+        <Text style={styles.headerText}>Stock</Text>
+        <MaterialIcons name={getSortIcon('quantity')} size={16} color="#666" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.headerCell} 
+        onPress={() => handleSort('price')}
+        accessibilityRole="button"
+        accessibilityLabel="Sort by price"
+      >
+        <Text style={styles.headerText}>Price</Text>
+        <MaterialIcons name={getSortIcon('price')} size={16} color="#666" />
+      </TouchableOpacity>
+      
+      <TouchableOpacity 
+        style={styles.headerCell} 
+        onPress={() => handleSort('status')}
+        accessibilityRole="button"
+        accessibilityLabel="Sort by status"
+      >
+        <Text style={styles.headerText}>Status</Text>
+        <MaterialIcons name={getSortIcon('status')} size={16} color="#666" />
+      </TouchableOpacity>
+      
+      <View style={styles.headerCell}>
+        <Text style={styles.headerText}>Actions</Text>
+      </View>
+    </Animated.View>
+  ), [fadeAnim, slideAnim, bulkActionMode, selectedItems, filteredInventory, getSortIcon, handleSort]);
+
+  // Get item layout for better performance
+  const getItemLayout = useCallback((data, index) => ({
+    length: 80, // Approximate height of inventory row
+    offset: 80 * index,
+    index,
+  }), []);
+
+  // Key extractor
+  const keyExtractor = useCallback((item) => item.id, []);
 
   return (
     <View style={styles.container}>
@@ -537,6 +627,8 @@ export default function InventoryTable({
             onChangeText={setSearchQuery}
             placeholder="Search products..."
             placeholderTextColor="#999"
+            returnKeyType="search"
+            accessibilityLabel="Search products"
           />
           {searchQuery ? (
             <TouchableOpacity onPress={() => setSearchQuery('')}>
@@ -547,12 +639,7 @@ export default function InventoryTable({
         
         {/* Filter Tabs */}
         <View style={styles.filterTabs}>
-          {[
-            { key: 'all', label: 'All', count: inventory.length },
-            { key: 'active', label: 'Active', count: inventory.filter(i => i.status === 'active').length },
-            { key: 'low-stock', label: 'Low Stock', count: lowStockItems.length },
-            { key: 'inactive', label: 'Inactive', count: inventory.filter(i => i.status === 'inactive').length },
-          ].map(filter => (
+          {filterTabs.map(filter => (
             <TouchableOpacity
               key={filter.key}
               style={[
@@ -560,6 +647,8 @@ export default function InventoryTable({
                 filterStatus === filter.key && styles.activeFilterTab
               ]}
               onPress={() => setFilterStatus(filter.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`Filter by ${filter.label}`}
             >
               <Text style={[
                 styles.filterTabText,
@@ -576,6 +665,8 @@ export default function InventoryTable({
           <TouchableOpacity 
             style={[styles.bulkActionButton, bulkActionMode && styles.activeBulkButton]}
             onPress={toggleBulkActionMode}
+            accessibilityRole="button"
+            accessibilityLabel={bulkActionMode ? "Cancel bulk edit" : "Enable bulk edit"}
           >
             <MaterialIcons 
               name={bulkActionMode ? "close" : "checklist"} 
@@ -595,6 +686,8 @@ export default function InventoryTable({
               <TouchableOpacity 
                 style={styles.bulkAction}
                 onPress={() => handleBulkAction('activate')}
+                accessibilityRole="button"
+                accessibilityLabel="Activate selected items"
               >
                 <MaterialIcons name="visibility" size={16} color="#4CAF50" />
                 <Text style={styles.bulkActionLabel}>Activate</Text>
@@ -603,6 +696,8 @@ export default function InventoryTable({
               <TouchableOpacity 
                 style={styles.bulkAction}
                 onPress={() => handleBulkAction('deactivate')}
+                accessibilityRole="button"
+                accessibilityLabel="Deactivate selected items"
               >
                 <MaterialIcons name="visibility-off" size={16} color="#FF9800" />
                 <Text style={styles.bulkActionLabel}>Deactivate</Text>
@@ -611,6 +706,8 @@ export default function InventoryTable({
               <TouchableOpacity 
                 style={styles.bulkAction}
                 onPress={() => handleBulkAction('delete')}
+                accessibilityRole="button"
+                accessibilityLabel="Delete selected items"
               >
                 <MaterialIcons name="delete" size={16} color="#f44336" />
                 <Text style={styles.bulkActionLabel}>Delete</Text>
@@ -639,7 +736,8 @@ export default function InventoryTable({
         <FlatList
           data={filteredInventory}
           renderItem={renderInventoryItem}
-          keyExtractor={item => item.id}
+          keyExtractor={keyExtractor}
+          getItemLayout={getItemLayout}
           style={styles.tableList}
           refreshControl={
             <RefreshControl
@@ -660,10 +758,9 @@ export default function InventoryTable({
               </Text>
               {searchQuery || filterStatus !== 'all' ? (
                 <TouchableOpacity 
-                  onPress={() => {
-                    setSearchQuery('');
-                    setFilterStatus('all');
-                  }}
+                  onPress={handleClearFilters}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear all filters"
                 >
                   <Text style={styles.clearFiltersText}>Clear filters</Text>
                 </TouchableOpacity>
@@ -671,6 +768,10 @@ export default function InventoryTable({
             </View>
           }
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={15}
+          initialNumToRender={15}
+          windowSize={10}
         />
       </View>
       
@@ -711,12 +812,15 @@ export default function InventoryTable({
               placeholder="Enter new stock quantity"
               keyboardType="numeric"
               autoFocus={true}
+              accessibilityLabel="Enter new stock quantity"
             />
             
             <View style={styles.quickEditActions}>
               <TouchableOpacity 
                 style={styles.quickEditCancel}
                 onPress={() => setQuickEditModalVisible(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Cancel stock update"
               >
                 <Text style={styles.quickEditCancelText}>Cancel</Text>
               </TouchableOpacity>
@@ -724,6 +828,8 @@ export default function InventoryTable({
               <TouchableOpacity 
                 style={styles.quickEditSave}
                 onPress={handleQuickStockUpdate}
+                accessibilityRole="button"
+                accessibilityLabel="Save stock update"
               >
                 <Text style={styles.quickEditSaveText}>Update</Text>
               </TouchableOpacity>
@@ -733,8 +839,9 @@ export default function InventoryTable({
       </Modal>
     </View>
   );
-}
+});
 
+// Enhanced styles with fixed deprecation issues
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -745,43 +852,61 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
   },
   searchInput: {
     flex: 1,
     fontSize: 16,
     color: '#333',
-    marginLeft: 8,
+    marginLeft: 12,
   },
   filterTabs: {
     flexDirection: 'row',
     marginBottom: 16,
+    flexWrap: 'wrap',
+    gap: 8,
   },
   filterTab: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
     backgroundColor: '#f5f5f5',
-    marginRight: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   activeFilterTab: {
     backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
   },
   filterTabText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#666',
+    fontWeight: '500',
   },
   activeFilterTabText: {
     color: '#fff',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   bulkActionsContainer: {
     flexDirection: 'row',
@@ -792,10 +917,10 @@ const styles = StyleSheet.create({
   bulkActionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1.5,
     borderColor: '#4CAF50',
     backgroundColor: '#fff',
   },
@@ -803,9 +928,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#4CAF50',
   },
   bulkActionText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#4CAF50',
-    marginLeft: 4,
+    marginLeft: 6,
+    fontWeight: '600',
   },
   activeBulkText: {
     color: '#fff',
@@ -817,32 +943,38 @@ const styles = StyleSheet.create({
   bulkAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 8,
-    borderRadius: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 16,
     backgroundColor: '#f5f5f5',
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
   },
   bulkActionLabel: {
     fontSize: 11,
     color: '#666',
     marginLeft: 4,
+    fontWeight: '500',
   },
   resultsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f5f5f5',
+    paddingVertical: 12,
+    backgroundColor: '#f8f9fa',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
   },
   resultsText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#666',
+    fontWeight: '500',
   },
   selectedText: {
-    fontSize: 12,
+    fontSize: 13,
     color: '#4CAF50',
-    fontWeight: '600',
+    fontWeight: '700',
   },
   tableContainer: {
     flex: 1,
@@ -851,25 +983,25 @@ const styles = StyleSheet.create({
   tableHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     backgroundColor: '#f8f9fa',
-    borderBottomWidth: 1,
+    borderBottomWidth: 2,
     borderBottomColor: '#e0e0e0',
   },
   headerCell: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
   },
   nameCell: {
-    flex: 2,
+    flex: 2.5,
   },
   headerText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2d3436',
   },
   tableList: {
     flex: 1,
@@ -877,10 +1009,11 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 16,
     paddingHorizontal: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
+    minHeight: 80,
   },
   evenRow: {
     backgroundColor: '#fafafa',
@@ -889,7 +1022,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f5e8',
   },
   tableCell: {
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
     justifyContent: 'center',
   },
   productInfo: {
@@ -897,78 +1030,85 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   productIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: '#f0f9f3',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#e8f5e8',
   },
   productDetails: {
     flex: 1,
   },
   productName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2d3436',
+    lineHeight: 20,
   },
   productScientific: {
-    fontSize: 12,
+    fontSize: 13,
     fontStyle: 'italic',
-    color: '#666',
+    color: '#636e72',
+    marginTop: 2,
   },
   productMetaInfo: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
+    marginTop: 6,
   },
   metaInfoItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 12,
+    marginRight: 16,
   },
   metaInfoText: {
     fontSize: 12,
     color: '#2196F3',
     marginLeft: 4,
+    fontWeight: '500',
   },
   stockContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   stockText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#2d3436',
   },
   lowStockText: {
     color: '#FF9800',
   },
   thresholdText: {
     fontSize: 12,
-    color: '#666',
+    color: '#636e72',
     marginTop: 4,
+    fontWeight: '500',
   },
   priceText: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '700',
     color: '#4CAF50',
   },
   discountText: {
     fontSize: 12,
     color: '#f44336',
     marginTop: 4,
+    fontWeight: '600',
   },
   statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   statusText: {
-    fontSize: 10,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
     color: '#fff',
   },
   actionsContainer: {
@@ -976,88 +1116,154 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   actionButton: {
-    padding: 6,
-    borderRadius: 6,
-    backgroundColor: '#f5f5f5',
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    ...Platform.select({
+      web: { boxShadow: '0px 1px 2px rgba(0, 0, 0, 0.05)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+        elevation: 1,
+      }
+    })
   },
   emptyContainer: {
     alignItems: 'center',
-    paddingVertical: 60,
+    paddingVertical: 80,
     paddingHorizontal: 32,
   },
   emptyText: {
-    fontSize: 16,
-    color: '#666',
+    fontSize: 18,
+    color: '#636e72',
     textAlign: 'center',
-    marginTop: 16,
+    marginTop: 20,
+    fontWeight: '500',
   },
   clearFiltersText: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#4CAF50',
-    marginTop: 12,
+    marginTop: 16,
+    fontWeight: '600',
   },
   // Quick Edit Modal
   quickEditOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   quickEditModal: {
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 24,
-    width: '80%',
+    borderRadius: 20,
+    padding: 28,
+    width: '85%',
+    maxWidth: 400,
+    ...Platform.select({
+      web: { boxShadow: '0px 10px 20px rgba(0, 0, 0, 0.3)' },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        elevation: 10,
+      }
+    })
   },
   quickEditTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#333',
+    color: '#2d3436',
     textAlign: 'center',
     marginBottom: 8,
   },
   quickEditProduct: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 16,
+    color: '#636e72',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: 24,
+    fontWeight: '500',
   },
   quickEditInput: {
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    marginBottom: 20,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    fontSize: 18,
+    marginBottom: 24,
     textAlign: 'center',
+    fontWeight: '600',
   },
   quickEditActions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 16,
   },
   quickEditCancel: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
     borderColor: '#e0e0e0',
     alignItems: 'center',
   },
   quickEditCancelText: {
     fontSize: 16,
-    color: '#666',
+    color: '#636e72',
+    fontWeight: '600',
   },
   quickEditSave: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 16,
+    borderRadius: 12,
     backgroundColor: '#4CAF50',
     alignItems: 'center',
+    ...Platform.select({
+      web: { boxShadow: '0px 2px 4px rgba(76, 175, 80, 0.2)' },
+      default: {
+        shadowColor: '#4CAF50',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+        elevation: 3,
+      }
+    })
   },
   quickEditSaveText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#fff',
   },
 });
+
+InventoryTable.propTypes = {
+  inventory: PropTypes.array,
+  isLoading: PropTypes.bool,
+  onRefresh: PropTypes.func,
+  onEditProduct: PropTypes.func,
+  onDeleteProduct: PropTypes.func,
+  onUpdateStock: PropTypes.func,
+  onProductPress: PropTypes.func,
+  refreshing: PropTypes.bool,
+  businessId: PropTypes.string,
+  navigation: PropTypes.object,
+};
+
+InventoryTable.defaultProps = {
+  inventory: [],
+  isLoading: false,
+  onRefresh: () => {},
+  onEditProduct: () => {},
+  onDeleteProduct: () => {},
+  onUpdateStock: () => {},
+  onProductPress: () => {},
+  refreshing: false,
+  businessId: null,
+  navigation: null,
+};
+
+export default InventoryTable;

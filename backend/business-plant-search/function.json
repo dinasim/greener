@@ -5,8 +5,8 @@
         "type": "httpTrigger",
         "direction": "in",
         "name": "req",
-        "methods": ["get", "options"],
-        "route": "business/plants/search"
+        "methods": ["get", "post", "options"],
+        "route": "business-plant-search"
       },
       {
         "type": "http",

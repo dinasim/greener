@@ -1,4 +1,4 @@
-// Business/BusinessNavigation.js - CORRECTED VERSION WITH ALL EXISTING SCREENS
+// Business/BusinessNavigation.js - UPDATED VERSION
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -8,11 +8,11 @@ import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import BusinessWelcomeScreen from './BusinessScreens/BusinessWelcomeScreen';
 import BusinessSignUpScreen from './BusinessScreens/BusinessSignUpScreen';
 import BusinessSignInScreen from './BusinessScreens/BusinessSignInScreen';
+import BusinessInventoryChoiceScreen from './BusinessScreens/BusinessInventoryChoiceScreen';
 import BusinessInventoryScreen from './BusinessScreens/BusinessInventoryScreen';
 import BusinessHomeScreen from './BusinessScreens/BusinessHomeScreen';
 import BusinessProfileScreen from './BusinessScreens/BusinessProfileScreen';
 import BusinessOrdersScreen from './BusinessScreens/BusinessOrdersScreen';
-import BusinessAnalyticsScreen from './BusinessScreens/BusinessAnalyticsScreen';
 import BusinessSettingsScreen from './BusinessScreens/BusinessSettingsScreen';
 import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import CreateOrderScreen from './BusinessScreens/CreateOrderScreen';
@@ -21,8 +21,18 @@ import WateringChecklistScreen from './BusinessScreens/WateringChecklistScreen';
 import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
-import PlantCareForumScreen from '../screens/PlantCareForumScreen';
 import CustomerListScreen from './BusinessScreens/CustomerListScreen';
+import PlantCareForumScreen from '../screens/PlantCareForumScreen';
+
+// Import existing screens
+import BusinessWeatherScreen from './BusinessScreens/BusinessWeatherScreen';
+import BusinessCustomersScreen from './BusinessScreens/BusinessCustomersScreen';
+
+// Import the missing screens that exist but weren't imported
+import WateringRouteScreen from './BusinessScreens/WateringRouteScreen';
+import BusinessNotificationsScreen from './BusinessScreens/BusinessNotificationsScreen';
+import BusinessInsightsScreen from './BusinessScreens/BusinessInsightsScreen';
+
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
@@ -41,12 +51,12 @@ const BusinessTabs = () => {
           } else if (route.name === 'BusinessInventory') {
             iconName = 'inventory';
           } else if (route.name === 'BusinessOrders') {
-            iconName = 'receipt';
+            iconName = 'receipt-long'; // FIXED: Changed from 'receipt' to valid icon
           } else if (route.name === 'BusinessProfile') {
             iconName = 'person';
           } else if (route.name === 'WateringChecklist') {
-            iconName = 'water-drop';
-            iconType = 'MaterialCommunityIcons';
+            iconName = 'water-drop'; // FIXED: Changed to valid icon
+            iconType = 'MaterialIcons';
           }
 
           const IconComponent = iconType === 'MaterialIcons' ? MaterialIcons : MaterialCommunityIcons;
@@ -98,7 +108,7 @@ const BusinessTabs = () => {
   );
 };
 
-// Main Business Stack Navigator
+// Main Business Stack Navigator - UPDATED WITH NEW FLOW
 const BusinessNavigation = () => {
   return (
     <Stack.Navigator
@@ -123,10 +133,22 @@ const BusinessNavigation = () => {
         component={BusinessSignInScreen}
       />
       
+      {/* Post-signup choice screen */}
+      <Stack.Screen 
+        name="BusinessInventoryChoiceScreen" 
+        component={BusinessInventoryChoiceScreen}
+        options={{ title: 'Setup Your Business' }}
+      />
+      
       {/* Setup Flow */}
       <Stack.Screen 
         name="BusinessInventoryScreen" 
         component={BusinessInventoryScreen}
+      />
+      <Stack.Screen 
+        name="BusinessInventorySetupScreen" 
+        component={BusinessInventoryScreen}
+        options={{ title: 'Setup Inventory' }}
       />
       
       {/* Main App Flow */}
@@ -139,19 +161,26 @@ const BusinessNavigation = () => {
         component={BusinessTabs}
       />
       
-      {/* Individual Screens */}
+      {/* FIXED: All previously missing screens are now properly defined */}
       <Stack.Screen 
-        name="BusinessAnalyticsScreen" 
-        component={BusinessAnalyticsScreen} 
-        options={{ title: 'Analytics' }} 
+        name="BusinessOrdersScreen" 
+        component={BusinessOrdersScreen} 
+        options={{ title: 'Orders' }} 
       />
+      <Stack.Screen 
+        name="BusinessProfileScreen" 
+        component={BusinessProfileScreen} 
+        options={{ title: 'Business Profile' }} 
+      />
+      
+      {/* Individual Screens */}
       <Stack.Screen 
         name="CustomerListScreen" 
         component={CustomerListScreen}
         options={{ title: 'Customers' }}
       />
       
-      {/* Watering & Plant Care Screens - ALL EXISTING */}
+      {/* Watering & Plant Care Screens */}
       <Stack.Screen 
         name="WateringChecklistScreen" 
         component={WateringChecklistScreen}
@@ -162,8 +191,13 @@ const BusinessNavigation = () => {
         component={GPSWateringNavigator}
         options={{ title: 'GPS Navigation' }}
       />
+      <Stack.Screen 
+        name="WateringRouteScreen" 
+        component={WateringRouteScreen}
+        options={{ title: 'Watering Routes' }}
+      />
       
-      {/* Notification Screens - EXISTING AND NEW */}
+      {/* Notification Screens */}
       <Stack.Screen 
         name="NotificationCenterScreen" 
         component={NotificationCenterScreen}
@@ -174,6 +208,25 @@ const BusinessNavigation = () => {
         component={NotificationSettingsScreen}
         options={{ title: 'Notification Settings' }}
       />
+      <Stack.Screen 
+        name="BusinessNotificationsScreen" 
+        component={BusinessNotificationsScreen}
+        options={{ title: 'Business Notifications' }}
+      />
+      
+      {/* Forum Screens - FIXED: Added missing ForumTopicDetail */}
+      <Stack.Screen 
+        name="PlantCareForumScreen" 
+        component={PlantCareForumScreen}
+        options={{ title: 'Plant Care Forum' }}
+      />
+      <Stack.Screen 
+        name="ForumTopicDetail" 
+        component={require('../screens/ForumTopicDetail').default}
+        options={{ title: 'Forum Topic' }}
+      />
+      
+      {/* Other Screens */}
       <Stack.Screen 
         name="BusinessProductDetailScreen" 
         component={BusinessProductDetailScreen}
@@ -207,9 +260,19 @@ const BusinessNavigation = () => {
         initialParams={{ detailMode: true }}
       />
       <Stack.Screen 
-        name="PlantCareForumScreen" 
-        component={PlantCareForumScreen}
-        options={{ title: 'Plant Care Forum' }}
+        name="BusinessWeatherScreen" 
+        component={BusinessWeatherScreen}
+        options={{ title: 'Weather' }}
+      />
+      <Stack.Screen 
+        name="BusinessCustomersScreen" 
+        component={BusinessCustomersScreen}
+        options={{ title: 'Customers' }}
+      />
+      <Stack.Screen 
+        name="BusinessInsightsScreen" 
+        component={BusinessInsightsScreen}
+        options={{ title: 'Business Insights' }}
       />
     </Stack.Navigator>
   );

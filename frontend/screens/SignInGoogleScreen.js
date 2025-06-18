@@ -115,6 +115,7 @@ export default function SignInGoogleScreen({ navigation }) {
               // Only store minimal data locally for authentication
               await AsyncStorage.setItem('userEmail', userInfo.email);
               await AsyncStorage.setItem('currentUserId', userInfo.email);
+              await AsyncStorage.setItem('persona', 'consumer'); // Set persona for AI assistant
 
               const userData = {
                 email: userInfo.email,
@@ -127,10 +128,30 @@ export default function SignInGoogleScreen({ navigation }) {
                 expoPushToken: null,
                 webPushSubscription: webPushToken || formData.webPushSubscription || null,
                 fcmToken: fcmToken || null,
-                location: formData.userLocation,
+                // FIXED: Ensure location data includes coordinates and address
+                location: formData.userLocation ? {
+                  city: formData.userLocation.city || '',
+                  street: formData.userLocation.street || '',
+                  houseNumber: formData.userLocation.houseNumber || '',
+                  latitude: formData.userLocation.latitude || null,
+                  longitude: formData.userLocation.longitude || null,
+                  formattedAddress: formData.userLocation.formattedAddress || '',
+                  country: formData.userLocation.country || 'Israel',
+                  postalCode: formData.userLocation.postalCode || ''
+                } : null,
               };
 
-              console.log("📦 Sending user data:", userData);
+              console.log("📦 Sending user data:", {
+                ...userData,
+                webPushSubscription: userData.webPushSubscription?.substring(0, 20) + '...' || null,
+                fcmToken: userData.fcmToken?.substring(0, 20) + '...' || null,
+                location: userData.location ? {
+                  city: userData.location.city,
+                  hasCoordinates: !!(userData.location.latitude && userData.location.longitude),
+                  coordinates: userData.location.latitude && userData.location.longitude ? 
+                    `${userData.location.latitude.toFixed(4)}, ${userData.location.longitude.toFixed(4)}` : 'None'
+                } : 'No location'
+              });
               saveUserToBackend(userData);
             } else {
               setIsLoading(false);
@@ -184,10 +205,63 @@ export default function SignInGoogleScreen({ navigation }) {
 
   async function saveUserToBackend(userData) {
     try {
-      const response = await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
+      // FIXED: Use the correct consumer registration endpoint instead of saveUser
+      // This prevents creating duplicate/incorrect user tables
+      const registrationData = {
+        // Required fields for consumer registration
+        username: userData.name?.replace(/\s+/g, '').toLowerCase() || userData.email.split('@')[0],
+        email: userData.email,
+        name: userData.name || userData.email.split('@')[0],
+        
+        // Optional consumer fields from form context
+        intersted: userData.intersted || formData.intersted || '',
+        animals: userData.animals || formData.animals || '',
+        kids: userData.kids || formData.kids || '',
+        
+        // Location data
+        location: userData.location,
+        plantLocations: userData.plantLocations || formData.plantLocations || [],
+        
+        // Notification tokens
+        fcmToken: userData.fcmToken,
+        webPushSubscription: userData.webPushSubscription,
+        expoPushToken: null, // deprecated
+        
+        // Notification settings
+        notificationSettings: {
+          enabled: true,
+          wateringReminders: true,
+          marketplaceUpdates: false,
+          platform: Platform.OS
+        },
+        
+        // User type and metadata
+        type: 'consumer',
+        platform: Platform.OS,
+        googleId: userData.googleId,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        
+        // Generate a secure password for Google users (they won't use it for login)
+        password: Math.random().toString(36).slice(-16) + Date.now().toString(36)
+      };
+
+      console.log("📦 Using consumer registration endpoint with data:", {
+        ...registrationData,
+        password: '[HIDDEN]',
+        webPushSubscription: registrationData.webPushSubscription?.substring(0, 20) + '...' || null,
+        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null,
+        location: registrationData.location ? {
+          city: registrationData.location.city,
+          hasCoordinates: !!(registrationData.location.latitude && registrationData.location.longitude)
+        } : 'No location'
+      });
+
+      // FIXED: Use registerUser endpoint for consumers, not saveUser
+      const response = await fetch('https://usersfunctions.azurewebsites.net/api/registerUser', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(userData),
+        body: JSON.stringify(registrationData),
       });
 
       const text = await response.text();
@@ -195,13 +269,15 @@ export default function SignInGoogleScreen({ navigation }) {
 
       if (!response.ok) {
         setIsLoading(false);
-        setAuthError(data?.error || 'Error saving your profile.');
+        setAuthError(data?.error || 'Error creating your account.');
         return;
       }
 
+      console.log('✅ Consumer registration successful via Google sign-in');
       setIsLoading(false);
       navigation.navigate('Home');
     } catch (error) {
+      console.error('❌ Registration error:', error);
       setIsLoading(false);
       setAuthError('Server connection error.');
     }

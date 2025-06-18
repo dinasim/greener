@@ -44,6 +44,9 @@ export default function ProductEditModal({
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
+  // Accessibility fix
+  const modalContentRef = useRef(null);
+
   // Initialize form data when product changes
   useEffect(() => {
     if (product && visible) {
@@ -96,16 +99,41 @@ export default function ProductEditModal({
           { 
             text: 'Discard Changes', 
             style: 'destructive',
-            onPress: performClose 
+            onPress: () => {
+              // Accessibility fix: blur focus if inside modal before closing (web only)
+              if (typeof document !== 'undefined') {
+                const active = document.activeElement;
+                const modal = document.querySelector('[role="dialog"]');
+                if (active && modal && modal.contains(active)) {
+                  active.blur();
+                }
+              }
+              performClose();
+            }
           }
         ]
       );
     } else {
+      // Accessibility fix: blur focus if inside modal before closing (web only)
+      if (typeof document !== 'undefined') {
+        const active = document.activeElement;
+        const modal = document.querySelector('[role="dialog"]');
+        if (active && modal && modal.contains(active)) {
+          active.blur();
+        }
+      }
       performClose();
     }
   };
 
   const performClose = () => {
+    // Accessibility fix: blur focus if inside modal before closing (web only)
+    if (typeof document !== 'undefined' && modalContentRef.current) {
+      const active = document.activeElement;
+      if (active && modalContentRef.current.contains(active)) {
+        active.blur();
+      }
+    }
     Animated.parallel([
       Animated.timing(slideAnim, {
         toValue: 300,
@@ -293,6 +321,7 @@ export default function ProductEditModal({
           style={styles.keyboardAvoid}
         >
           <Animated.View 
+            ref={modalContentRef} // Attach ref here
             style={[
               styles.modalContainer,
               {

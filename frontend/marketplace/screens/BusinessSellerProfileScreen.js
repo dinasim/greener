@@ -75,7 +75,32 @@ const BusinessSellerProfileScreen = () => {
       
       // FIXED: Use the business profile API endpoint with better error handling
       try {
-        const data = await marketplaceApi.fetchBusinessProfile(businessId);
+        const userEmail = await AsyncStorage.getItem('userEmail');
+        const token = await AsyncStorage.getItem('googleAuthToken');
+        
+        const headers = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (userEmail) {
+          headers['X-User-Email'] = userEmail;
+        }
+        
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        // FIXED: Use correct deployed route from function.json
+        const businessResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/business/${businessId}/profile`, {
+          method: 'GET',
+          headers,
+        });
+        
+        if (!businessResponse.ok) {
+          throw new Error(`HTTP error! Status: ${businessResponse.status}`);
+        }
+        
+        const data = await businessResponse.json();
         
         if (data && data.business) {
           console.log("Business profile loaded successfully");
@@ -598,7 +623,7 @@ const BusinessSellerProfileScreen = () => {
     }
   };
 
-  // Render business hours
+  // Render business hours with improved web styling
   const renderBusinessHours = () => {
     if (!business?.businessHours || !Array.isArray(business.businessHours) || business.businessHours.length === 0) {
       return (
@@ -617,7 +642,7 @@ const BusinessSellerProfileScreen = () => {
     });
     
     return (
-      <View style={styles.sectionContent}>
+      <View style={styles.businessHoursContainer}>
         {sortedHours.map((hours, index) => (
           <View 
             key={hours.day} 
@@ -627,18 +652,27 @@ const BusinessSellerProfileScreen = () => {
               openHours?.day === hours.day && styles.todayRow
             ]}
           >
-            <Text style={[
-              styles.dayText,
-              openHours?.day === hours.day && styles.todayText
-            ]}>
-              {hours.day}
-            </Text>
+            <View style={styles.dayContainer}>
+              <Text style={[
+                styles.dayText,
+                openHours?.day === hours.day && styles.todayText
+              ]}>
+                {hours.day}
+              </Text>
+              {openHours?.day === hours.day && (
+                <View style={styles.todayIndicator} />
+              )}
+            </View>
             
-            {hours.isClosed ? (
-              <Text style={styles.closedText}>Closed</Text>
-            ) : (
-              <Text style={styles.hoursText}>{hours.open} - {hours.close}</Text>
-            )}
+            <View style={styles.timeContainer}>
+              {hours.isClosed ? (
+                <Text style={styles.closedText}>Closed</Text>
+              ) : (
+                <Text style={styles.hoursText}>
+                  {hours.open} - {hours.close}
+                </Text>
+              )}
+            </View>
           </View>
         ))}
       </View>
@@ -1378,32 +1412,64 @@ const styles = StyleSheet.create({
   hoursRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    minHeight: 48,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
   },
   evenRow: {
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fafafa',
   },
   todayRow: {
-    backgroundColor: '#f0f9f3',
+    backgroundColor: '#e8f5e8',
+    borderLeftWidth: 4,
+    borderLeftColor: '#4CAF50',
+  },
+  dayContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
   },
   dayText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '500',
     color: '#333',
+    minWidth: 80,
   },
   todayText: {
-    fontWeight: 'bold',
-    color: '#4CAF50',
+    fontWeight: '700',
+    color: '#2e7d32',
+  },
+  todayIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginLeft: 8,
+  },
+  timeContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
   },
   hoursText: {
     fontSize: 14,
     color: '#333',
+    fontWeight: '500',
+    textAlign: 'right',
+    fontFamily: Platform.OS === 'web' ? 'monospace' : 'System',
   },
   closedText: {
     fontSize: 14,
-    color: '#f44336',
-    fontWeight: '500',
+    color: '#d32f2f',
+    fontWeight: '600',
+    textAlign: 'right',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   noDataText: {
     fontSize: 14,
@@ -1471,6 +1537,48 @@ const styles = StyleSheet.create({
   },
   plantGrid: {
     paddingBottom: 80,
+  },
+  businessHoursContainer: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 0,
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    overflow: 'hidden',
+  },
+  dayContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+  },
+  todayIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#4CAF50',
+    marginLeft: 8,
+  },
+  timeContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+  },
+  hoursText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '500',
+    textAlign: 'right',
+    fontFamily: Platform.OS === 'web' ? 'monospace' : 'System',
+  },
+  closedText: {
+    fontSize: 14,
+    color: '#d32f2f',
+    fontWeight: '600',
+    textAlign: 'right',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
 });
 

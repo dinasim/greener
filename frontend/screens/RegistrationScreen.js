@@ -95,25 +95,26 @@ export default function RegistrationScreen({ navigation }) {
         updateFormData('fcmToken', fcmToken);
       }
 
-      console.log('🔔 Notification tokens obtained:', {
-        platform: Platform.OS,
-        webPushToken: webPushToken?.substring(0, 20) + '...' || null,
-        fcmToken: fcmToken?.substring(0, 20) + '...' || null
-      });
-
       // Combine registration fields and context fields
       const registrationData = {
-        username,
-        password,
-        email,
-        // The following are pulled from your FormContext
+        username: username || '',
+        password: password || '',
+        email: email || '',
         name: formData.name || '',
         intersted: formData.intersted || '',
         animals: formData.animals || '',
         kids: formData.kids || '',
-        location: formData.userLocation || null,
+        location: formData.userLocation ? {
+          city: formData.userLocation.city || '',
+          street: formData.userLocation.street || '',
+          houseNumber: formData.userLocation.houseNumber || '',
+          latitude: formData.userLocation.latitude || null,
+          longitude: formData.userLocation.longitude || null,
+          formattedAddress: formData.userLocation.formattedAddress || '',
+          country: formData.userLocation.country || 'Israel',
+          postalCode: formData.userLocation.postalCode || ''
+        } : null,
         plantLocations: formData.plantLocations || [],
-        // Add notification tokens
         expoPushToken: null, // deprecated
         webPushSubscription: webPushToken || formData.webPushSubscription || null,
         fcmToken: fcmToken || formData.fcmToken || null,
@@ -122,14 +123,24 @@ export default function RegistrationScreen({ navigation }) {
           wateringReminders: true,
           marketplaceUpdates: false,
           platform: Platform.OS
-        }
+        },
+        type: 'consumer',
+        platform: Platform.OS,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
 
       console.log('📦 Sending registration data:', {
         ...registrationData,
         password: '[HIDDEN]',
         webPushSubscription: registrationData.webPushSubscription?.substring(0, 20) + '...' || null,
-        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null
+        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null,
+        location: registrationData.location ? {
+          city: registrationData.location.city,
+          hasCoordinates: !!(registrationData.location.latitude && registrationData.location.longitude),
+          coordinates: registrationData.location.latitude && registrationData.location.longitude ? 
+            `${registrationData.location.latitude.toFixed(4)}, ${registrationData.location.longitude.toFixed(4)}` : 'None'
+        } : 'No location'
       });
 
       const res = await fetch(REGISTER_API, {
@@ -142,17 +153,7 @@ export default function RegistrationScreen({ navigation }) {
       
       if (!res.ok) throw new Error(data.error || 'Registration failed');
 
-      // Save important data to AsyncStorage for marketplace integration
-      await AsyncStorage.setItem('userEmail', email);
-      await AsyncStorage.setItem('userName', username);
-      
-      if (webPushToken) {
-        await AsyncStorage.setItem('webPushToken', webPushToken);
-      }
-      if (fcmToken) {
-        await AsyncStorage.setItem('fcmToken', fcmToken);
-      }
-
+      // Do not save any user data to AsyncStorage (except session token if needed)
       console.log('✅ Registration successful');
       setSuccessMsg('Registration successful! You can now log in.');
       setLoading(false);

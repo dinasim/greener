@@ -19,11 +19,23 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return handle_options_request()
     
     try:
-        # Get search query from parameters
+        # Get search query from either query parameters or POST body
         query = req.params.get('q')
         
-        if not query or len(query) < 2:
+        # If no query parameter, try to get from POST body
+        if not query and req.method == 'POST':
+            try:
+                body = req.get_json()
+                if body:
+                    query = body.get('query') or body.get('q')
+            except:
+                pass
+        
+        if not query or len(query.strip()) < 2:
             return create_error_response("Search query must be at least 2 characters", 400)
+        
+        query = query.strip()
+        logging.info(f"Searching for plants with query: '{query}'")
         
         # Connect to main database (GreenerDB) and Plants container
         client = CosmosClient(COSMOS_URI, credential=COSMOS_KEY)

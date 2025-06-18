@@ -39,7 +39,7 @@ const ActionButtons = ({
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
-                <MaterialIcons name="shopping-cart" size={24} color="#fff" />
+                <MaterialIcons name="cart" size={24} color="#fff" />
                 <Text style={styles.orderButtonText}>Order Now</Text>
               </>
             )}

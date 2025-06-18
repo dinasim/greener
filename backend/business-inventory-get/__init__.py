@@ -2,17 +2,12 @@
 import logging
 import json
 import azure.functions as func
-from azure.cosmos import CosmosClient
-import os
 
 # Import standardized helpers
 import sys
 sys.path.append('..')
 from http_helpers import add_cors_headers, get_user_id_from_request, create_success_response, create_error_response
-
-# Database connection details for marketplace
-MARKETPLACE_CONNECTION_STRING = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-MARKETPLACE_DATABASE_NAME = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+from db_helpers import get_container
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business inventory get function processed a request.')
@@ -23,7 +18,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         return add_cors_headers(response)
     
     try:
-        # FIXED: Get business ID from route params first, then fallback to headers
+        # Get business ID from route params first, then fallback to headers
         business_id = req.route_params.get('businessId') or get_user_id_from_request(req)
         
         if not business_id:
@@ -31,24 +26,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         logging.info(f"Getting inventory for business: {business_id}")
         
-        # Connect to marketplace database and inventory container
+        # FIXED: Use standardized container access
         try:
-            logging.info("Connecting to marketplace database...")
+            inventory_container = get_container("inventory")
             
-            # Parse connection string
-            params = dict(param.split('=', 1) for param in MARKETPLACE_CONNECTION_STRING.split(';'))
-            account_endpoint = params.get('AccountEndpoint')
-            account_key = params.get('AccountKey')
-            
-            if not account_endpoint or not account_key:
-                raise ValueError("Invalid marketplace connection string")
-            
-            # Create client and get container
-            client = CosmosClient(account_endpoint, credential=account_key)
-            database = client.get_database_client(MARKETPLACE_DATABASE_NAME)
-            inventory_container = database.get_container_client("inventory")
-            
-            # Query inventory by businessId (which is the partition key)
+            # Query inventory by businessId (partition key)
             query = "SELECT * FROM c WHERE c.businessId = @businessId ORDER BY c.addedAt DESC"
             parameters = [{"name": "@businessId", "value": business_id}]
             
@@ -63,7 +45,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             
             logging.info(f"Found {len(items)} inventory items for business {business_id}")
             
-            # FIXED: Format items for frontend with all required fields
+            # Format items for frontend with all required fields
             formatted_items = []
             for item in items:
                 # Process images
@@ -103,7 +85,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "lastUpdated": item.get("lastUpdated"),
                     "soldCount": item.get("soldCount", 0),
                     "viewCount": item.get("viewCount", 0),
-                    # FIXED: Image handling
+                    # Image handling
                     "mainImage": images[0] if images else None,
                     "image": images[0] if images else None,
                     "images": images,
@@ -116,7 +98,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 }
                 formatted_items.append(formatted_item)
             
-            # FIXED: Return inventory data with consistent structure
+            # Return inventory data with consistent structure
             response_data = {
                 "success": True,
                 "businessId": business_id,

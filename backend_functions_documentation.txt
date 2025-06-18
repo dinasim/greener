@@ -1,0 +1,793 @@
+# GREENER BACKEND - AZURE FUNCTIONS DOCUMENTATION
+# Generated: June 17, 2025
+# Base URL: https://usersfunctions.azurewebsites.net/api
+
+## AUTHENTICATION & USER MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: registeruser                                          │
+│ Route: /registeruser                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Register new users with email/password authentication │
+│ Database: GreenerDB.Users                                       │
+│ Partition Key: /id                                              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: loginuser                                             │
+│ Route: /loginuser                                               │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Authenticate users and return login tokens            │
+│ Database: GreenerDB.Users                                       │
+│ Features: bcrypt password hashing, session management          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: user-profile                                          │
+│ Route: /user-profile/{id}                                       │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Manage user profiles and personal information         │
+│ Database: GreenerDB.Users                                       │
+│ Features: Profile updates, user data retrieval                 │
+└─────────────────────────────────────────────────────────────────┘
+
+## PLANT MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: addUserPlant                                          │
+│ Route: /addUserPlant                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Add plants to user's personal collection              │
+│ Database: GreenerDB.userPlants                                  │
+│ Features: Gemini AI integration, plant data enrichment         │
+│ External APIs: Google Gemini, plantDetailsInJson               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: getalluserplants                                      │
+│ Route: /getalluserplants                                        │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve all plants for a specific user               │
+│ Database: GreenerDB.userPlants                                  │
+│ Query: Filter by email parameter                               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: getuserplantbyid                                      │
+│ Route: /getuserplantbyid                                        │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get specific plant details by ID                      │
+│ Database: GreenerDB.userPlants                                  │
+│ Features: Plant data normalization, care schedule              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: getUserPlantsByLocation                               │
+│ Route: /getUserPlantsByLocation                                 │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get plants filtered by user location                  │
+│ Database: GreenerDB.userPlants                                  │
+│ Query: Location-based plant filtering                          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: plantSearch                                           │
+│ Route: /plantSearch                                             │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Search plant database with fuzzy matching             │
+│ Database: GreenerDB.Plants                                      │
+│ Features: Full-text search, common/scientific name matching    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: plantDetailsInJson                                    │
+│ Route: /plantdetailsjson                                        │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Get detailed plant information with AI enrichment     │
+│ Database: GreenerDB.Plants                                      │
+│ Features: Gemini AI integration, auto data completion          │
+│ External APIs: Google Gemini                                   │
+└─────────────────────────────────────────────────────────────────┘
+
+## TASK & CARE MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: markTaskDone                                          │
+│ Route: /markTaskDone                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Mark plant care tasks as completed                    │
+│ Database: GreenerDB.userPlants                                  │
+│ Features: Schedule updates, next care date calculation         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: watering_checklist                                    │
+│ Route: /watering_checklist                                      │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Manage daily watering tasks and schedules             │
+│ Database: GreenerDB.userPlants                                  │
+│ Features: Daily checklist generation, watering tracking        │
+└─────────────────────────────────────────────────────────────────┘
+
+## MARKETPLACE FUNCTIONS
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: marketplace-products                                  │
+│ Route: /marketplace-products                                    │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Main marketplace product listing and management       │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Partition Key: /category                                        │
+│ Features: Product CRUD, image handling, location filtering     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: marketplace-products-specific                         │
+│ Route: /marketplace-products-specific                           │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get specific marketplace product details              │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Features: Detailed product view, seller information            │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: marketplace-products-wish                             │
+│ Route: /marketplace-products-wish                               │
+│ Methods: GET, POST, DELETE, OPTIONS                             │
+│ Purpose: Manage user wishlist functionality                    │
+│ Database: greener-marketplace-db.marketplace_wishlists         │
+│ Partition Key: /userId                                          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: products-create                                       │
+│ Route: /products-create                                         │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Create new marketplace product listings               │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Features: Image upload, location geocoding, validation         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: update-product                                        │
+│ Route: /update-product                                          │
+│ Methods: PUT, OPTIONS                                           │
+│ Purpose: Update existing marketplace products                  │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Features: Partial updates, image management                    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: delete-product                                        │
+│ Route: /delete-product                                          │
+│ Methods: DELETE, OPTIONS                                        │
+│ Purpose: Remove products from marketplace                      │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Features: Soft delete, status management                       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: mark-as-sold                                          │
+│ Route: /mark-as-sold                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Mark marketplace products as sold                     │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Features: Status updates, availability management              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: user-listings                                         │
+│ Route: /user-listings/{id}                                      │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get all listings for a specific user/seller           │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Query Parameters: status (active, sold, deleted, all)          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: user-wishlist                                         │
+│ Route: /user-wishlist                                           │
+│ Methods: GET, POST, DELETE, OPTIONS                             │
+│ Purpose: Manage user wishlist items                            │
+│ Database: greener-marketplace-db.marketplace_wishlists         │
+│ Features: Add/remove wishlist items, wishlist retrieval       │
+└─────────────────────────────────────────────────────────────────┘
+
+## LOCATION & MAPPING
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: nearby-products                                       │
+│ Route: /nearby-products                                         │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Find products within specified radius                 │
+│ Database: greener-marketplace-db.marketplace_plants            │
+│ Parameters: lat, lon, radius, category, sortBy                 │
+│ Features: Haversine distance calculation, location filtering   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: get_nearby_businesses                                 │
+│ Route: /get_nearby_businesses                                   │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Find businesses within specified radius               │
+│ Database: greener-marketplace-db.business_users                │
+│ Parameters: lat, lon, radius, businessType                     │
+│ Features: Business location search, type filtering             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: geocode                                               │
+│ Route: /geocode                                                 │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Convert addresses to coordinates (cost-optimized)     │
+│ Features: Caching, rate limiting, Azure Maps integration       │
+│ External APIs: Azure Maps (greener-marketplace-maps account)   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: reverse-geocode                                       │
+│ Route: /reverse-geocode                                         │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Convert coordinates to addresses                      │
+│ Features: Caching, rate limiting, Azure Maps integration       │
+│ External APIs: Azure Maps (greener-marketplace-maps account)   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: maps-config                                           │
+│ Route: /maps-config                                             │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Provide Azure Maps API key for client applications    │
+│ Features: Cost-optimized key distribution                      │
+│ Environment: AZURE_MAPS_MARKETPLACE_KEY                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: getUserLocations                                      │
+│ Route: /getuserlocations                                        │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get all locations associated with a user              │
+│ Database: GreenerDB.userPlantsLocation                          │
+│ Query Parameter: email                                          │
+└─────────────────────────────────────────────────────────────────┘
+
+## BUSINESS MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-profile                                      │
+│ Route: /business-profile                                        │
+│ Methods: GET, POST, PUT, OPTIONS                                │
+│ Purpose: Manage business profiles and information              │
+│ Database: greener-marketplace-db.business_users                │
+│ Partition Key: /id                                              │
+│ Features: Business registration, profile updates               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: get_business_profile                                  │
+│ Route: /get_business_profile                                    │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve business profile information                 │
+│ Database: greener-marketplace-db.business_users                │
+│ Features: Public profile access, business details              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: get-all-businesses                                    │
+│ Route: /get-all-businesses                                      │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: List all active businesses for marketplace            │
+│ Database: greener-marketplace-db.business_users                │
+│ Features: Public business directory                            │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-dashboard                                    │
+│ Route: /business-dashboard                                      │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Business analytics and dashboard data                 │
+│ Database: greener-marketplace-db (multiple containers)         │
+│ Features: Revenue metrics, order statistics, inventory stats   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-analytics                                    │
+│ Route: /business-analytics                                      │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Advanced business analytics and reporting             │
+│ Database: greener-marketplace-db (multiple containers)         │
+│ Features: Time-series data, trend analysis, performance KPIs   │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-reports                                      │
+│ Route: /business-reports                                        │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Generate business reports and exports                 │
+│ Database: greener-marketplace-db (multiple containers)         │
+│ Features: PDF generation, CSV exports, custom date ranges      │
+└─────────────────────────────────────────────────────────────────┘
+
+## BUSINESS INVENTORY MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-inventory-get                                │
+│ Route: /business-inventory-get                                  │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve business inventory items                     │
+│ Database: greener-marketplace-db.inventory                     │
+│ Partition Key: /businessId                                      │
+│ Features: Inventory listing, stock levels, product details     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-inventory-create                             │
+│ Route: /business-inventory-create                               │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Add new items to business inventory                   │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Product validation, image upload, category assignment│
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-inventory-update                             │
+│ Route: /business-inventory-update                               │
+│ Methods: PUT, PATCH, OPTIONS                                    │
+│ Purpose: Update existing inventory items                       │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Partial updates, stock management, price updates     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-inventory-bulk                               │
+│ Route: /business-inventory-bulk                                 │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Bulk operations on inventory items                    │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Bulk delete, bulk update, batch status changes       │
+│ Actions: delete, update, activate, deactivate                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-inventory-publish                            │
+│ Route: /business-inventory-publish                              │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Publish inventory items to marketplace                │
+│ Database: greener-marketplace-db (inventory + marketplace)     │
+│ Features: Marketplace integration, visibility controls         │
+└─────────────────────────────────────────────────────────────────┘
+
+## BUSINESS ORDER MANAGEMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-orders                                       │
+│ Route: /business-orders                                         │
+│ Methods: GET, POST, PATCH, OPTIONS                              │
+│ Purpose: Manage business orders and status updates             │
+│ Database: greener-marketplace-db.orders                        │
+│ Partition Key: /businessId                                      │
+│ Features: Order CRUD, status management, customer communication│
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-orders-get                                   │
+│ Route: /business-orders-get                                     │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Retrieve business orders with filtering               │
+│ Database: greener-marketplace-db.orders                        │
+│ Parameters: status, limit, offset                              │
+│ Features: Order filtering, pagination, status-based queries    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-order-create                                 │
+│ Route: /business-order-create                                   │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Create new orders for pickup/delivery                 │
+│ Database: greener-marketplace-db.orders                        │
+│ Features: Order validation, confirmation numbers, notifications│
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-customers                                    │
+│ Route: /business-customers                                      │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Manage business customer relationships                │
+│ Database: greener-marketplace-db.business_customers            │
+│ Features: Customer profiles, order history, contact management │
+└─────────────────────────────────────────────────────────────────┘
+
+## BUSINESS PLANT CARE & WATERING
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-watering-checklist                           │
+│ Route: /business-watering-checklist                             │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Manage business plant watering schedules              │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Daily watering lists, schedule tracking              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-watering-route                               │
+│ Route: /business-watering-route                                 │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Generate optimized watering routes for businesses     │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Route optimization, GPS coordinates, time estimation │
+│ Algorithm: Nearest neighbor for GPS, section/aisle for indoor  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: optimize_watering_route                               │
+│ Route: /optimize_watering_route                                 │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Advanced route optimization for plant watering        │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Multiple optimization algorithms, distance calculation│
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-mark-watered                                 │
+│ Route: /business-mark-watered                                   │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Mark business plants as watered                       │
+│ Database: greener-marketplace-db.inventory                     │
+│ Features: Schedule updates, GPS tracking, method logging       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-plant-search                                 │
+│ Route: /business-plant-search                                   │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Search plant database for business use                │
+│ Database: GreenerDB.Plants                                      │
+│ Features: Business-specific plant search, care information     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-weather-get                                  │
+│ Route: /business-weather-get                                    │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get weather data for business locations               │
+│ External APIs: OpenWeatherMap (free tier)                      │
+│ Features: Location-based weather, caching, care recommendations│
+└─────────────────────────────────────────────────────────────────┘
+
+## MESSAGING & COMMUNICATION
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: signalr-negotiate                                     │
+│ Route: /signalr-negotiate                                       │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: SignalR connection negotiation for real-time messaging│
+│ Features: Real-time communication setup, connection management │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: conversations                                         │
+│ Route: /conversations                                           │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Manage chat conversations between users               │
+│ Database: greener-marketplace-db.marketplace_conversations     │
+│ Partition Key: /id                                              │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: get-messages                                          │
+│ Route: /get-messages                                            │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve messages for specific conversations          │
+│ Database: greener-marketplace-db.marketplace_messages          │
+│ Partition Key: /conversationId                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: send-message                                          │
+│ Route: /send-message                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Send new messages in conversations                    │
+│ Database: greener-marketplace-db.marketplace_messages          │
+│ Features: Real-time delivery, message validation               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: read-message                                          │
+│ Route: /read-message                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Mark messages as read                                 │
+│ Database: greener-marketplace-db.marketplace_messages          │
+│ Features: Read status tracking, notification management        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: create-chat                                           │
+│ Route: /create-chat                                             │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Initialize new chat conversations                     │
+│ Database: greener-marketplace-db.marketplace_conversations     │
+│ Features: Conversation setup, participant management           │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: chat-history                                          │
+│ Route: /chat-history                                            │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve chat conversation history                    │
+│ Database: greener-marketplace-db.marketplace_conversations     │
+│ Features: Message pagination, conversation metadata            │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: typing-indicator                                      │
+│ Route: /typing-indicator                                        │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Handle typing indicators in real-time chat            │
+│ Features: Real-time typing status, SignalR integration         │
+└─────────────────────────────────────────────────────────────────┘
+
+## REVIEWS & RATINGS
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: reviews-get                                           │
+│ Route: /reviews-get                                             │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve reviews for products/sellers                 │
+│ Database: greener-marketplace-db.marketplace_reviews           │
+│ Partition Key: /sellerId                                        │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: reviews-submit                                        │
+│ Route: /reviews-submit                                          │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Submit new product/seller reviews                     │
+│ Database: greener-marketplace-db.marketplace_reviews           │
+│ Features: Rating validation, review moderation                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: reviews-delete                                        │
+│ Route: /reviews-delete                                          │
+│ Methods: DELETE, OPTIONS                                        │
+│ Purpose: Remove user reviews                                   │
+│ Database: greener-marketplace-db.marketplace_reviews           │
+│ Features: Review deletion, moderation support                  │
+└─────────────────────────────────────────────────────────────────┘
+
+## NOTIFICATIONS & ALERTS
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: get_pending_notifications                             │
+│ Route: /get_pending_notifications                               │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve pending notifications for users              │
+│ Database: GreenerDB.Users + notification containers            │
+│ Features: Notification queuing, status tracking                │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: mark_notification_read                                │
+│ Route: /mark_notification_read                                  │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Mark notifications as read                            │
+│ Database: Notification containers                              │
+│ Features: Read status management, notification cleanup         │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: notification_settings                                 │
+│ Route: /notification_settings                                   │
+│ Methods: GET, POST, PUT, DELETE, OPTIONS                        │
+│ Purpose: Manage user notification preferences                  │
+│ Database: Custom notification settings container               │
+│ Partition Key: /businessId                                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: business-notification-settings                        │
+│ Route: /business-notification-settings                          │
+│ Methods: GET, POST, PUT, OPTIONS                                │
+│ Purpose: Manage business-specific notification settings        │
+│ Database: greener-marketplace-db notification containers       │
+│ Features: Business alert preferences, notification types       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: registerWebPush                                       │
+│ Route: /registerWebPush                                         │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Register devices for web push notifications           │
+│ External Services: Azure Notification Hub                      │
+│ Database: GreenerDB.Users                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: register_device_token                                 │
+│ Route: /register_device_token                                   │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Register mobile device tokens for push notifications  │
+│ External Services: Firebase, Azure Notification Hub            │
+│ Database: GreenerDB.Users                                       │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: test_notification                                     │
+│ Route: /test_notification                                       │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Test notification delivery systems                    │
+│ Features: Notification testing, delivery verification          │
+└─────────────────────────────────────────────────────────────────┘
+
+## SCHEDULED FUNCTIONS & AUTOMATION
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: daily_watering_update                                 │
+│ Trigger: Timer (daily at 06:00 UTC)                            │
+│ Purpose: Update daily watering schedules and send reminders    │
+│ Database: GreenerDB.userPlants + business inventory            │
+│ Features: Automated schedule updates, weather integration      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: plantSupportReminders                                 │
+│ Trigger: Timer (daily)                                         │
+│ Purpose: Send plant care reminders to users                    │
+│ Database: GreenerDB.userPlants, GreenerDB.Users                │
+│ External Services: Firebase notifications                      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: send_watering_notifications                           │
+│ Trigger: Timer (configurable)                                  │
+│ Purpose: Send automated watering reminders                     │
+│ Database: Multiple containers                                  │
+│ External Services: Firebase, Azure Notification Hub            │
+└─────────────────────────────────────────────────────────────────┘
+
+## UTILITY & HELPER FUNCTIONS
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: upload-image                                          │
+│ Route: /upload-image                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Handle image uploads for products and profiles        │
+│ External Services: Azure Blob Storage                          │
+│ Features: Image validation, resizing, CDN integration          │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: uploadUserPlantPhoto                                  │
+│ Route: /uploadUserPlantPhoto                                    │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Upload photos for user plant collections              │
+│ External Services: Azure Blob Storage                          │
+│ Database: GreenerDB.userPlants                                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: speechToText                                          │
+│ Route: /speechtotext                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Convert audio to text for voice search                │
+│ External APIs: Azure Cognitive Services                        │
+│ Features: Multi-language support (Hebrew, English)             │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: identifyPlantPhoto                                    │
+│ Route: /identifyPlantPhoto                                      │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: AI-powered plant identification from photos           │
+│ External APIs: Google Gemini Vision                            │
+│ Features: Image analysis, species identification               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: diseaseCheck                                          │
+│ Route: /diseaseCheck                                            │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: AI plant disease detection and diagnosis              │
+│ External APIs: Google Gemini Vision                            │
+│ Features: Disease identification, treatment recommendations     │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: generate_plant_barcode                                │
+│ Route: /generate_plant_barcode                                  │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Generate QR codes for plant identification            │
+│ Features: QR code generation, plant linking                    │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: weather-get                                           │
+│ Route: /weather-get                                             │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Get weather data for plant care recommendations       │
+│ External APIs: OpenWeatherMap                                  │
+│ Features: Location-based weather, care advice                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: ai-plant-care-chat                                    │
+│ Route: /ai-plant-care-chat                                      │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: AI-powered plant care chatbot                         │
+│ External APIs: Google Gemini                                   │
+│ Features: Plant care advice, problem diagnosis                 │
+└─────────────────────────────────────────────────────────────────┘
+
+## CITY & LOCATION DATA
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: getcities                                             │
+│ Route: /getcities                                               │
+│ Methods: GET, OPTIONS                                           │
+│ Purpose: Retrieve list of supported cities                     │
+│ Database: GreenerDB.israelCities                                │
+│ Features: City directory, location validation                  │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: addcity                                               │
+│ Route: /addcity                                                 │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Add new cities to the system                          │
+│ Database: GreenerDB.israelCities                                │
+│ Features: City management, location expansion                  │
+└─────────────────────────────────────────────────────────────────┘
+
+## FORUM & COMMUNITY
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: plant-care-forum                                      │
+│ Route: /plant-care-forum                                        │
+│ Methods: GET, POST, DELETE, PATCH, PUT, OPTIONS                 │
+│ Purpose: Community plant care forum management                 │
+│ Database: greener-marketplace-db.forum                         │
+│ Partition Key: /category                                        │
+│ Features: Topic creation, editing, deletion, community Q&A     │
+│ Data Types:                                                    │
+│   - Forum topics: type = 'topic'                               │
+│   - Forum replies: type = 'reply'                              │
+│ Notes: Both topics and replies are stored in the same container│
+│        and differentiated by the 'type' field.                 │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: forum-replies                                         │
+│ Route: /forum-replies                                           │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Handle forum topic replies and discussions            │
+│ Database: greener-marketplace-db.forum                         │
+│ Partition Key: /category                                        │
+│ Features: Threaded replies, voting, best answers               │
+│ Notes: Advanced reply features (edit/delete) can be added.     │
+└─────────────────────────────────────────────────────────────────┘
+
+## TESTING & DEVELOPMENT
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: test                                                  │
+│ Route: /test                                                    │
+│ Methods: GET, POST, OPTIONS                                     │
+│ Purpose: Development testing and API validation                │
+│ Features: Endpoint testing, system health checks               │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│ Function: saveUser                                              │
+│ Route: /saveUser                                                │
+│ Methods: POST, OPTIONS                                          │
+│ Purpose: Development function for user data testing            │
+│ Database: GreenerDB.Users                                       │
+│ Features: User data validation, testing support                │
+└─────────────────────────────────────────────────────────────────┘
+
+## COMMON FEATURES ACROSS FUNCTIONS:
+• CORS support for cross-origin requests
+• Standardized error handling and response formats
+• Authentication via headers (X-User-Email, X-User-Type, X-Business-ID)
+• Input validation and sanitization
+• Rate limiting and caching where applicable
+• Comprehensive logging for monitoring and debugging
+• Support for OPTIONS method for preflight requests
+• JSON request/response format
+• Environment-based configuration
+
+## AUTHENTICATION HEADERS:
+• X-User-Email: User's email address
+• X-User-Type: user, business, admin
+• X-Business-ID: Business identifier for business users
+• Authorization: Bearer token for OAuth authentication
+
+## ERROR HANDLING:
+All functions return standardized error responses with:
+• HTTP status codes (400, 401, 404, 500, etc.)
+• JSON error messages with context
+• CORS headers for cross-origin support
+• Detailed logging for troubleshooting

@@ -13,7 +13,7 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useBusinessFirebaseNotifications } from '../hooks/useBusinessFirebaseNotifications';
+import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 
 export default function NotificationSettings({ visible, onClose }) {
   const [enableNotifications, setEnableNotifications] = useState(false);
@@ -23,7 +23,7 @@ export default function NotificationSettings({ visible, onClose }) {
   const [isSaving, setIsSaving] = useState(false);
   const [businessId, setBusinessId] = useState(null);
 
-  // Use Firebase notifications hook
+  // Use universal notifications hook
   const {
     isInitialized,
     hasPermission,
@@ -32,7 +32,7 @@ export default function NotificationSettings({ visible, onClose }) {
     registerForWateringNotifications,
     sendTestNotification,
     getNotificationInfo
-  } = useBusinessFirebaseNotifications(businessId);
+  } = useUniversalNotifications(businessId);
 
   useEffect(() => {
     initializeSettings();

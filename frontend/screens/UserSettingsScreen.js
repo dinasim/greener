@@ -11,8 +11,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFirebaseNotifications } from '../hooks/useFirebaseNotifications';
-import firebaseNotificationService from '../services/FirebaseNotificationService';
+import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 
 export default function UserSettingsScreen({ navigation }) {
   const [userEmail, setUserEmail] = useState('');
@@ -24,7 +23,7 @@ export default function UserSettingsScreen({ navigation }) {
     marketplaceUpdates: false
   });
 
-  const { clearNotifications } = useFirebaseNotifications(userEmail);
+  const { clearNotifications } = useUniversalNotifications(userEmail);
 
   useEffect(() => {
     loadUserData();

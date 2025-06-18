@@ -947,6 +947,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.3,
     shadowRadius: 6,
+    zIndex: 50, // Set appropriate z-index
   },
   disabledButton: {
     opacity: 0.7,
@@ -967,6 +968,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+    zIndex: 50, // Set appropriate z-index
   },
   viewToggleText: {
     color: '#fff',
@@ -988,6 +990,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
+    zIndex: 50, // Set appropriate z-index
   },
   backToMapText: {
     color: '#fff',
@@ -999,7 +1002,7 @@ const styles = StyleSheet.create({
     bottom: 400,
     left: 16,
     right: 16,
-    zIndex: 20,
+    zIndex: 500, // High z-index for detail cards
   },
 });
 

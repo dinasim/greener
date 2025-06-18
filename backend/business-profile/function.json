@@ -5,8 +5,8 @@
         "type": "httpTrigger",
         "direction": "in",
         "name": "req",
-        "methods": ["get", "post", "patch", "options"],
-        "route": "marketplace/business/{businessId}/profile"
+        "methods": ["get", "post", "patch", "put", "delete", "options"],
+        "route": "business-profile"
       },
       {
         "type": "http",

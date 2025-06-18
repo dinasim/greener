@@ -24,21 +24,29 @@ export default function PushMobileSetup({ email }) {
         const token = await messaging().getToken();
         setFcmToken(token);
 
-        // Save FCM token to your backend
-        await fetch('https://usersfunctions.azurewebsites.net/api/saveUser?', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            expoPushToken: null,         // Deprecated
-            fcmToken: token,             // NEW FIELD
-            platform: Platform.OS
-          }),
-        });
-        // Optionally: console.log("FCM token registered:", token);
+        // FIXED: Use proper token registration endpoint instead of saveUser
+        // This prevents creating duplicate/incorrect user tables
+        if (email && token) {
+          try {
+            await fetch('https://usersfunctions.azurewebsites.net/api/register_device_token', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email,
+                token,
+                platform: Platform.OS
+              }),
+            });
+            console.log("✅ FCM token registered for existing user:", email);
+          } catch (tokenError) {
+            console.warn("⚠️ Failed to register FCM token:", tokenError.message);
+            // Don't fail - user can still use app without push notifications
+          }
+        }
       }
     } catch (err) {
-      // Optionally: console.error("FCM registration failed:", err);
+      console.warn("⚠️ FCM registration failed:", err.message);
+      // Don't fail - user can still use app without push notifications
     }
   }
 
