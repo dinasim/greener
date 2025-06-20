@@ -96,8 +96,6 @@ def main(mytimer: func.TimerRequest) -> None:
             message = "🌬️ Strong winds today — protect your plants!"
         elif temp > 30:
             message = "🌡️ It's hot today — move your plants to the shade."
-        elif temp < 28:
-            message = f"🧪 Test: It's {temp}°C today — sending test notification."
         else:
             message = "✅ Weather looks great for your plants today!"
 
