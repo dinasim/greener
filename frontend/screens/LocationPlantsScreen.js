@@ -66,7 +66,7 @@ export default function LocationPlantsDetail() {
           <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>{location}</Text>
-        <View style={{ width: 45 }} /> {/* Spacer for symmetry */}
+        <View style={{ width: 45 }} />
       </View>
 
       {loading ? (

@@ -15,10 +15,12 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm } from '../../context/FormContext';
+import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 import ToastMessage from '../../marketplace/components/ToastMessage';
 
 export default function BusinessSignInScreen({ navigation }) {
   const { updateFormData } = useForm();
+  const { initialize } = useUniversalNotifications(); // Extract initialize function
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -33,10 +35,14 @@ export default function BusinessSignInScreen({ navigation }) {
       setToast({ visible: true, message: 'Password is required', type: 'error' });
       return;
     }
+    
     setIsLoading(true);
     setToast({ visible: false, message: '', type: 'info' });
+    
     try {
-      // Use the new business-login endpoint for business authentication
+      console.log('🔐 Attempting business login for:', email);
+      
+      // Use the original business-login endpoint for business authentication
       const res = await fetch('https://usersfunctions.azurewebsites.net/api/business-login', {
         method: 'POST',
         headers: {
@@ -44,25 +50,88 @@ export default function BusinessSignInScreen({ navigation }) {
         },
         body: JSON.stringify({ email, password })
       });
-      const data = await res.json();
-      if (!res.ok || !data || !data.success || !data.business) {
-        setToast({ visible: true, message: data.error || 'Invalid business credentials', type: 'error' });
+      
+      console.log('📡 Login response status:', res.status);
+      
+      // Handle response text parsing more safely
+      let data = null;
+      const responseText = await res.text();
+      
+      console.log('📄 Response text length:', responseText?.length || 0);
+      
+      if (responseText) {
+        try {
+          data = JSON.parse(responseText);
+          console.log('✅ Parsed response data:', { success: data.success, hasEmail: !!data.email });
+        } catch (parseError) {
+          console.error('❌ Failed to parse response:', parseError);
+          setToast({ visible: true, message: 'Invalid server response. Please try again.', type: 'error' });
+          setIsLoading(false);
+          return;
+        }
+      } else {
+        console.error('❌ Empty response from server');
+        setToast({ visible: true, message: 'No response from server. Please check your connection.', type: 'error' });
         setIsLoading(false);
         return;
       }
+      
+      // Check for specific error responses
+      if (!res.ok) {
+        const errorMessage = data?.error || `Server error (${res.status})`;
+        console.error('❌ Server error:', errorMessage);
+        setToast({ visible: true, message: errorMessage, type: 'error' });
+        setIsLoading(false);
+        return;
+      }
+      
+      // Validate response structure
+      if (!data || !data.success || !data.business) {
+        const errorMessage = data?.error || 'Invalid login response from server';
+        console.error('❌ Invalid response structure:', errorMessage);
+        setToast({ visible: true, message: errorMessage, type: 'error' });
+        setIsLoading(false);
+        return;
+      }
+      
+      console.log('✅ Business login successful');
       
       // Set persona to business for proper AI assistant behavior
       await AsyncStorage.setItem('persona', 'business');
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('businessId', data.email);
+      await AsyncStorage.setItem('userType', 'business');
+      await AsyncStorage.setItem('isBusinessUser', 'true');
       
       // Update form context
       updateFormData('email', data.email);
       updateFormData('businessId', data.email);
-      navigation.navigate('BusinessHomeScreen');
+      
+      // Initialize notifications in background (non-blocking)
+      setTimeout(async () => {
+        try {
+          await initialize('business', data.email, data.email);
+          console.log('✅ Business notifications initialized after login');
+        } catch (notificationError) {
+          console.warn('⚠️ Business notifications failed to initialize:', notificationError);
+          // Don't block login for notification failures
+        }
+      }, 1000);
+      
+      setToast({ visible: true, message: 'Login successful! Redirecting...', type: 'success' });
+      
+      // Navigate to business home after short delay
+      setTimeout(() => {
+        navigation.navigate('BusinessHomeScreen');
+      }, 1000);
+      
     } catch (err) {
-      console.error('Sign in error:', err);
-      setToast({ visible: true, message: 'Authentication failed. Please try again.', type: 'error' });
+      console.error('❌ Network/connection error:', err);
+      setToast({ 
+        visible: true, 
+        message: 'Connection failed. Please check your internet and try again.', 
+        type: 'error' 
+      });
     } finally {
       setIsLoading(false);
     }

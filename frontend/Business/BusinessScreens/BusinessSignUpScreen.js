@@ -191,20 +191,28 @@ export default function BusinessSignUpScreen({ navigation }) {
   useEffect(() => {
     const initializeNotifications = async () => {
       try {
-        // Initialize with business type and email
-        await initialize('business', formData.email, formData.email);
-        await requestPermission();
-        console.log('✅ Notification permissions granted for business signup');
+        // Only initialize if we have an email
+        if (formData.email) {
+          // Initialize with business type and email (non-blocking)
+          setTimeout(async () => {
+            try {
+              await initialize('business', formData.email, formData.email);
+              await requestPermission();
+              console.log('✅ Notification permissions granted for business signup');
+            } catch (error) {
+              console.warn('⚠️ Notification permission denied (non-blocking):', error);
+              // Don't block signup process for notification failures
+            }
+          }, 500);
+        }
       } catch (error) {
-        console.warn('⚠️ Notification permission denied:', error);
+        console.warn('⚠️ Notification initialization failed (non-blocking):', error);
+        // Don't block the signup process
       }
     };
 
-    // Only initialize if we have an email
-    if (formData.email) {
-      initializeNotifications();
-    }
-  }, [formData.email, initialize, requestPermission]);
+    initializeNotifications();
+  }, [formData.email]); // Only reinitialize when email changes
 
   // Show toast message
   const showToast = (message, type = 'info') => {

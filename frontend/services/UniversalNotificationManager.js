@@ -43,6 +43,9 @@ const firebaseConfig = {
   measurementId: "G-8K9XS4GPRM"
 };
 
+// Correct VAPID key from your existing codebase
+const VAPID_KEY = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+
 class UniversalNotificationManager {
   constructor(userType = 'user', userId = null, businessId = null) {
     this.userType = userType;
@@ -341,7 +344,7 @@ class UniversalNotificationManager {
       // Get token
       if (this.hasPermission) {
         this.fcmToken = await (await import('firebase/messaging')).getToken(this.messaging, {
-          vapidKey: "BKx8nYqV8L5L5r5r5r5r5r5r5r5r5r5r5r5r5r5r5"
+          vapidKey: VAPID_KEY
         });
         
         if (this.fcmToken) {
