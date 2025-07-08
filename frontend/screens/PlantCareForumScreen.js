@@ -21,6 +21,7 @@ import { useCurrentUserType } from '../utils/authUtils';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import ToastMessage from '../marketplace/components/ToastMessage';
+import MainLayout from '../components/MainLayout';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
@@ -40,7 +41,7 @@ export default function PlantCareForumScreen({ navigation }) {
   const [isCreatingTopic, setIsCreatingTopic] = useState(false);
   const [topicImages, setTopicImages] = useState([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const modalContentRef = useRef(null); // For accessibility fix
+  const modalContentRef = useRef(null);
 
   // Create topic form
   const [newTopic, setNewTopic] = useState({
@@ -105,8 +106,7 @@ export default function PlantCareForumScreen({ navigation }) {
         }
         setCurrentLocation(userProfile.location || null);
       } else if (userType === 'business') {
-        // For business, fetch inventory and business location if needed
-        setUserPlants([]); // or business inventory
+        setUserPlants([]);
         setCurrentLocation(userProfile.location || null);
       }
     };
@@ -125,7 +125,7 @@ export default function PlantCareForumScreen({ navigation }) {
   const loadTopics = async () => {
     try {
       setIsLoading(true);
-      
+
       // Build query parameters
       const params = new URLSearchParams({
         category: selectedCategory !== 'all' ? selectedCategory : '',
@@ -134,10 +134,7 @@ export default function PlantCareForumScreen({ navigation }) {
         offset: '0',
         sort: 'lastActivity'
       });
-      
-      console.log('🔍 Loading forum topics with params:', params.toString());
-      
-      // FIXED: Use correct API endpoint for plant care forum
+
       const response = await fetch(`${API_BASE_URL}/plant-care-forum?${params}`, {
         method: 'GET',
         headers: {
@@ -146,61 +143,27 @@ export default function PlantCareForumScreen({ navigation }) {
         }
       });
 
-      console.log('📡 Forum API Response Status:', response.status);
-
       if (response.ok) {
         const data = await response.json();
-        console.log('✅ Forum topics loaded:', data);
-        
-        // FIXED: Handle different response structures from Azure Functions
+
         const topicsArray = data.topics || data.data || data || [];
         const statsData = data.categoryStats || data.stats || {};
-        
-        console.log(`📊 Found ${topicsArray.length} topics`);
-        
+
         setTopics(Array.isArray(topicsArray) ? topicsArray : []);
         setCategoryStats(statsData);
-        
-        // Log first topic for debugging
-        if (topicsArray.length > 0) {
-          console.log('🔍 First topic sample:', topicsArray[0]);
-        }
       } else {
-        // Enhanced error handling for debugging
         const errorText = await response.text();
-        console.error(`❌ Forum API error (${response.status}): ${response.statusText}`);
-        console.error('Error response:', errorText);
-        
-        if (response.status === 404) {
-          console.log('⚠️ The plant-care-forum endpoint might be missing or misconfigured');
-        }
-        
-        // Show user-friendly error but don't break the app
         setTopics([]);
         setCategoryStats({});
-        
-        // Only show alert for non-404 errors to avoid spam
         if (response.status !== 404) {
           Alert.alert('Forum Error', 'Unable to load forum topics. Please try again later.');
         }
       }
     } catch (error) {
-      console.error('🔥 Forum API connection failed:', error);
-      
-      // Provide more specific error messages
-      let errorMessage = 'Connection failed. ';
-      if (error.message.includes('Network request failed')) {
-        errorMessage += 'Please check your internet connection.';
-      } else {
-        errorMessage += 'Please try again later.';
-      }
-      
       setTopics([]);
       setCategoryStats({});
-      
-      // Only show alert for actual network errors
       if (!error.message.includes('404')) {
-        Alert.alert('Connection Error', errorMessage);
+        Alert.alert('Connection Error', 'Connection failed. Please try again later.');
       }
     } finally {
       setIsLoading(false);
@@ -212,8 +175,7 @@ export default function PlantCareForumScreen({ navigation }) {
   const uploadImageToServer = async (imageUri) => {
     try {
       setIsUploadingImage(true);
-      
-      // Convert image to base64
+
       const response = await fetch(imageUri);
       const blob = await response.blob();
       const base64 = await new Promise((resolve, reject) => {
@@ -223,7 +185,6 @@ export default function PlantCareForumScreen({ navigation }) {
         reader.readAsDataURL(blob);
       });
 
-      // Upload to server - FIXED path to match function.json route
       const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
         method: 'POST',
         headers: {
@@ -243,7 +204,7 @@ export default function PlantCareForumScreen({ navigation }) {
       const result = await uploadResponse.json();
       return result.url;
     } catch (error) {
-      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload image. Please try again.');
       throw error;
     } finally {
       setIsUploadingImage(false);
@@ -258,7 +219,7 @@ export default function PlantCareForumScreen({ navigation }) {
       }
 
       const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      
+
       if (permissionResult.granted === false) {
         Alert.alert('Permission Required', 'Camera roll access is required to upload images');
         return;
@@ -288,7 +249,7 @@ export default function PlantCareForumScreen({ navigation }) {
       }
 
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-      
+
       if (permissionResult.granted === false) {
         Alert.alert('Permission Required', 'Camera access is required to take photos');
         return;
@@ -325,14 +286,14 @@ export default function PlantCareForumScreen({ navigation }) {
 
     try {
       setIsCreatingTopic(true);
-      
+
       const topicData = {
         title: newTopic.title.trim(),
         content: newTopic.content.trim(),
         category: newTopic.category,
         author: userEmail,
         tags: newTopic.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
-        images: topicImages.map(img => img.url), // Include uploaded image URLs
+        images: topicImages.map(img => img.url),
         authorType: userType === 'business' ? 'business' : 'customer'
       };
 
@@ -345,10 +306,9 @@ export default function PlantCareForumScreen({ navigation }) {
       });
 
       if (response.ok) {
-        const result = await response.json();
         setShowCreateModal(false);
         setNewTopic({ title: '', content: '', category: 'general', tags: '' });
-        setTopicImages([]); // Clear uploaded images
+        setTopicImages([]);
         loadTopics();
         showToast('Your topic has been posted successfully!', 'success');
       } else {
@@ -356,7 +316,6 @@ export default function PlantCareForumScreen({ navigation }) {
         throw new Error(errorData.error || 'Failed to create topic');
       }
     } catch (error) {
-      console.error('Error creating topic:', error);
       showToast(`Failed to create topic: ${error.message}`, 'error');
     } finally {
       setIsCreatingTopic(false);
@@ -364,13 +323,22 @@ export default function PlantCareForumScreen({ navigation }) {
   };
 
   const handleTopicPress = (topic) => {
-    // Navigate to topic detail screen (to be implemented)
     navigation.navigate('ForumTopicDetail', { 
       topicId: topic.id, 
       topic,
       category: topic.category
     });
   };
+
+  // ------- FIX: Add handleTabPress at top-level, not in renderSuggestions -------
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+  };
+  // ------------------------------------------------------------------------------
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -381,7 +349,6 @@ export default function PlantCareForumScreen({ navigation }) {
     const now = new Date();
     const time = new Date(timestamp);
     const diffInHours = Math.floor((now - time) / (1000 * 60 * 60));
-    
     if (diffInHours < 1) return 'Just now';
     if (diffInHours < 24) return `${diffInHours}h ago`;
     if (diffInHours < 168) return `${Math.floor(diffInHours / 24)}d ago`;
@@ -398,7 +365,6 @@ export default function PlantCareForumScreen({ navigation }) {
     return category ? category.icon : 'leaf';
   };
 
-  // Delete topic handler
   const deleteTopic = (topicId, category) => {
     setDeleteConfirm({ visible: true, topicId, category });
   };
@@ -427,7 +393,6 @@ export default function PlantCareForumScreen({ navigation }) {
   // --- Enhanced Search Suggestions Logic ---
   useEffect(() => {
     const query = searchQuery.trim().toLowerCase();
-    // Filter topics by current category (tab)
     const filteredTopics = selectedCategory === 'all'
       ? topics
       : topics.filter(t => t.category === selectedCategory);
@@ -445,8 +410,7 @@ export default function PlantCareForumScreen({ navigation }) {
     } else {
       const titleMatches = filteredTopics.filter(t => t.title?.toLowerCase().includes(query));
       const contentMatches = filteredTopics.filter(t => !titleMatches.includes(t) && t.content?.toLowerCase().includes(query));
-      const replyMatches = [];
-      setSuggestions([...titleMatches, ...contentMatches, ...replyMatches]);
+      setSuggestions([...titleMatches, ...contentMatches]);
       setShowSuggestions(true);
     }
   }, [searchQuery, topics, searchMode, selectedCategory]);
@@ -604,7 +568,8 @@ export default function PlantCareForumScreen({ navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <MainLayout currentTab="forum" onTabPress={handleTabPress}>
+      <SafeAreaView style={styles.container}>
       {/* Toast Message always visible at root */}
       <ToastMessage
         visible={toast.visible}
@@ -901,6 +866,7 @@ export default function PlantCareForumScreen({ navigation }) {
         </View>
       )}
     </SafeAreaView>
+    </MainLayout>
   );
 }
 

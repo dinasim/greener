@@ -16,6 +16,7 @@ import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-ic
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
+import MainLayout from '../components/MainLayout';
 
 const { width } = Dimensions.get('window');
 
@@ -29,39 +30,75 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
 
   const resultCardRef = useRef();
 
-  // Check if user is business user on component mount
+  // Tabs navigation handler - match your PlantCareForumScreen
+  const handleTabPress = (tab) => {
+    if (isBusiness) {
+      switch (tab) {
+        case 'home':
+          navigation.navigate('BusinessDashboard');
+          break;
+        case 'locations':
+          navigation.navigate('BusinessLocations');
+          break;
+        case 'marketplace':
+          navigation.navigate('BusinessInventory');
+          break;
+        case 'forum':
+          navigation.navigate('BusinessForum');
+          break;
+        case 'disease':
+          navigation.navigate('DiseaseChecker');
+          break;
+        default:
+          navigation.goBack();
+      }
+    } else {
+      switch (tab) {
+        case 'home':
+          navigation.navigate('Home');
+          break;
+        case 'plants':
+          navigation.navigate('Locations');
+          break;
+        case 'marketplace':
+          navigation.navigate('MainTabs');
+          break;
+        case 'forum':
+          navigation.navigate('PlantCareForumScreen');
+          break;
+        case 'disease':
+          navigation.navigate('DiseaseChecker');
+          break;
+        default:
+          navigation.goBack();
+      }
+    }
+  };
+
   useEffect(() => {
     const checkUserType = async () => {
       try {
-        // Method 1: From route params
         if (route?.params?.business === true) {
           setIsBusiness(true);
           return;
         }
-
-        // Method 2: From AsyncStorage
         const userType = await AsyncStorage.getItem('userType');
         const businessId = await AsyncStorage.getItem('businessId');
-        
         if (userType === 'business' || businessId) {
           setIsBusiness(true);
         }
-
-        // Method 3: Check current navigation stack
         const currentRouteName = navigation.getState()?.routeNames?.[0];
-        if (currentRouteName?.includes('Business') || 
-            navigation.getState()?.routes?.some(route => route.name.includes('Business'))) {
+        if (currentRouteName?.includes('Business') ||
+          navigation.getState()?.routes?.some(route => route.name.includes('Business'))) {
           setIsBusiness(true);
         }
       } catch (error) {
         console.log('Error checking user type:', error);
       }
     };
-
     checkUserType();
   }, [route?.params, navigation]);
 
-  // Helper to display bullet list for "." or ";"
   const renderMultiLine = (text) => {
     return text
       .split(/(?:\.\s+|;)/)
@@ -77,17 +114,15 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
       ));
   };
 
-  // Load recent analysis results from AsyncStorage
   useEffect(() => {
     (async () => {
       try {
         const json = await AsyncStorage.getItem('recentAnalysis');
         if (json) setHistory(JSON.parse(json));
-      } catch {}
+      } catch { }
     })();
   }, []);
 
-  // Save to history when a valid result is received
   useEffect(() => {
     if (result && Array.isArray(result.results) && result.results.length > 0) {
       const newEntry = {
@@ -96,13 +131,12 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
         imageUri,
         result,
       };
-      const newHistory = [newEntry, ...history].slice(0, 5); // max 5
+      const newHistory = [newEntry, ...history].slice(0, 5);
       setHistory(newHistory);
       AsyncStorage.setItem('recentAnalysis', JSON.stringify(newHistory));
     }
   }, [result]);
 
-  // Pick from gallery
   const pickFromLibrary = async () => {
     setResult(null);
     let perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -119,7 +153,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     autoAnalyze(uri);
   };
 
-  // Take from camera
   const takePhoto = async () => {
     setResult(null);
     let perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -136,7 +169,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     autoAnalyze(uri);
   };
 
-  // Auto-analyze after image picked
   const autoAnalyze = async (uri) => {
     setLoading(true);
     setResult(null);
@@ -149,7 +181,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
         reader.onload = () => resolve(reader.result.split(',')[1]);
         reader.readAsDataURL(blob);
       });
-      // Call backend
       const apiRes = await fetch(
         'https://usersfunctions.azurewebsites.net/api/diseaseCheck',
         {
@@ -171,7 +202,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     }
   };
 
-  // Confidence bar color
   const getBarColor = (confidence) => {
     const c = Number(confidence) || 0;
     if (c > 90) return '#38b000';
@@ -179,7 +209,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     return '#ff3e00';
   };
 
-  // Share as image
   const shareResultCard = async () => {
     if (Platform.OS === 'web') {
       Alert.alert('Not supported', 'Sharing only works on mobile devices for now.');
@@ -196,47 +225,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     }
   };
 
-  // Nav bar actions - different for business vs consumer
-  const handleNavigation = (destination) => {
-    if (isBusiness) {
-      // Business navigation
-      switch (destination) {
-        case 'home':
-          navigation.navigate('BusinessDashboard');
-          break;
-        case 'locations':
-          navigation.navigate('BusinessLocations');
-          break;
-        case 'marketplace':
-          navigation.navigate('BusinessInventory');
-          break;
-        case 'disease':
-          // Already on disease checker
-          break;
-        default:
-          navigation.goBack();
-      }
-    } else {
-      // Consumer navigation
-      switch (destination) {
-        case 'home':
-          navigation.navigate('Home');
-          break;
-        case 'locations':
-          navigation.navigate('Locations');
-          break;
-        case 'marketplace':
-          navigation.navigate('MainTabs');
-          break;
-        case 'disease':
-          navigation.navigate('DiseaseChecker');
-          break;
-        default:
-          navigation.goBack();
-      }
-    }
-  };
-
   const handleAddPress = () => setShowPopup(true);
   const handleOptionPress = (type) => {
     setShowPopup(false);
@@ -247,21 +235,20 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
     }
   };
 
-  // Robust plant detected check
   const isPlantDetected = result && Array.isArray(result.results) && result.results.length > 0;
 
-  // Critical warnings
   const hasCritical = result && result.results && result.results.some(
     (r) => (r.severity && r.severity.toLowerCase() === 'high') ||
       (r.spreading && r.spreading.toLowerCase().includes('contagious'))
   );
 
-  return (
+  // --- SCREEN CONTENT ---
+  const screenContent = (
     <View style={{ flex: 1 }}>
       {/* Header Row with Back Button */}
       <View style={styles.headerRow}>
-        <TouchableOpacity 
-          style={styles.backButton} 
+        <TouchableOpacity
+          style={styles.backButton}
           onPress={() => navigation.goBack()}
         >
           <Ionicons name="arrow-back" size={24} color="#4CAF50" />
@@ -272,10 +259,9 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView 
+      <ScrollView
         contentContainerStyle={[
           styles.container,
-          // Add bottom padding for business users (no nav bar)
           isBusiness && { paddingBottom: 40 }
         ]}
       >
@@ -310,7 +296,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
         {/* RESULT CARD */}
         {result && (
           <View ref={resultCardRef} collapsable={false} style={styles.resultCard}>
-            {/* Plant Not Detected */}
             {!isPlantDetected ? (
               <View style={styles.notFoundCard}>
                 <Text style={{ fontSize: 22, fontWeight: "bold", marginBottom: 10 }}>😕 Plant Not Detected</Text>
@@ -331,7 +316,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
               <>
                 {/* Share + Encyclopedia Buttons */}
                 <View style={{ flexDirection: 'row', width: '100%', justifyContent: 'space-between', marginBottom: 6 }}>
-                  {/* Encyclopedia only if plant_name available */}
                   {result.plant_name && result.plant_name !== "Unknown" && (
                     <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center' }}
                       onPress={() => navigation.navigate('PlantDetail', { plantId: result.plant_name })}
@@ -351,7 +335,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                 {imageUri && (
                   <Image source={{ uri: imageUri }} style={styles.imagePreview} />
                 )}
-                {/* Critical warning banner */}
                 {hasCritical && (
                   <View style={styles.criticalBanner}>
                     <Ionicons name="alert" size={20} color="#fff" style={{ marginRight: 8 }} />
@@ -376,13 +359,11 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                     <Text>{result.confidence ? `${result.confidence}%` : "N/A"}</Text>
                   </View>
                 </View>
-                {/* CATEGORY CARDS */}
                 {result.results && result.results.length > 0 && (
                   <View>
                     <Text style={styles.issuesTitle}>Detected Issues</Text>
                     {result.results.map((item, i) => (
                       <View key={i} style={styles.issueCard}>
-                        {/* Title Row */}
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
                           <MaterialIcons name="report-problem" size={22} color="#ca2c2c" style={{ marginRight: 6 }} />
                           <Text style={styles.issueTitle}>
@@ -393,7 +374,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                             <Text style={styles.severityCard}>{item.severity || ""}</Text>
                           </View>
                         </View>
-                        {/* Probability Bar */}
                         <View style={styles.confBarWrap}>
                           <View style={[
                             styles.confBar,
@@ -405,11 +385,10 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                         </View>
                         <View style={{ flexDirection: 'row' }}>
                           <Text style={styles.cardLabel}>
-                            Probability: 
+                            Probability:
                           </Text>
                           <Text style={{ fontWeight: "bold" }}>{item.probability || "N/A"}</Text>
                         </View>
-                        {/* SYMPTOMS */}
                         {item.symptoms && (
                           <View style={styles.infoCard}>
                             <View style={styles.infoCardHeader}>
@@ -419,7 +398,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                             {renderMultiLine(item.symptoms)}
                           </View>
                         )}
-                        {/* CAUSES */}
                         {item.causes && (
                           <View style={styles.infoCard}>
                             <View style={styles.infoCardHeader}>
@@ -429,7 +407,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                             {renderMultiLine(item.causes)}
                           </View>
                         )}
-                        {/* SPREADING */}
                         {item.spreading && (
                           <View style={styles.infoCard}>
                             <View style={styles.infoCardHeader}>
@@ -439,7 +416,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                             {renderMultiLine(item.spreading)}
                           </View>
                         )}
-                        {/* TREATMENT */}
                         {item.treatment && (
                           <View style={styles.infoCard}>
                             <View style={styles.infoCardHeader}>
@@ -449,7 +425,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
                             {renderMultiLine(item.treatment)}
                           </View>
                         )}
-                        {/* PREVENTION */}
                         {item.prevention && (
                           <View style={styles.infoCard}>
                             <View style={styles.infoCardHeader}>
@@ -476,7 +451,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
           </View>
         )}
 
-        {/* RECENT HISTORY */}
         {history.length > 0 && (
           <View style={styles.historySection}>
             <Text style={styles.historyTitle}>Recent Analysis</Text>
@@ -495,37 +469,6 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
         )}
       </ScrollView>
 
-      {/* CONDITIONAL NAVIGATION - Only show for consumer users */}
-      {!isBusiness && (
-        <>
-          {/* NAV BAR */}
-          <View style={styles.navBar}>
-            <TouchableOpacity onPress={() => handleNavigation('home')}>
-              <Ionicons name="home" size={24} color="black" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleNavigation('locations')}>
-              <Ionicons name="leaf" size={24} color="black" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleNavigation('marketplace')}>
-              <Ionicons name="cart-outline" size={24} color="black" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleNavigation('disease')}>
-              <Ionicons name="medkit" size={24} color="black" />
-            </TouchableOpacity>
-          </View>
-
-          {/* Floating buttons */}
-          <View style={styles.floatingContainer}>
-            <TouchableOpacity style={styles.floatingButton} onPress={() => handleNavigation('disease')}>
-              <Ionicons name="search" size={32} color="#4CAF50" />
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
-              <Ionicons name="add" size={36} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        </>
-      )}
-
       {/* Add Plant popup - Available for both user types but with different options */}
       {showPopup && (
         <Modal transparent visible={showPopup} animationType="slide" onRequestClose={() => setShowPopup(false)}>
@@ -541,8 +484,31 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
           </TouchableOpacity>
         </Modal>
       )}
+
+      {/* Floating Action Buttons: Only for consumers */}
+      {!isBusiness && (
+        <View style={styles.floatingContainer}>
+          <TouchableOpacity style={styles.floatingButton} onPress={() => handleTabPress('disease')}>
+            <Ionicons name="search" size={32} color="#4CAF50" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
+            <Ionicons name="add" size={36} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
+
+  // ---- Use MainLayout for consumers, plain view for business ----
+  if (!isBusiness) {
+    return (
+      <MainLayout currentTab="disease" onTabPress={handleTabPress}>
+        {screenContent}
+      </MainLayout>
+    );
+  } else {
+    return screenContent;
+  }
 }
 
 const styles = StyleSheet.create({

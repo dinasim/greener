@@ -17,6 +17,7 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import CosmosDbService from '../services/CosmosDbService';
+import MainLayout from '../components/MainLayout';
 
 const AI_CHAT_API = 'https://usersfunctions.azurewebsites.net/api/ai-plant-care-chat';
 
@@ -28,10 +29,42 @@ export default function AIPlantCareAssistant({ navigation, route }) {
   const [isTyping, setIsTyping] = useState(false);
   const [userId, setUserId] = useState(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  
+  const [isBusiness, setIsBusiness] = useState(false);
+
+  useEffect(() => {
+    console.log('DEBUG isBusiness:', isBusiness);
+  }, [isBusiness]);
+
   const scrollViewRef = useRef();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const typingAnim = useRef(new Animated.Value(0)).current;
+
+  // Business/user detection logic (matches your other screens)
+  useEffect(() => {
+    const checkUserType = async () => {
+      if (route?.params?.business === true) {
+        setIsBusiness(true);
+        return;
+      }
+      const userType = await AsyncStorage.getItem('userType');
+      const businessId = await AsyncStorage.getItem('businessId');
+      if (userType === 'business' || businessId) {
+        setIsBusiness(true);
+        return;
+      }
+      const currentRouteName = navigation.getState()?.routeNames?.[0];
+      if (
+        currentRouteName?.includes('Business') ||
+        navigation.getState()?.routes?.some(route => route.name.includes('Business'))
+      ) {
+        setIsBusiness(true);
+        return;
+      }
+      // Explicitly set to false if none of the above
+      setIsBusiness(false);
+    };
+    checkUserType();
+  }, [route?.params, navigation]);
 
   useEffect(() => {
     initializeChat();
@@ -59,27 +92,20 @@ export default function AIPlantCareAssistant({ navigation, route }) {
   const initializeChat = async () => {
     try {
       setIsInitializing(true);
-      
-      // Get current user ID - only this must remain as AsyncStorage
-      // since it's used for authentication
       const currentUserId = await AsyncStorage.getItem('currentUserId');
       setUserId(currentUserId);
-      
-      // Initialize or get chat session
+
       let sessionId = await AsyncStorage.getItem('aiChatSession');
       if (!sessionId) {
         sessionId = generateSessionId(currentUserId);
         await AsyncStorage.setItem('aiChatSession', sessionId);
       }
       setChatSession(sessionId);
-      
-      // Load chat history exclusively from Cosmos DB
+
       const chatHistory = await CosmosDbService.getChatHistory(sessionId);
-      
       if (chatHistory && chatHistory.length > 0) {
         setMessages(chatHistory);
       } else {
-        // Create welcome message and store it in Cosmos DB
         const welcomeMessage = {
           id: Date.now().toString(),
           text: "🌿 Hello! I'm your AI Plant Care Assistant. I specialize in helping you care for your plants, diagnose issues, and provide expert gardening advice. How can I help you today?",
@@ -87,10 +113,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
           timestamp: new Date(),
           type: 'welcome'
         };
-        
         setMessages([welcomeMessage]);
-        
-        // Save welcome message to Cosmos DB
         await CosmosDbService.saveChatMessages(sessionId, [welcomeMessage]);
       }
     } catch (error) {
@@ -126,14 +149,12 @@ export default function AIPlantCareAssistant({ navigation, route }) {
 
   const sendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
-
     const userMessage = {
       id: Date.now().toString(),
       text: inputText.trim(),
       isUser: true,
       timestamp: new Date(),
     };
-
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
     setInputText('');
@@ -141,10 +162,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
     setIsTyping(true);
 
     try {
-      // Save user message immediately
       await saveMessages([userMessage]);
-      
-      // Prepare context from recent messages
       const context = newMessages.slice(-10).map(msg => ({
         role: msg.isUser ? 'user' : 'assistant',
         content: msg.text
@@ -168,9 +186,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
       }
 
       const data = await response.json();
-      
-      console.log('AI response received:', data);
-      
+
       const aiMessage = {
         id: (Date.now() + 1).toString(),
         text: data.response || 'I apologize, but I encountered an error. Please try asking your question again.',
@@ -182,15 +198,11 @@ export default function AIPlantCareAssistant({ navigation, route }) {
 
       const finalMessages = [...newMessages, aiMessage];
       setMessages(finalMessages);
-      
-      // Save AI response to Cosmos DB
-      await saveMessages([aiMessage]);
-      
-      console.log('Updated message state:', finalMessages.length);
 
+      await saveMessages([aiMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
-      
+
       const errorMessage = {
         id: (Date.now() + 1).toString(),
         text: "I'm sorry, I'm having trouble connecting right now. Please check your internet connection and try again.",
@@ -201,14 +213,12 @@ export default function AIPlantCareAssistant({ navigation, route }) {
 
       const finalMessages = [...newMessages, errorMessage];
       setMessages(finalMessages);
-      
-      // Try to save error message to Cosmos DB
+
       await saveMessages([errorMessage]);
     } finally {
       setIsLoading(false);
       setIsTyping(false);
-      
-      // Auto-scroll to bottom
+
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: true });
       }, 100);
@@ -227,15 +237,12 @@ export default function AIPlantCareAssistant({ navigation, route }) {
           onPress: async () => {
             try {
               setIsLoading(true);
-              // Delete chat history from Cosmos DB
               await CosmosDbService.deleteChatHistory(chatSession);
-              
-              // Generate new session ID
+
               const newSessionId = generateSessionId(userId);
               await AsyncStorage.setItem('aiChatSession', newSessionId);
               setChatSession(newSessionId);
-              
-              // Create new welcome message
+
               const welcomeMessage = {
                 id: Date.now().toString(),
                 text: "🌿 Hello! I'm your AI Plant Care Assistant. I specialize in helping you care for your plants, diagnose issues, and provide expert gardening advice. How can I help you today?",
@@ -243,10 +250,8 @@ export default function AIPlantCareAssistant({ navigation, route }) {
                 timestamp: new Date(),
                 type: 'welcome'
               };
-              
+
               setMessages([welcomeMessage]);
-              
-              // Save welcome message to Cosmos DB
               await CosmosDbService.saveChatMessages(newSessionId, [welcomeMessage]);
             } catch (error) {
               console.error('Error clearing chat:', error);
@@ -278,7 +283,6 @@ export default function AIPlantCareAssistant({ navigation, route }) {
 
   const renderMessage = (message) => {
     const isUser = message.isUser;
-    
     return (
       <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.aiMessageContainer]}>
         {!isUser && (
@@ -286,12 +290,12 @@ export default function AIPlantCareAssistant({ navigation, route }) {
             <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" />
           </View>
         )}
-        
+
         <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble]}>
           <Text style={[styles.messageText, isUser ? styles.userText : styles.aiText]}>
             {message.text}
           </Text>
-          
+
           {message.confidence && (
             <View style={styles.confidenceContainer}>
               <Text style={styles.confidenceText}>
@@ -299,12 +303,12 @@ export default function AIPlantCareAssistant({ navigation, route }) {
               </Text>
             </View>
           )}
-          
+
           <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
-        
+
         {isUser && (
           <View style={styles.userAvatar}>
             <MaterialIcons name="person" size={20} color="#fff" />
@@ -316,7 +320,6 @@ export default function AIPlantCareAssistant({ navigation, route }) {
 
   const renderTypingIndicator = () => {
     if (!isTyping) return null;
-    
     return (
       <View style={[styles.messageContainer, styles.aiMessageContainer]}>
         <View style={styles.aiAvatar}>
@@ -343,14 +346,14 @@ export default function AIPlantCareAssistant({ navigation, route }) {
     );
   }
 
-  return (
+  const screenContent = (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
         </TouchableOpacity>
-        
+
         <View style={styles.headerCenter}>
           <View style={styles.headerTitle}>
             <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
@@ -358,7 +361,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
           </View>
           <Text style={styles.headerSubtitle}>Powered by Gemini AI</Text>
         </View>
-        
+
         <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
           <MaterialIcons name="delete-outline" size={24} color="#666" />
         </TouchableOpacity>
@@ -374,8 +377,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
         >
           {messages.map(renderMessage)}
           {renderTypingIndicator()}
-          
-          {/* Quick Suggestions (show when chat is empty or after welcome) */}
+
           {messages.length <= 1 && (
             <View style={styles.suggestionsContainer}>
               <Text style={styles.suggestionsTitle}>Try asking about:</Text>
@@ -392,8 +394,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
           )}
         </ScrollView>
 
-        {/* Input Area */}
-        <KeyboardAvoidingView 
+        <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={styles.inputContainer}
         >
@@ -410,7 +411,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
               onSubmitEditing={sendMessage}
               editable={!isLoading}
             />
-            
+
             <TouchableOpacity
               style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
               onPress={sendMessage}
@@ -423,7 +424,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
               )}
             </TouchableOpacity>
           </View>
-          
+
           <View style={styles.inputFooter}>
             <Text style={styles.inputHint}>
               💡 Ask about watering, diseases, plant identification, care tips, and more!
@@ -433,6 +434,23 @@ export default function AIPlantCareAssistant({ navigation, route }) {
       </Animated.View>
     </SafeAreaView>
   );
+
+  if (!isBusiness) {
+    return (
+      <MainLayout
+        currentTab="ai"
+        onTabPress={tab => navigation.navigate(
+          tab === 'plants'
+            ? 'Locations'
+            : tab.charAt(0).toUpperCase() + tab.slice(1)
+        )}
+      >
+        {screenContent}
+      </MainLayout>
+    );
+  } else {
+    return screenContent;
+  }
 }
 
 const styles = StyleSheet.create({

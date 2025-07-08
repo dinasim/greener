@@ -3,7 +3,6 @@ import {
   View,
   Text,
   StyleSheet,
-  SafeAreaView,
   TouchableOpacity,
   ScrollView,
   Alert,
@@ -12,6 +11,7 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
+import MainLayout from '../components/MainLayout';
 
 export default function UserSettingsScreen({ navigation }) {
   const [userEmail, setUserEmail] = useState('');
@@ -77,10 +77,7 @@ export default function UserSettingsScreen({ navigation }) {
           style: 'destructive',
           onPress: async () => {
             try {
-              // Clear Firebase notifications
               await clearNotifications();
-              
-              // Clear AsyncStorage
               await AsyncStorage.multiRemove([
                 'userEmail',
                 'userName',
@@ -91,10 +88,6 @@ export default function UserSettingsScreen({ navigation }) {
                 'fcm_token_android',
                 'fcm_token_ios'
               ]);
-              
-              console.log('✅ User logged out successfully');
-              
-              // Navigate to persona selection
               navigation.reset({
                 index: 0,
                 routes: [{ name: 'PersonaSelection' }],
@@ -109,8 +102,20 @@ export default function UserSettingsScreen({ navigation }) {
     );
   };
 
+  // Navigation tab handler for MainLayout
+  const handleTabPress = (tab) => {
+    // Highlight this tab in the nav bar
+    // Add navigation logic to switch screens
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+    else if (tab === 'settings') navigation.navigate('UserSettings'); // Already here
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <MainLayout currentTab="settings" onTabPress={handleTabPress}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -140,8 +145,8 @@ export default function UserSettingsScreen({ navigation }) {
         {/* Notification Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>🔔 Notifications</Text>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.menuItem}
             onPress={() => navigation.navigate('NotificationSettings')}
           >
@@ -183,7 +188,7 @@ export default function UserSettingsScreen({ navigation }) {
         {/* App Settings */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>⚙️ App Settings</Text>
-          
+
           <TouchableOpacity style={styles.menuItem}>
             <MaterialIcons name="language" size={24} color="#4CAF50" />
             <View style={styles.menuItemContent}>
@@ -220,7 +225,7 @@ export default function UserSettingsScreen({ navigation }) {
           </TouchableOpacity>
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </MainLayout>
   );
 }
 

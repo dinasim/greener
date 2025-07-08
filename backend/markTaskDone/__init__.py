@@ -37,6 +37,8 @@ def schedule_to_days(amount, unit):
 def main(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return func.HttpResponse(status_code=204, headers=_cors_headers())
+
+    # Parse input
     try:
         data = req.get_json()
         plant_id = data.get("id")
@@ -51,13 +53,22 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as e:
         return func.HttpResponse(f"Invalid request: {e}", status_code=400, headers=_cors_headers())
 
-    # Fetch plant (partition key is plant_id)
+    # Fetch plant by id using cross-partition query
     try:
-        plant = container.read_item(item=plant_id, partition_key=plant_id)
+        query = "SELECT * FROM c WHERE c.id=@id"
+        params = [{"name": "@id", "value": plant_id}]
+        items = list(container.query_items(query=query, parameters=params, enable_cross_partition_query=True))
+        if not items:
+            return func.HttpResponse(
+                "Plant not found",
+                status_code=404,
+                headers=_cors_headers()
+            )
+        plant = items[0]
     except Exception as e:
         return func.HttpResponse(
-            f"Plant not found: {e}",
-            status_code=404,
+            f"DB error: {e}",
+            status_code=500,
             headers=_cors_headers()
         )
 

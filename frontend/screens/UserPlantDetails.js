@@ -9,13 +9,11 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import MainLayout from '../components/MainLayout';
 
-const { width } = Dimensions.get('window');
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 
 // Utility: calculate days until a given ISO date
@@ -54,12 +52,24 @@ export default function UserPlantDetailScreen({ route, navigation }) {
     }
   }, [plantId]);
 
+  // --- NAV BAR tab handler ---
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+    // no 'settings' here for detail page
+  };
+
   if (loading || !plant) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
-        <ActivityIndicator size="large" color="#4caf50" />
-        <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
-      </View>
+      <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
+          <ActivityIndicator size="large" color="#4caf50" />
+          <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
+        </View>
+      </MainLayout>
     );
   }
 
@@ -105,22 +115,34 @@ export default function UserPlantDetailScreen({ route, navigation }) {
 
   // Handler: Mark task as done (update last_X to today)
   async function markTaskDone(key) {
-    try {
-      const res = await fetch('https://usersfunctions.azurewebsites.net/api/markTaskDone', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: plant.id, task: key, date: new Date().toISOString() }),
-      });
-      if (!res.ok) throw new Error('Failed to update task');
-      const updated = await res.json();
-      setPlant(updated); // Should return updated plant object!
-    } catch (err) {
-      Alert.alert("Error", "Failed to update task: " + err.message);
+  try {
+    console.log('Making request to markTaskDone with:', { id: plantId,email: plant.email, task: key });
+    
+    const res = await fetch('https://usersfunctions.azurewebsites.net/api/markTaskDone', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: plantId, email: plant.email, task: key, date: new Date().toISOString() }),
+    });
+    
+    console.log('Response status:', res.status);
+    console.log('Response URL:', res.url);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      console.error('Error response body:', errorText);
+      throw new Error(`HTTP ${res.status}: ${errorText}`);
     }
+    
+    const updated = await res.json();
+    setPlant(updated);
+  } catch (err) {
+    console.error('Full error object:', err);
+    Alert.alert("Error", "Failed to update task: " + err.message);
   }
+}
 
   return (
-    <View style={{ flex: 1 }}>
+    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
       {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -263,23 +285,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
           </View>
         )}
       </ScrollView>
-
-      {/* NAV BAR */}
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-          <Ionicons name="home" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('Locations')}>
-          <Ionicons name="leaf" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}>
-          <Ionicons name="cart-outline" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('DiseaseChecker')}>
-          <Ionicons name="medkit" size={24} color="black" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </MainLayout>
   );
 }
 
@@ -377,12 +383,4 @@ const styles = StyleSheet.create({
     borderColor: "#ffd6d6",
     borderWidth: 1
   },
-
-  navBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#eee', flexDirection: 'row',
-    justifyContent: 'space-around', alignItems: 'center',
-    paddingVertical: 10, borderTopLeftRadius: 20,
-    borderTopRightRadius: 20, elevation: 10,
-  }
 });

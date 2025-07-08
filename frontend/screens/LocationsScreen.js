@@ -13,7 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
 import { Ionicons } from '@expo/vector-icons';
-import HomeToolbar from '../components/HomeTool';
+import NavigationBar from '../components/NavigationBar';
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 // const GEAR_ICON = require('../assets/gear.png'); // Use Ionicons for gear if you don't have a PNG
@@ -161,7 +161,7 @@ export default function LocationPlantsScreen() {
         />
       )}
 
-    <HomeToolbar navigation={navigation} />  
+    <NavigationBar navigation={navigation} />  
     </SafeAreaView>
   );
 }

@@ -3,7 +3,6 @@ import {
   View,
   Text,
   Image,
-  SafeAreaView,
   TextInput,
   StyleSheet,
   TouchableOpacity,
@@ -16,6 +15,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useForm } from '../context/FormContext';
+import MainLayout from '../components/MainLayout'; // <--- ADDED
 
 // Helper: upload photo to Azure Blob Storage via your backend
 async function uploadPlantPhotoToAzure(uri) {
@@ -63,6 +63,15 @@ export default function PlantReviewScreen({ route, navigation }) {
   const [lastWatered, setLastWatered] = useState(null);
   const [lastFed, setLastFed] = useState(null);
   const [lastRepotted, setLastRepotted] = useState(null);
+
+  // Tab handler for the nav bar
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+  };
 
   // Pick custom user photo
   const handlePhotoPick = async () => {
@@ -144,7 +153,7 @@ export default function PlantReviewScreen({ route, navigation }) {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
         {/* Back Button */}
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -248,7 +257,7 @@ export default function PlantReviewScreen({ route, navigation }) {
           {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>Save Plant</Text>}
         </TouchableOpacity>
       </ScrollView>
-    </SafeAreaView>
+    </MainLayout>
   );
 }
 
