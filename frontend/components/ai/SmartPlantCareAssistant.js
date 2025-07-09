@@ -17,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import NavigationBar from '../NavigationBar'; 
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -792,6 +793,7 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
           </SafeAreaView>
         </View>
       )}
+    <NavigationBar currentTab="ai" navigation={navigation} />
     </Animated.View>
   );
 }
@@ -800,7 +802,6 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fffe',
   },
   safeArea: {
     flex: 1,

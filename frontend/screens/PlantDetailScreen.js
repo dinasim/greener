@@ -45,7 +45,7 @@ export default function PlantDetailScreen({ route, navigation }) {
 
   if (loading) {
     return (
-      <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+      <MainLayout currentTab="plants" navigation={navigation}>
         <View style={styles.center}>
           <Text style={{ fontSize: 18, color: "#2e7d32", fontWeight: "bold" }}>Loading plant details…</Text>
         </View>
@@ -55,7 +55,7 @@ export default function PlantDetailScreen({ route, navigation }) {
 
   if (!plant) {
     return (
-      <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+      <MainLayout currentTab="plants" navigation={navigation}>
         <View style={styles.center}>
           <Ionicons name="alert-circle" size={70} color="#bdbdbd" style={{ marginBottom: 14 }} />
           <Text style={{ fontSize: 24, fontWeight: "bold", color: "#333", marginBottom: 10 }}>
@@ -144,7 +144,7 @@ export default function PlantDetailScreen({ route, navigation }) {
   const problems = Array.isArray(plant.common_problems) ? plant.common_problems : [];
 
   return (
-    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>

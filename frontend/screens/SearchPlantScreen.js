@@ -248,7 +248,7 @@ export default function AddPlantScreen({ navigation }) {
   );
 
   return (
-    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       <Text style={styles.header}>Let's find your plant!</Text>
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>

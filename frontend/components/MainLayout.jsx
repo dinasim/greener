@@ -1,12 +1,14 @@
+// MainLayout.js
 import React from "react";
 import { View, StyleSheet } from "react-native";
 import NavigationBar from "./NavigationBar";
 
-export default function MainLayout({ children, currentTab, onTabPress }) {
+// Make sure you accept the navigation prop here
+export default function MainLayout({ children, currentTab, navigation }) {
   return (
     <View style={styles.container}>
       <View style={styles.content}>{children}</View>
-      <NavigationBar currentTab={currentTab} onTabPress={onTabPress} />
+      <NavigationBar currentTab={currentTab} navigation={navigation} />
     </View>
   );
 }

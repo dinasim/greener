@@ -19,7 +19,6 @@ import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 import {
   getWeatherData,
   generateWateringAdvice,
-  getWeatherIconUrl,
 } from '../services/weatherService';
 import SmartPlantCareAssistant from '../components/ai/SmartPlantCareAssistant';
 import { useCurrentUserType } from '../utils/authUtils';
@@ -37,6 +36,20 @@ function daysUntil(dateStr) {
   return Math.floor((target - today) / (1000 * 60 * 60 * 24));
 }
 
+// --- Helper: Find the next care task for a plant
+function getNextTask(plant) {
+  // Add more task types if you want!
+  const tasks = [
+    { type: 'Water', date: plant.next_water, icon: 'water', color: '#4CAF50' },
+    { type: 'Feed',  date: plant.next_feed,  icon: 'spa', color: '#FFD600' },
+    { type: 'Repot', date: plant.next_repot, icon: 'flower-pot', color: '#8D6E63' },
+  ].filter(t => !!t.date);
+
+  if (!tasks.length) return null;
+  tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return tasks[0];
+}
+
 export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [activeTab, setActiveTab] = useState('today');
@@ -51,8 +64,9 @@ export default function HomeScreen({ navigation }) {
   const { userType, userProfile, loading: userTypeLoading } = useCurrentUserType();
   const [personaChecked, setPersonaChecked] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
+  const [fabOpen, setFabOpen] = useState(false);
 
-  // Notifications (not changed)
+
   useUniversalNotifications(userEmail);
 
   // Weather data loading
@@ -114,15 +128,10 @@ export default function HomeScreen({ navigation }) {
           const res = await fetch(`${API_URL}?email=${encodeURIComponent(userEmail)}`);
           if (!res.ok) throw new Error('Failed to fetch');
           const data = await res.json();
+          // console.log("API returned data:", data);
           let allPlants = [];
           if (Array.isArray(data)) {
-            data.forEach(locationObj => {
-              if (locationObj.plants && Array.isArray(locationObj.plants)) {
-                locationObj.plants.forEach(p => {
-                  allPlants.push({ ...p, location: p.location || locationObj.location });
-                });
-              }
-            });
+            allPlants = data;
           }
           return allPlants;
         } catch (e) {
@@ -156,7 +165,6 @@ export default function HomeScreen({ navigation }) {
     };
   }, []);
 
-  // Only render content if persona is checked and not business
   useEffect(() => {
     if (!userTypeLoading) setPersonaChecked(true);
   }, [userTypeLoading]);
@@ -232,7 +240,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Pull to refresh
   const onRefresh = async () => {
     setRefreshing(true);
     await Promise.all([fetchPlants(), loadWeatherData(true)]);
@@ -251,13 +258,7 @@ export default function HomeScreen({ navigation }) {
       const data = await res.json();
       let allPlants = [];
       if (Array.isArray(data)) {
-        data.forEach(locationObj => {
-          if (locationObj.plants && Array.isArray(locationObj.plants)) {
-            locationObj.plants.forEach(p => {
-              allPlants.push({ ...p, location: p.location || locationObj.location });
-            });
-          }
-        });
+        allPlants = data;
       }
       setPlants(allPlants);
     } catch (e) {
@@ -360,10 +361,14 @@ export default function HomeScreen({ navigation }) {
   );
 
   const renderPlantsSection = () => {
+    // console.log("RENDER plants.length:", plants.length, plants);
+
     const filteredPlants = plants.filter((plant) => {
-      const days = daysUntil(plant.next_water);
+      const nextTask = getNextTask(plant);
+      if (!nextTask) return false;
+      const days = daysUntil(nextTask.date);
       if (activeTab === 'today') return days <= 0;
-      if (activeTab === 'upcoming') return days > 0 && days <= 3;
+      if (activeTab === 'upcoming') return days > 0;
       return false;
     });
 
@@ -410,24 +415,24 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
+  // --- Render a Plant Card for an upcoming task ---
   const renderPlantItem = (item, index) => {
-    const days = daysUntil(item.next_water);
+    const nextTask = getNextTask(item);
+    if (!nextTask) return null;
+    const days = daysUntil(nextTask.date);
+
     let status = '';
-    let statusColor = '#2e7d32';
-    let statusIcon = 'water-outline';
+    let statusColor = nextTask.color;
+    let statusIcon = nextTask.icon;
 
     if (days < 0) {
       status = `Late by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
       statusColor = '#f44336';
-      statusIcon = 'alert-circle';
     } else if (days === 0) {
-      status = 'Water today';
+      status = `${nextTask.type} today`;
       statusColor = '#FF9800';
-      statusIcon = 'water';
     } else {
       status = `In ${days} day${days !== 1 ? 's' : ''}`;
-      statusColor = '#2e7d32';
-      statusIcon = 'time-outline';
     }
 
     return (
@@ -438,7 +443,7 @@ export default function HomeScreen({ navigation }) {
       >
         <View style={styles.plantImageContainer}>
           <Image
-            source={item.image_url ? { uri: item.image_url } : require('../assets/plant-placeholder.png')}
+            source={item.image_url && item.image_url !== '—' ? { uri: item.image_url } : require('../assets/plant-placeholder.png')}
             style={styles.plantImage}
           />
           <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
@@ -450,7 +455,9 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.plantLocation}>{item.location}</Text>
           <View style={styles.statusRow}>
             <MaterialCommunityIcons name={statusIcon} size={16} color={statusColor} />
-            <Text style={[styles.statusText, { color: statusColor }]}>{status}</Text>
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {nextTask.type} {status}
+            </Text>
           </View>
         </View>
         <MaterialIcons name="chevron-right" size={24} color="#ccc" />
@@ -458,29 +465,9 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
+  // --- Weather Card ---
   const renderWeatherCard = () => {
-    if (!weatherData || weatherLoading) {
-      return (
-        <View style={styles.weatherCard}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-            <MaterialCommunityIcons name="weather-partly-cloudy" size={26} color="#388e3c" style={{ marginRight: 6 }} />
-            <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#388e3c', flex: 1 }}>
-              Weather
-            </Text>
-            <View style={styles.weatherActions}>
-              <TouchableOpacity onPress={() => loadWeatherData()}>
-                <MaterialIcons name="refresh" size={20} color="#4CAF50" />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <View style={styles.weatherLoading}>
-            <ActivityIndicator size="small" color="#4CAF50" />
-            <Text style={styles.weatherLoadingText}>Loading weather data...</Text>
-          </View>
-        </View>
-      );
-    }
-
+  if (!weatherData || weatherLoading) {
     return (
       <View style={styles.weatherCard}>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -494,104 +481,172 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </View>
-        {wateringAdvice && (
-          <View style={styles.weatherAdviceRow}>
-            <View style={styles.adviceSectionLeft}>
-              <MaterialCommunityIcons
-                name={wateringAdvice.icon}
-                size={24}
-                color={wateringAdvice.color}
-                style={{ marginRight: 8, marginTop: 4 }}
-              />
-              <View>
-                <Text style={styles.advicePriorityText}>
-                  {wateringAdvice.urgency === 'high'
-                    ? 'High Priority'
-                    : wateringAdvice.urgency === 'medium'
-                    ? 'Medium Priority'
-                    : wateringAdvice.urgency === 'low'
-                    ? 'Low Priority'
-                    : 'Normal'}
-                </Text>
-                <Text style={[styles.adviceGeneral, { color: wateringAdvice.color }]}>
-                  {wateringAdvice.general}
-                </Text>
-              </View>
-            </View>
-            {wateringAdvice.details && (
-              <View style={styles.statsRow}>
-                <View style={styles.statItem}>
-                  <MaterialCommunityIcons name="thermometer" size={20} color="#FF5722" />
-                  <Text style={styles.statValue}>{wateringAdvice.details.temperature}°C</Text>
-                  <Text style={styles.statLabel}>Temp</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <MaterialCommunityIcons name="water-percent" size={20} color="#2196F3" />
-                  <Text style={styles.statValue}>{wateringAdvice.details.humidity}%</Text>
-                  <Text style={styles.statLabel}>Humidity</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <MaterialCommunityIcons name="weather-rainy" size={20} color="#4FC3F7" />
-                  <Text style={styles.statValue}>{wateringAdvice.details.precipitation} mm</Text>
-                  <Text style={styles.statLabel}>Rain</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <MaterialCommunityIcons name="weather-windy" size={20} color="#9E9E9E" />
-                  <Text style={styles.statValue}>{Math.round(wateringAdvice.details.windSpeed)} m/s</Text>
-                  <Text style={styles.statLabel}>Wind</Text>
-                </View>
-                <View style={styles.statItem}>
-                  <MaterialCommunityIcons name="white-balance-sunny" size={20} color="#FFD600" />
-                  <Text style={styles.statValue}>{wateringAdvice.details.uvIndex}</Text>
-                  <Text style={styles.statLabel}>UV</Text>
-                </View>
-              </View>
-            )}
-          </View>
-        )}
+        <View style={styles.weatherLoading}>
+          <ActivityIndicator size="small" color="#4CAF50" />
+          <Text style={styles.weatherLoadingText}>Loading weather data...</Text>
+        </View>
       </View>
     );
-  };
+  }
 
-return (
-  <SafeAreaView style={styles.container}>
-    {/* === Add the header here === */}
-    {mainTab === 'home' && (
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Greener</Text>
-          <Text style={styles.headerSubtitle}>Your Plant Care Companion</Text>
-        </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => navigation.navigate('UserSettings')}
-            accessibilityLabel="Settings"
-          >
-            <MaterialIcons name="settings" size={24} color="#4CAF50" />
+  // Format date string (short weekday, day, short month)
+  const dateStr = new Date().toLocaleDateString(undefined, {
+    weekday: "short", day: "numeric", month: "short"
+  });
+
+  const wd = weatherData.current || {};
+  const icon = wd.icon
+    ? { uri: `https://openweathermap.org/img/wn/${wd.icon}@2x.png` }
+    : null;
+
+  return (
+    <View style={styles.weatherCard}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <MaterialCommunityIcons name="weather-partly-cloudy" size={26} color="#388e3c" style={{ marginRight: 6 }} />
+        <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#388e3c', flex: 1 }}>
+          Weather
+        </Text>
+        <View style={styles.weatherActions}>
+          <TouchableOpacity onPress={() => loadWeatherData()}>
+            <MaterialIcons name="refresh" size={20} color="#4CAF50" />
           </TouchableOpacity>
         </View>
       </View>
-    )}
 
-    {/* Main content below the header */}
-    <View style={styles.contentContainer}>
-      {renderMainTabContent()}
+      {/* Main Weather Row */}
+      <View style={styles.weatherMainRow2}>
+        {/* Left - Big temp + weather icon + city/date */}
+        <View style={styles.weatherLeftCol2}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {icon && (
+              <Image source={icon} style={{ width: 52, height: 52, marginRight: 6 }} />
+            )}
+            <Text style={styles.weatherBigTemp}>
+              {wd.temperature}°C
+            </Text>
+          </View>
+          <Text style={styles.weatherDesc2}>
+            {wd.description && wd.description.charAt(0).toUpperCase() + wd.description.slice(1)}
+          </Text>
+          <Text style={styles.weatherCityDate2}>
+            {(weatherData.location?.city || "Location")} · {dateStr}
+          </Text>
+        </View>
+        {/* Right - weather stats */}
+        <View style={styles.weatherMetricsCol2}>
+          <WeatherMetric icon="water-percent" value={wd.humidity + "%"} label="Humidity" color="#2196F3" />
+          <WeatherMetric icon="weather-rainy" value={weatherData.precipitation?.last24h + " mm"} label="Rain" color="#4FC3F7" />
+          <WeatherMetric icon="weather-windy" value={Math.round(wd.windSpeed) + " m/s"} label="Wind" color="#888" />
+          <WeatherMetric icon="white-balance-sunny" value={wd.uvIndex || 0} label="UV" color="#FFD600" />
+        </View>
+      </View>
+      {/* Advice */}
+      {wateringAdvice && (
+        <View style={styles.weatherAdviceBanner}>
+          <MaterialCommunityIcons
+            name={wateringAdvice.icon || "water-outline"}
+            size={22}
+            color={wateringAdvice.color}
+            style={{ marginRight: 8, marginTop: 2 }}
+          />
+          <Text style={[styles.weatherAdviceText, { color: wateringAdvice.color }]}>
+            {wateringAdvice.general}
+          </Text>
+        </View>
+      )}
     </View>
-    {/* Bottom navigation bar */}
-    <NavigationBar currentTab={mainTab} onTabPress={handleTabPress} />
-  </SafeAreaView>
-);
+  );
+};
 
+// WeatherMetric helper
+function WeatherMetric({ icon, value, label, color }) {
+  return (
+    <View style={styles.weatherMetricBox2}>
+      <MaterialCommunityIcons name={icon} size={18} color={color} />
+      <Text style={styles.weatherMetricVal2}>{value}</Text>
+      <Text style={styles.weatherMetricLabel2}>{label}</Text>
+    </View>
+  );
+}
+
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* === Add the header here === */}
+      {mainTab === 'home' && (
+        <View style={styles.header}>
+          <View style={styles.headerLeftRow}>
+            <Image
+              source={require('../assets/icon.png')}
+              style={styles.logoImg}
+              resizeMode="contain"
+            />
+            <Text style={styles.headerTitle}>Greener</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => navigation.navigate('UserSettings')}
+              accessibilityLabel="Settings"
+            >
+              <MaterialIcons name="settings" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
+        </View>
+      )}
+
+      {/* Main content below the header */}
+      <View style={styles.contentContainer}>
+        {renderMainTabContent()}
+      </View>
+      {/* Bottom navigation bar */}
+  <NavigationBar currentTab={mainTab} navigation={navigation} />
+  <>
+  {/* Floating Action Button */}
+  <View style={styles.fabContainer} pointerEvents="box-none">
+    {fabOpen && (
+      <View style={styles.fabActions}>
+        <TouchableOpacity
+          style={styles.fabActionButton}
+          onPress={() => {
+            setFabOpen(false);
+            navigation.navigate('AddPlant');
+          }}
+        >
+          <MaterialIcons name="local-florist" size={24} color="#fff" />
+          <Text style={styles.fabActionLabel}>Add Plant</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fabActionButton}
+          onPress={() => {
+            setFabOpen(false);
+            navigation.navigate('AddSite');
+          }}
+        >
+          <MaterialIcons name="location-on" size={24} color="#fff" />
+          <Text style={styles.fabActionLabel}>Add Site</Text>
+        </TouchableOpacity>
+      </View>
+    )}
+    <TouchableOpacity
+      style={styles.fab}
+      onPress={() => setFabOpen((prev) => !prev)}
+      activeOpacity={0.85}
+    >
+      <MaterialIcons name={fabOpen ? 'close' : 'add'} size={32} color="#fff" />
+    </TouchableOpacity>
+  </View>
+</> 
+    </SafeAreaView>
+  );
 }
 
 
 const isWeb = Platform.OS === 'web';
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8f9fa' 
+  container: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -603,17 +658,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e8f5e8',
     elevation: 2,
-    ...(!isWeb ? {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    } : {
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    }),
+    ...(!isWeb
+      ? {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+        }
+      : {
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        }),
   },
-  headerLeft: {
+  headerLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+  },
+  logoImg: {
+    width: 36,
+    height: 36,
+    marginRight: 10,
   },
   headerTitle: {
     fontSize: 24,
@@ -624,19 +688,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#66bb6a',
     marginTop: 2,
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  headerActionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f9f3',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   settingsButton: {
     width: 40,
@@ -646,7 +703,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
+
   // Enhanced Profile Card Styles
   enhancedProfileCard: {
     backgroundColor: '#fff',
@@ -1274,5 +1331,121 @@ statValue: {
 statLabel: {
   fontSize: 11,
   color: '#444',
+},
+fabContainer: {
+  position: 'absolute',
+  right: 24,
+  bottom: Platform.OS === 'web' ? 36 : 36,
+  alignItems: 'flex-end',
+  zIndex: 1000,
+  pointerEvents: 'box-none',
+},
+fab: {
+  width: 64,
+  height: 64,
+  borderRadius: 32,
+  backgroundColor: '#4CAF50',
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.25,
+  shadowRadius: 10,
+  elevation: 6,
+  marginBottom: 8,
+},
+fabActions: {
+  marginBottom: 12,
+  alignItems: 'flex-end',
+},
+fabActionButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#388e3c',
+  borderRadius: 24,
+  paddingVertical: 10,
+  paddingHorizontal: 18,
+  marginBottom: 10,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.17,
+  shadowRadius: 3,
+  elevation: 3,
+},
+fabActionLabel: {
+  color: '#fff',
+  fontWeight: '600',
+  fontSize: 16,
+  marginLeft: 10,
+},
+weatherMainRow2: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingBottom: 6,
+  paddingHorizontal: 2,
+},
+weatherLeftCol2: {
+  flex: 1.3,
+  justifyContent: 'center',
+},
+weatherBigTemp: {
+  fontSize: 34,
+  fontWeight: 'bold',
+  color: '#2e7d32',
+  marginRight: 2,
+},
+weatherDesc2: {
+  fontSize: 15,
+  color: '#555',
+  marginBottom: 1,
+},
+weatherCityDate2: {
+  fontSize: 12,
+  color: '#888',
+},
+weatherMetricsCol2: {
+  flex: 1.4,
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  gap: 6,
+},
+weatherMetricBox2: {
+  alignItems: 'center',
+  marginLeft: 10,
+  marginBottom: 2,
+  backgroundColor: '#F0F7F0',
+  borderRadius: 8,
+  paddingVertical: 7,
+  paddingHorizontal: 9,
+  minWidth: 56,
+},
+weatherMetricVal2: {
+  fontWeight: 'bold',
+  color: '#222',
+  fontSize: 15,
+  marginTop: 1,
+},
+weatherMetricLabel2: {
+  fontSize: 11,
+  color: '#666',
+},
+weatherAdviceBanner: {
+  marginTop: 14,
+  borderRadius: 10,
+  backgroundColor: '#e7fbe5',
+  padding: 10,
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginHorizontal: -4,
+  marginBottom: -6,
+},
+weatherAdviceText: {
+  fontWeight: '600',
+  fontSize: 14,
+  flex: 1,
+  flexWrap: 'wrap',
 },
 });

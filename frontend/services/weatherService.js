@@ -8,7 +8,14 @@ const LOCATION_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours cache
 
 // Weather cache
 const weatherCache = new Map();
-
+function fetchWithTimeout(resource, options = {}, timeout = 15000) {
+  return Promise.race([
+    fetch(resource, options),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), timeout)
+    ),
+  ]);
+}
 /**
  * Get user's current location - now with backend fallback!
  */
@@ -145,7 +152,7 @@ export const getWeatherData = async (location = null) => {
 
     console.log('🌤️ Fetching REAL weather data for:', userLocation.city);
     
-    const response = await fetch(`${BASE_URL}/weather-get`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/weather-get`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -154,8 +161,8 @@ export const getWeatherData = async (location = null) => {
         latitude: userLocation.latitude,
         longitude: userLocation.longitude
       }),
-      signal: AbortSignal.timeout(15000)
-    });
+    }, 15000);
+
 
     if (!response.ok) {
       if (response.status === 503) {

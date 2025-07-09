@@ -502,7 +502,7 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
   // ---- Use MainLayout for consumers, plain view for business ----
   if (!isBusiness) {
     return (
-      <MainLayout currentTab="disease" onTabPress={handleTabPress}>
+      <MainLayout currentTab="disease" navigation={navigation}>
         {screenContent}
       </MainLayout>
     );
@@ -530,7 +530,7 @@ const styles = StyleSheet.create({
     color: '#205d29',
     letterSpacing: 0.5,
   },
-  container: { padding: 20, alignItems: 'center', backgroundColor: '#f7f7fa' },
+  container: { padding: 20, alignItems: 'center'},
   greenBtn: {
     flexDirection: "row", alignItems: "center",
     backgroundColor: "#2e7d32",

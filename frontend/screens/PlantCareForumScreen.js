@@ -568,8 +568,8 @@ export default function PlantCareForumScreen({ navigation }) {
   };
 
   return (
-    <MainLayout currentTab="forum" onTabPress={handleTabPress}>
-      <SafeAreaView style={styles.container}>
+  <MainLayout currentTab="forum" navigation={navigation}>
+        <SafeAreaView style={styles.container}>
       {/* Toast Message always visible at root */}
       <ToastMessage
         visible={toast.visible}

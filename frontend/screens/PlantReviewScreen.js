@@ -153,7 +153,7 @@ export default function PlantReviewScreen({ route, navigation }) {
   };
 
   return (
-    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
         {/* Back Button */}
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>

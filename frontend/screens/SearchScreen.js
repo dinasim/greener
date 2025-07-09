@@ -14,7 +14,7 @@ export default function SearchScreen({ navigation }) {
   };
 
   return (
-    <MainLayout currentTab="plants" onTabPress={handleTabPress}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       {/* Header with Back Arrow */}
       <View style={styles.header}>
         <TouchableOpacity 

@@ -102,21 +102,10 @@ export default function UserSettingsScreen({ navigation }) {
     );
   };
 
-  // Navigation tab handler for MainLayout
-  const handleTabPress = (tab) => {
-    // Highlight this tab in the nav bar
-    // Add navigation logic to switch screens
-    if (tab === 'home') navigation.navigate('Home');
-    else if (tab === 'plants') navigation.navigate('Locations');
-    else if (tab === 'marketplace') navigation.navigate('MainTabs');
-    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
-    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
-    else if (tab === 'settings') navigation.navigate('UserSettings'); // Already here
-  };
 
   return (
-    <MainLayout currentTab="settings" onTabPress={handleTabPress}>
-      {/* Header */}
+    <MainLayout currentTab="home" navigation={navigation}>
+        {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />

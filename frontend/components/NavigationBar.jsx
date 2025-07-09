@@ -2,24 +2,35 @@ import React from "react";
 import { View, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-// List of navigation tabs, each with key, label, and icon.
+// Smaller size for compact nav
+const ICON_SIZE = 19;
+
 const TABS = [
-  { key: "home", label: "Home", icon: (focused) => <MaterialIcons name="home" size={26} color={focused ? "#4CAF50" : "#222"} /> },
-  { key: "plants", label: "My Plants", icon: (focused) => <Ionicons name="leaf" size={26} color={focused ? "#4CAF50" : "#222"} /> },
-  { key: "ai", label: "AI Assistant", icon: (focused) => <MaterialCommunityIcons name="robot-excited" size={26} color={focused ? "#FF5722" : "#222"} /> },
-  { key: "disease", label: "Disease Check", icon: (focused) => <Ionicons name="medkit" size={26} color={focused ? "#E91E63" : "#222"} /> },
-  { key: "marketplace", label: "Market", icon: (focused) => <Ionicons name="cart-outline" size={26} color={focused ? "#FF9800" : "#222"} /> },
-  { key: "forum", label: "Forum", icon: (focused) => <MaterialCommunityIcons name="forum" size={26} color={focused ? "#2196F3" : "#222"} /> },
+  { key: "home", label: "Home", icon: (focused) => <MaterialIcons name="home" size={ICON_SIZE} color={focused ? "#4CAF50" : "#9E9E9E"} /> },
+  { key: "plants", label: "My Plants", icon: (focused) => <Ionicons name="leaf" size={ICON_SIZE} color={focused ? "#4CAF50" : "#9E9E9E"} /> },
+  { key: "ai", label: "AI Assistant", icon: (focused) => <MaterialCommunityIcons name="robot-excited" size={ICON_SIZE} color={focused ? "#FF5722" : "#9E9E9E"} /> },
+  { key: "disease", label: "Disease Check", icon: (focused) => <Ionicons name="medkit" size={ICON_SIZE} color={focused ? "#E91E63" : "#9E9E9E"} /> },
+  { key: "marketplace", label: "Market", icon: (focused) => <Ionicons name="cart-outline" size={ICON_SIZE} color={focused ? "#FF9800" : "#9E9E9E"} /> },
+  { key: "forum", label: "Forum", icon: (focused) => <MaterialCommunityIcons name="forum" size={ICON_SIZE} color={focused ? "#2196F3" : "#9E9E9E"} /> },
 ];
 
-export default function NavigationBar({ currentTab, onTabPress }) {
+export default function NavigationBar({ currentTab, navigation }) {
+  const handleTabPress = (tabKey) => {
+    if (tabKey === 'home') navigation.navigate('Home');
+    else if (tabKey === 'plants') navigation.navigate('Locations');
+    else if (tabKey === 'ai') navigation.navigate('SmartPlantCareAssistant');
+    else if (tabKey === 'disease') navigation.navigate('DiseaseChecker');
+    else if (tabKey === 'marketplace') navigation.navigate('MainTabs');
+    else if (tabKey === 'forum') navigation.navigate('PlantCareForumScreen');
+  };
+
   return (
     <View style={styles.bottomBar}>
       {TABS.map(tab => (
         <TouchableOpacity
           key={tab.key}
           style={styles.bottomBarItem}
-          onPress={() => onTabPress(tab.key)}
+          onPress={() => handleTabPress(tab.key)}
           activeOpacity={0.7}
         >
           {tab.icon(currentTab === tab.key)}
@@ -36,7 +47,6 @@ export default function NavigationBar({ currentTab, onTabPress }) {
 }
 
 const isWeb = Platform.OS === 'web';
-
 const styles = StyleSheet.create({
   bottomBar: {
     flexDirection: "row",
@@ -45,7 +55,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
     borderTopWidth: 1,
     borderTopColor: "#e8f5e8",
-    paddingVertical: isWeb ? 12 : 8,
+    paddingVertical: isWeb ? 6 : 6,
     elevation: 20,
     ...(!isWeb ? {
       shadowColor: "#000",
@@ -60,12 +70,12 @@ const styles = StyleSheet.create({
   bottomBarItem: {
     alignItems: "center",
     flex: 1,
-    paddingVertical: 2,
-    minWidth: 60,
+    paddingVertical: 0,
+    minWidth: 44,
   },
   bottomBarLabel: {
-    fontSize: 12,
+    fontSize: 10,
     color: "#222",
-    marginTop: 2,
+    marginTop: 1,
   },
 });

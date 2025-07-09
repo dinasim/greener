@@ -3,6 +3,7 @@ import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity,
 import { MaterialIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ToastMessage from '../marketplace/components/ToastMessage';
+import NavigationBar from '../components/NavigationBar';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
@@ -313,6 +314,7 @@ export default function ForumTopicDetail({ route, navigation }) {
           </View>
         </View>
       )}
+      <NavigationBar currentTab="forum" navigation={navigation} />
     </SafeAreaView>
   );
 }
