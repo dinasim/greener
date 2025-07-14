@@ -13,7 +13,7 @@ import {
 import { useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
 import { Ionicons } from '@expo/vector-icons';
-import HomeToolbar from '../components/HomeTool';
+import NavigationBar from '../components/NavigationBar';
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 // const GEAR_ICON = require('../assets/gear.png'); // Use Ionicons for gear if you don't have a PNG
@@ -74,12 +74,6 @@ export default function LocationPlantsScreen() {
     <SafeAreaView style={styles.safeArea}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
         <View style={styles.headerCenter}>
           <Text style={styles.headerTitle}>My Plants</Text>
           <Text style={styles.headerSub}>
@@ -160,8 +154,7 @@ export default function LocationPlantsScreen() {
           }
         />
       )}
-
-    <HomeToolbar navigation={navigation} />  
+      <NavigationBar currentTab="plants" navigation={navigation} />
     </SafeAreaView>
   );
 }
@@ -183,12 +176,6 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 36, fontWeight: 'bold', color: '#273d1a', marginBottom: 3 },
   headerSub: { color: '#657465', fontSize: 16, marginLeft: 2, marginBottom: 2 },
   gearBtn: { padding: 6, borderRadius: 99, backgroundColor: '#f3f3f5' },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   headerCenter: {
     flex: 1,
     alignItems: 'flex-start',

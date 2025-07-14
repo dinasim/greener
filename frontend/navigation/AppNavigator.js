@@ -32,7 +32,7 @@ import AddOptionsScreen from '../screens/AddOptionsScreen';
 import EnhancedNotificationSettingsScreen from '../screens/EnhancedNotificationSettingsScreen';
 import UserSettingsScreen from '../screens/UserSettingsScreen';
 import ForumTopicDetail from '../screens/ForumTopicDetail';
-
+import smartPlanteCareAssistant from '../components/ai/SmartPlantCareAssistant';
 // Import marketplace navigation
 import MainTabs from './MainTabs';
 
@@ -111,6 +111,7 @@ export default function AppNavigator() {
         />
 
         {/* Other consumer screens */}
+        <Stack.Screen name="SmartPlantCareAssistant" component={withBackground(smartPlanteCareAssistant)} />
         <Stack.Screen name="Camera" component={withBackground(CameraScreen)} />
         <Stack.Screen name="AddPlant" component={withBackground(AddPlantScreen)} />
         <Stack.Screen name="SearchPlants" component={withBackground(searchPlants)} />

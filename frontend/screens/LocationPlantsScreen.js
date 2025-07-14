@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import { useForm } from '../context/FormContext';
-import HomeToolbar from '../components/HomeTool';
+import NavigationBar from '../components/NavigationBar'; 
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 
@@ -84,7 +84,7 @@ export default function LocationPlantsDetail() {
           contentContainerStyle={styles.list}
         />
       )}
-       <HomeToolbar navigation={navigation} />
+      <NavigationBar currentTab="plants" navigation={navigation} />
     </SafeAreaView>
   );
 }

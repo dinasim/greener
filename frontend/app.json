@@ -3,7 +3,6 @@
     "name": "Greener",
     "slug": "greener",
     "platforms": [
-      "ios",
       "android",
       "web"
     ],

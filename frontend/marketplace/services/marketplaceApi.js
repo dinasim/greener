@@ -221,7 +221,7 @@ export const fetchBusinessInventory = async (businessId) => {
   }
   
   // FIXED: Use correct backend endpoint from documentation
-  const response = await apiRequest(`business-inventory-get?businessId=${encodeURIComponent(businessId)}`);
+  const response = await apiRequest(`marketplace/business/${encodeURIComponent(businessId)}/inventory`);
   
   // Update unified cache
   await AsyncStorage.setItem('unified_business_inventory', JSON.stringify({

@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import {
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ActivityIndicator, SafeAreaView, KeyboardAvoidingView, Platform
+} from 'react-native';
 import { useForm } from "../context/FormContext";
 
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
@@ -13,7 +16,7 @@ export default function LoginScreen({ navigation }) {
 
   const canLogin = username.trim() && password.trim();
 
-  const handleLogin = async () => {
+  const handleLogin = useCallback(async () => {
     setErrorMsg('');
     setLoading(true);
     try {
@@ -24,23 +27,29 @@ export default function LoginScreen({ navigation }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
-      updateFormData('email', data.email);
-      updateFormData('username', data.username);
-      updateFormData('name', data.name);
-      updateFormData('intersted', data.intersted || '');
-      updateFormData('animals', data.animals || '');
-      updateFormData('kids', data.kids || '');
-      setLoading(false);
+      // If you can, batch update (depends on your context logic)
+      updateFormData({
+        email: data.email,
+        username: data.username,
+        name: data.name,
+        intersted: data.intersted || '',
+        animals: data.animals || '',
+        kids: data.kids || ''
+      });
       navigation.navigate('Home');
     } catch (err) {
-      setLoading(false);
       setErrorMsg(err.message);
+    } finally {
+      setLoading(false);
     }
-  };
+  }, [username, password, updateFormData, navigation]);
 
   return (
-    <SafeAreaView style={{ flex: 1  }}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
         <View style={styles.container}>
           <Text style={styles.title}>Login</Text>
           {errorMsg ? <Text style={styles.errorMsg}>{errorMsg}</Text> : null}
@@ -49,9 +58,11 @@ export default function LoginScreen({ navigation }) {
             placeholder="Username"
             value={username}
             autoCapitalize="none"
+            autoCorrect={false}
             onChangeText={setUsername}
             editable={!loading}
             returnKeyType="next"
+            onSubmitEditing={() => { }}
           />
           <TextInput
             style={styles.input}
@@ -61,15 +72,20 @@ export default function LoginScreen({ navigation }) {
             secureTextEntry
             editable={!loading}
             returnKeyType="done"
+            onSubmitEditing={canLogin ? handleLogin : undefined}
           />
           <TouchableOpacity
             style={[styles.button, !canLogin && { opacity: 0.5 }]}
             disabled={!canLogin || loading}
             onPress={handleLogin}
+            accessibilityLabel="Login Button"
           >
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => navigation.navigate('SignupPlantsLocation')}>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('SignupPlantsLocation')}
+            accessibilityLabel="Go to Signup"
+          >
             <Text style={styles.toggleText}>Don't have an account? Register</Text>
           </TouchableOpacity>
         </View>

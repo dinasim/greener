@@ -9,16 +9,13 @@ import {
   StyleSheet,
   TouchableOpacity,
   ActivityIndicator,
-  Dimensions,
   Alert,
-  Platform,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import MainLayout from '../components/MainLayout';
 
-const { width } = Dimensions.get('window');
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
 
-// Utility: calculate days until a given ISO date
 function daysUntil(dateStr) {
   if (!dateStr) return '?';
   const now = new Date();
@@ -27,7 +24,6 @@ function daysUntil(dateStr) {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
-// Format a JS Date as DD MMM YYYY (e.g. "16 April 2025")
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
@@ -56,23 +52,22 @@ export default function UserPlantDetailScreen({ route, navigation }) {
 
   if (loading || !plant) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
-        <ActivityIndicator size="large" color="#4caf50" />
-        <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
-      </View>
+      <MainLayout currentTab="plants" navigation={navigation}> {/* <- THIS LINE IS ALL YOU NEED! */}
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
+          <ActivityIndicator size="large" color="#4caf50" />
+          <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
+        </View>
+      </MainLayout>
     );
   }
 
-  // Unified access to new schema
   const care = plant.care_info || {};
   const schedule = plant.schedule || {};
 
-  // For next care actions in X days
   const nextWaterDays = plant.next_water ? daysUntil(plant.next_water) : '?';
   const nextFeedDays = plant.next_feed ? daysUntil(plant.next_feed) : '?';
   const nextRepotDays = plant.next_repot ? daysUntil(plant.next_repot) : '?';
 
-  // Actions as array
   const actions = [
     {
       key: 'water',
@@ -103,24 +98,31 @@ export default function UserPlantDetailScreen({ route, navigation }) {
     }
   ];
 
-  // Handler: Mark task as done (update last_X to today)
   async function markTaskDone(key) {
     try {
+      console.log('Making request to markTaskDone with:', { id: plant.id, email: plant.email, task: key });
       const res = await fetch('https://usersfunctions.azurewebsites.net/api/markTaskDone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: plant.id, task: key, date: new Date().toISOString() }),
+        body: JSON.stringify({ id: plant.id, email: plant.email, task: key, date: new Date().toISOString() }),
       });
-      if (!res.ok) throw new Error('Failed to update task');
+      console.log('Response status:', res.status);
+      console.log('Response URL:', res.url);
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error('Error response body:', errorText);
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
       const updated = await res.json();
-      setPlant(updated); // Should return updated plant object!
+      setPlant(updated);
     } catch (err) {
+      console.error('Full error object:', err);
       Alert.alert("Error", "Failed to update task: " + err.message);
     }
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <MainLayout currentTab="plants" navigation={navigation}> {/* <- THIS LINE IS ALL YOU NEED! */}
       {/* Header */}
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
@@ -142,7 +144,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
           <Text style={styles.scientific}>{plant.scientific_name || '—'}</Text>
         </View>
 
-        {/* Task summary row (horizontal KPI-style) */}
+        {/* Task summary row */}
         <View style={styles.tasksRow}>
           {actions.map((act, idx) => {
             let status = '';
@@ -263,26 +265,9 @@ export default function UserPlantDetailScreen({ route, navigation }) {
           </View>
         )}
       </ScrollView>
-
-      {/* NAV BAR */}
-      <View style={styles.navBar}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')}>
-          <Ionicons name="home" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('Locations')}>
-          <Ionicons name="leaf" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('MainTabs')}>
-          <Ionicons name="cart-outline" size={24} color="black" />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate('DiseaseChecker')}>
-          <Ionicons name="medkit" size={24} color="black" />
-        </TouchableOpacity>
-      </View>
-    </View>
+    </MainLayout>
   );
 }
-
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -324,7 +309,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
     paddingVertical: 10,
     paddingHorizontal: 6,
-    boxShadow: "0px 1px 5px rgba(0, 0, 0, 0.06)",
     elevation: 2,
   },
   kpiCard: {
@@ -377,12 +361,4 @@ const styles = StyleSheet.create({
     borderColor: "#ffd6d6",
     borderWidth: 1
   },
-
-  navBar: {
-    position: 'absolute', bottom: 0, left: 0, right: 0,
-    backgroundColor: '#eee', flexDirection: 'row',
-    justifyContent: 'space-around', alignItems: 'center',
-    paddingVertical: 10, borderTopLeftRadius: 20,
-    borderTopRightRadius: 20, elevation: 10,
-  }
 });

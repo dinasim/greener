@@ -8,21 +8,19 @@ import {
   FlatList,
   TouchableOpacity,
   Image,
-  SafeAreaView,
   StyleSheet,
   ActivityIndicator,
   Alert,
   Platform,
 } from 'react-native';
-import HomeToolbar from '../components/HomeTool';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons, MaterialIcons, FontAwesome5 } from '@expo/vector-icons';
 import { SwipeListView } from 'react-native-swipe-list-view';
+import MainLayout from '../components/MainLayout';
 
 const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyPlantPhoto';
 
-// Fallback list for trending/popular plants
 const fallbackPopular = [
   { id: 'Epipremnum aureum', common_name: 'Golden Pothos', scientific_name: 'Epipremnum aureum', family_common_name: 'Araceae', image_url: null },
   { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata', family_common_name: 'Asparagaceae', image_url: null },
@@ -38,7 +36,15 @@ export default function AddPlantScreen({ navigation }) {
   const [loading, setLoading]             = useState(false);
   const [searchDone, setSearchDone]       = useState(false);
 
-  // Normalizes API data for local rendering
+  // Nav bar handler for MainLayout
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+  };
+
   const normalize = p => ({
     id:                  p.id,
     common_name:         p.common_name || '',
@@ -51,7 +57,6 @@ export default function AddPlantScreen({ navigation }) {
     temperature:         p.temperature     || null,
   });
 
-  // Fetch plant details by scientific name
   async function fetchByScientificName(name) {
     try {
       const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(name)}`);
@@ -63,7 +68,6 @@ export default function AddPlantScreen({ navigation }) {
     }
   }
 
-  // Load popular plants on mount
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -78,7 +82,6 @@ export default function AddPlantScreen({ navigation }) {
     })();
   }, []);
 
-  // Search by text
   const loadCosmosPlants = async () => {
     if (!query.trim() || loading) return;
     setLoading(true);
@@ -95,7 +98,6 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // Photo search handler (mobile: FormData upload)
   const processFileNative = async uri => {
     const filename = uri.split('/').pop();
     const extMatch = /\.(\w+)$/.exec(filename);
@@ -106,13 +108,11 @@ export default function AddPlantScreen({ navigation }) {
     const resp = await fetch(PLANTNET_PROXY_URL, {
       method: 'POST',
       body: form,
-      // Do NOT set Content-Type header! Let fetch do it.
     });
     if (!resp.ok) throw new Error(await resp.text());
     return resp.json();
   };
 
-  // Photo search main handler
   const handlePhotoSearch = async () => {
     if (Platform.OS === 'web') {
       document.getElementById('web-file-input').click();
@@ -127,7 +127,6 @@ export default function AddPlantScreen({ navigation }) {
       setLoading(false);
       return;
     }
-    // FIXED: Use correct mediaTypes format instead of deprecated MediaTypeOptions
     const pick = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: 'image',
       allowsEditing: true,
@@ -137,7 +136,6 @@ export default function AddPlantScreen({ navigation }) {
     if (!uri) { setLoading(false); return; }
     try {
       const json = await processFileNative(uri);
-      console.log("Photo search server response:", json); // Debug
       const results = json.results || [];
       setPlants(results.map(r => ({
         id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
@@ -154,7 +152,6 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // Web file upload handler (FormData upload)
   const handleWebFileUpload = async e => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -168,7 +165,6 @@ export default function AddPlantScreen({ navigation }) {
       const resp = await fetch(PLANTNET_PROXY_URL, { method: 'POST', body: form });
       if (!resp.ok) throw new Error(await resp.text());
       const json = await resp.json();
-      console.log("Web upload server response:", json); // Debug
       const results = json.results || [];
       setPlants(results.map(r => ({
         id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
@@ -186,7 +182,6 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // Render icons
   const renderCareIcons = p => {
     const col = (v,c) => v ? c : '#ccc';
     return (
@@ -208,7 +203,6 @@ export default function AddPlantScreen({ navigation }) {
     );
   };
 
-  // Render cards
   const renderCard = ({ item, index }) => (
     <SwipeListView
       data={[item]}
@@ -254,9 +248,8 @@ export default function AddPlantScreen({ navigation }) {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       <Text style={styles.header}>Let's find your plant!</Text>
-      {/* Search + Scan */}
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color="#999" onPress={loadCosmosPlants}/>
@@ -284,7 +277,6 @@ export default function AddPlantScreen({ navigation }) {
           />
         )}
       </View>
-      {/* List */}
       {!searchDone ? (
         <FlatList
           data={popularPlants}
@@ -302,8 +294,7 @@ export default function AddPlantScreen({ navigation }) {
       ) : (
         !loading && <Text style={styles.noResults}>No plants found. Try another search.</Text>
       )}
-      <HomeToolbar navigation={navigation} />
-    </SafeAreaView>
+    </MainLayout>
   );
 }
 

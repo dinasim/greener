@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Animated } from 'react-native';
+import MainLayout from '../components/MainLayout';
 
 const WateringChecklistScreen = ({ weatherData }) => {
   const weatherFadeAnim = new Animated.Value(0);
@@ -23,10 +24,12 @@ const WateringChecklistScreen = ({ weatherData }) => {
   };
 
   return (
-    <View style={styles.container}>
-      {renderWeatherCard()}
-      {/* ...other components... */}
-    </View>
+    <MainLayout currentTab="plants" onTabPress={() => {}}>
+      <View style={styles.container}>
+        {renderWeatherCard()}
+        {/* ...other components... */}
+      </View>
+    </MainLayout>
   );
 };
 

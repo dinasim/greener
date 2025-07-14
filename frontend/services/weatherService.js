@@ -8,12 +8,20 @@ const LOCATION_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours cache
 
 // Weather cache
 const weatherCache = new Map();
-
+function fetchWithTimeout(resource, options = {}, timeout = 15000) {
+  return Promise.race([
+    fetch(resource, options),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Request timeout')), timeout)
+    ),
+  ]);
+}
 /**
- * Get user's current location - REAL LOCATION ONLY
+ * Get user's current location - now with backend fallback!
  */
 export const getUserLocation = async () => {
   try {
+    // 1. Try cached location (if recent)
     const cachedLocation = await AsyncStorage.getItem('user_weather_location');
     if (cachedLocation) {
       const parsed = JSON.parse(cachedLocation);
@@ -22,53 +30,93 @@ export const getUserLocation = async () => {
       }
     }
 
-    // Try to get location from user profile first
-    const userProfile = await AsyncStorage.getItem('userProfile');
-    if (userProfile) {
-      const profile = JSON.parse(userProfile);
-      if (profile.location && profile.location.latitude && profile.location.longitude) {
-        const location = {
-          latitude: profile.location.latitude,
-          longitude: profile.location.longitude,
-          city: profile.city || 'Unknown',
-          country: 'Israel'
-        };
-        
-        // Cache the location
-        await AsyncStorage.setItem('user_weather_location', JSON.stringify({
-          location,
-          timestamp: Date.now()
-        }));
-        
-        return location;
+    // 2. Try AsyncStorage userProfile
+    let userProfile = await AsyncStorage.getItem('userProfile');
+    let profile = userProfile ? JSON.parse(userProfile) : null;
+
+    // 3. If missing, fetch from backend by email
+    let user = profile && profile.user ? profile.user : profile;
+
+    if (
+      !user ||
+      !user.location ||
+      typeof user.location.latitude !== "number" ||
+      typeof user.location.longitude !== "number"
+    ) {
+      // Get user's email
+      let email =
+        (user && user.email) ||
+        (profile && profile.email) ||
+        (profile && profile.user && profile.user.email) ||
+        (await AsyncStorage.getItem('userEmail'));
+
+      if (email) {
+        try {
+          const res = await fetch(
+            `https://usersfunctions.azurewebsites.net/api/marketplace/users/${encodeURIComponent(email)}`
+          );
+          if (res.ok) {
+            const data = await res.json();
+            user = data.user || data;
+            profile = { user }; // Save as { user: ... } for consistency
+            await AsyncStorage.setItem('userProfile', JSON.stringify(profile));
+          }
+        } catch (fetchErr) {
+          // Just warn, will try device location next
+          console.warn('Failed to fetch user profile from backend:', fetchErr);
+        }
       }
     }
 
-    // Try device location if available
+    // DEBUG LOGGING
+    console.log("Fetched user profile (user):", user);
+    if (user && user.location) {
+      console.log("Profile location:", user.location);
+      console.log("Latitude:", user.location.latitude, "Longitude:", user.location.longitude);
+    }
+
+    // 4. If user has location, use it and cache
+    if (
+      user &&
+      user.location &&
+      typeof user.location.latitude === "number" &&
+      typeof user.location.longitude === "number"
+    ) {
+      const location = {
+        latitude: user.location.latitude,
+        longitude: user.location.longitude,
+        city: user.location.city || user.city || 'Unknown',
+        country: user.location.country || 'Israel',
+      };
+      // Cache
+      await AsyncStorage.setItem('user_weather_location', JSON.stringify({
+        location,
+        timestamp: Date.now()
+      }));
+      return location;
+    }
+
+    // 5. Try device location if available (mobile only)
     if (Platform.OS !== 'web') {
       try {
         const { Location } = require('expo-location');
         const { status } = await Location.requestForegroundPermissionsAsync();
-        
         if (status === 'granted') {
           const position = await Location.getCurrentPositionAsync({
             accuracy: Location.Accuracy.Balanced,
             timeout: 10000
           });
-          
           const location = {
             latitude: position.coords.latitude,
             longitude: position.coords.longitude,
             city: 'Current Location',
             country: 'Unknown'
           };
-          
-          // Cache the location
+          // Cache
           await AsyncStorage.setItem('user_weather_location', JSON.stringify({
             location,
             timestamp: Date.now()
           }));
-          
           return location;
         }
       } catch (locationError) {
@@ -104,7 +152,7 @@ export const getWeatherData = async (location = null) => {
 
     console.log('🌤️ Fetching REAL weather data for:', userLocation.city);
     
-    const response = await fetch(`${BASE_URL}/weather-get`, {
+    const response = await fetchWithTimeout(`${BASE_URL}/weather-get`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -113,8 +161,8 @@ export const getWeatherData = async (location = null) => {
         latitude: userLocation.latitude,
         longitude: userLocation.longitude
       }),
-      signal: AbortSignal.timeout(15000)
-    });
+    }, 15000);
+
 
     if (!response.ok) {
       if (response.status === 503) {

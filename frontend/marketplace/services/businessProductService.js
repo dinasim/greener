@@ -5,7 +5,7 @@ const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
 /**
  * Get specific business product details by productId and businessId
- * Uses /business-inventory-get?businessId=... and filters for the product
+ * Uses /marketplace/business/{businessId}/inventory and filters for the product
  */
 export const getBusinessProduct = async (productId, businessId) => {
   if (!productId || !businessId) throw new Error('Product ID and Business ID are required');
@@ -17,7 +17,7 @@ export const getBusinessProduct = async (productId, businessId) => {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     headers['X-Business-ID'] = businessId;
 
-    const url = `${API_BASE_URL}/business-inventory-get?businessId=${encodeURIComponent(businessId)}`;
+    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/inventory`;
     const response = await fetch(url, { method: 'GET', headers });
     if (!response.ok) throw new Error(`Failed to fetch business inventory: ${response.status}`);
     const data = await response.json();
@@ -95,7 +95,7 @@ export const getBusinessProfile = async (businessId) => {
 /**
  * Get business inventory/products
  */
-export const getBusinessInventory = async (businessId, filters = {}) => {
+export const getBusinessInventory = async (businessId) => {
   if (!businessId) throw new Error('Business ID is required');
   try {
     const headers = { 'Content-Type': 'application/json' };
@@ -104,8 +104,8 @@ export const getBusinessInventory = async (businessId, filters = {}) => {
     if (userEmail) headers['X-User-Email'] = userEmail;
     if (token) headers['Authorization'] = `Bearer ${token}`;
     headers['X-Business-ID'] = businessId;
-    const queryParams = new URLSearchParams({ businessId, ...filters });
-    const url = `${API_BASE_URL}/business-inventory-get?${queryParams.toString()}`;
+
+    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/inventory`;
     const response = await fetch(url, { method: 'GET', headers });
     if (!response.ok) throw new Error(`Failed to fetch business inventory: ${response.status}`);
     return await response.json();

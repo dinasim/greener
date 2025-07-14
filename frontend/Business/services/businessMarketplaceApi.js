@@ -1,4 +1,4 @@
-// Business/services/businessMarketplaceApi.js - FIXED: Clean business marketplace API
+// Business/services/businessMarketplaceApi.js - UPDATED for business inventory endpoint
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
@@ -40,12 +40,12 @@ const apiRequest = async (url, options = {}, retries = 3, context = 'Request') =
         timeout: 15000,
         ...options
       });
-      
+
       const responseText = await response.text();
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${responseText}`);
       }
-      
+
       try {
         return JSON.parse(responseText);
       } catch {
@@ -69,7 +69,7 @@ export const getBusinessMarketplaceProfile = async (businessId) => {
   try {
     console.log('🏪 Loading business marketplace profile for:', businessId);
     const headers = await getEnhancedHeaders();
-    
+
     const url = `${API_BASE_URL}/business-profile`;
     const response = await apiRequest(url, {
       method: 'GET',
@@ -90,7 +90,7 @@ export const updateBusinessMarketplaceProfile = async (businessId, profileData) 
   try {
     console.log('📝 Updating business marketplace profile');
     const headers = await getEnhancedHeaders();
-    
+
     const url = `${API_BASE_URL}/business-profile`;
     const response = await apiRequest(url, {
       method: 'PATCH',
@@ -106,14 +106,15 @@ export const updateBusinessMarketplaceProfile = async (businessId, profileData) 
 };
 
 /**
- * Get Business Products for Marketplace
+ * Get Business Products for Marketplace (inventory)
  */
 export const getBusinessMarketplaceProducts = async (businessId) => {
   try {
     console.log('🛒 Loading marketplace products for business:', businessId);
     const headers = await getEnhancedHeaders();
-    
-    const url = `${API_BASE_URL}/business-inventory-get`;
+
+    // NEW: Using the updated endpoint and businessId in the query param:
+    const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/inventory`;
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
@@ -133,7 +134,7 @@ export const publishProductsToMarketplace = async (productIds, publishSettings =
   try {
     console.log('📢 Publishing products to marketplace:', productIds.length);
     const headers = await getEnhancedHeaders();
-    
+
     const url = `${API_BASE_URL}/business-inventory-publish`;
     const response = await apiRequest(url, {
       method: 'POST',
@@ -155,15 +156,18 @@ export const getNearbyBusinesses = async (location, radius = 10) => {
   try {
     console.log('📍 Getting nearby businesses');
     const headers = await getEnhancedHeaders();
+    
     // Convert location and radius to query string
     const queryParams = location && location.latitude && location.longitude
       ? `?lat=${encodeURIComponent(location.latitude)}&lon=${encodeURIComponent(location.longitude)}&radius=${encodeURIComponent(radius)}`
       : '';
     const url = `${API_BASE_URL}/get_nearby_businesses${queryParams}`;
+    
     const response = await apiRequest(url, {
       method: 'GET',
       headers,
     }, 3, 'Nearby Businesses');
+    
     return response;
   } catch (error) {
     console.error('❌ Nearby businesses error:', error);
@@ -178,11 +182,13 @@ export const getAllBusinesses = async (filters = {}) => {
   try {
     console.log('🏢 Getting all businesses');
     const headers = await getEnhancedHeaders();
+    
     // Convert filters to query string
     const queryParams = Object.keys(filters).length
       ? '?' + Object.entries(filters).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
       : '';
     const url = `${API_BASE_URL}/get-all-businesses${queryParams}`;
+    
     const response = await apiRequest(url, {
       method: 'GET',
       headers,

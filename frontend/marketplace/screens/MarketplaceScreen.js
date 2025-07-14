@@ -658,7 +658,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         onBackPress={handleBackPress}
         onNotificationsPress={() => navigateToMessages({})}
       />
-      
+      <View style={styles.topSections}>
       <SearchBar
         value={searchQuery}
         onChangeText={handleSearch}
@@ -688,7 +688,8 @@ const MarketplaceScreen = ({ navigation, route }) => {
         onResetFilters={handleResetFilters}
         businessCounts={sellerTypeCounts}
       />
-      
+      </View>
+      <View style={styles.listSection}>
       <FlatList
         data={filteredPlants}
         renderItem={renderPlantItem}
@@ -710,7 +711,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         columnWrapperStyle={viewMode === 'grid' ? styles.gridRow : null}
         ItemSeparatorComponent={viewMode === 'list' ? () => <View style={styles.listSeparator} /> : null}
       />
-      
+      </View>
       {/* Only show Add button for individual users, not businesses */}
       {userType !== 'business' && (
         <TouchableOpacity 
@@ -839,6 +840,16 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2, 
     shadowRadius: 4,
   },
+topSections: {
+  paddingHorizontal: 8,
+  paddingTop: 6,
+  paddingBottom: 2,
+  backgroundColor: '#fff', // optional, for contrast
+},
+listSection: {
+  flex: 1,  
+  minHeight: 0,
+},
 });
 
 export default MarketplaceScreen;

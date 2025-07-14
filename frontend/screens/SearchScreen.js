@@ -1,13 +1,21 @@
-// Create separate screen for Search with proper back navigation
 import React from 'react';
-import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import MainLayout from '../components/MainLayout'; // update import path as needed
 import SearchPlantScreen from './SearchPlantScreen';
 
 export default function SearchScreen({ navigation }) {
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Standardized Header with Back Arrow */}
+    <MainLayout currentTab="plants" navigation={navigation}>
+      {/* Header with Back Arrow */}
       <View style={styles.header}>
         <TouchableOpacity 
           style={styles.backButton} 
@@ -21,17 +29,13 @@ export default function SearchScreen({ navigation }) {
         <Text style={styles.headerTitle}>Search Plants</Text>
         <View style={styles.backButton} /> {/* Placeholder for centering */}
       </View>
-      
+      {/* The actual search component */}
       <SearchPlantScreen navigation={navigation} />
-    </SafeAreaView>
+    </MainLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

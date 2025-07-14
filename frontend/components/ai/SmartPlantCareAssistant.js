@@ -10,7 +10,6 @@ import {
   Image,
   Alert,
   ActivityIndicator,
-  Modal,
   SafeAreaView,
   Animated,
   Easing,
@@ -18,6 +17,7 @@ import {
   KeyboardAvoidingView,
   Platform
 } from 'react-native';
+import NavigationBar from '../NavigationBar'; 
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,71 +25,58 @@ import GreenerLogo from '../../assets/icon.png';
 import { getBusinessInventory, getBusinessProfile } from '../../Business/services/businessApi';
 
 const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
-
 const { width, height } = Dimensions.get('window');
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
-export default function GreenerPlantCareAssistant({ visible, onClose, plant = null, onSelectPlant }) {
+export default function GreenerPlantCareAssistant({ navigation, route }) {
+  const routePlant = route?.params?.plant || null;
+  const onSelectPlant = route?.params?.onSelectPlant;
   const [isLoading, setIsLoading] = useState(false);
   const [question, setQuestion] = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [diagnosis, setDiagnosis] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [chatHistory, setChatHistory] = useState([]);
-  const [error, setError] = useState('');
   const [plantSelectVisible, setPlantSelectVisible] = useState(false);
   const [inventoryPlants, setInventoryPlants] = useState([]);
   const [plantSearchResults, setPlantSearchResults] = useState([]);
   const [plantSearchQuery, setPlantSearchQuery] = useState('');
   const [plantTab, setPlantTab] = useState('inventory');
   const [isInventoryLoading, setIsInventoryLoading] = useState(false);
-  const [selectedPlant, setSelectedPlant] = useState(plant);
+  const [selectedPlant, setSelectedPlant] = useState(routePlant);
   const [messageAnimations, setMessageAnimations] = useState([]);
   const [isPlantSearchLoading, setIsPlantSearchLoading] = useState(false);
-  const [showQuickActions, setShowQuickActions] = useState(false);
   const [ownerName, setOwnerName] = useState('');
-  const [businessLogo, setBusinessLogo] = useState(null);
   const [showWelcome, setShowWelcome] = useState(true);
   const [chatStarted, setChatStarted] = useState(false);
   const [hasExistingChat, setHasExistingChat] = useState(false);
   const [lastChatHistory, setLastChatHistory] = useState([]);
-  const [persona, setPersona] = useState('business'); // 'business' or 'consumer'
+  const [persona, setPersona] = useState('business');
   const scrollViewRef = useRef(null);
   const plantSearchDebounce = useRef(null);
-  
-  // Fixed animation refs with proper initialization
+
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
 
-  // Initialize animations when modal becomes visible
   useEffect(() => {
-    if (visible) {
-      // Reset animations
-      fadeAnim.setValue(0);
-      slideAnim.setValue(-50);
-      
-      // Start entrance animations
-      Animated.sequence([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: false, // Fixed: Added useNativeDriver
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 300,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: false, // Fixed: Added useNativeDriver
-        }),
-      ]).start();
-    } else {
-      // Reset to initial state when modal closes
-      fadeAnim.setValue(1);
-      slideAnim.setValue(0);
-    }
-  }, [visible]);
+    // Animate on mount
+    fadeAnim.setValue(0);
+    slideAnim.setValue(-50);
+    Animated.sequence([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 300,
+        useNativeDriver: false,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, []);
 
-  // Detect persona and set name on mount
   useEffect(() => {
     const detectPersonaAndSetName = async () => {
       let personaType = 'business';
@@ -98,12 +85,10 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
         const storedPersona = await AsyncStorage.getItem('persona');
         if (storedPersona === 'consumer') {
           personaType = 'consumer';
-          // Fallback: get name from AsyncStorage or use email
           const userName = await AsyncStorage.getItem('userName');
           const userEmail = await AsyncStorage.getItem('userEmail');
           name = userName || userEmail || 'there';
         } else {
-          // Business logic (default)
           const profile = await getBusinessProfile();
           name = profile?.contactName || profile?.name || profile?.businessName || 'there';
         }
@@ -113,10 +98,9 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       setPersona(personaType);
       setOwnerName(name);
     };
-    if (visible) detectPersonaAndSetName();
-  }, [visible]);
+    detectPersonaAndSetName();
+  }, []);
 
-  // Fetch inventory for plant picker
   const fetchInventoryPlants = async () => {
     setIsInventoryLoading(true);
     try {
@@ -124,7 +108,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       if (!userEmail) throw new Error('No user email found');
       let plants = [];
       if (persona === 'consumer') {
-        // Fetch user plants for consumer
         const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getalluserplants?email=${encodeURIComponent(userEmail)}`);
         const data = await res.json();
         if (Array.isArray(data)) {
@@ -137,7 +120,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
           });
         }
       } else {
-        // Business inventory
         const inv = await getBusinessInventory(userEmail);
         plants = (inv.inventory || inv || []).filter(item => (item.productType === 'plant' || item.category === 'Plants'));
       }
@@ -149,7 +131,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     }
   };
 
-  // Fetch general plants (from global container, not business inventory)
   const fetchGeneralPlants = async (query = '') => {
     try {
       let url = PLANT_SEARCH_URL;
@@ -158,7 +139,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       }
       const res = await fetch(url);
       const data = await res.json();
-      // Normalize for plant picker
       const normalize = p => ({
         id: p.id,
         name: p.common_name || p.name || '',
@@ -172,22 +152,18 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     }
   };
 
-  // Open plant picker and fetch inventory
   const handleOpenPlantPicker = () => {
     setPlantSelectVisible(true);
     fetchInventoryPlants();
   };
 
-  // Handle plant selection
   const handleSelectPlant = (plant) => {
     setSelectedPlant(plant);
     setPlantSelectVisible(false);
     if (onSelectPlant) onSelectPlant(plant);
   };
 
-  // Reset chat history with animation
   const handleResetChat = () => {
-    // Save last chat before clearing
     setLastChatHistory(chatHistory);
     setChatHistory([
       {
@@ -202,10 +178,8 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     setDiagnosis(null);
     setRecommendations([]);
     setMessageAnimations([]);
-    // Do NOT setShowWelcome(true) or setChatStarted(false)
   };
 
-  // Fixed message animation function
   const animateMessage = (index) => {
     const anim = new Animated.Value(0);
     setMessageAnimations((prev) => {
@@ -213,31 +187,29 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       arr[index] = anim;
       return arr;
     });
-    
+
     Animated.sequence([
       Animated.timing(anim, {
         toValue: 0.8,
         duration: 200,
         easing: Easing.out(Easing.ease),
-        useNativeDriver: false, // Fixed: Added useNativeDriver
+        useNativeDriver: false,
       }),
       Animated.spring(anim, {
         toValue: 1,
         tension: 100,
         friction: 8,
-        useNativeDriver: false, // Fixed: Added useNativeDriver
+        useNativeDriver: false,
       }),
     ]).start();
   };
 
-  // Animate on new message
   useEffect(() => {
     if (chatHistory.length > 0) {
       animateMessage(chatHistory.length - 1);
     }
   }, [chatHistory.length]);
 
-  // Debounced search for 'All Plants' tab
   useEffect(() => {
     if (plantTab !== 'all') return;
     if (plantSearchDebounce.current) clearTimeout(plantSearchDebounce.current);
@@ -259,30 +231,22 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     };
   }, [plantSearchQuery, plantTab]);
 
-  // Check if there's existing chat history
   useEffect(() => {
     setHasExistingChat(chatHistory.length > 0);
   }, [chatHistory.length]);
 
-  // Show welcome screen only if chat is empty and user hasn't started chat
   useEffect(() => {
-    if (!visible) {
-      // Reset to welcome screen when modal closes
-      setShowWelcome(true);
-      setChatStarted(false);
-    }
-  }, [visible]);
+    setShowWelcome(true);
+    setChatStarted(false);
+  }, []);
 
-  // AI Analysis Functions
   const analyzePlantHealth = async (imageUri = null, userQuestion = '') => {
     if (!userQuestion.trim() && !imageUri) {
       return;
     }
-    
     setIsLoading(true);
     try {
       const userEmail = await AsyncStorage.getItem('userEmail');
-      
       const requestBody = {
         message: userQuestion || 'Analyze this plant\'s health and provide care recommendations',
         plantInfo: selectedPlant ? {
@@ -307,19 +271,15 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('AI API Error:', response.status, errorText);
         throw new Error(`AI service unavailable (${response.status}). Please try again later.`);
       }
 
       const result = await response.json();
-      
       const aiResponse = result.message || result.diagnosis || result.response || 'No response received';
       const recommendations = result.recommendations || [];
-      
+
       setDiagnosis(aiResponse);
       setRecommendations(Array.isArray(recommendations) ? recommendations : []);
-      
-      // Add to chat history
       const newMessage = {
         id: Date.now(),
         type: 'ai_response',
@@ -329,12 +289,9 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
         timestamp: new Date().toISOString(),
         hasImage: !!imageUri
       };
-      
+
       setChatHistory(prev => [...prev, newMessage]);
-      
     } catch (error) {
-      console.error('AI Analysis Error:', error);
-      
       let errorMessage = 'Failed to analyze plant. ';
       if (error.message.includes('Failed to fetch')) {
         errorMessage += 'Network connection issue. Please check your internet connection.';
@@ -345,8 +302,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       } else {
         errorMessage += error.message || 'Please try again.';
       }
-      
-      // Alert.alert('AI Assistant Error', errorMessage);
       showToast(errorMessage, 'error');
     } finally {
       setIsLoading(false);
@@ -355,19 +310,16 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
 
   const handleImagePick = async () => {
     const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    
     if (permissionResult.granted === false) {
       Alert.alert('Permission Required', 'Please allow access to photos for plant analysis');
       return;
     }
-
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
     });
-
     if (!result.canceled && result.assets[0]) {
       setSelectedImage(result.assets[0].uri);
     }
@@ -375,18 +327,15 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
 
   const handleTakePhoto = async () => {
     const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    
     if (permissionResult.granted === false) {
       Alert.alert('Permission Required', 'Please allow camera access for plant analysis');
       return;
     }
-
     const result = await ImagePicker.launchCameraAsync({
       allowsEditing: true,
       aspect: [4, 3],
       quality: 0.8,
     });
-
     if (!result.canceled && result.assets[0]) {
       setSelectedImage(result.assets[0].uri);
     }
@@ -397,13 +346,9 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       Alert.alert('Input Required', 'Please ask a question or upload an image');
       return;
     }
-
-    // If on welcome screen, start new chat
     if (showWelcome) {
       handleStartNewChat();
     }
-
-    // Add user question to chat
     const userMessage = {
       id: Date.now(),
       type: 'user_question',
@@ -411,17 +356,10 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       image: selectedImage,
       timestamp: new Date().toISOString()
     };
-    
     setChatHistory(prev => [...prev, userMessage]);
-    
-    // Analyze with AI
     analyzePlantHealth(selectedImage, question.trim());
-    
-    // Clear inputs
     setQuestion('');
     setSelectedImage(null);
-    
-    // Auto-scroll to bottom
     setTimeout(() => {
       scrollViewRef.current?.scrollToEnd({ animated: true });
     }, 100);
@@ -443,30 +381,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     setHasExistingChat(true);
   };
 
-  const handleContinueChat = () => {
-    setShowWelcome(false);
-    setChatStarted(true);
-  };
-
-  const handleQuestionSelect = (questionText) => {
-    setQuestion(questionText);
-    handleStartNewChat();
-    
-    // Auto-submit the question after a brief delay
-    setTimeout(() => {
-      const userMessage = {
-        id: Date.now() + 1,
-        type: 'user_question',
-        question: questionText,
-        image: null,
-        timestamp: new Date().toISOString()
-      };
-      
-      setChatHistory(prev => [...prev, userMessage]);
-      analyzePlantHealth(null, questionText);
-    }, 500);
-  };
-
   const getQuickSuggestions = () => [
     { text: "Why are my plant's leaves turning yellow?", icon: "help-outline" },
     { text: "How often should I water this plant?", icon: "opacity" },
@@ -476,7 +390,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     { text: "When should I repot my plant?", icon: "home" }
   ];
 
-  // Update renderChatMessage for business/user messages with FIXED styling
   const renderChatMessage = (message, idx) => {
     const anim = messageAnimations[idx] || new Animated.Value(1);
     if (message.type === 'user_question') {
@@ -499,22 +412,23 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
         </Animated.View>
       );
     } else {
-      // AI response
       return (
-        <Animated.View 
-          key={`${message.id}-${idx}`} 
+        <Animated.View
+          key={`${message.id}-${idx}`}
           style={[
             styles.aiMessageContainer,
             {
               transform: [
                 { scale: anim },
-                { translateX: Animated.multiply(anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [-50, 0]
-                }), 1) }
+                {
+                  translateX: Animated.multiply(
+                    anim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }),
+                    1
+                  ),
+                },
               ],
-              opacity: anim
-            }
+              opacity: anim,
+            },
           ]}
         >
           <View style={styles.aiMessage}>
@@ -556,19 +470,16 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     }
   };
 
-  // Timestamp formatting utility
   const formatTimestamp = (dateStr) => {
     const date = new Date(dateStr);
     const now = new Date();
     const isToday = date.toDateString() === now.toDateString();
     const hours = date.getHours().toString().padStart(2, '0');
     const mins = date.getMinutes().toString().padStart(2, '0');
-    
     if (isToday) return `${hours}:${mins}`;
     return `${date.toLocaleDateString()}, ${hours}:${mins}`;
   };
 
-  // Enhanced chat history rendering
   const renderChatHistory = () => {
     let lastDay = '';
     return chatHistory.map((message, idx) => {
@@ -576,7 +487,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
       const dayStr = date.toDateString();
       const showDay = dayStr !== lastDay;
       lastDay = dayStr;
-      
       return (
         <React.Fragment key={`${message.id}-fragment`}>
           {showDay && (
@@ -590,237 +500,219 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
     });
   };
 
-  // Helper to show toast/alert
-  // Use the global Toast system instead of Alert
+  // Show toast helper
   const showToast = (msg, type = 'info') => {
     if (typeof window !== 'undefined' && window.showToast) {
       window.showToast(msg, type);
     } else if (typeof global !== 'undefined' && global.showToast) {
       global.showToast(msg, type);
-    } else if (typeof props?.showToast === 'function') {
-      props.showToast(msg, type);
-    } // else: fallback, do nothing
+    }
   };
 
+  // --- UI ---
   return (
-    <Modal visible={visible} animationType="none" onRequestClose={onClose}>
-      <Animated.View style={[styles.container, { opacity: fadeAnim }]}> 
-        <SafeAreaView style={styles.safeArea}>
-          <KeyboardAvoidingView 
-            style={styles.keyboardView} 
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          >
-            {/* Enhanced Header */}
-            <Animated.View style={[styles.header, { transform: [{ translateY: slideAnim }] }]}> 
-              <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-                <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-              </TouchableOpacity>
-              <View style={styles.headerCenterLabelWrapper}>
-                <View style={{flexDirection:'row', alignItems:'center', justifyContent:'center'}}>
-                  <Image source={GreenerLogo} style={styles.headerLogo} />
-                  <View>
-                    <Text style={styles.headerCenterLabelMain}>AI Plant Care</Text>
-                    <Text style={styles.headerCenterLabelSub}>Your Smart Garden Assistant</Text>
-                  </View>
+    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          {/* Header */}
+          <Animated.View style={[styles.header, { transform: [{ translateY: slideAnim }] }]}>
+            <View style={styles.headerCenterLabelWrapper}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
+                <Image source={GreenerLogo} style={styles.headerLogo} />
+                <View>
+                  <Text style={styles.headerCenterLabelMain}>AI Plant Care</Text>
+                  <Text style={styles.headerCenterLabelSub}>Your Smart Garden Assistant</Text>
                 </View>
               </View>
-              {/* Hide clear chat button if welcome is visible */}
-              {!showWelcome && (
-                <View style={styles.headerActions}>
-                  <TouchableOpacity onPress={handleResetChat} style={[styles.headerActionButton, {flexDirection:'row', alignItems:'center', justifyContent:'center'}]}>
-                    <MaterialIcons name="delete-sweep" size={20} color="#4CAF50" />
-                    <Text style={{ marginLeft: 6, color: '#4CAF50', fontWeight: '600', fontSize: 14 }}>Clear Chat History</Text>
-                  </TouchableOpacity>
-                </View>
-              )}
-            </Animated.View>
-
-            {/* Enhanced Plant Selection Bar */}
-            {selectedPlant && !showWelcome && (
-              <Animated.View style={[styles.plantInfoBar, { transform: [{ translateY: slideAnim }] }]}> 
-                <Image 
-                  source={selectedPlant.mainImage ? { uri: selectedPlant.mainImage } : GreenerLogo} 
-                  style={styles.plantInfoImage} 
-                />
-                <View style={styles.plantInfoText}>
-                  <Text style={styles.plantInfoName}>{selectedPlant.name || selectedPlant.common_name}</Text>
-                  <Text style={styles.plantInfoScientific}>{selectedPlant.scientific_name}</Text>
-                </View>
-                <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.changePlantButton}>
-                  <MaterialIcons name="edit" size={16} color="#4CAF50" />
+            </View>
+            {!showWelcome && (
+              <View style={styles.headerActions}>
+                <TouchableOpacity onPress={handleResetChat} style={[styles.headerActionButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
+                  <MaterialIcons name="delete-sweep" size={20} color="#4CAF50" />
+                  <Text style={{ marginLeft: 6, color: '#4CAF50', fontWeight: '600', fontSize: 14 }}>Clear Chat History</Text>
                 </TouchableOpacity>
-              </Animated.View>
+              </View>
             )}
+          </Animated.View>
 
-            {/* Chat Container */}
-            <ScrollView
-              ref={scrollViewRef}
-              style={styles.chatContainer}
-              contentContainerStyle={styles.chatContent}
-              showsVerticalScrollIndicator={false}
-              onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
-            >
-              {showWelcome ? (
-                <View style={styles.welcomeContainer}>
-                  <View style={styles.welcomeHeader}>
-                    <Image source={GreenerLogo} style={styles.welcomeAvatar} />
-                    <Text style={styles.welcomeTitle}>Welcome to Greener AI! 🌱</Text>
-                    <Text style={styles.welcomeText}>
-                      I'm here to help you care for your plants. Ask me anything about plant health, 
-                      watering schedules, diseases, or upload a photo for instant analysis!
-                    </Text>
-                  </View>
-                  <View style={styles.suggestionsContainer}>
-                    <Text style={styles.suggestionsTitle}>Quick Questions:</Text>
-                    {getQuickSuggestions().map((suggestion, index) => (
-                      <TouchableOpacity
-                        key={index}
-                        style={styles.suggestionButton}
-                        onPress={() => {
-                          // Only start chat, do not add greeting message
-                          setShowWelcome(false);
-                          setChatStarted(true);
-                          // Add user message and trigger AI
-                          const userMessage = {
-                            id: Date.now() + 1,
-                            type: 'user_question',
-                            question: suggestion.text,
-                            image: null,
-                            timestamp: new Date().toISOString()
-                          };
-                          setChatHistory([userMessage]);
-                          analyzePlantHealth(null, suggestion.text);
-                          setQuestion('');
-                          setSelectedImage(null);
-                          setTimeout(() => {
-                            scrollViewRef.current?.scrollToEnd({ animated: true });
-                          }, 100);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <MaterialIcons name={suggestion.icon} size={18} color="#4CAF50" />
-                        <Text style={styles.suggestionText}>{suggestion.text}</Text>
-                      </TouchableOpacity>
-                    ))}
+          {/* Plant Info Bar */}
+          <Animated.View style={[styles.plantInfoBar, { transform: [{ translateY: slideAnim }] }]}>
+            <Image
+              source={selectedPlant && selectedPlant.mainImage ? { uri: selectedPlant.mainImage } : GreenerLogo}
+              style={styles.plantInfoImage}
+            />
+            <View style={styles.plantInfoText}>
+              <Text style={styles.plantInfoName}>{selectedPlant?.name || selectedPlant?.common_name || 'No plant selected'}</Text>
+              <Text style={styles.plantInfoScientific}>{selectedPlant?.scientific_name || ''}</Text>
+            </View>
+            <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.changePlantButton}>
+              <MaterialIcons name="edit" size={16} color="#4CAF50" />
+            </TouchableOpacity>
+          </Animated.View>
+
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.chatContainer}
+            contentContainerStyle={styles.chatContent}
+            showsVerticalScrollIndicator={false}
+            onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          >
+            {showWelcome ? (
+              <View style={styles.welcomeContainer}>
+                <View style={styles.welcomeHeader}>
+                  <Image source={GreenerLogo} style={styles.welcomeAvatar} />
+                  <Text style={styles.welcomeTitle}>Welcome to Greener AI! 🌱</Text>
+                  <Text style={styles.welcomeText}>
+                    I'm here to help you care for your plants. Ask me anything about plant health,
+                    watering schedules, diseases, or upload a photo for instant analysis!
+                  </Text>
+                </View>
+                <View style={styles.suggestionsContainer}>
+                  <Text style={styles.suggestionsTitle}>Quick Questions:</Text>
+                  {getQuickSuggestions().map((suggestion, index) => (
                     <TouchableOpacity
-                      style={[styles.suggestionButton, {marginTop: 16, backgroundColor: '#e8f5e8', borderColor: '#4CAF50'}]}
+                      key={index}
+                      style={styles.suggestionButton}
                       onPress={() => {
                         setShowWelcome(false);
                         setChatStarted(true);
-                        setChatHistory([
-                          {
-                            id: Date.now(),
-                            type: 'ai_response',
-                            diagnosis: `Hello ${ownerName || 'there'}, how can I help you today?`,
-                            recommendations: [],
-                            timestamp: new Date().toISOString(),
-                            hasImage: false
-                          }
-                        ]);
+                        const userMessage = {
+                          id: Date.now() + 1,
+                          type: 'user_question',
+                          question: suggestion.text,
+                          image: null,
+                          timestamp: new Date().toISOString()
+                        };
+                        setChatHistory([userMessage]);
+                        analyzePlantHealth(null, suggestion.text);
+                        setQuestion('');
+                        setSelectedImage(null);
+                        setTimeout(() => {
+                          scrollViewRef.current?.scrollToEnd({ animated: true });
+                        }, 100);
                       }}
                       activeOpacity={0.7}
                     >
-                      <MaterialIcons name="edit" size={18} color="#4CAF50" />
-                      <Text style={styles.suggestionText}>Type your own question</Text>
+                      <MaterialIcons name={suggestion.icon} size={18} color="#4CAF50" />
+                      <Text style={styles.suggestionText}>{suggestion.text}</Text>
                     </TouchableOpacity>
-                    {/* Continue with last chat option */}
-                    {lastChatHistory && lastChatHistory.length > 1 ? (
-                      <TouchableOpacity
-                        style={[styles.suggestionButton, {marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800'}]}
-                        onPress={() => {
-                          setShowWelcome(false);
-                          setChatStarted(true);
-                          setChatHistory(lastChatHistory);
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <MaterialIcons name="history" size={18} color="#FF9800" />
-                        <Text style={styles.suggestionText}>Continue with last chat</Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={[styles.suggestionButton, {marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800'}]}
-                        onPress={() => {
-                          showToast('No previous chat history found.', 'info');
-                        }}
-                        activeOpacity={0.7}
-                      >
-                        <MaterialIcons name="history" size={18} color="#FF9800" />
-                        <Text style={styles.suggestionText}>Continue with last chat</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-                </View>
-              ) : (
-                renderChatHistory()
-              )}
-              
-              {/* Loading indicator */}
-              {/* Removed: No loading indicator when waiting for AI response */}
-            </ScrollView>
-            {/* Hide input section if welcome is visible */}
-            {!showWelcome && (
-              <Animated.View style={[styles.inputSection, { transform: [{ translateY: slideAnim }] }]}> 
-                {selectedImage && (
-                  <View style={styles.imagePreview}>
-                    <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+                  ))}
+                  <TouchableOpacity
+                    style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#e8f5e8', borderColor: '#4CAF50' }]}
+                    onPress={() => {
+                      setShowWelcome(false);
+                      setChatStarted(true);
+                      setChatHistory([
+                        {
+                          id: Date.now(),
+                          type: 'ai_response',
+                          diagnosis: `Hello ${ownerName || 'there'}, how can I help you today?`,
+                          recommendations: [],
+                          timestamp: new Date().toISOString(),
+                          hasImage: false
+                        }
+                      ]);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialIcons name="edit" size={18} color="#4CAF50" />
+                    <Text style={styles.suggestionText}>Type your own question</Text>
+                  </TouchableOpacity>
+                  {lastChatHistory && lastChatHistory.length > 1 ? (
                     <TouchableOpacity
-                      style={styles.removeImageButton}
-                      onPress={() => setSelectedImage(null)}
+                      style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800' }]}
+                      onPress={() => {
+                        setShowWelcome(false);
+                        setChatStarted(true);
+                        setChatHistory(lastChatHistory);
+                      }}
+                      activeOpacity={0.7}
                     >
-                      <MaterialIcons name="close" size={16} color="#fff" />
+                      <MaterialIcons name="history" size={18} color="#FF9800" />
+                      <Text style={styles.suggestionText}>Continue with last chat</Text>
                     </TouchableOpacity>
-                  </View>
-                )}
-                <View style={styles.inputContainer}>
-                  <View style={styles.textInputContainer}>
-                    <TextInput
-                      style={styles.textInput}
-                      placeholder="Ask about your plant's care, health, or problems..."
-                      placeholderTextColor="#999"
-                      value={question}
-                      onChangeText={setQuestion}
-                      multiline
-                      maxLength={500}
-                      textAlignVertical="top"
-                    />
-                  </View>
-                  <View style={styles.inputActions}>
-                    <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.actionButton}>
-                      <MaterialIcons name="local-florist" size={22} color="#4CAF50" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleTakePhoto} style={styles.actionButton}>
-                      <MaterialIcons name="camera-alt" size={22} color="#4CAF50" />
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleImagePick} style={styles.actionButton}>
-                      <MaterialIcons name="photo-library" size={22} color="#4CAF50" />
-                    </TouchableOpacity>
+                  ) : (
                     <TouchableOpacity
-                      onPress={handleSubmitQuestion}
-                      style={[
-                        styles.sendButton,
-                        (!question.trim() && !selectedImage) && styles.sendButtonDisabled
-                      ]}
-                      disabled={!question.trim() && !selectedImage || isLoading}
-                      activeOpacity={0.8}
+                      style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800' }]}
+                      onPress={() => {
+                        showToast('No previous chat history found.', 'info');
+                      }}
+                      activeOpacity={0.7}
                     >
-                      {isLoading ? (
-                        <ActivityIndicator size="small" color="#fff" />
-                      ) : (
-                        <MaterialIcons name="send" size={20} color="#fff" />
-                      )}
+                      <MaterialIcons name="history" size={18} color="#FF9800" />
+                      <Text style={styles.suggestionText}>Continue with last chat</Text>
                     </TouchableOpacity>
-                  </View>
+                  )}
                 </View>
-              </Animated.View>
+              </View>
+            ) : (
+              renderChatHistory()
             )}
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Animated.View>
+          </ScrollView>
+          {!showWelcome && (
+            <Animated.View style={[styles.inputSection, { transform: [{ translateY: slideAnim }] }]}>
+              {selectedImage && (
+                <View style={styles.imagePreview}>
+                  <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+                  <TouchableOpacity
+                    style={styles.removeImageButton}
+                    onPress={() => setSelectedImage(null)}
+                  >
+                    <MaterialIcons name="close" size={16} color="#fff" />
+                  </TouchableOpacity>
+                </View>
+              )}
+              <View style={styles.inputContainer}>
+                <View style={styles.textInputContainer}>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="Ask about your plant's care, health, or problems..."
+                    placeholderTextColor="#999"
+                    value={question}
+                    onChangeText={setQuestion}
+                    multiline
+                    maxLength={500}
+                    textAlignVertical="top"
+                  />
+                </View>
+                <View style={styles.inputActions}>
+                  <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.actionButton}>
+                    <MaterialIcons name="local-florist" size={22} color="#4CAF50" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleTakePhoto} style={styles.actionButton}>
+                    <MaterialIcons name="camera-alt" size={22} color="#4CAF50" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={handleImagePick} style={styles.actionButton}>
+                    <MaterialIcons name="photo-library" size={22} color="#4CAF50" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    onPress={handleSubmitQuestion}
+                    style={[
+                      styles.sendButton,
+                      (!question.trim() && !selectedImage) && styles.sendButtonDisabled
+                    ]}
+                    disabled={!question.trim() && !selectedImage || isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <MaterialIcons name="send" size={20} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Animated.View>
+          )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
 
-      {/* Enhanced Plant Selection Modal */}
+      {/* PLANT SELECT MODAL */}
       {plantSelectVisible && (
-        <Modal visible={plantSelectVisible} animationType="slide" onRequestClose={() => setPlantSelectVisible(false)}>
+        <View style={StyleSheet.absoluteFillObject}>
           <SafeAreaView style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select a Plant</Text>
@@ -828,10 +720,9 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                 <MaterialIcons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
-            
             <View style={styles.modalTabs}>
-              <TouchableOpacity 
-                onPress={() => { setPlantTab('inventory'); setPlantSearchQuery(''); }} 
+              <TouchableOpacity
+                onPress={() => { setPlantTab('inventory'); setPlantSearchQuery(''); }}
                 style={[styles.modalTab, plantTab === 'inventory' && styles.modalTabActive]}
               >
                 <MaterialIcons name="inventory" size={20} color={plantTab === 'inventory' ? '#4CAF50' : '#888'} />
@@ -839,9 +730,8 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                   {persona === 'consumer' ? 'My Plants' : 'Business Inventory'}
                 </Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                onPress={() => { setPlantTab('all'); setPlantSearchQuery(''); fetchGeneralPlants(); }} 
+              <TouchableOpacity
+                onPress={() => { setPlantTab('all'); setPlantSearchQuery(''); fetchGeneralPlants(); }}
                 style={[styles.modalTab, plantTab === 'all' && styles.modalTabActive]}
               >
                 <MaterialIcons name="search" size={20} color={plantTab === 'all' ? '#4CAF50' : '#888'} />
@@ -850,7 +740,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                 </Text>
               </TouchableOpacity>
             </View>
-            
             {plantTab === 'all' && (
               <View style={styles.searchContainer}>
                 <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
@@ -864,7 +753,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                 />
               </View>
             )}
-            
             <ScrollView style={styles.plantsScrollView} showsVerticalScrollIndicator={false}>
               {(isInventoryLoading && plantTab === 'inventory') || (isPlantSearchLoading && plantTab === 'all') ? (
                 <View style={styles.modalLoadingContainer}>
@@ -881,7 +769,6 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                       </Text>
                     </View>
                   )}
-                  
                   {(plantTab === 'inventory' ? inventoryPlants : plantSearchResults).map((item) => (
                     <TouchableOpacity
                       key={item.id}
@@ -889,9 +776,9 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
                       onPress={() => handleSelectPlant(item)}
                       activeOpacity={0.7}
                     >
-                      <Image 
-                        source={item.mainImage ? { uri: item.mainImage } : GreenerLogo} 
-                        style={styles.plantItemImage} 
+                      <Image
+                        source={item.mainImage ? { uri: item.mainImage } : GreenerLogo}
+                        style={styles.plantItemImage}
                       />
                       <View style={styles.plantItemInfo}>
                         <Text style={styles.plantItemName}>{item.name || item.common_name}</Text>
@@ -904,16 +791,17 @@ export default function GreenerPlantCareAssistant({ visible, onClose, plant = nu
               )}
             </ScrollView>
           </SafeAreaView>
-        </Modal>
+        </View>
       )}
-    </Modal>
+    <NavigationBar currentTab="ai" navigation={navigation} />
+    </Animated.View>
   );
 }
+
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fffe',
   },
   safeArea: {
     flex: 1,

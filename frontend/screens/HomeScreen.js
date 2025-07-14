@@ -5,35 +5,24 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Modal,
-  FlatList,
   Image,
   Animated,
-  Dimensions,
   ActivityIndicator,
   ScrollView,
   Platform,
-  RefreshControl
+  RefreshControl,
+  Dimensions,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import PlantCareForumScreen from './PlantCareForumScreen';
-import SearchPlantScreen from './SearchPlantScreen';
-import AddPlantScreen from './AddPlantScreen';
-import LocationsScreen from './LocationsScreen';
-import DiseaseCheckerScreen from './DiseaseCheckerScreen';
 import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
-import { 
-  getWeatherData, 
-  generateWateringAdvice, 
-  getWeatherIconUrl, 
-  getUserLocation 
+import {
+  getWeatherData,
+  generateWateringAdvice,
 } from '../services/weatherService';
-import { fetchUserProfile } from '../marketplace/services/marketplaceApi';
-// Use the enhanced AI component from business
 import SmartPlantCareAssistant from '../components/ai/SmartPlantCareAssistant';
 import { useCurrentUserType } from '../utils/authUtils';
+import NavigationBar from '../components/NavigationBar';
 
 const { width } = Dimensions.get('window');
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
@@ -47,95 +36,72 @@ function daysUntil(dateStr) {
   return Math.floor((target - today) / (1000 * 60 * 60 * 24));
 }
 
+// --- Helper: Find the next care task for a plant
+function getNextTask(plant) {
+  // Add more task types if you want!
+  const tasks = [
+    { type: 'Water', date: plant.next_water, icon: 'water', color: '#4CAF50' },
+    { type: 'Feed',  date: plant.next_feed,  icon: 'spa', color: '#FFD600' },
+    { type: 'Repot', date: plant.next_repot, icon: 'flower-pot', color: '#8D6E63' },
+  ].filter(t => !!t.date);
+
+  if (!tasks.length) return null;
+  tasks.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return tasks[0];
+}
+
 export default function HomeScreen({ navigation }) {
   const [greeting, setGreeting] = useState('');
   const [activeTab, setActiveTab] = useState('today');
   const [plants, setPlants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [mainTab, setMainTab] = useState('home');
-  const [selectedFeature, setSelectedFeature] = useState('home');
   const [userEmail, setUserEmail] = useState(null);
   const [weatherData, setWeatherData] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [wateringAdvice, setWateringAdvice] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [userLocation, setUserLocation] = useState(null);
-  const [persona, setPersona] = useState(null);
   const { userType, userProfile, loading: userTypeLoading } = useCurrentUserType();
   const [personaChecked, setPersonaChecked] = useState(false);
-  const [aiAssistantVisible, setAIAssistantVisible] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
+  const [fabOpen, setFabOpen] = useState(false);
 
-  // Initialize Firebase notifications
-  const { isInitialized, hasPermission, token, error } = useUniversalNotifications(userEmail);
 
-  // Load weather data
+  useUniversalNotifications(userEmail);
+
+  // Weather data loading
   const loadWeatherData = async (silent = false) => {
     try {
-      if (!silent) {
-        setWeatherLoading(true);
-      }
-
-      console.log('🌤️ Loading weather data for watering advice...');
-      
-      // Prefer userProfile.location if available
+      if (!silent) setWeatherLoading(true);
       let location = null;
-      if (userProfile && userProfile.location && userProfile.location.latitude && userProfile.location.longitude) {
+      if (
+        userProfile &&
+        userProfile.location &&
+        userProfile.location.latitude &&
+        userProfile.location.longitude
+      ) {
         location = {
           latitude: userProfile.location.latitude,
           longitude: userProfile.location.longitude,
           city: userProfile.location.city,
-          country: userProfile.location.country || 'Israel'
+          country: userProfile.location.country || 'Israel',
         };
       }
-      // Get weather data (will fallback to device if location is null)
       const weather = await getWeatherData(location);
       setWeatherData(weather);
-      
-      // Generate watering advice based on weather and plants
       const advice = generateWateringAdvice(weather, plants);
       setWateringAdvice(advice);
-      
-      console.log('✅ Weather data loaded successfully');
-      
     } catch (error) {
-      console.error('❌ Error loading weather data:', error);
-      // Set fallback advice
       setWateringAdvice({
         general: 'Weather data unavailable. Follow your regular watering schedule.',
         urgency: 'normal',
         icon: 'help-circle-outline',
-        color: '#666'
+        color: '#666',
       });
     } finally {
-      if (!silent) {
-        setWeatherLoading(false);
-      }
+      if (!silent) setWeatherLoading(false);
     }
   };
-
-  // Handle navigation for tabs that should navigate immediately
-  useEffect(() => {
-    if (selectedFeature === 'plants') {
-      navigation.navigate('Locations');
-      setSelectedFeature('home'); // Reset to home after navigation
-    } else if (selectedFeature === 'marketplace') {
-      navigation.navigate('MainTabs');
-      setSelectedFeature('home'); // Reset to home after navigation
-    } else if (selectedFeature === 'disease') {
-      navigation.navigate('DiseaseChecker');
-      setSelectedFeature('home'); // Reset to home after navigation
-    } else if (selectedFeature === 'search') {
-      navigation.navigate('SearchScreen');
-      setSelectedFeature('home'); // Reset to home after navigation
-    } else if (selectedFeature === 'add') {
-      navigation.navigate('AddOptionsScreen');
-      setSelectedFeature('home'); // Reset to home after navigation
-    } else if (selectedFeature === 'forum') {
-      navigation.navigate('PlantCareForumScreen');
-      setSelectedFeature('home'); // Reset to home after navigation
-    }
-  }, [selectedFeature, navigation]);
 
   useEffect(() => {
     const hour = new Date().getHours();
@@ -146,66 +112,137 @@ export default function HomeScreen({ navigation }) {
     Animated.timing(fadeAnim, {
       toValue: 1,
       duration: 800,
-      useNativeDriver: Platform.OS !== 'web', // Fix: only use native driver on native platforms
+      useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, []);
 
   useEffect(() => {
-    const fetchPlants = async () => {
+    let mounted = true;
+    const fetchAllData = async () => {
       setLoading(true);
-      try {
-        let userEmail = await AsyncStorage.getItem('userEmail');
-        setUserEmail(userEmail);
-        
-        if (!userEmail) {
-          setPlants([]);
-          setLoading(false);
-          return;
+      const plantsPromise = (async () => {
+        try {
+          let userEmail = await AsyncStorage.getItem('userEmail');
+          setUserEmail(userEmail);
+          if (!userEmail) return [];
+          const res = await fetch(`${API_URL}?email=${encodeURIComponent(userEmail)}`);
+          if (!res.ok) throw new Error('Failed to fetch');
+          const data = await res.json();
+          // console.log("API returned data:", data);
+          let allPlants = [];
+          if (Array.isArray(data)) {
+            allPlants = data;
+          }
+          return allPlants;
+        } catch (e) {
+          return [];
         }
-        const res = await fetch(`${API_URL}?email=${encodeURIComponent(userEmail)}`);
-        if (!res.ok) throw new Error('Failed to fetch');
-        const data = await res.json();
-        // data = [{ location: 'Living Room', plants: [ {...}, ... ] }, ...]
-        let allPlants = [];
-        if (Array.isArray(data)) {
-          data.forEach(locationObj => {
-            if (locationObj.plants && Array.isArray(locationObj.plants)) {
-              // add location to plant if not present
-              locationObj.plants.forEach(p => {
-                allPlants.push({ ...p, location: p.location || locationObj.location });
-              });
-            }
-          });
+      })();
+
+      const weatherPromise = (async () => {
+        try {
+          const weather = await loadWeatherData(true);
+          return weather;
+        } catch {
+          return null;
         }
+      })();
+
+      const [allPlants, weather] = await Promise.all([plantsPromise, weatherPromise]);
+      if (mounted) {
         setPlants(allPlants);
-        
-        // Load weather data after plants are loaded
-        if (allPlants.length > 0) {
-          loadWeatherData(true);
+        if (weather) setWeatherData(weather);
+        setLoading(false);
+        if (weather && allPlants.length > 0) {
+          const advice = generateWateringAdvice(weather, allPlants);
+          setWateringAdvice(advice);
         }
-      } catch (e) {
-        setPlants([]);
       }
-      setLoading(false);
     };
-    fetchPlants();
+    fetchAllData();
+    return () => {
+      mounted = false;
+    };
   }, []);
 
-  // Refresh weather advice when plants change
   useEffect(() => {
-    if (weatherData && plants.length > 0) {
-      const advice = generateWateringAdvice(weatherData, plants);
-      setWateringAdvice(advice);
-    }
-  }, [plants, weatherData]);
+    if (!userTypeLoading) setPersonaChecked(true);
+  }, [userTypeLoading]);
 
-  // Pull to refresh
+  if (!personaChecked) {
+    return (
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4CAF50" />
+        <Text style={{ marginTop: 16, color: '#666' }}>Loading...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (userType === 'business') {
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'BusinessHome' }],
+    });
+    return null;
+  }
+
+  // NavigationBar tab handling
+  const handleTabPress = (tabKey) => {
+    setMainTab(tabKey);
+    switch (tabKey) {
+      case 'home':
+        break; // stay
+      case 'ai':
+        break; // just render AI
+      case 'plants':
+        navigation.navigate('Locations');
+        break;
+      case 'marketplace':
+        navigation.navigate('MainTabs');
+        break;
+      case 'forum':
+        navigation.navigate('PlantCareForumScreen');
+        break;
+      case 'disease':
+        navigation.navigate('DiseaseChecker');
+        break;
+      default:
+        break;
+    }
+  };
+
+  // Main tab content
+  const renderMainTabContent = () => {
+    switch (mainTab) {
+      case 'home':
+        return (
+          <ScrollView
+            style={styles.scrollContent}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          >
+            {renderConsumerProfileCard()}
+            {renderTabRow()}
+            {renderPlantsSection()}
+            {renderWeatherCard()}
+          </ScrollView>
+        );
+      case 'ai':
+        return (
+          <SmartPlantCareAssistant
+            visible={true}
+            onClose={() => setMainTab('home')}
+            plant={null}
+            onSelectPlant={() => {}}
+          />
+        );
+      default:
+        return null;
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([
-      fetchPlants(),
-      loadWeatherData(true)
-    ]);
+    await Promise.all([fetchPlants(), loadWeatherData(true)]);
     setRefreshing(false);
   };
 
@@ -221,13 +258,7 @@ export default function HomeScreen({ navigation }) {
       const data = await res.json();
       let allPlants = [];
       if (Array.isArray(data)) {
-        data.forEach(locationObj => {
-          if (locationObj.plants && Array.isArray(locationObj.plants)) {
-            locationObj.plants.forEach(p => {
-              allPlants.push({ ...p, location: p.location || locationObj.location });
-            });
-          }
-        });
+        allPlants = data;
       }
       setPlants(allPlants);
     } catch (e) {
@@ -235,40 +266,16 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Only render content if persona is checked and not business
-  useEffect(() => {
-    if (!userTypeLoading) {
-      setPersonaChecked(true);
-    }
-  }, [userTypeLoading]);
-
-  if (!personaChecked) {
-    return (
-      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-        <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={{ marginTop: 16, color: '#666' }}>Loading...</Text>
-      </SafeAreaView>
-    );
-  }
-  
-  if (userType === 'business') {
-    navigation.reset({
-      index: 0,
-      routes: [{ name: 'BusinessHome' }],
-    });
-    return null;
-  }
   // --- Consumer Profile Card ---
   const renderConsumerProfileCard = () => {
     if (!userProfile) return null;
-    
     const missingFields = [];
     if (!userProfile.name) missingFields.push('Name');
     if (!userProfile.intersted) missingFields.push('Interest Level');
     if (!userProfile.animals) missingFields.push('Animals');
     if (!userProfile.kids) missingFields.push('Kids');
     if (!userProfile.location || !userProfile.location.city) missingFields.push('Location');
-    
+
     return (
       <View style={styles.enhancedProfileCard}>
         <View style={styles.profileHeader}>
@@ -283,14 +290,13 @@ export default function HomeScreen({ navigation }) {
               {plants.length} plant{plants.length !== 1 ? 's' : ''} in your garden
             </Text>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.profileEditButton}
             onPress={() => navigation.navigate('UserSettings')}
           >
             <MaterialIcons name="edit" size={20} color="#4CAF50" />
           </TouchableOpacity>
         </View>
-        
         <View style={styles.profileDetails}>
           <View style={styles.profileDetailRow}>
             <MaterialIcons name="star" size={16} color="#FF9800" />
@@ -317,10 +323,9 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </View>
         </View>
-        
         {missingFields.length > 0 && (
-          <TouchableOpacity 
-            style={styles.profileCompleteButton} 
+          <TouchableOpacity
+            style={styles.profileCompleteButton}
             onPress={() => navigation.navigate('UserSettings')}
           >
             <MaterialIcons name="info" size={16} color="#FF9800" />
@@ -333,229 +338,7 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  // Enhanced tab navigation handling
-  const handleTabNavigation = (tabKey) => {
-    setMainTab(tabKey);
-    
-    // Handle immediate navigation for certain tabs
-    switch (tabKey) {
-      case 'plants':
-        navigation.navigate('Locations');
-        setMainTab('home'); // Reset after navigation
-        break;
-      case 'marketplace':
-        navigation.navigate('MainTabs');
-        setMainTab('home');
-        break;
-      case 'disease':
-        navigation.navigate('DiseaseChecker');
-        setMainTab('home');
-        break;
-      case 'forum':
-        navigation.navigate('PlantCareForumScreen');
-        setMainTab('home');
-        break;
-      case 'profile':
-        navigation.navigate('UserSettings');
-        setMainTab('home');
-        break;
-      default:
-        // For home, ai, weather tabs - stay in current screen
-        break;
-    }
-  };
-
-  // --- Enhanced Feature Tabs Row (proportional, scrollable) ---
-  const FEATURE_TABS = [
-    { key: 'home', label: 'Home', icon: <MaterialIcons name="home" size={22} color="#2e7d32" /> },
-    { key: 'ai', label: 'AI Assistant', icon: <MaterialCommunityIcons name="robot-excited" size={22} color="#FF5722" /> },
-    { key: 'weather', label: 'Weather', icon: <MaterialCommunityIcons name="weather-partly-cloudy" size={22} color="#2196F3" /> },
-    { key: 'plants', label: 'My Plants', icon: <Ionicons name="leaf" size={22} color="#4CAF50" /> },
-    { key: 'marketplace', label: 'Market', icon: <Ionicons name="cart-outline" size={22} color="#FF9800" /> },
-    { key: 'forum', label: 'Forum', icon: <MaterialCommunityIcons name="forum" size={22} color="#2196F3" /> },
-    { key: 'disease', label: 'Disease Check', icon: <Ionicons name="medkit" size={22} color="#E91E63" /> },
-    { key: 'profile', label: 'Profile', icon: <MaterialIcons name="person" size={22} color="#9C27B0" /> },
-  ];
-
-  // --- Enhanced Feature Tabs Row ---
-  const renderFeatureTabsRow = () => (
-    <ScrollView 
-      horizontal 
-      showsHorizontalScrollIndicator={false} 
-      style={styles.featureTabsRow} 
-      contentContainerStyle={styles.featureTabsContent}
-    >
-      {FEATURE_TABS.map(tab => (
-        <TouchableOpacity
-          key={tab.key}
-          style={[
-            styles.featureTabCard, 
-            mainTab === tab.key && styles.featureTabCardActive
-          ]}
-          onPress={() => handleTabNavigation(tab.key)}
-          accessibilityLabel={tab.label}
-        >
-          <View style={styles.featureTabIconContainer}>
-            {tab.icon}
-          </View>
-          <Text style={[
-            styles.featureTabCardLabel, 
-            mainTab === tab.key && styles.featureTabCardLabelActive
-          ]}>
-            {tab.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
-    </ScrollView>
-  );
-
-  // --- Main Content by Tab ---
-  const renderMainTabContent = () => {
-    switch (mainTab) {
-      case 'home':
-        return (
-          <ScrollView 
-            style={styles.scrollContent}
-            refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-            }
-          >
-            {renderConsumerProfileCard()}
-            {renderTabRow()}
-            {renderWeatherCard()}
-            {renderPlantsSection()}
-          </ScrollView>
-        );
-      case 'ai':
-        return (
-          <SmartPlantCareAssistant
-            visible={true}
-            onClose={() => setMainTab('home')}
-            plant={null}
-            onSelectPlant={(plant) => {
-              console.log('Selected plant:', plant);
-            }}
-          />
-        );
-      case 'weather':
-        return (
-          <ScrollView style={styles.scrollContent}>
-            {renderWeatherCard()}
-            {renderConsumerWeatherInsights()}
-          </ScrollView>
-        );
-      default:
-        return renderHomeTabContent();
-    }
-  };
-
-  // Enhanced Plants Section
-  const renderPlantsSection = () => {
-    const filteredPlants = plants.filter((plant) => {
-      const days = daysUntil(plant.next_water);
-      if (activeTab === 'today') return days <= 0;
-      if (activeTab === 'upcoming') return days > 0 && days <= 3;
-      return false;
-    });
-
-    return (
-      <View style={styles.plantsSection}>
-        <View style={styles.plantsSectionHeader}>
-          <Text style={styles.sectionTitle}>
-            {activeTab === 'today' ? "Today's Care" : 'Upcoming Care'}
-          </Text>
-          <View style={styles.plantsCountBadge}>
-            <Text style={styles.plantsCountText}>
-              {filteredPlants.length}
-            </Text>
-          </View>
-        </View>
-        
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.loadingText}>Loading your plants...</Text>
-          </View>
-        ) : filteredPlants.length === 0 ? (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="sprout" size={64} color="#E0E0E0" />
-            <Text style={styles.emptyTitle}>
-              {activeTab === 'today' ? 'No plants need care today' : 'No upcoming care needed'}
-            </Text>
-            <Text style={styles.emptySubtitle}>
-              {plants.length === 0 ? 'Add some plants to get started!' : 'Great job keeping up with your plants! 🌿'}
-            </Text>
-            {plants.length === 0 && (
-              <TouchableOpacity 
-                style={styles.addPlantButton}
-                onPress={() => navigation.navigate('AddPlant')}
-              >
-                <MaterialIcons name="add" size={20} color="#fff" />
-                <Text style={styles.addPlantButtonText}>Add Your First Plant</Text>
-              </TouchableOpacity>
-            )}
-          </View>
-        ) : (
-          filteredPlants.map((item, index) => renderPlantItem(item, index))
-        )}
-      </View>
-    );
-  };
-
-  // Enhanced Plant Item Rendering
-  const renderPlantItem = (item, index) => {
-    const days = daysUntil(item.next_water);
-    let status = '';
-    let statusColor = '#2e7d32';
-    let statusIcon = 'water-outline';
-    
-    if (days < 0) {
-      status = `Late by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
-      statusColor = '#f44336';
-      statusIcon = 'alert-circle';
-    } else if (days === 0) {
-      status = 'Water today';
-      statusColor = '#FF9800';
-      statusIcon = 'water';
-    } else {
-      status = `In ${days} day${days !== 1 ? 's' : ''}`;
-      statusColor = '#2e7d32';
-      statusIcon = 'time-outline';
-    }
-
-    return (
-      <TouchableOpacity 
-        key={item.id || index}
-        style={styles.enhancedTaskCard}
-        onPress={() => navigation.navigate('UserPlantDetail', { plant: item })}
-      >
-        <View style={styles.plantImageContainer}>
-          <Image 
-            source={item.image_url ? { uri: item.image_url } : require('../assets/plant-placeholder.png')} 
-            style={styles.plantImage} 
-          />
-          <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
-            <MaterialCommunityIcons name={statusIcon} size={12} color="#fff" />
-          </View>
-        </View>
-        
-        <View style={styles.taskInfo}>
-          <Text style={styles.plantName}>{item.nickname || item.common_name}</Text>
-          <Text style={styles.plantLocation}>{item.location}</Text>
-          <View style={styles.statusRow}>
-            <MaterialCommunityIcons name={statusIcon} size={16} color={statusColor} />
-            <Text style={[styles.statusText, { color: statusColor }]}>
-              {status}
-            </Text>
-          </View>
-        </View>
-        
-        <MaterialIcons name="chevron-right" size={24} color="#ccc" />
-      </TouchableOpacity>
-    );
-  };
-
-  // Tab row for today/upcoming
+  // --- Plants Section & Tabs ---
   const renderTabRow = () => (
     <View style={styles.tabRow}>
       <TouchableOpacity
@@ -577,206 +360,293 @@ export default function HomeScreen({ navigation }) {
     </View>
   );
 
-  // Fallback content
-  const renderHomeTabContent = () => (
-    <ScrollView style={styles.scrollContent}>
-      {renderConsumerProfileCard()}
-      {renderTabRow()}
-      {renderWeatherCard()}
-      {renderPlantsSection()}
-    </ScrollView>
-  );
+  const renderPlantsSection = () => {
+    // console.log("RENDER plants.length:", plants.length, plants);
 
-  // --- Enhanced Weather Advice UI ---
-  const renderWeatherCard = () => {
-    if (!weatherData || weatherLoading) {
-      return (
-        <View style={styles.weatherCard}>
-          <View style={styles.weatherHeader}>
-            <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
-            <Text style={styles.weatherTitle}>Weather & Watering</Text>
-            <TouchableOpacity onPress={() => loadWeatherData()}>
-              <MaterialIcons name="refresh" size={20} color="#4CAF50" />
-            </TouchableOpacity>
+    const filteredPlants = plants.filter((plant) => {
+      const nextTask = getNextTask(plant);
+      if (!nextTask) return false;
+      const days = daysUntil(nextTask.date);
+      if (activeTab === 'today') return days <= 0;
+      if (activeTab === 'upcoming') return days > 0;
+      return false;
+    });
+
+    return (
+      <View style={[styles.weatherCard, { marginBottom: 8 }]}>
+        <View style={styles.plantsSection}>
+          <Text style={styles.sectionTitle}>
+            {activeTab === 'today' ? "Today's Care" : 'Upcoming Care'}
+          </Text>
+          <View style={styles.plantsCountBadge}>
+            <Text style={styles.plantsCountText}>{filteredPlants.length}</Text>
           </View>
-          {weatherLoading ? (
-            <View style={styles.weatherLoading}>
-              <ActivityIndicator size="small" color="#4CAF50" />
-              <Text style={styles.weatherLoadingText}>Loading weather data...</Text>
-            </View>
-          ) : (
-            <Text style={styles.weatherUnavailable}>Tap refresh to load weather</Text>
-          )}
         </View>
-      );
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading your plants...</Text>
+          </View>
+        ) : filteredPlants.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons name="sprout" size={64} color="#E0E0E0" />
+            <Text style={styles.emptyTitle}>
+              {activeTab === 'today' ? 'No plants need care today' : 'No upcoming care needed'}
+            </Text>
+            <Text style={styles.emptySubtitle}>
+              {plants.length === 0
+                ? 'Add some plants to get started!'
+                : 'Great job keeping up with your plants! 🌿'}
+            </Text>
+            {plants.length === 0 && (
+              <TouchableOpacity
+                style={styles.addPlantButton}
+                onPress={() => navigation.navigate('AddPlant')}
+              >
+                <MaterialIcons name="add" size={20} color="#fff" />
+                <Text style={styles.addPlantButtonText}>Add Your First Plant</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        ) : (
+          filteredPlants.map((item, index) => renderPlantItem(item, index))
+        )}
+      </View>
+    );
+  };
+
+  // --- Render a Plant Card for an upcoming task ---
+  const renderPlantItem = (item, index) => {
+    const nextTask = getNextTask(item);
+    if (!nextTask) return null;
+    const days = daysUntil(nextTask.date);
+
+    let status = '';
+    let statusColor = nextTask.color;
+    let statusIcon = nextTask.icon;
+
+    if (days < 0) {
+      status = `Late by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
+      statusColor = '#f44336';
+    } else if (days === 0) {
+      status = `${nextTask.type} today`;
+      statusColor = '#FF9800';
+    } else {
+      status = `In ${days} day${days !== 1 ? 's' : ''}`;
     }
-    const { current, location } = weatherData;
+
+    return (
+      <TouchableOpacity
+        key={item.id || index}
+        style={styles.enhancedTaskCard}
+        onPress={() => navigation.navigate('UserPlantDetail', { plant: item })}
+      >
+        <View style={styles.plantImageContainer}>
+          <Image
+            source={item.image_url && item.image_url !== '—' ? { uri: item.image_url } : require('../assets/plant-placeholder.png')}
+            style={styles.plantImage}
+          />
+          <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+            <MaterialCommunityIcons name={statusIcon} size={12} color="#fff" />
+          </View>
+        </View>
+        <View style={styles.taskInfo}>
+          <Text style={styles.plantName}>{item.nickname || item.common_name}</Text>
+          <Text style={styles.plantLocation}>{item.location}</Text>
+          <View style={styles.statusRow}>
+            <MaterialCommunityIcons name={statusIcon} size={16} color={statusColor} />
+            <Text style={[styles.statusText, { color: statusColor }]}>
+              {nextTask.type} {status}
+            </Text>
+          </View>
+        </View>
+        <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+      </TouchableOpacity>
+    );
+  };
+
+  // --- Weather Card ---
+  const renderWeatherCard = () => {
+  if (!weatherData || weatherLoading) {
     return (
       <View style={styles.weatherCard}>
-        <View style={styles.weatherHeader}>
-          <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
-          <Text style={styles.weatherTitle}>Weather & Watering</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+          <MaterialCommunityIcons name="weather-partly-cloudy" size={26} color="#388e3c" style={{ marginRight: 6 }} />
+          <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#388e3c', flex: 1 }}>
+            Weather
+          </Text>
           <View style={styles.weatherActions}>
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('PlantCareCalendarScreen')}
-              style={styles.calendarButton}
-            >
-              <MaterialIcons name="calendar-today" size={20} color="#4CAF50" />
-            </TouchableOpacity>
             <TouchableOpacity onPress={() => loadWeatherData()}>
               <MaterialIcons name="refresh" size={20} color="#4CAF50" />
             </TouchableOpacity>
           </View>
         </View>
-        <View style={styles.weatherContent}>
-          <View style={styles.weatherMain}>
-            <View style={styles.weatherLeft}>
-              <Image 
-                source={{ uri: getWeatherIconUrl(current.icon) }}
-                style={styles.weatherIcon}
-              />
-              <View>
-                <Text style={styles.temperature}>{current.temperature}°C</Text>
-                <Text style={styles.weatherDescription}>{current.description}</Text>
-                <Text style={styles.location}>{location.city}</Text>
-              </View>
-            </View>
-            <View style={styles.weatherDetails}>
-              <View style={styles.weatherDetailItem}>
-                <MaterialCommunityIcons name="water-percent" size={16} color="#2196F3" />
-                <Text style={styles.weatherDetailText}>{current.humidity}%</Text>
-              </View>
-              <View style={styles.weatherDetailItem}>
-                <MaterialCommunityIcons name="weather-windy" size={16} color="#9E9E9E" />
-                <Text style={styles.weatherDetailText}>{Math.round(current.windSpeed)} m/s</Text>
-              </View>
-              <View style={styles.weatherDetailItem}>
-                <MaterialCommunityIcons name="thermometer" size={16} color="#FF5722" />
-                <Text style={styles.weatherDetailText}>Feels {current.feelsLike}°</Text>
-              </View>
-            </View>
-          </View>
-          {/* Enhanced actionable advice UI */}
-          {wateringAdvice && (
-            <View style={[styles.wateringAdvice, { borderLeftColor: wateringAdvice.color, backgroundColor: '#f8fff8', marginTop: 12 }]}> 
-              <View style={styles.adviceHeader}>
-                <MaterialCommunityIcons 
-                  name={wateringAdvice.icon} 
-                  size={22} 
-                  color={wateringAdvice.color} 
-                />
-                <Text style={styles.adviceTitle}>
-                  {wateringAdvice.urgency === 'high' ? 'High Priority' :
-                   wateringAdvice.urgency === 'medium' ? 'Medium Priority' :
-                   wateringAdvice.urgency === 'low' ? 'Low Priority' : 'Normal'}
-                </Text>
-                {wateringAdvice.plantsNeedingWater > 0 && (
-                  <View style={styles.plantsBadge}>
-                    <Text style={styles.plantsBadgeText}>
-                      {wateringAdvice.plantsNeedingWater}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <Text style={[styles.adviceText, {fontWeight:'600', color: wateringAdvice.color, marginBottom: 4}]}>
-                {wateringAdvice.general}
-              </Text>
-              {wateringAdvice.details && (
-                <Text style={styles.adviceText}>{wateringAdvice.details}</Text>
-              )}
-            </View>
-          )}
+        <View style={styles.weatherLoading}>
+          <ActivityIndicator size="small" color="#4CAF50" />
+          <Text style={styles.weatherLoadingText}>Loading weather data...</Text>
         </View>
       </View>
     );
-  };
+  }
 
-  // --- Consumer Weather Insights Section (Business Style) ---
-  const renderConsumerWeatherInsights = () => {
-    if (!weatherData || weatherLoading) return null;
-    const { current, location } = weatherData;
-    return (
-      <View style={styles.businessWeatherCard}>
-        <View style={styles.businessWeatherHeader}>
-          <MaterialCommunityIcons name="weather-cloudy-clock" size={24} color="#4CAF50" />
-          <Text style={styles.businessWeatherTitle}>Weather Insights</Text>
-        </View>
-        <View style={styles.businessWeatherContent}>
-          <View style={styles.businessWeatherMain}>
-            <View style={styles.businessWeatherLeft}>
-              <Image 
-                source={{ uri: getWeatherIconUrl(current.icon) }}
-                style={styles.weatherIcon}
-              />
-              <View>
-                <Text style={styles.businessTemperature}>{current.temperature}°C</Text>
-                <Text style={styles.businessWeatherDescription}>{current.description}</Text>
-                <Text style={styles.businessLocation}>{location.city}</Text>
-              </View>
-            </View>
-            <View style={styles.businessWeatherDetails}>
-              <View style={styles.businessWeatherDetailItem}>
-                <MaterialCommunityIcons name="water-percent" size={16} color="#2196F3" />
-                <Text style={styles.businessWeatherDetailText}>{current.humidity}%</Text>
-              </View>
-              <View style={styles.businessWeatherDetailItem}>
-                <MaterialCommunityIcons name="weather-windy" size={16} color="#9E9E9E" />
-                <Text style={styles.businessWeatherDetailText}>{Math.round(current.windSpeed)} m/s</Text>
-              </View>
-              <View style={styles.businessWeatherDetailItem}>
-                <MaterialCommunityIcons name="thermometer" size={16} color="#FF5722" />
-                <Text style={styles.businessWeatherDetailText}>Feels {current.feelsLike}°</Text>
-              </View>
-            </View>
-          </View>
+  // Format date string (short weekday, day, short month)
+  const dateStr = new Date().toLocaleDateString(undefined, {
+    weekday: "short", day: "numeric", month: "short"
+  });
+
+  const wd = weatherData.current || {};
+  const icon = wd.icon
+    ? { uri: `https://openweathermap.org/img/wn/${wd.icon}@2x.png` }
+    : null;
+
+  return (
+    <View style={styles.weatherCard}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+        <MaterialCommunityIcons name="weather-partly-cloudy" size={26} color="#388e3c" style={{ marginRight: 6 }} />
+        <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#388e3c', flex: 1 }}>
+          Weather
+        </Text>
+        <View style={styles.weatherActions}>
+          <TouchableOpacity onPress={() => loadWeatherData()}>
+            <MaterialIcons name="refresh" size={20} color="#4CAF50" />
+          </TouchableOpacity>
         </View>
       </View>
-    );
-  };
+
+      {/* Main Weather Row */}
+      <View style={styles.weatherMainRow2}>
+        {/* Left - Big temp + weather icon + city/date */}
+        <View style={styles.weatherLeftCol2}>
+          <View style={{ flexDirection: "row", alignItems: "center" }}>
+            {icon && (
+              <Image source={icon} style={{ width: 52, height: 52, marginRight: 6 }} />
+            )}
+            <Text style={styles.weatherBigTemp}>
+              {wd.temperature}°C
+            </Text>
+          </View>
+          <Text style={styles.weatherDesc2}>
+            {wd.description && wd.description.charAt(0).toUpperCase() + wd.description.slice(1)}
+          </Text>
+          <Text style={styles.weatherCityDate2}>
+            {(weatherData.location?.city || "Location")} · {dateStr}
+          </Text>
+        </View>
+        {/* Right - weather stats */}
+        <View style={styles.weatherMetricsCol2}>
+          <WeatherMetric icon="water-percent" value={wd.humidity + "%"} label="Humidity" color="#2196F3" />
+          <WeatherMetric icon="weather-rainy" value={weatherData.precipitation?.last24h + " mm"} label="Rain" color="#4FC3F7" />
+          <WeatherMetric icon="weather-windy" value={Math.round(wd.windSpeed) + " m/s"} label="Wind" color="#888" />
+          <WeatherMetric icon="white-balance-sunny" value={wd.uvIndex || 0} label="UV" color="#FFD600" />
+        </View>
+      </View>
+      {/* Advice */}
+      {wateringAdvice && (
+        <View style={styles.weatherAdviceBanner}>
+          <MaterialCommunityIcons
+            name={wateringAdvice.icon || "water-outline"}
+            size={22}
+            color={wateringAdvice.color}
+            style={{ marginRight: 8, marginTop: 2 }}
+          />
+          <Text style={[styles.weatherAdviceText, { color: wateringAdvice.color }]}>
+            {wateringAdvice.general}
+          </Text>
+        </View>
+      )}
+    </View>
+  );
+};
+
+// WeatherMetric helper
+function WeatherMetric({ icon, value, label, color }) {
+  return (
+    <View style={styles.weatherMetricBox2}>
+      <MaterialCommunityIcons name={icon} size={18} color={color} />
+      <Text style={styles.weatherMetricVal2}>{value}</Text>
+      <Text style={styles.weatherMetricLabel2}>{label}</Text>
+    </View>
+  );
+}
+
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Enhanced Header with Settings */}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Greener</Text>
-          <Text style={styles.headerSubtitle}>Your Plant Care Companion</Text>
+      {/* === Add the header here === */}
+      {mainTab === 'home' && (
+        <View style={styles.header}>
+          <View style={styles.headerLeftRow}>
+            <Image
+              source={require('../assets/icon.png')}
+              style={styles.logoImg}
+              resizeMode="contain"
+            />
+            <Text style={styles.headerTitle}>Greener</Text>
+          </View>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.settingsButton}
+              onPress={() => navigation.navigate('UserSettings')}
+              accessibilityLabel="Settings"
+            >
+              <MaterialIcons name="settings" size={24} color="#4CAF50" />
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={styles.headerActions}>
-          <TouchableOpacity 
-            style={styles.headerActionButton}
-            onPress={() => navigation.navigate('PlantCareCalendarScreen')}
-            accessibilityLabel="Calendar"
-          >
-            <MaterialIcons name="calendar-today" size={24} color="#4CAF50" />
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={styles.settingsButton}
-            onPress={() => navigation.navigate('UserSettings')}
-            accessibilityLabel="Settings"
-          >
-            <MaterialIcons name="settings" size={24} color="#4CAF50" />
-          </TouchableOpacity>
-        </View>
-      </View>
-      
-      {/* Enhanced Feature Tabs Row */}
-      {renderFeatureTabsRow()}
-      
-      {/* Main Content */}
+      )}
+
+      {/* Main content below the header */}
       <View style={styles.contentContainer}>
         {renderMainTabContent()}
       </View>
+      {/* Bottom navigation bar */}
+  <NavigationBar currentTab={mainTab} navigation={navigation} />
+  <>
+  {/* Floating Action Button */}
+  <View style={styles.fabContainer} pointerEvents="box-none">
+    {fabOpen && (
+      <View style={styles.fabActions}>
+        <TouchableOpacity
+          style={styles.fabActionButton}
+          onPress={() => {
+            setFabOpen(false);
+            navigation.navigate('AddPlant');
+          }}
+        >
+          <MaterialIcons name="local-florist" size={24} color="#fff" />
+          <Text style={styles.fabActionLabel}>Add Plant</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.fabActionButton}
+          onPress={() => {
+            setFabOpen(false);
+            navigation.navigate('AddSite');
+          }}
+        >
+          <MaterialIcons name="location-on" size={24} color="#fff" />
+          <Text style={styles.fabActionLabel}>Add Site</Text>
+        </TouchableOpacity>
+      </View>
+    )}
+    <TouchableOpacity
+      style={styles.fab}
+      onPress={() => setFabOpen((prev) => !prev)}
+      activeOpacity={0.85}
+    >
+      <MaterialIcons name={fabOpen ? 'close' : 'add'} size={32} color="#fff" />
+    </TouchableOpacity>
+  </View>
+</> 
     </SafeAreaView>
   );
 }
 
+
 const isWeb = Platform.OS === 'web';
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f8f9fa' 
+  container: {
+    flex: 1,
   },
   header: {
     flexDirection: 'row',
@@ -788,17 +658,26 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e8f5e8',
     elevation: 2,
-    ...(!isWeb ? {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-    } : {
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    }),
+    ...(!isWeb
+      ? {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+        }
+      : {
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        }),
   },
-  headerLeft: {
+  headerLeftRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
+  },
+  logoImg: {
+    width: 36,
+    height: 36,
+    marginRight: 10,
   },
   headerTitle: {
     fontSize: 24,
@@ -809,19 +688,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#66bb6a',
     marginTop: 2,
+    flex: 1,
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  headerActionButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f9f3',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   settingsButton: {
     width: 40,
@@ -831,7 +703,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
+
   // Enhanced Profile Card Styles
   enhancedProfileCard: {
     backgroundColor: '#fff',
@@ -1376,4 +1248,204 @@ const styles = StyleSheet.create({
     color: '#333',
     marginLeft: 4,
   },
+  weatherMainRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  marginBottom: 8,
+},
+weatherLeftColumn: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  flex: 1,
+},
+bigTemperature: {
+  fontSize: 32,
+  fontWeight: 'bold',
+  color: '#2e7d32',
+  marginBottom: 2,
+},
+weatherInfoCol: {
+  alignItems: 'flex-end',
+  justifyContent: 'center',
+  gap: 6,
+  marginLeft: 12,
+},
+weatherInfoItem: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginBottom: 2,
+},
+weatherInfoText: {
+  fontSize: 13,
+  color: '#333',
+  marginLeft: 4,
+},
+weatherAdviceRow: { // PALE GREEN advice area
+  marginTop: 6,
+  borderRadius: 12,
+  backgroundColor: '#F7FCF7',
+  padding: 14,
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  gap: 10,
+},
+adviceSectionLeft: {
+  flexDirection: 'row',
+  alignItems: 'flex-start',
+  flex: 2,
+  minWidth: 0,
+  marginRight: 12,
+},
+advicePriorityText: {
+  fontSize: 15,
+  fontWeight: 'bold',
+  color: '#388e3c',
+  marginBottom: 4,
+},
+adviceGeneral: {
+  fontSize: 14,
+  fontWeight: '600',
+  marginTop: 2,
+  flexWrap: 'wrap',
+},
+statsRow: {
+  flexDirection: 'row',
+  flex: 2.5,
+  justifyContent: 'space-evenly',
+  alignItems: 'center',
+  marginLeft: 10,
+  flexWrap: 'wrap',
+},
+statItem: {
+  alignItems: 'center',
+  marginHorizontal: 4,
+  minWidth: 52,
+},
+statValue: {
+  fontWeight: 'bold',
+  color: '#2e7d32',
+  fontSize: 15,
+},
+statLabel: {
+  fontSize: 11,
+  color: '#444',
+},
+fabContainer: {
+  position: 'absolute',
+  right: 24,
+  bottom: Platform.OS === 'web' ? 36 : 36,
+  alignItems: 'flex-end',
+  zIndex: 1000,
+  pointerEvents: 'box-none',
+},
+fab: {
+  width: 64,
+  height: 64,
+  borderRadius: 32,
+  backgroundColor: '#4CAF50',
+  alignItems: 'center',
+  justifyContent: 'center',
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.25,
+  shadowRadius: 10,
+  elevation: 6,
+  marginBottom: 8,
+},
+fabActions: {
+  marginBottom: 12,
+  alignItems: 'flex-end',
+},
+fabActionButton: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  backgroundColor: '#388e3c',
+  borderRadius: 24,
+  paddingVertical: 10,
+  paddingHorizontal: 18,
+  marginBottom: 10,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.17,
+  shadowRadius: 3,
+  elevation: 3,
+},
+fabActionLabel: {
+  color: '#fff',
+  fontWeight: '600',
+  fontSize: 16,
+  marginLeft: 10,
+},
+weatherMainRow2: {
+  flexDirection: 'row',
+  justifyContent: 'space-between',
+  alignItems: 'center',
+  paddingBottom: 6,
+  paddingHorizontal: 2,
+},
+weatherLeftCol2: {
+  flex: 1.3,
+  justifyContent: 'center',
+},
+weatherBigTemp: {
+  fontSize: 34,
+  fontWeight: 'bold',
+  color: '#2e7d32',
+  marginRight: 2,
+},
+weatherDesc2: {
+  fontSize: 15,
+  color: '#555',
+  marginBottom: 1,
+},
+weatherCityDate2: {
+  fontSize: 12,
+  color: '#888',
+},
+weatherMetricsCol2: {
+  flex: 1.4,
+  flexDirection: 'row',
+  flexWrap: 'wrap',
+  justifyContent: 'flex-end',
+  alignItems: 'center',
+  gap: 6,
+},
+weatherMetricBox2: {
+  alignItems: 'center',
+  marginLeft: 10,
+  marginBottom: 2,
+  backgroundColor: '#F0F7F0',
+  borderRadius: 8,
+  paddingVertical: 7,
+  paddingHorizontal: 9,
+  minWidth: 56,
+},
+weatherMetricVal2: {
+  fontWeight: 'bold',
+  color: '#222',
+  fontSize: 15,
+  marginTop: 1,
+},
+weatherMetricLabel2: {
+  fontSize: 11,
+  color: '#666',
+},
+weatherAdviceBanner: {
+  marginTop: 14,
+  borderRadius: 10,
+  backgroundColor: '#e7fbe5',
+  padding: 10,
+  flexDirection: 'row',
+  alignItems: 'center',
+  marginHorizontal: -4,
+  marginBottom: -6,
+},
+weatherAdviceText: {
+  fontWeight: '600',
+  fontSize: 14,
+  flex: 1,
+  flexWrap: 'wrap',
+},
 });

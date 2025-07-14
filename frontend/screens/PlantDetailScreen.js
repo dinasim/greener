@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import {
-  View, Text, ScrollView, Image, StyleSheet, TouchableOpacity, Dimensions, SafeAreaView, Platform
+  View, Text, ScrollView, Image, StyleSheet, TouchableOpacity, Dimensions, Platform
 } from 'react-native';
 import { Ionicons, MaterialIcons, FontAwesome5, Entypo, Feather } from '@expo/vector-icons';
+import MainLayout from '../components/MainLayout';
 
 const PLANT_DETAIL_URL = 'https://usersfunctions.azurewebsites.net/api/plant_detail';
 const { width } = Dimensions.get('window');
@@ -33,28 +34,41 @@ export default function PlantDetailScreen({ route, navigation }) {
     })();
   }, [plantId]);
 
+  // --- Nav bar handler ---
+  const handleTabPress = (tab) => {
+    if (tab === 'home') navigation.navigate('Home');
+    else if (tab === 'plants') navigation.navigate('Locations');
+    else if (tab === 'marketplace') navigation.navigate('MainTabs');
+    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
+    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
+  };
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Text style={{ fontSize: 18, color: "#2e7d32", fontWeight: "bold" }}>Loading plant details…</Text>
-      </SafeAreaView>
+      <MainLayout currentTab="plants" navigation={navigation}>
+        <View style={styles.center}>
+          <Text style={{ fontSize: 18, color: "#2e7d32", fontWeight: "bold" }}>Loading plant details…</Text>
+        </View>
+      </MainLayout>
     );
   }
 
   if (!plant) {
     return (
-      <SafeAreaView style={styles.center}>
-        <Ionicons name="alert-circle" size={70} color="#bdbdbd" style={{ marginBottom: 14 }} />
-        <Text style={{ fontSize: 24, fontWeight: "bold", color: "#333", marginBottom: 10 }}>
-          Plant Not Found
-        </Text>
-        <Text style={{ color: "#666", fontSize: 17, marginBottom: 18, textAlign: 'center' }}>
-          Sorry, we couldn't find details for this plant in our encyclopedia.
-        </Text>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Text style={styles.backText}>Back</Text>
-        </TouchableOpacity>
-      </SafeAreaView>
+      <MainLayout currentTab="plants" navigation={navigation}>
+        <View style={styles.center}>
+          <Ionicons name="alert-circle" size={70} color="#bdbdbd" style={{ marginBottom: 14 }} />
+          <Text style={{ fontSize: 24, fontWeight: "bold", color: "#333", marginBottom: 10 }}>
+            Plant Not Found
+          </Text>
+          <Text style={{ color: "#666", fontSize: 17, marginBottom: 18, textAlign: 'center' }}>
+            Sorry, we couldn't find details for this plant in our encyclopedia.
+          </Text>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
+      </MainLayout>
     );
   }
 
@@ -83,7 +97,6 @@ export default function PlantDetailScreen({ route, navigation }) {
     {
       icon: <FontAwesome5 name="temperature-low" size={22} color="#F26C4F" />,
       label: 'Temperature',
-      // Show single dash if neither, min if only one, else as "min°–max°C"
       value: care.temperature_min_c && care.temperature_max_c
         ? `${care.temperature_min_c}°–${care.temperature_max_c}°C`
         : care.temperature_min_c
@@ -105,7 +118,6 @@ export default function PlantDetailScreen({ route, navigation }) {
     },
   ];
 
-  // Schedule uses {amount, unit} everywhere!
   const formatSchedule = (item) =>
     item && item.amount
       ? `every ${item.amount} ${item.unit || ''}`.trim()
@@ -129,11 +141,10 @@ export default function PlantDetailScreen({ route, navigation }) {
     },
   ];
 
-  // --- Common Problems section ---
   const problems = Array.isArray(plant.common_problems) ? plant.common_problems : [];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <MainLayout currentTab="plants" navigation={navigation}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
@@ -146,12 +157,10 @@ export default function PlantDetailScreen({ route, navigation }) {
       </View>
 
       <ScrollView contentContainerStyle={styles.contentContainer}>
-        {/* Plant Image (only if image_url exists and non-empty) */}
+        {/* Plant Image */}
         {!!plant.image_url && (
           <Image source={{ uri: plant.image_url }} style={styles.image} />
         )}
-
-        {/* Names */}
         <Text style={styles.commonName}>{plant.common_name || dash}</Text>
         <Text style={styles.latinName}>{plant.scientific_name || dash}</Text>
 
@@ -167,7 +176,6 @@ export default function PlantDetailScreen({ route, navigation }) {
               key={item.label}
             >
               <View style={styles.infoIcon}>{item.icon}</View>
-              {/* For Temperature: label/value always in a row */}
               {item.oneLine ? (
                 <>
                   <Text style={[styles.infoLabel, { flexShrink: 0, minWidth: 90 }]}>{item.label}:</Text>
@@ -230,7 +238,7 @@ export default function PlantDetailScreen({ route, navigation }) {
           )}
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </MainLayout>
   );
 }
 

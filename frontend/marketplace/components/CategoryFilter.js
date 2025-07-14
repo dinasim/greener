@@ -122,16 +122,16 @@ const CategoryFilter = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    paddingVertical: 12,
-    paddingHorizontal: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
     width: '100%',
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
     borderBottomColor: '#eee',
   },
   heading: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 12,
+    marginBottom: 4,
     color: '#333',
     textAlign: 'center', // Center the heading
   },
