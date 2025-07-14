@@ -1220,8 +1220,8 @@ export const fetchReviews = async (targetType, targetId) => {
   if (!targetType || !targetId) {
     throw new Error('Target type and ID are required');
   }
-  
-  const response = await apiRequest(`reviews-get?targetType=${targetType}&targetId=${encodeURIComponent(targetId)}`);
+  // Use the correct Azure Function route
+  const response = await apiRequest(`marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`);
   return response;
 };
 

@@ -11,24 +11,41 @@ import db_helpers
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Business login function starting')
-    
-    # CORS headers
-    cors_headers = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type'
-    }
-    
-    # Handle CORS preflight
-    if req.method == 'OPTIONS':
-        logging.info('Handling OPTIONS request (CORS preflight)')
-        return func.HttpResponse("", status_code=200, headers=cors_headers)
-    
     try:
-        # Log environment check and Python version
-        logging.info(f"Python version: {sys.version}")
+        logging.info('About to handle CORS')
+        # CORS headers
+        cors_headers = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'POST, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type'
+        }
+        logging.info('About to check request method')
+        if req.method == 'OPTIONS':
+            logging.info('Handling OPTIONS request (CORS preflight)')
+            return func.HttpResponse("", status_code=200, headers=cors_headers)
+        logging.info('About to parse request body')
+        try:
+            body = req.get_json()
+        except Exception as e:
+            logging.error(f"Failed to parse JSON body: {str(e)}")
+            return func.HttpResponse(
+                json.dumps({"error": "Invalid request body", "success": False}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors_headers
+            )
+        email = (body.get('email') or '').strip().lower()
+        password = body.get('password')
+        if not email or not password:
+            logging.warning('Missing email or password in login request')
+            return func.HttpResponse(
+                json.dumps({"error": "Email and password are required", "success": False}),
+                status_code=400,
+                mimetype="application/json",
+                headers=cors_headers
+            )
         
-        # Test database connections first to validate configuration
+        # FIXED: Always test database connections first to validate configuration
         try:
             db_status = db_helpers.test_database_connections()
             if not db_status["marketplace_db"]["connected"]:
@@ -53,44 +70,6 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "success": False
                 }),
                 status_code=500,
-                mimetype="application/json",
-                headers=cors_headers
-            )
-        
-        # Get request data
-        try:
-            req_body = req.get_json()
-            if not req_body:
-                logging.error("No request body received")
-                return func.HttpResponse(
-                    json.dumps({"error": "Invalid request body", "success": False}),
-                    status_code=400,
-                    mimetype="application/json",
-                    headers=cors_headers
-                )
-            
-            email = req_body.get('email', '').strip().lower()
-            password = req_body.get('password', '')
-            
-            logging.info(f"Login attempt for email: {email}")
-            
-            if not email or not password:
-                logging.error("Missing email or password")
-                return func.HttpResponse(
-                    json.dumps({"error": "Email and password are required", "success": False}),
-                    status_code=400,
-                    mimetype="application/json",
-                    headers=cors_headers
-                )
-        except Exception as request_error:
-            error_details = traceback.format_exc()
-            logging.error(f"Request parsing failed: {str(request_error)}\n{error_details}")
-            return func.HttpResponse(
-                json.dumps({
-                    "error": f"Invalid request format: {str(request_error)}", 
-                    "success": False
-                }),
-                status_code=400,
                 mimetype="application/json",
                 headers=cors_headers
             )
@@ -138,10 +117,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             error_details = traceback.format_exc()
             logging.error(f"Database query failed: {str(query_error)}\n{error_details}")
             return func.HttpResponse(
-                json.dumps({
-                    "error": f"Database query failed: {str(query_error)}", 
-                    "success": False
-                }),
+                json.dumps({"error": "Database error. Please try again later.", "success": False}),
                 status_code=500,
                 mimetype="application/json",
                 headers=cors_headers
@@ -185,10 +161,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             error_details = traceback.format_exc()
             logging.error(f"Password validation failed: {str(bcrypt_error)}\n{error_details}")
             return func.HttpResponse(
-                json.dumps({
-                    "error": f"Authentication error: {str(bcrypt_error)}", 
-                    "success": False
-                }),
+                json.dumps({"error": "Authentication error. Please try again later.", "success": False}),
                 status_code=500,
                 mimetype="application/json",
                 headers=cors_headers
@@ -211,16 +184,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json",
             headers=cors_headers
         )
-        
     except Exception as e:
-        error_details = traceback.format_exc()
-        logging.error(f"Unexpected error in business login: {str(e)}\n{error_details}")
+        logging.error(f'Error in business login: {str(e)}')
+        logging.error(f'Error type: {type(e).__name__}')
+        import traceback
+        logging.error(f'Traceback: {traceback.format_exc()}')
         return func.HttpResponse(
-            json.dumps({
-                "error": f"Authentication failed: {str(e)}. Please try again.", 
-                "success": False
-            }),
+            json.dumps({"error": "Internal server error. Please try again later.", "success": False}),
             status_code=500,
-            mimetype="application/json",
             headers=cors_headers
         )

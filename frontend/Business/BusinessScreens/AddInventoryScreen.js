@@ -252,45 +252,25 @@ export default function AddInventoryScreen({ navigation, route }) {
   // Enhanced inventory loading with KPI calculation
   const loadCurrentInventory = useCallback(async (id = currentBusinessId, silent = false) => {
     if (!id) return;
-    
     try {
       if (!silent) setRefreshing(true);
       setNetworkStatus('loading');
-      
+      setInventoryError(null); // NEW: clear previous error
       console.log('📦 Loading inventory for business:', id);
       const inventoryResponse = await getBusinessInventory(id);
       const inventory = inventoryResponse.inventory || inventoryResponse || [];
-      
       if (isMounted.current) {
-        console.log('✅ Loaded inventory:', inventory.length, 'items');
         setCurrentInventory(inventory);
-        
-        // Calculate KPIs
         const kpis = calculateKPIs(inventory);
         setKpiData(kpis);
-        
-        // Calculate low stock items
-        const lowStock = inventory.filter(item => 
-          item.isLowStock && item.status === 'active'
-        );
+        const lowStock = inventory.filter(item => item.isLowStock && item.status === 'active');
         setLowStockItems(lowStock);
-        
         setNetworkStatus('online');
-        
-        // Success animation for inventory load
         if (!silent && inventory.length > 0) {
           Animated.sequence([
-            Animated.timing(successAnim, {
-              toValue: 1,
-              duration: 200,
-              useNativeDriver: Platform.OS !== 'web',
-            }),
+            Animated.timing(successAnim, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
             Animated.delay(1000),
-            Animated.timing(successAnim, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: Platform.OS !== 'web',
-            }),
+            Animated.timing(successAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
           ]).start();
         }
       }
@@ -298,8 +278,15 @@ export default function AddInventoryScreen({ navigation, route }) {
       console.error('❌ Error loading inventory:', error);
       if (isMounted.current) {
         setNetworkStatus('error');
+        setCurrentInventory([]);
+        // NEW: Set error message for UI
+        if (error.message && error.message.includes('Business not found')) {
+          setInventoryError('Business not found. Please check the business ID or contact support.');
+        } else {
+          setInventoryError('Failed to load inventory. Please try again later.');
+        }
         if (!silent) {
-          Alert.alert('Connection Error', 'Failed to load inventory. Please check your connection and try again.');
+          Alert.alert('Connection Error', error.message || 'Failed to load inventory. Please check your connection and try again.');
         }
       }
     } finally {
@@ -1556,14 +1543,12 @@ export default function AddInventoryScreen({ navigation, route }) {
                 onPress={() => handleKPIPress('totalValue')}
               />
             </View>
-
             {/* Low Stock Banner */}
             <LowStockBanner
               lowStockItems={lowStockItems}
               onManageStock={() => setShowInventory(true)}
               onRestock={handleRestock}
             />
-
             {/* Inventory Table Component */}
             <InventoryTable
               inventory={currentInventory}
@@ -1574,7 +1559,14 @@ export default function AddInventoryScreen({ navigation, route }) {
               onDeleteProduct={(item) => console.log('Delete:', item.id)}
               onProductPress={handleEditInventoryItem}
               businessId={currentBusinessId}
+              error={inventoryError} // NEW: pass error to table
             />
+            {/* Show error or empty state below table if needed */}
+            {inventoryError && (
+              <View style={styles.errorContainer} accessibilityRole="alert">
+                <Text style={styles.errorText}>{inventoryError}</Text>
+              </View>
+            )}
           </View>
         ) : (
           // Add Plant View
@@ -2512,5 +2504,13 @@ const styles = StyleSheet.create({
     color: '#666',
     marginBottom: 8,
     fontStyle: 'italic',
+  },
+  errorContainer: {
+    padding: 16,
+    backgroundColor: '#fff3f3',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#f44336',
+    marginTop: 16,
   },
 });

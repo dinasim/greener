@@ -71,7 +71,7 @@ class UniversalNotificationManager {
     // Use separate endpoints for different user types
     this.apiEndpoints = {
       consumer: 'https://usersfunctions.azurewebsites.net/api/consumer-notification-settings',
-      business: 'https://usersfunctions.azurewebsites.net/api/business-notification-settings',
+      business: 'https://usersfunctions.azurewebsites.net/api/business/notification-settings',
       user: 'https://usersfunctions.azurewebsites.net/api/consumer-notification-settings' // Default to consumer
     };
     
@@ -506,7 +506,7 @@ class UniversalNotificationManager {
   async updateTokenOnServer(token) {
     try {
       const endpoint = this.userType === 'business' 
-        ? 'business-notification-settings' 
+        ? 'business/notification-settings' 
         : 'register_device_token';
       
       const body = this.userType === 'business'

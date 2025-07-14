@@ -63,9 +63,7 @@ const BusinessSellerProfileScreen = () => {
     try {
       setIsLoading(true);
       setError(null);
-      
       if (!businessId) {
-        console.error("No business ID provided");
         setError('Unable to load business profile. Missing business ID.');
         setIsLoading(false);
         return;
@@ -95,13 +93,16 @@ const BusinessSellerProfileScreen = () => {
           method: 'GET',
           headers,
         });
-        
         if (!businessResponse.ok) {
-          throw new Error(`HTTP error! Status: ${businessResponse.status}`);
+          let errorMsg = `HTTP error! Status: ${businessResponse.status}`;
+          if (businessResponse.status === 500) {
+            errorMsg = 'Server error (500). Please try again later.';
+          }
+          setError(errorMsg);
+          setIsLoading(false);
+          return;
         }
-        
         const data = await businessResponse.json();
-        
         if (data && data.business) {
           console.log("Business profile loaded successfully");
           const businessData = data.business;
@@ -154,73 +155,16 @@ const BusinessSellerProfileScreen = () => {
           }
           
         } else {
-          console.warn("API returned empty business data, using fallback");
-          
-          // Fallback to seller data if business profile isn't available
-          if (route.params?.sellerData) {
-            const sellerData = route.params.sellerData;
-            setBusiness({
-              id: businessId,
-              businessName: sellerData.name || 'Business',
-              name: sellerData.name || 'Business',
-              email: sellerData.email || businessId,
-              logo: sellerData.avatar || sellerData.logo,
-              description: sellerData.description || 'No description available',
-              businessType: sellerData.businessType || 'Plant Business',
-              contactPhone: sellerData.contactPhone,
-              contactEmail: sellerData.email,
-              address: processAddress(sellerData.address),
-              businessHours: sellerData.businessHours || [],
-              joinDate: sellerData.joinDate || new Date().toISOString(),
-              status: sellerData.status || 'active',
-              rating: sellerData.rating || 0,
-              reviewCount: sellerData.reviewCount || 0,
-              inventory: [],
-              socialMedia: {},
-              isBusiness: true
-            });
-          } else {
-            setError('Business profile could not be loaded.');
-          }
+          setError('Business profile not found or invalid data.');
+          setIsLoading(false);
         }
-      } catch (apiError) {
-        console.error('API call failed:', apiError);
-        
-        // Try fallback data
-        if (route.params?.sellerData) {
-          const sellerData = route.params.sellerData;
-          setBusiness({
-            id: businessId,
-            businessName: sellerData.name || 'Business',
-            name: sellerData.name || 'Business',
-            email: sellerData.email || businessId,
-            logo: sellerData.avatar || sellerData.logo,
-            description: sellerData.description || 'No description available',
-            businessType: sellerData.businessType || 'Plant Business',
-            contactPhone: sellerData.contactPhone,
-            contactEmail: sellerData.email,
-            address: processAddress(sellerData.address),
-            businessHours: sellerData.businessHours || [],
-            joinDate: sellerData.joinDate || new Date().toISOString(),
-            status: sellerData.status || 'active',
-            rating: sellerData.rating || 0,
-            reviewCount: sellerData.reviewCount || 0,
-            inventory: [],
-            socialMedia: {},
-            isBusiness: true
-          });
-        } else {
-          throw apiError;
-        }
+      } catch (err) {
+        setError('Failed to load business profile. Please try again later.');
+        setIsLoading(false);
       }
-      
-      setIsLoading(false);
-      setIsRefreshing(false);
     } catch (err) {
-      console.error('Error fetching business profile:', err);
-      setError('Failed to load business profile. Please try again later.');
+      setError('Unexpected error loading business profile.');
       setIsLoading(false);
-      setIsRefreshing(false);
     }
   }, [businessId, route.params]);
 
@@ -941,7 +885,7 @@ const BusinessSellerProfileScreen = () => {
     );
   }
 
-  // Render error state
+  // In render, show error if present
   if (error) {
     return (
       <SafeAreaView style={styles.container}>
@@ -951,11 +895,10 @@ const BusinessSellerProfileScreen = () => {
           onBackPress={() => navigation.goBack()}
           onNotificationsPress={() => navigation.navigate('Messages')}
         />
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+        <View style={styles.loadingContainer}>
           <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadBusinessProfile}>
-            <Text style={styles.retryText}>Retry</Text>
+          <TouchableOpacity onPress={loadBusinessProfile} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Retry</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>

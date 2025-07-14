@@ -39,7 +39,8 @@ const InventoryTable = React.memo(({
   onProductPress = () => {},
   refreshing = false,
   businessId,
-  navigation
+  navigation,
+  error // NEW: error prop
 }) => {
   // State
   const [searchQuery, setSearchQuery] = useState('');
@@ -605,6 +606,16 @@ const InventoryTable = React.memo(({
 
   // Key extractor
   const keyExtractor = useCallback((item) => item.id, []);
+
+  // If error, show error message instead of table
+  if (error) {
+    return (
+      <View style={styles.emptyContainer} accessibilityRole="alert">
+        <MaterialIcons name="error-outline" size={48} color="#f44336" />
+        <Text style={styles.emptyText}>{error}</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -1251,6 +1262,7 @@ InventoryTable.propTypes = {
   refreshing: PropTypes.bool,
   businessId: PropTypes.string,
   navigation: PropTypes.object,
+  error: PropTypes.string, // NEW: error prop type
 };
 
 InventoryTable.defaultProps = {
@@ -1264,6 +1276,7 @@ InventoryTable.defaultProps = {
   refreshing: false,
   businessId: null,
   navigation: null,
+  error: null, // NEW: error default value
 };
 
 export default InventoryTable;
