@@ -1,7 +1,7 @@
 # 🌱 Greener
 
 <div align="center">
-  <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=600&size=50&duration=4000&pause=1000&color=00B04F&background=FFFFFF&center=true&vCenter=true&width=800&height=100&lines=GREENER;Sustainable+Marketplace;Eco-Friendly+Commerce" alt="Greener - Sustainable Marketplace Platform" />
+  <img src="https://readme-typing-svg.herokuapp.com?font=Fira+Code&weight=600&size=50&duration=4000&pause=1000&color=00B04F&background=FFFFFF&center=true&vCenter=true&width=800&height=100&lines=GREENER;Sustainable+Living+Platform;Grow+Share+Thrive" alt="Greener - Sustainable Living Platform" />
 </div>
 
 <div align="center">
@@ -12,10 +12,8 @@
 </div>
 
 <div align="center">
-  <h3>🌍 The Modern Marketplace for Sustainable Living</h3>
-  <p><strong>Connecting eco-conscious consumers with sustainable businesses through cutting-edge technology</strong></p>
-</div>
-
+  <h3>🌱 The All-in-One Platform for plants</h3>
+  <p><strong>Empowering individuals and businesses to grow, care, and thrive plant 
 ---
 
 ## 🎯 Overview
@@ -207,7 +205,7 @@ func azure functionapp publish greener-functions
 
 ## 📜 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+Greener 2025
 
 ---
 
@@ -217,13 +215,6 @@ This is a university project developed under the guidance of:
 
 - Nir Levi – Course Instructor
 - Omer Avramovich – Teaching Assistant
-
-Special thanks to:
-
-- Microsoft Azure for cloud infrastructure
-- React Native community for cross-platform capabilities
-- Open source contributors and maintainers
-
 ---
 
 <div align="center">
