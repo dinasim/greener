@@ -5,13 +5,6 @@
 </div>
 
 <div align="center">
-  <img src="https://img.shields.io/github/stars/dinasim/greener?style=for-the-badge&logo=github&logoColor=white&color=00B04F&labelColor=2F2F2F" alt="GitHub stars"/>
-  <img src="https://img.shields.io/github/forks/dinasim/greener?style=for-the-badge&logo=github&logoColor=white&color=00B04F&labelColor=2F2F2F" alt="GitHub forks"/>
-  <img src="https://img.shields.io/github/issues/dinasim/greener?style=for-the-badge&logo=github&logoColor=white&color=00B04F&labelColor=2F2F2F" alt="GitHub issues"/>
-  <img src="https://img.shields.io/github/license/dinasim/greener?style=for-the-badge&logo=github&logoColor=white&color=00B04F&labelColor=2F2F2F" alt="GitHub license"/>
-</div>
-
-<div align="center">
   <h3>🌱 The All-in-One Platform for plants</h3>
   <p><strong>Empowering individuals and businesses to grow, care, and thrive plant 
 ---
