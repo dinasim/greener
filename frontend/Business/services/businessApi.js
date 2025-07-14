@@ -526,11 +526,21 @@ export const getBusinessInventory = async (businessId) => {
     
     // Updated URL to match the actual Azure Function endpoint
     const url = `${API_BASE_URL}/marketplace/business/${encodeURIComponent(businessId)}/inventory`;
-    const response = await apiRequest(url, {
-      method: 'GET',
-      headers,
-    }, 3, 'Business Inventory');
+    let response;
+    try {
+      response = await apiRequest(url, {
+        method: 'GET',
+        headers,
+      }, 3, 'Business Inventory');
+    } catch (err) {
+      // If backend returns 404, treat as business not found
+      if (err && err.status === 404) {
+        throw new Error('Business not found');
+      }
+      throw err;
+    }
 
+    // Defensive: always return an array for inventory
     const inventory = response.inventory || response.items || response.data || [];
     
     await AsyncStorage.setItem('businessInventory', JSON.stringify(response));

@@ -155,14 +155,15 @@ export const getNearbyBusinesses = async (location, radius = 10) => {
   try {
     console.log('📍 Getting nearby businesses');
     const headers = await getEnhancedHeaders();
-    
-    const url = `${API_BASE_URL}/get_nearby_businesses`;
+    // Convert location and radius to query string
+    const queryParams = location && location.latitude && location.longitude
+      ? `?lat=${encodeURIComponent(location.latitude)}&lon=${encodeURIComponent(location.longitude)}&radius=${encodeURIComponent(radius)}`
+      : '';
+    const url = `${API_BASE_URL}/get_nearby_businesses${queryParams}`;
     const response = await apiRequest(url, {
-      method: 'POST',
+      method: 'GET',
       headers,
-      body: JSON.stringify({ location, radius }),
     }, 3, 'Nearby Businesses');
-
     return response;
   } catch (error) {
     console.error('❌ Nearby businesses error:', error);
@@ -177,12 +178,14 @@ export const getAllBusinesses = async (filters = {}) => {
   try {
     console.log('🏢 Getting all businesses');
     const headers = await getEnhancedHeaders();
-    
-    const url = `${API_BASE_URL}/get-all-businesses`;
+    // Convert filters to query string
+    const queryParams = Object.keys(filters).length
+      ? '?' + Object.entries(filters).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
+      : '';
+    const url = `${API_BASE_URL}/get-all-businesses${queryParams}`;
     const response = await apiRequest(url, {
-      method: 'POST',
+      method: 'GET',
       headers,
-      body: JSON.stringify(filters),
     }, 3, 'All Businesses');
 
     return response;
