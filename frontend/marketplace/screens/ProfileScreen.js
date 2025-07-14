@@ -96,7 +96,7 @@ const ProfileScreen = () => {
       
       try {
         // Try to fetch from the app's user registration data
-        const appUserResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/registeruser?email=${encodeURIComponent(userId)}`);
+        const appUserResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/registerUser?email=${encodeURIComponent(userId)}`);
         
         if (appUserResponse.ok) {
           const appUserData = await appUserResponse.json();

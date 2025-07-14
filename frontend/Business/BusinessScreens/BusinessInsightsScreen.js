@@ -18,6 +18,8 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import BusinessDashboardCharts from '../components/BusinessDashboardCharts';
 import KPIWidget from '../components/KPIWidget';
+import { getBusinessAnalytics, createAnalyticsStream } from '../services/businessAnalyticsApi';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -39,36 +41,200 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [activeTab, timeframe]);
+  
+  // Set up real-time data stream for auto-refresh (every 60 seconds)
+  useEffect(() => {
+    // Only enable auto-refresh for overview tab
+    if (activeTab !== 'overview') return;
+    
+    console.log('🔄 Setting up analytics auto-refresh stream...');
+    const cleanupStream = createAnalyticsStream(
+      timeframe,
+      (newData) => {
+        if (newData && newData.data) {
+          console.log('📊 Auto-refreshed analytics data received');
+          // Transform API data similar to loadData function
+          // ...
+          // If you want to update the UI automatically, uncomment:
+          // loadData();
+        }
+      },
+      (error) => {
+        console.warn('⚠️ Analytics stream error:', error);
+      },
+      60000 // 60 seconds refresh interval
+    );
+    
+    // Cleanup function
+    return () => {
+      console.log('🛑 Stopping analytics auto-refresh stream');
+      cleanupStream();
+    };
+  }, [activeTab, timeframe]);
 
   const loadData = async () => {
     setIsLoading(true);
     setError(null);
     try {
-      // Replace with your real API call for analytics/reports
-      // Example fallback data for high-level UI
-      setData({
+      // Get the business ID from AsyncStorage if not provided in route params
+      let id = businessId;
+      if (!id) {
+        id = await AsyncStorage.getItem('businessId');
+      }
+      
+      if (!id) {
+        throw new Error('Business ID is required');
+      }
+
+      // Call the real API using the businessAnalyticsApi service
+      const response = await getBusinessAnalytics(timeframe, 'all', false);
+      
+      if (!response || !response.data) {
+        throw new Error('Invalid response from analytics API');
+      }
+      
+      const apiData = response.data;
+      
+      // Transform API data to the format expected by UI components
+      const formattedData = {
         kpis: [
-          { title: 'Total Revenue', value: 12000, icon: 'cash', color: '#4CAF50', format: 'currency' },
-          { title: 'Total Orders', value: 320, icon: 'shopping-cart', color: '#2196F3', format: 'number' },
-          { title: 'Avg Order Value', value: 37.5, icon: 'attach-money', color: '#FF9800', format: 'currency' },
-          { title: 'Customers', value: 210, icon: 'people', color: '#9C27B0', format: 'number' },
+          { 
+            title: 'Total Revenue', 
+            value: apiData.sales?.totalRevenue || 0, 
+            icon: 'cash', 
+            color: '#4CAF50', 
+            format: 'currency' 
+          },
+          { 
+            title: 'Total Orders', 
+            value: apiData.sales?.totalOrders || 0, 
+            icon: 'shopping-cart', 
+            color: '#2196F3', 
+            format: 'number' 
+          },
+          { 
+            title: 'Avg Order Value', 
+            value: apiData.sales?.averageOrderValue || 0, 
+            icon: 'attach-money', 
+            color: '#FF9800', 
+            format: 'currency' 
+          },
+          { 
+            title: 'Customers', 
+            value: apiData.customers?.totalCustomers || 0, 
+            icon: 'people', 
+            color: '#9C27B0', 
+            format: 'number' 
+          },
         ],
         chartData: {
-          sales: { labels: ['W1', 'W2', 'W3', 'W4'], values: [3000, 3500, 2800, 2700], total: 12000, average: 3000 },
-          orders: { pending: 12, confirmed: 20, ready: 8, completed: 280, total: 320 },
-          inventory: { inStock: 120, lowStock: 10, outOfStock: 5 },
+          sales: {
+            labels: apiData.sales?.weeklyLabels || [], 
+            values: apiData.sales?.weeklyValues || [], 
+            total: apiData.sales?.totalRevenue || 0, 
+            average: apiData.sales?.averageWeeklyRevenue || 0
+          },
+          orders: {
+            pending: apiData.sales?.pendingOrders || 0, 
+            confirmed: apiData.sales?.confirmedOrders || 0, 
+            ready: apiData.sales?.readyOrders || 0, 
+            completed: apiData.sales?.completedOrders || 0, 
+            total: apiData.sales?.totalOrders || 0
+          },
+          inventory: {
+            inStock: apiData.inventory?.inStockItems || 0, 
+            lowStock: apiData.inventory?.lowStockItems || 0, 
+            outOfStock: apiData.inventory?.outOfStockItems || 0
+          },
         },
-        topProducts: [
-          { name: 'Ficus', sales: 80, revenue: 1200 },
-          { name: 'Monstera', sales: 60, revenue: 900 },
-        ],
-        topCustomers: [
-          { name: 'Alice', orders: 12, spent: 400 },
-          { name: 'Bob', orders: 10, spent: 350 },
-        ],
-      });
+        topProducts: apiData.sales?.topProducts || [],
+        topCustomers: apiData.customers?.topCustomers || [],
+        generatedAt: apiData.generatedAt || new Date().toISOString()
+      };
+      
+      setData(formattedData);
+      console.log('✅ Analytics data loaded successfully!');
     } catch (e) {
-      setError('Failed to load data');
+      console.error('❌ Failed to load analytics data:', e);
+      setError(`Failed to load data: ${e.message}`);
+      
+      // Try to load cached data as fallback
+      try {
+        const cachedData = await AsyncStorage.getItem('cached_analytics');
+        if (cachedData) {
+          const { data: cachedApiData } = JSON.parse(cachedData);
+          if (cachedApiData && cachedApiData.data) {
+            console.log('📱 Using cached analytics data');
+            // Transform cached data (similar to above)
+            const formattedCachedData = {
+              kpis: [
+                { 
+                  title: 'Total Revenue', 
+                  value: cachedApiData.sales?.totalRevenue || 0, 
+                  icon: 'cash', 
+                  color: '#4CAF50', 
+                  format: 'currency' 
+                },
+                { 
+                  title: 'Total Orders', 
+                  value: cachedApiData.sales?.totalOrders || 0, 
+                  icon: 'shopping-cart', 
+                  color: '#2196F3', 
+                  format: 'number' 
+                },
+                { 
+                  title: 'Avg Order Value', 
+                  value: cachedApiData.sales?.averageOrderValue || 0, 
+                  icon: 'attach-money', 
+                  color: '#FF9800', 
+                  format: 'currency' 
+                },
+                { 
+                  title: 'Customers', 
+                  value: cachedApiData.customers?.totalCustomers || 0, 
+                  icon: 'people', 
+                  color: '#9C27B0', 
+                  format: 'number' 
+                },
+              ],
+              chartData: {
+                sales: {
+                  labels: cachedApiData.sales?.weeklyLabels || [], 
+                  values: cachedApiData.sales?.weeklyValues || [], 
+                  total: cachedApiData.sales?.totalRevenue || 0, 
+                  average: cachedApiData.sales?.averageWeeklyRevenue || 0
+                },
+                orders: {
+                  pending: cachedApiData.sales?.pendingOrders || 0, 
+                  confirmed: cachedApiData.sales?.confirmedOrders || 0, 
+                  ready: cachedApiData.sales?.readyOrders || 0, 
+                  completed: cachedApiData.sales?.completedOrders || 0, 
+                  total: cachedApiData.sales?.totalOrders || 0
+                },
+                inventory: {
+                  inStock: cachedApiData.inventory?.inStockItems || 0, 
+                  lowStock: cachedApiData.inventory?.lowStockItems || 0, 
+                  outOfStock: cachedApiData.inventory?.outOfStockItems || 0
+                },
+              },
+              topProducts: cachedApiData.sales?.topProducts || [],
+              topCustomers: cachedApiData.customers?.topCustomers || [],
+              generatedAt: cachedApiData.generatedAt || new Date().toISOString()
+            };
+            
+            setData(formattedCachedData);
+            setError(null); // Clear error since we are using cached data
+            console.log('📂 Cached analytics data loaded successfully!');
+          } else {
+            throw new Error('Invalid cached data format');
+          }
+        } else {
+          throw new Error('No cached data available');
+        }
+      } catch (cacheError) {
+        console.warn('⚠️ Failed to load cached analytics:', cacheError);
+        setError('Failed to load data and no cached data available');
+      }
     } finally {
       setIsLoading(false);
       setRefreshing(false);
@@ -98,28 +264,40 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       return (
         <View>
           <View style={styles.kpiGrid}>
-            {data.kpis.map((kpi, idx) => (
+            {Array.isArray(data.kpis) && data.kpis.map((kpi, idx) => (
               <KPIWidget key={idx} {...kpi} />
             ))}
           </View>
           <BusinessDashboardCharts
-            salesData={data.chartData.sales}
-            ordersData={data.chartData.orders}
-            inventoryData={data.chartData.inventory}
+            salesData={data.chartData?.sales || {}}
+            ordersData={data.chartData?.orders || {}}
+            inventoryData={data.chartData?.inventory || {}}
             onRefresh={loadData}
             autoRefresh={false}
           />
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Top Products</Text>
-            {data.topProducts.map((p, i) => (
-              <Text key={i} style={styles.listItem}>{i + 1}. {p.name} - {p.sales} sales (${p.revenue})</Text>
-            ))}
+            {Array.isArray(data.topProducts) && data.topProducts.length > 0 ? (
+              data.topProducts.map((p, i) => (
+                <Text key={i} style={styles.listItem}>
+                  {`${i + 1}. ${p?.name || 'Unknown'} - ${p?.sales ?? 0} sales ($${p?.revenue ?? 0})`}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.listItem}>No products found.</Text>
+            )}
           </View>
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Top Customers</Text>
-            {data.topCustomers.map((c, i) => (
-              <Text key={i} style={styles.listItem}>{i + 1}. {c.name} - {c.orders} orders (${c.spent})</Text>
-            ))}
+            {Array.isArray(data.topCustomers) && data.topCustomers.length > 0 ? (
+              data.topCustomers.map((c, i) => (
+                <Text key={i} style={styles.listItem}>
+                  {`${i + 1}. ${c?.name || 'Unknown'} - ${c?.orders ?? 0} orders ($${c?.spent ?? 0})`}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.listItem}>No customers found.</Text>
+            )}
           </View>
         </View>
       );
@@ -129,15 +307,21 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       return (
         <View>
           <BusinessDashboardCharts
-            salesData={data.chartData.sales}
+            salesData={data.chartData?.sales || {}}
             onRefresh={loadData}
             autoRefresh={false}
           />
           <View style={styles.sectionCard}>
             <Text style={styles.sectionTitle}>Top Products</Text>
-            {data.topProducts.map((p, i) => (
-              <Text key={i} style={styles.listItem}>{i + 1}. {p.name} - {p.sales} sales (${p.revenue})</Text>
-            ))}
+            {Array.isArray(data.topProducts) && data.topProducts.length > 0 ? (
+              data.topProducts.map((p, i) => (
+                <Text key={i} style={styles.listItem}>
+                  {`${i + 1}. ${p?.name || 'Unknown'} - ${p?.sales ?? 0} sales ($${p?.revenue ?? 0})`}
+                </Text>
+              ))
+            ) : (
+              <Text style={styles.listItem}>No products found.</Text>
+            )}
           </View>
         </View>
       );
@@ -146,7 +330,7 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       return (
         <View>
           <BusinessDashboardCharts
-            inventoryData={data.chartData.inventory}
+            inventoryData={data.chartData?.inventory || {}}
             onRefresh={loadData}
             autoRefresh={false}
           />
@@ -157,9 +341,15 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       return (
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Top Customers</Text>
-          {data.topCustomers.map((c, i) => (
-            <Text key={i} style={styles.listItem}>{i + 1}. {c.name} - {c.orders} orders (${c.spent})</Text>
-          ))}
+          {Array.isArray(data.topCustomers) && data.topCustomers.length > 0 ? (
+            data.topCustomers.map((c, i) => (
+              <Text key={i} style={styles.listItem}>
+                {`${i + 1}. ${c?.name || 'Unknown'} - ${c?.orders ?? 0} orders ($${c?.spent ?? 0})`}
+              </Text>
+            ))
+          ) : (
+            <Text style={styles.listItem}>No customers found.</Text>
+          )}
         </View>
       );
     }
@@ -172,6 +362,31 @@ export default function BusinessInsightsScreen({ navigation, route }) {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
           <Text style={styles.loadingText}>Loading insights...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (error) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="error-outline" size={48} color="#f44336" />
+          <Text style={styles.errorText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadData}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!data) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.errorContainer}>
+          <MaterialIcons name="info-outline" size={48} color="#2196F3" />
+          <Text style={styles.noDataText}>No data available for this timeframe</Text>
         </View>
       </SafeAreaView>
     );
@@ -214,7 +429,15 @@ export default function BusinessInsightsScreen({ navigation, route }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
         showsVerticalScrollIndicator={false}
       >
-        <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>{renderTabContent()}</Animated.View>
+        <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>
+          {data.fromCache && (
+            <View style={styles.cacheNotice}>
+              <MaterialIcons name="info-outline" size={16} color="#FFC107" />
+              <Text style={styles.cacheText}>Showing cached data from {new Date(data.generatedAt).toLocaleString()}</Text>
+            </View>
+          )}
+          {renderTabContent()}
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -242,4 +465,11 @@ const styles = StyleSheet.create({
   sectionCard: { backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16 },
   sectionTitle: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 8 },
   listItem: { fontSize: 14, color: '#555', marginBottom: 4 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
+  errorText: { color: '#f44336', fontSize: 16, marginVertical: 12, textAlign: 'center' },
+  retryButton: { backgroundColor: '#4CAF50', paddingHorizontal: 24, paddingVertical: 10, borderRadius: 8, marginTop: 8 },
+  retryButtonText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  noDataText: { color: '#2196F3', fontSize: 16, marginVertical: 12, textAlign: 'center' },
+  cacheNotice: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF8E1', padding: 8, borderRadius: 8, marginBottom: 12 },
+  cacheText: { color: '#FFC107', marginLeft: 6, fontSize: 13 },
 });

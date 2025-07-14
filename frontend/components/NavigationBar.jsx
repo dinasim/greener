@@ -1,6 +1,7 @@
 import React from "react";
 import { View, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
 import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 // Smaller size for compact nav
 const ICON_SIZE = 19;
@@ -14,14 +15,29 @@ const TABS = [
   { key: "forum", label: "Forum", icon: (focused) => <MaterialCommunityIcons name="forum" size={ICON_SIZE} color={focused ? "#2196F3" : "#9E9E9E"} /> },
 ];
 
-export default function NavigationBar({ currentTab, navigation }) {
+export default function NavigationBar({ currentTab, navigation: propNavigation }) {
+  const hookNavigation = useNavigation();
+  
+  // Use prop navigation if provided, otherwise use hook navigation
+  const navigation = propNavigation || hookNavigation;
+
   const handleTabPress = (tabKey) => {
-    if (tabKey === 'home') navigation.navigate('Home');
-    else if (tabKey === 'plants') navigation.navigate('Locations');
-    else if (tabKey === 'ai') navigation.navigate('SmartPlantCareAssistant');
-    else if (tabKey === 'disease') navigation.navigate('DiseaseChecker');
-    else if (tabKey === 'marketplace') navigation.navigate('MainTabs');
-    else if (tabKey === 'forum') navigation.navigate('PlantCareForumScreen');
+    // Add null check for navigation
+    if (!navigation || typeof navigation.navigate !== 'function') {
+      console.warn('Navigation is not available or navigate function is missing');
+      return;
+    }
+    
+    try {
+      if (tabKey === 'home') navigation.navigate('Home');
+      else if (tabKey === 'plants') navigation.navigate('Locations');
+      else if (tabKey === 'ai') navigation.navigate('SmartPlantCareAssistant');
+      else if (tabKey === 'disease') navigation.navigate('DiseaseChecker');
+      else if (tabKey === 'marketplace') navigation.navigate('MainTabs');
+      else if (tabKey === 'forum') navigation.navigate('PlantCareForumScreen');
+    } catch (error) {
+      console.error('Navigation error:', error);
+    }
   };
 
   return (
