@@ -14,6 +14,7 @@ import {
   StatusBar,
   ScrollView,
 } from 'react-native';
+import BusinessLayout from '../components/BusinessLayout';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getBusinessOrders, updateOrderStatus } from '../services/businessApi'; // Fixed: Corrected import path from api to services
 import OrderDetailModal from '../components/OrderDetailModal';
@@ -28,7 +29,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filteredOrders, setFilteredOrders] = useState([]);
   const [statusFilter, setStatusFilter] = useState('all');
-  
+
   // NEW: Modal state
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -41,21 +42,21 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   useEffect(() => {
     // Filter orders based on search query and status
     let filtered = orders;
-    
+
     if (statusFilter !== 'all') {
       filtered = filtered.filter(order => order.status === statusFilter);
     }
-    
+
     if (searchQuery.trim()) {
       filtered = filtered.filter(order =>
         order.orderId?.toString().includes(searchQuery) ||
         order.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.items?.some(item => 
+        order.items?.some(item =>
           item.name?.toLowerCase().includes(searchQuery.toLowerCase())
         )
       );
     }
-    
+
     setFilteredOrders(filtered);
   }, [searchQuery, orders, statusFilter]);
 
@@ -126,8 +127,8 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     ];
 
     return (
-      <ScrollView 
-        horizontal 
+      <ScrollView
+        horizontal
         showsHorizontalScrollIndicator={false}
         style={styles.statusFilters}
         contentContainerStyle={styles.statusFiltersContent}
@@ -202,9 +203,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           text: 'Message',
           onPress: () => {
             // Navigate to chat/messaging screen
-            navigation.navigate('CustomerChat', { 
+            navigation.navigate('CustomerChat', {
               orderId: order.id,
-              customerName: order.customerName 
+              customerName: order.customerName
             });
           }
         },
@@ -219,7 +220,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   };
 
   const renderOrderItem = ({ item }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.orderItem}
       onPress={() => {
         setSelectedOrder(item);
@@ -237,19 +238,19 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           <Text style={styles.statusText}>{item.status}</Text>
         </View>
       </View>
-      
+
       <View style={styles.orderDetails}>
         <View style={styles.customerInfo}>
           <MaterialIcons name="person" size={16} color="#666" />
           <Text style={styles.customerName}>{item.customerName || 'Unknown Customer'}</Text>
         </View>
-        
+
         <View style={styles.orderValue}>
           <MaterialIcons name="monetization-on" size={16} color="#4CAF50" />
           <Text style={styles.orderAmount}>₪{item.totalAmount || 0}</Text>
         </View>
       </View>
-      
+
       {item.items && item.items.length > 0 && (
         <View style={styles.orderItems}>
           <Text style={styles.itemsLabel}>Items:</Text>
@@ -259,10 +260,10 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           </Text>
         </View>
       )}
-      
+
       {/* NEW: Quick Action Buttons */}
       <View style={styles.orderActions}>
-        <TouchableOpacity 
+        <TouchableOpacity
           style={[styles.actionButton, styles.viewButton]}
           onPress={(e) => {
             e.stopPropagation();
@@ -273,9 +274,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           <MaterialIcons name="visibility" size={16} color="#2196F3" />
           <Text style={[styles.actionText, { color: '#2196F3' }]}>View</Text>
         </TouchableOpacity>
-        
+
         {item.status === 'pending' && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.confirmButton]}
             onPress={(e) => {
               e.stopPropagation();
@@ -286,9 +287,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             <Text style={[styles.actionText, { color: '#4CAF50' }]}>Confirm</Text>
           </TouchableOpacity>
         )}
-        
+
         {item.status === 'confirmed' && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.readyButton]}
             onPress={(e) => {
               e.stopPropagation();
@@ -299,9 +300,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             <Text style={[styles.actionText, { color: '#FF9800' }]}>Ready</Text>
           </TouchableOpacity>
         )}
-        
+
         {item.status === 'ready' && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.actionButton, styles.completeButton]}
             onPress={(e) => {
               e.stopPropagation();
@@ -312,8 +313,8 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             <Text style={[styles.actionText, { color: '#4CAF50' }]}>Complete</Text>
           </TouchableOpacity>
         )}
-        
-        <TouchableOpacity 
+
+        <TouchableOpacity
           style={[styles.actionButton, styles.contactButton]}
           onPress={(e) => {
             e.stopPropagation();
@@ -334,7 +335,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       <Text style={styles.emptyText}>
         When customers place orders, they'll appear here
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.createFirstOrderButton}
         onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}
       >
@@ -350,7 +351,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
         <MaterialIcons name="arrow-back" size={24} color="#216a94" />
       </TouchableOpacity>
       <Text style={styles.headerTitle}>Orders</Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.createOrderButton}
         onPress={() => navigation.navigate('CreateOrderScreen', { businessId })}
       >
@@ -361,96 +362,106 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Orders</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#216a94" />
-          <Text style={styles.loadingText}>Loading orders...</Text>
-        </View>
-      </SafeAreaView>
+      <BusinessLayout navigation={navigation} businessId={businessId} currentTab="orders">
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Orders</Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color="#216a94" />
+            <Text style={styles.loadingText}>Loading orders...</Text>
+          </View>
+        </SafeAreaView>
+      </BusinessLayout>
+
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* Header with Create Order Button */}
-      {renderHeader()}
+    <BusinessLayout
+      navigation={navigation}
+      businessId={businessId}
+      currentTab="orders"
+      badges={{ orders: orders.filter(o => o.status === 'pending').length }} // optional badge
+    >
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <MaterialIcons name="search" size={20} color="#666" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search orders..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
+        {/* Header with Create Order Button */}
+        {renderHeader()}
+
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <MaterialIcons name="search" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search orders..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialIcons name="close" size={20} color="#666" />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+
+        {/* Status Filters */}
+        {renderStatusFilters()}
+
+        {/* Order Stats */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{orders.length}</Text>
+            <Text style={styles.statLabel}>Total Orders</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              {orders.filter(o => o.status === 'pending').length}
+            </Text>
+            <Text style={styles.statLabel}>Pending</Text>
+          </View>
+          <View style={styles.statCard}>
+            <Text style={styles.statNumber}>
+              ₪{orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + (o.totalAmount || 0), 0)}
+            </Text>
+            <Text style={styles.statLabel}>Revenue</Text>
+          </View>
+        </View>
+
+        {/* Orders List */}
+        <FlatList
+          data={filteredOrders}
+          renderItem={renderOrderItem}
+          keyExtractor={(item) => item.id || item.orderId}
+          style={styles.ordersList}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          showsVerticalScrollIndicator={false}
         />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <MaterialIcons name="close" size={20} color="#666" />
-          </TouchableOpacity>
-        ) : null}
-      </View>
 
-      {/* Status Filters */}
-      {renderStatusFilters()}
-
-      {/* Order Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{orders.length}</Text>
-          <Text style={styles.statLabel}>Total Orders</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            {orders.filter(o => o.status === 'pending').length}
-          </Text>
-          <Text style={styles.statLabel}>Pending</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>
-            ₪{orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + (o.totalAmount || 0), 0)}
-          </Text>
-          <Text style={styles.statLabel}>Revenue</Text>
-        </View>
-      </View>
-
-      {/* Orders List */}
-      <FlatList
-        data={filteredOrders}
-        renderItem={renderOrderItem}
-        keyExtractor={(item) => item.id || item.orderId}
-        style={styles.ordersList}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
-      />
-
-      {/* Order Detail Modal */}
-      {selectedOrder && (
-        <OrderDetailModal
-          visible={showOrderModal}
-          order={selectedOrder}
-          onClose={() => setShowOrderModal(false)}
-          onUpdateStatus={handleUpdateStatus}
-          onContactCustomer={handleContactCustomer}
-          onPrintReceipt={() => handlePrintReceipt(selectedOrder)}
-          isLoading={isUpdatingStatus}
-          businessInfo={{ businessName: 'Your Plant Store', address: 'Store Location' }}
-        />
-      )}
-    </SafeAreaView>
+        {/* Order Detail Modal */}
+        {selectedOrder && (
+          <OrderDetailModal
+            visible={showOrderModal}
+            order={selectedOrder}
+            onClose={() => setShowOrderModal(false)}
+            onUpdateStatus={handleUpdateStatus}
+            onContactCustomer={handleContactCustomer}
+            onPrintReceipt={() => handlePrintReceipt(selectedOrder)}
+            isLoading={isUpdatingStatus}
+            businessInfo={{ businessName: 'Your Plant Store', address: 'Store Location' }}
+          />
+        )}
+      </SafeAreaView>
+    </BusinessLayout >
   );
 }
 

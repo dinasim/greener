@@ -1,4 +1,4 @@
-// Business/components/BusinessDashboardCharts.js - COMPLETE WEB COMPATIBILITY FIX
+// Business/components/BusinessDashboardCharts.js - FIXED ACCESSIBILITY ROLES
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -9,11 +9,11 @@ import {
   Animated,
   Platform,
   Dimensions,
-  Pressable, // FIXED: Use Pressable instead of deprecated TouchableMixin
+  Pressable,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
-// FIXED: Conditional chart imports to prevent web compatibility issues
+// Conditional chart imports
 let LineChart, BarChart, PieChart;
 if (Platform.OS !== 'web') {
   try {
@@ -29,7 +29,6 @@ if (Platform.OS !== 'web') {
 const { width: screenWidth } = Dimensions.get('window');
 const chartWidth = screenWidth - 32;
 
-// FIXED: Web-safe chart wrapper with proper error boundaries
 const WebSafeChart = ({ children, fallback, chartType = 'chart' }) => {
   const [hasError, setHasError] = useState(false);
 
@@ -43,7 +42,6 @@ const WebSafeChart = ({ children, fallback, chartType = 'chart' }) => {
     );
   }
 
-  // Error boundary wrapper for native charts
   try {
     return (
       <View style={{ minHeight: 220, justifyContent: 'center', alignItems: 'center' }}>
@@ -75,32 +73,27 @@ export default function BusinessDashboardCharts({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [chartError, setChartError] = useState(null);
   
-  // Animation refs
   const fadeAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(0)).current;
   const refreshAnim = useRef(new Animated.Value(0)).current;
-  
-  // Auto-refresh timer
   const refreshTimer = useRef(null);
 
   useEffect(() => {
-    // FIXED: Web-compatible entrance animation
     const animations = [
       Animated.timing(fadeAnim, {
         toValue: 1,
         duration: 600,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(slideAnim, {
         toValue: 1,
         duration: 500,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ];
 
     Animated.stagger(200, animations).start();
 
-    // Auto-refresh setup
     if (autoRefresh) {
       refreshTimer.current = setInterval(() => {
         handleAutoRefresh();
@@ -112,7 +105,7 @@ export default function BusinessDashboardCharts({
         clearInterval(refreshTimer.current);
       }
     };
-  }, [autoRefresh, refreshInterval]); // FIXED: Added missing dependencies
+  }, [autoRefresh, refreshInterval]);
 
   const handleAutoRefresh = async () => {
     setIsRefreshing(true);
@@ -122,12 +115,12 @@ export default function BusinessDashboardCharts({
       Animated.timing(refreshAnim, {
         toValue: 1,
         duration: 300,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(refreshAnim, {
         toValue: 0,
         duration: 300,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
     
@@ -150,19 +143,18 @@ export default function BusinessDashboardCharts({
       Animated.timing(slideAnim, {
         toValue: 0,
         duration: 200,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
       Animated.timing(slideAnim, {
         toValue: 1,
         duration: 200,
-        useNativeDriver: Platform.OS !== 'web', // FIXED: Disable native driver on web
+        useNativeDriver: Platform.OS !== 'web',
       }),
     ]).start();
     
     setActiveChart(chartType);
   };
 
-  // FIXED: Web-safe chart configuration with proper SVG properties
   const getWebSafeChartConfig = () => {
     const baseConfig = {
       backgroundColor: '#ffffff',
@@ -177,11 +169,11 @@ export default function BusinessDashboardCharts({
     if (Platform.OS === 'web') {
       return {
         ...baseConfig,
-        color: () => '#4CAF50', // FIXED: Function instead of rgba for web
-        labelColor: () => '#000000', // FIXED: Function instead of rgba for web
+        color: () => '#4CAF50',
+        labelColor: () => '#000000',
         propsForDots: {},
         propsForLabels: {},
-        fillShadowGradient: '#4CAF50', // FIXED: String color instead of boolean
+        fillShadowGradient: '#4CAF50',
         fillShadowGradientOpacity: 0,
       };
     }
@@ -212,92 +204,55 @@ export default function BusinessDashboardCharts({
     }
   };
 
-  const getSalesChartData = () => {
-    try {
-      return {
-        labels: salesData.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        datasets: [
-          {
-            data: validateChartData(salesData.values, [0, 0, 0, 0, 0, 0, 0]),
-            ...(Platform.OS === 'web' ? {
-              color: '#4CAF50',
-              strokeWidth: 2,
-            } : {
-              color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})`,
-              strokeWidth: 3,
-            }),
-          },
-        ],
-      };
-    } catch (error) {
-      console.error('Sales chart data error:', error);
-      return {
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        datasets: [{ data: [0, 0, 0, 0, 0, 0, 0] }],
-      };
-    }
-  };
+  const getSalesChartData = () => ({
+    labels: salesData.labels || ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    datasets: [
+      {
+        data: validateChartData(salesData.values, [0, 0, 0, 0, 0, 0, 0]),
+        ...(Platform.OS === 'web'
+          ? { color: '#4CAF50', strokeWidth: 2 }
+          : { color: (opacity = 1) => `rgba(76, 175, 80, ${opacity})`, strokeWidth: 3 }),
+      },
+    ],
+  });
 
-  const getOrdersChartData = () => {
-    try {
-      return {
-        labels: ['Pending', 'Confirmed', 'Ready', 'Completed'],
-        datasets: [
-          {
-            data: [
-              Math.max(0, ordersData.pending || 0),
-              Math.max(0, ordersData.confirmed || 0),
-              Math.max(0, ordersData.ready || 0),
-              Math.max(0, ordersData.completed || 0),
-            ],
-          },
+  const getOrdersChartData = () => ({
+    labels: ['Pending', 'Confirmed', 'Ready', 'Completed'],
+    datasets: [
+      {
+        data: [
+          Math.max(0, ordersData.pending || 0),
+          Math.max(0, ordersData.confirmed || 0),
+          Math.max(0, ordersData.ready || 0),
+          Math.max(0, ordersData.completed || 0),
         ],
-      };
-    } catch (error) {
-      console.error('Orders chart data error:', error);
-      return {
-        labels: ['Pending', 'Confirmed', 'Ready', 'Completed'],
-        datasets: [{ data: [0, 0, 0, 0] }],
-      };
-    }
-  };
+      },
+    ],
+  });
 
-  const getInventoryPieData = () => {
-    try {
-      const data = [
-        {
-          name: 'In Stock',
-          population: Math.max(0, inventoryData.inStock || 0),
-          color: '#4CAF50',
-          legendFontColor: '#333',
-          legendFontSize: 12,
-        },
-        {
-          name: 'Low Stock',
-          population: Math.max(0, inventoryData.lowStock || 0),
-          color: '#FF9800',
-          legendFontColor: '#333',
-          legendFontSize: 12,
-        },
-        {
-          name: 'Out of Stock',
-          population: Math.max(0, inventoryData.outOfStock || 0),
-          color: '#F44336',
-          legendFontColor: '#333',
-          legendFontSize: 12,
-        },
-      ];
-      
-      return data;
-    } catch (error) {
-      console.error('Inventory pie data error:', error);
-      return [
-        { name: 'In Stock', population: 0, color: '#4CAF50', legendFontColor: '#333', legendFontSize: 12 },
-        { name: 'Low Stock', population: 0, color: '#FF9800', legendFontColor: '#333', legendFontSize: 12 },
-        { name: 'Out of Stock', population: 0, color: '#F44336', legendFontColor: '#333', legendFontSize: 12 },
-      ];
-    }
-  };
+  const getInventoryPieData = () => [
+    {
+      name: 'In Stock',
+      population: Math.max(0, inventoryData.inStock || 0),
+      color: '#4CAF50',
+      legendFontColor: '#333',
+      legendFontSize: 12,
+    },
+    {
+      name: 'Low Stock',
+      population: Math.max(0, inventoryData.lowStock || 0),
+      color: '#FF9800',
+      legendFontColor: '#333',
+      legendFontSize: 12,
+    },
+    {
+      name: 'Out of Stock',
+      population: Math.max(0, inventoryData.outOfStock || 0),
+      color: '#F44336',
+      legendFontColor: '#333',
+      legendFontSize: 12,
+    },
+  ];
 
   const renderChart = () => {
     if (chartError) {
@@ -312,147 +267,132 @@ export default function BusinessDashboardCharts({
       );
     }
 
-    try {
-      const chartConfig = getWebSafeChartConfig();
-      
-      switch (activeChart) {
-        case 'sales':
-          return (
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>Sales This Week</Text>
-              <WebSafeChart 
-                chartType="line"
-                fallback={
-                  <View style={styles.chartFallback}>
-                    <MaterialIcons name="trending-up" size={48} color="#4CAF50" />
-                    <Text style={styles.chartFallbackText}>Sales: ${salesData.total || 0}</Text>
-                    <Text style={styles.chartFallbackSubtext}>Average: ${salesData.average || 0}/day</Text>
-                  </View>
-                }
-              >
-                {LineChart && (
-                  <LineChart
-                    data={getSalesChartData()}
-                    width={chartWidth}
-                    height={220}
-                    chartConfig={chartConfig}
-                    style={styles.chart}
-                    withShadow={false}
-                    fromZero={true}
-                    bezier={Platform.OS !== 'web'}
-                    withDots={Platform.OS !== 'web'}
-                    withInnerLines={Platform.OS !== 'web'}
-                    withOuterLines={Platform.OS !== 'web'}
-                  />
-                )}
-              </WebSafeChart>
-              <View style={styles.chartInsights}>
-                <Text style={styles.insightText}>
-                  📈 Total: ${salesData.total || 0} | Avg: ${salesData.average || 0}/day
-                </Text>
-              </View>
+    const chartConfig = getWebSafeChartConfig();
+    switch (activeChart) {
+      case 'sales':
+        return (
+          <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>Sales This Week</Text>
+            <WebSafeChart 
+              chartType="line"
+              fallback={
+                <View style={styles.chartFallback}>
+                  <MaterialIcons name="trending-up" size={48} color="#4CAF50" />
+                  <Text style={styles.chartFallbackText}>Sales: ${salesData.total || 0}</Text>
+                  <Text style={styles.chartFallbackSubtext}>Average: ${salesData.average || 0}/day</Text>
+                </View>
+              }
+            >
+              {LineChart && (
+                <LineChart
+                  data={getSalesChartData()}
+                  width={chartWidth}
+                  height={220}
+                  chartConfig={chartConfig}
+                  style={styles.chart}
+                  withShadow={false}
+                  fromZero
+                  bezier={Platform.OS !== 'web'}
+                  withDots={Platform.OS !== 'web'}
+                  withInnerLines={Platform.OS !== 'web'}
+                  withOuterLines={Platform.OS !== 'web'}
+                />
+              )}
+            </WebSafeChart>
+            <View style={styles.chartInsights}>
+              <Text style={styles.insightText}>
+                📈 Total: ${salesData.total || 0} | Avg: ${salesData.average || 0}/day
+              </Text>
             </View>
-          );
-          
-        case 'orders':
-          return (
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>Orders by Status</Text>
-              <WebSafeChart 
-                chartType="bar"
-                fallback={
-                  <View style={styles.chartFallback}>
-                    <MaterialIcons name="receipt" size={48} color="#2196F3" />
-                    <Text style={styles.chartFallbackText}>Total Orders: {ordersData.total || 0}</Text>
-                    <Text style={styles.chartFallbackSubtext}>Active: {(ordersData.pending || 0) + (ordersData.confirmed || 0)}</Text>
-                  </View>
-                }
-              >
-                {BarChart && (
-                  <BarChart
-                    data={getOrdersChartData()}
-                    width={chartWidth}
-                    height={220}
-                    chartConfig={chartConfig}
-                    style={styles.chart}
-                    verticalLabelRotation={0}
-                    withHorizontalLabels={true}
-                    withVerticalLabels={true}
-                    yAxisLabel=""
-                    yAxisSuffix=""
-                    showValuesOnTopOfBars={Platform.OS !== 'web'}
-                    withInnerLines={Platform.OS !== 'web'}
-                  />
-                )}
-              </WebSafeChart>
-              <View style={styles.chartInsights}>
-                <Text style={styles.insightText}>
-                  📦 Total: {ordersData.total || 0} orders | Active: {(ordersData.pending || 0) + (ordersData.confirmed || 0) + (ordersData.ready || 0)}
-                </Text>
-              </View>
+          </View>
+        );
+
+      case 'orders':
+        return (
+          <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>Orders by Status</Text>
+            <WebSafeChart 
+              chartType="bar"
+              fallback={
+                <View style={styles.chartFallback}>
+                  <MaterialIcons name="receipt" size={48} color="#2196F3" />
+                  <Text style={styles.chartFallbackText}>Total Orders: {ordersData.total || 0}</Text>
+                  <Text style={styles.chartFallbackSubtext}>Active: {(ordersData.pending || 0) + (ordersData.confirmed || 0)}</Text>
+                </View>
+              }
+            >
+              {BarChart && (
+                <BarChart
+                  data={getOrdersChartData()}
+                  width={chartWidth}
+                  height={220}
+                  chartConfig={chartConfig}
+                  style={styles.chart}
+                  verticalLabelRotation={0}
+                  withHorizontalLabels
+                  withVerticalLabels
+                  yAxisLabel=""
+                  yAxisSuffix=""
+                  showValuesOnTopOfBars={Platform.OS !== 'web'}
+                  withInnerLines={Platform.OS !== 'web'}
+                />
+              )}
+            </WebSafeChart>
+            <View style={styles.chartInsights}>
+              <Text style={styles.insightText}>
+                📦 Total: {ordersData.total || 0} orders | Active: {(ordersData.pending || 0) + (ordersData.confirmed || 0) + (ordersData.ready || 0)}
+              </Text>
             </View>
-          );
-          
-        case 'inventory':
-          return (
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>Inventory Status</Text>
-              <WebSafeChart 
-                chartType="pie"
-                fallback={
-                  <View style={styles.chartFallback}>
-                    <MaterialIcons name="inventory" size={48} color="#9C27B0" />
-                    <Text style={styles.chartFallbackText}>In Stock: {inventoryData.inStock || 0}</Text>
-                    <Text style={styles.chartFallbackSubtext}>Low: {inventoryData.lowStock || 0} | Out: {inventoryData.outOfStock || 0}</Text>
-                  </View>
-                }
-              >
-                {PieChart && (
-                  <PieChart
-                    data={getInventoryPieData()}
-                    width={chartWidth}
-                    height={220}
-                    chartConfig={chartConfig}
-                    accessor="population"
-                    backgroundColor="transparent"
-                    paddingLeft="15"
-                    style={styles.chart}
-                    hasLegend={true}
-                    avoidFalseZero={true}
-                    absolute={Platform.OS !== 'web'}
-                  />
-                )}
-              </WebSafeChart>
-              <View style={styles.chartInsights}>
-                <Text style={styles.insightText}>
-                  📊 Total Items: {(inventoryData.inStock || 0) + (inventoryData.lowStock || 0) + (inventoryData.outOfStock || 0)}
-                </Text>
-              </View>
+          </View>
+        );
+
+      case 'inventory':
+        return (
+          <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>Inventory Status</Text>
+            <WebSafeChart 
+              chartType="pie"
+              fallback={
+                <View style={styles.chartFallback}>
+                  <MaterialIcons name="inventory" size={48} color="#9C27B0" />
+                  <Text style={styles.chartFallbackText}>In Stock: {inventoryData.inStock || 0}</Text>
+                  <Text style={styles.chartFallbackSubtext}>Low: {inventoryData.lowStock || 0} | Out: {inventoryData.outOfStock || 0}</Text>
+                </View>
+              }
+            >
+              {PieChart && (
+                <PieChart
+                  data={getInventoryPieData()}
+                  width={chartWidth}
+                  height={220}
+                  chartConfig={chartConfig}
+                  accessor="population"
+                  backgroundColor="transparent"
+                  paddingLeft="15"
+                  style={styles.chart}
+                  hasLegend
+                  avoidFalseZero
+                  absolute={Platform.OS !== 'web'}
+                />
+              )}
+            </WebSafeChart>
+            <View style={styles.chartInsights}>
+              <Text style={styles.insightText}>
+                📊 Total Items: {(inventoryData.inStock || 0) + (inventoryData.lowStock || 0) + (inventoryData.outOfStock || 0)}
+              </Text>
             </View>
-          );
-          
-        default:
-          return (
-            <View style={styles.chartContainer}>
-              <Text style={styles.chartTitle}>Select a Chart</Text>
-              <View style={styles.chartInsights}>
-                <Text style={styles.insightText}>Choose a chart type from the tabs above</Text>
-              </View>
+          </View>
+        );
+
+      default:
+        return (
+          <View style={styles.chartContainer}>
+            <Text style={styles.chartTitle}>Select a Chart</Text>
+            <View style={styles.chartInsights}>
+              <Text style={styles.insightText}>Choose a chart type from the tabs above</Text>
             </View>
-          );
-      }
-    } catch (error) {
-      console.error('Chart rendering error:', error);
-      setChartError(`Chart error: ${error.message}`);
-      return (
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={48} color="#F44336" />
-          <Text style={styles.errorText}>Unable to display chart</Text>
-          <Pressable style={styles.retryButton} onPress={handleAutoRefresh}>
-            <Text style={styles.retryButtonText}>Retry</Text>
-          </Pressable>
-        </View>
-      );
+          </View>
+        );
     }
   };
 
@@ -462,15 +402,14 @@ export default function BusinessDashboardCharts({
         styles.container,
         {
           opacity: fadeAnim,
-          transform: Platform.OS === 'web' ? [] : [{ scale: slideAnim }], // FIXED: Conditional transform for web
+          transform: Platform.OS === 'web' ? [] : [{ scale: slideAnim }],
         }
       ]}
-      accessible={true}
-      accessibilityRole="region"
+      accessible
       accessibilityLabel="Business dashboard charts"
     >
-      {/* Chart Navigation - FIXED: Use Pressable instead of TouchableOpacity for better web support */}
-      <View style={styles.chartTabs} accessible={true} accessibilityRole="tablist">
+      {/* Chart Tabs */}
+      <View style={styles.chartTabs} accessible accessibilityRole="tablist">
         {[
           { key: 'sales', label: 'Sales', icon: 'trending-up' },
           { key: 'orders', label: 'Orders', icon: 'receipt' },
@@ -478,12 +417,9 @@ export default function BusinessDashboardCharts({
         ].map((tab) => (
           <Pressable
             key={tab.key}
-            style={[
-              styles.chartTab,
-              activeChart === tab.key && styles.activeChartTab,
-            ]}
+            style={[styles.chartTab, activeChart === tab.key && styles.activeChartTab]}
             onPress={() => handleChartChange(tab.key)}
-            accessible={true}
+            accessible
             accessibilityRole="tab"
             accessibilityState={{ selected: activeChart === tab.key }}
             accessibilityLabel={`${tab.label} chart tab`}
@@ -504,12 +440,12 @@ export default function BusinessDashboardCharts({
           </Pressable>
         ))}
         
-        {/* Refresh button */}
+        {/* Refresh Button */}
         <Pressable 
           style={styles.refreshButton}
           onPress={handleAutoRefresh}
           disabled={isRefreshing}
-          accessible={true}
+          accessible
           accessibilityRole="button"
           accessibilityLabel={isRefreshing ? "Refreshing data" : "Refresh chart data"}
           accessibilityState={{ disabled: isRefreshing }}
@@ -537,18 +473,19 @@ export default function BusinessDashboardCharts({
       <Animated.View
         style={[
           styles.chartContent,
-          Platform.OS === 'web' ? { opacity: slideAnim } : {
-            opacity: slideAnim,
-            transform: [{
-              translateX: slideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [50, 0],
-              })
-            }]
-          }
+          Platform.OS === 'web'
+            ? { opacity: slideAnim }
+            : {
+                opacity: slideAnim,
+                transform: [{
+                  translateX: slideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  })
+                }],
+              }
         ]}
-        accessible={true}
-        accessibilityRole="region"
+        accessible
         accessibilityLabel={`${activeChart} chart content`}
       >
         {renderChart()}
@@ -556,14 +493,14 @@ export default function BusinessDashboardCharts({
       
       {/* Auto-refresh indicator */}
       {autoRefresh && (
-        <View 
+        <View
           style={styles.autoRefreshIndicator}
-          accessible={true}
-          accessibilityRole="status"
-          accessibilityLabel={`Auto-refreshing every ${refreshInterval / 1000} seconds`}
+          accessible
+          accessibilityLiveRegion="polite"
+          accessibilityLabel={`Auto-refreshing every ${Math.round(refreshInterval / 1000)} seconds`}
         >
           <MaterialCommunityIcons name="sync" size={12} color="#4CAF50" />
-          <Text style={styles.autoRefreshText}>Auto-refreshing every {refreshInterval / 1000}s</Text>
+          <Text style={styles.autoRefreshText}>Auto-refreshing every {Math.round(refreshInterval / 1000)}s</Text>
         </View>
       )}
     </Animated.View>
@@ -642,69 +579,61 @@ const styles = StyleSheet.create({
   },
   insightText: {
     fontSize: 14,
-    color: '#666',
+    color: '#333',
     textAlign: 'center',
   },
   autoRefreshIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    backgroundColor: '#f0f9f3',
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 16,
+    padding: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+    backgroundColor: '#f8f9fa',
   },
   autoRefreshText: {
-    fontSize: 10,
+    fontSize: 12,
     color: '#4CAF50',
     marginLeft: 4,
+  },
+  chartFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  chartFallbackText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#555',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  chartFallbackSubtext: {
+    fontSize: 12,
+    color: '#777',
+    marginTop: 4,
+    textAlign: 'center',
   },
   errorContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 32,
-    minHeight: 220,
+    padding: 20,
   },
   errorText: {
     fontSize: 16,
+    fontWeight: '600',
     color: '#F44336',
+    marginVertical: 8,
     textAlign: 'center',
-    marginTop: 16,
-    marginBottom: 16,
   },
   retryButton: {
     backgroundColor: '#4CAF50',
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
+    marginTop: 8,
   },
   retryButtonText: {
     color: '#fff',
-    fontSize: 14,
     fontWeight: '600',
-  },
-  chartFallback: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
-    minHeight: 220,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#e0e0e0',
-    borderStyle: 'dashed',
-  },
-  chartFallbackText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  chartFallbackSubtext: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-    textAlign: 'center',
   },
 });

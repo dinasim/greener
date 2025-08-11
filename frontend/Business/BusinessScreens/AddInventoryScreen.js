@@ -1,4 +1,4 @@
-// Business/BusinessScreens/AddInventoryScreen.js - ENHANCED WITH IMAGE SUPPORT
+// Business/screens/AddInventoryScreen.js
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   View,
@@ -14,21 +14,19 @@ import {
   KeyboardAvoidingView,
   Platform,
   Animated,
-  Dimensions,
   RefreshControl,
-  StatusBar,
   Image,
 } from 'react-native';
-import { MaterialCommunityIcons, MaterialIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BusinessLayout from '../components/BusinessLayout';
 
-// Safe ImagePicker import with web compatibility
+// Safe ImagePicker import with web fallback
 let ImagePicker;
 try {
   ImagePicker = require('expo-image-picker');
 } catch (error) {
   console.warn('expo-image-picker not available:', error);
-  // Mock ImagePicker for web compatibility
   ImagePicker = {
     launchImageLibraryAsync: () => Promise.resolve({ canceled: true }),
     launchCameraAsync: () => Promise.resolve({ canceled: true }),
@@ -39,23 +37,29 @@ try {
   };
 }
 
-import { searchPlantsForBusiness as searchPlants, createInventoryItem, getBusinessInventory, updateInventoryItem } from '../services/businessPlantApi';
-import { uploadImage } from '../../marketplace/services/marketplaceApi'; // Import image upload function
+import * as businessPlantApi from '../services/businessPlantApi';
+import { uploadImage } from '../../marketplace/services/marketplaceApi';
 import SpeechToTextComponent from '../../marketplace/components/SpeechToTextComponent';
-import config from '../../marketplace/services/config'; // Import config for API_BASE_URL
+import config from '../../marketplace/services/config';
 
-// Import Business Components
+// Business Components
 import InventoryTable from '../components/InventoryTable';
 import ProductEditModal from '../components/ProductEditModal';
 import LowStockBanner from '../components/LowStockBanner';
 import KPIWidget from '../components/KPIWidget';
 
-const { width, height } = Dimensions.get('window');
 const API_BASE_URL = config.API_BASE_URL || 'https://usersfunctions.azurewebsites.net/api';
+
+// pull the functions we use (helps with tree-shaking & mocking)
+const {
+  searchPlantsForBusiness: searchPlants,
+  createInventoryItem,
+  getBusinessInventory
+} = businessPlantApi;
 
 export default function AddInventoryScreen({ navigation, route }) {
   const { businessId, showInventory: initialShowInventory = false } = route.params || {};
-  
+
   // Core state
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
@@ -66,40 +70,38 @@ export default function AddInventoryScreen({ navigation, route }) {
   const [showInventory, setShowInventory] = useState(initialShowInventory);
   const [refreshing, setRefreshing] = useState(false);
   const [currentBusinessId, setCurrentBusinessId] = useState(businessId);
-  
-  // NEW: Product type state
-  const [productType, setProductType] = useState('plant'); // 'plant', 'tool', 'accessory'
-  
-  // Enhanced state for better UX
+
+  // Product type
+  const [productType, setProductType] = useState('plant'); // 'plant' | 'tool' | 'accessory'
+
+  // UX state
   const [lastSavedItem, setLastSavedItem] = useState(null);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [autoRefreshEnabled] = useState(true);
   const [networkStatus, setNetworkStatus] = useState('online');
   const [searchHistory, setSearchHistory] = useState([]);
   const [showSearchHistory, setShowSearchHistory] = useState(false);
-  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [productToEdit, setProductToEdit] = useState(null);
   const [lowStockItems, setLowStockItems] = useState([]);
-  
-  // NEW: Image upload state
+
+  // Images
   const [images, setImages] = useState([]);
   const [isImageLoading, setIsImageLoading] = useState(false);
   const webFileInputRef = useRef(null);
-  
-  // NEW: Plant care accordion state
+
+  // Plant care accordion
   const [showCommonProblems, setShowCommonProblems] = useState(false);
-  
-  // KPI state
+
+  // KPIs
   const [kpiData, setKpiData] = useState({
     totalItems: 0,
     activeItems: 0,
     lowStockCount: 0,
     totalValue: 0
   });
-  
-  // Enhanced form state for different product types
+
+  // Form state
   const [formData, setFormData] = useState({
-    // Common fields
     name: '',
     description: '',
     quantity: '',
@@ -109,95 +111,150 @@ export default function AddInventoryScreen({ navigation, route }) {
     notes: '',
     category: '',
     brand: '',
-    // Plant-specific fields
     scientificName: '',
     careInstructions: '',
-    // Tool/Accessory specific fields
     material: '',
     dimensions: '',
     weight: '',
   });
-  
+
   const [errors, setErrors] = useState({});
-  
-  // Animation refs - Fixed for web compatibility
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  const [inventoryError, setInventoryError] = useState(null);
+  const [isInventoryEmpty, setIsInventoryEmpty] = useState(false);
+
+  // Animations
   const fadeAnim = useRef(new Animated.Value(1)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const successAnim = useRef(new Animated.Value(0)).current;
   const headerHeightAnim = useRef(new Animated.Value(100)).current;
   const searchBarFocusAnim = useRef(new Animated.Value(0)).current;
-  
-  // Refs for better performance
+
+  // Refs
   const debounceTimeout = useRef(null);
   const isMounted = useRef(true);
   const searchInputRef = useRef(null);
 
-  // Enhanced initialization with proper business ID setup
+  // Helpers
+  const calculateKPIs = (inventory) => {
+    const totalItems = inventory.length;
+    const activeItems = inventory.filter(item => item.status === 'active').length;
+    const lowStockCount = inventory.filter(item =>
+      (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
+    ).length;
+    const totalValue = inventory.reduce((sum, item) =>
+      sum + ((item.price || 0) * (item.quantity || 0)), 0
+    );
+    return { totalItems, activeItems, lowStockCount, totalValue };
+  };
+
+  const markEmpty = () => {
+    setCurrentInventory([]);
+    setKpiData({ totalItems: 0, activeItems: 0, lowStockCount: 0, totalValue: 0 });
+    setLowStockItems([]);
+    setInventoryError(null);
+    setIsInventoryEmpty(true);
+    setNetworkStatus('online');
+  };
+
+  const loadCurrentInventory = useCallback(async (id = currentBusinessId, silent = false) => {
+    if (!id) return;
+    try {
+      if (!silent) setRefreshing(true);
+      setNetworkStatus('loading');
+      setInventoryError(null);
+
+      const inventoryResponse = await getBusinessInventory(id);
+      const inventory = inventoryResponse?.inventory || inventoryResponse || [];
+
+      if (isMounted.current) {
+        if (Array.isArray(inventory) && inventory.length === 0) {
+          markEmpty();
+        } else {
+          setCurrentInventory(inventory);
+          const kpis = calculateKPIs(inventory);
+          setKpiData(kpis);
+          const lowStock = inventory.filter(item => item.isLowStock && item.status === 'active');
+          setLowStockItems(lowStock);
+          setNetworkStatus('online');
+          setIsInventoryEmpty(false);
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error loading inventory:', error);
+      if (isMounted.current) {
+        const msg = String(error?.message || '').toLowerCase();
+        if (msg.includes('not found') || msg.includes('404')) {
+          markEmpty();
+        } else {
+          setNetworkStatus('error');
+          setCurrentInventory([]);
+          setIsInventoryEmpty(false);
+          setInventoryError('We couldn’t load your inventory. Please try again.');
+          if (!silent) {
+            Alert.alert('Connection Error', error.message || 'Failed to load inventory. Please check your connection and try again.');
+          }
+        }
+      }
+    } finally {
+      if (isMounted.current && !silent) setRefreshing(false);
+    }
+  }, [currentBusinessId]);
+
+  // Success overlay timing
+  const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+  useEffect(() => {
+    if (showSuccessAnimation) {
+      successAnim.setValue(0);
+      Animated.timing(successAnim, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+        .start(() => {
+          setTimeout(() => {
+            Animated.timing(successAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' })
+              .start(() => setShowSuccessAnimation(false));
+          }, 1200);
+        });
+    }
+  }, [showSuccessAnimation, successAnim]);
+
+  // Init
   useEffect(() => {
     const initializeScreen = async () => {
       try {
         let id = businessId;
         if (!id) {
-          // Get from AsyncStorage or use the known working ID
           const email = await AsyncStorage.getItem('userEmail');
           const storedBusinessId = await AsyncStorage.getItem('businessId');
-          id = storedBusinessId || email || 'dina2@mail.tau.ac.il'; // Fallback to working ID
-          
-          // Set up the business credentials if not set
+          id = storedBusinessId || email || 'dina2@mail.tau.ac.il';
           await AsyncStorage.setItem('userEmail', id);
           await AsyncStorage.setItem('businessId', id);
           await AsyncStorage.setItem('userType', 'business');
         }
-        
+
         setCurrentBusinessId(id);
-        console.log('🏢 Using business ID:', id);
-        
+
         if (id) {
           await loadCurrentInventory(id);
           await loadSearchHistory();
         }
-        
-        // Entrance animation
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 1,
-            duration: 800,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(slideAnim, {
-            toValue: 1,
-            duration: 600,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-        ]).start();
-        
       } catch (error) {
         console.error('Error initializing screen:', error);
         setNetworkStatus('error');
       }
     };
-    
+
     initializeScreen();
-    
-    // Cleanup on unmount
+
     return () => {
       isMounted.current = false;
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
-      }
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     };
-  }, [businessId]);
+  }, [businessId, loadCurrentInventory]);
 
-  // Enhanced search with debouncing
+  // Debounced search
   useEffect(() => {
-    if (debounceTimeout.current) {
-      clearTimeout(debounceTimeout.current);
-    }
-    
+    if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
+
     debounceTimeout.current = setTimeout(() => {
-      if (searchQuery.length >= 2) {
+      if (productType === 'plant' && searchQuery.length >= 2) {
         handleSearch(searchQuery);
         setShowSearchHistory(false);
       } else {
@@ -207,38 +264,31 @@ export default function AddInventoryScreen({ navigation, route }) {
     }, 300);
 
     return () => {
-      if (debounceTimeout.current) {
-        clearTimeout(debounceTimeout.current);
-      }
+      if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     };
-  }, [searchQuery]);
+  }, [searchQuery, productType]);
 
-  // Auto-refresh functionality
+  // Auto-refresh inventory
   useEffect(() => {
     if (!autoRefreshEnabled || !currentBusinessId) return;
-    
     const interval = setInterval(() => {
       if (!isLoading && !refreshing && showInventory) {
-        loadCurrentInventory(currentBusinessId, true); // Silent refresh
+        loadCurrentInventory(currentBusinessId, true);
       }
-    }, 30000); // Refresh every 30 seconds
-    
+    }, 30000);
     return () => clearInterval(interval);
-  }, [autoRefreshEnabled, currentBusinessId, isLoading, refreshing, showInventory]);
+  }, [autoRefreshEnabled, currentBusinessId, isLoading, refreshing, showInventory, loadCurrentInventory]);
 
-  // Load search history
+  // History
   const loadSearchHistory = async () => {
     try {
       const history = await AsyncStorage.getItem('plantSearchHistory');
-      if (history) {
-        setSearchHistory(JSON.parse(history));
-      }
+      if (history) setSearchHistory(JSON.parse(history));
     } catch (error) {
       console.error('Error loading search history:', error);
     }
   };
 
-  // Save search to history
   const saveSearchToHistory = async (query) => {
     try {
       const newHistory = [query, ...searchHistory.filter(h => h !== query)].slice(0, 10);
@@ -249,169 +299,61 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // Enhanced inventory loading with KPI calculation
-  const loadCurrentInventory = useCallback(async (id = currentBusinessId, silent = false) => {
-    if (!id) return;
-    try {
-      if (!silent) setRefreshing(true);
-      setNetworkStatus('loading');
-      setInventoryError(null); // NEW: clear previous error
-      console.log('📦 Loading inventory for business:', id);
-      const inventoryResponse = await getBusinessInventory(id);
-      const inventory = inventoryResponse.inventory || inventoryResponse || [];
-      if (isMounted.current) {
-        setCurrentInventory(inventory);
-        const kpis = calculateKPIs(inventory);
-        setKpiData(kpis);
-        const lowStock = inventory.filter(item => item.isLowStock && item.status === 'active');
-        setLowStockItems(lowStock);
-        setNetworkStatus('online');
-        if (!silent && inventory.length > 0) {
-          Animated.sequence([
-            Animated.timing(successAnim, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
-            Animated.delay(1000),
-            Animated.timing(successAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
-          ]).start();
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error loading inventory:', error);
-      if (isMounted.current) {
-        setNetworkStatus('error');
-        setCurrentInventory([]);
-        // NEW: Set error message for UI
-        if (error.message && error.message.includes('Business not found')) {
-          setInventoryError('Business not found. Please check the business ID or contact support.');
-        } else {
-          setInventoryError('Failed to load inventory. Please try again later.');
-        }
-        if (!silent) {
-          Alert.alert('Connection Error', error.message || 'Failed to load inventory. Please check your connection and try again.');
-        }
-      }
-    } finally {
-      if (isMounted.current && !silent) {
-        setRefreshing(false);
-      }
-    }
-  }, [currentBusinessId]);
-
-  // Calculate KPIs from inventory
-  const calculateKPIs = (inventory) => {
-    const totalItems = inventory.length;
-    const activeItems = inventory.filter(item => item.status === 'active').length;
-    const lowStockCount = inventory.filter(item => 
-      (item.quantity || 0) <= (item.minThreshold || 5) && item.status === 'active'
-    ).length;
-    const totalValue = inventory.reduce((sum, item) => 
-      sum + ((item.price || 0) * (item.quantity || 0)), 0
-    );
-
-    return {
-      totalItems,
-      activeItems,
-      lowStockCount,
-      totalValue
-    };
-  };
-
-  // Enhanced search function
+  // Search
   const handleSearch = async (query) => {
     if (!query || query.length < 2) return;
-    
     setIsSearching(true);
     setNetworkStatus('loading');
-    
     try {
-      console.log('🔍 Searching for plants:', query);
       const results = await searchPlants(query);
       const plants = results.plants || results || [];
-      
       if (isMounted.current) {
-        console.log('✅ Search results:', plants.length, 'plants found');
         setSearchResults(plants);
         setNetworkStatus('online');
-        
-        // Save successful search to history
-        if (plants.length > 0) {
-          saveSearchToHistory(query);
-        }
+        if (plants.length > 0) saveSearchToHistory(query);
       }
     } catch (error) {
       console.error('❌ Search error:', error);
       if (isMounted.current) {
         setNetworkStatus('error');
         setSearchResults([]);
-        
-        // Shake animation for error
         Animated.sequence([
-          Animated.timing(shakeAnim, {
-            toValue: 10,
-            duration: 100,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: -10,
-            duration: 100,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
-          Animated.timing(shakeAnim, {
-            toValue: 0,
-            duration: 100,
-            useNativeDriver: Platform.OS !== 'web',
-          }),
+          Animated.timing(shakeAnim, { toValue: 10, duration: 100, useNativeDriver: Platform.OS !== 'web' }),
+          Animated.timing(shakeAnim, { toValue: -10, duration: 100, useNativeDriver: Platform.OS !== 'web' }),
+          Animated.timing(shakeAnim, { toValue: 0, duration: 100, useNativeDriver: Platform.OS !== 'web' }),
         ]).start();
-        
         Alert.alert('Search Error', 'Failed to search plants. Please check your connection.');
       }
     } finally {
-      if (isMounted.current) {
-        setIsSearching(false);
-      }
+      if (isMounted.current) setIsSearching(false);
     }
   };
 
-  // Handle speech-to-text result
+  // Speech-to-text
   const handleSpeechResult = (transcribedText) => {
     if (transcribedText && transcribedText.trim()) {
       setSearchQuery(transcribedText.trim());
       searchInputRef.current?.focus();
-      
-      // Animate mic usage feedback
       Animated.sequence([
-        Animated.timing(searchBarFocusAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
+        Animated.timing(searchBarFocusAnim, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
         Animated.delay(1000),
-        Animated.timing(searchBarFocusAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
+        Animated.timing(searchBarFocusAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
       ]).start();
     }
   };
 
-  // Enhanced plant selection
+  // Select plant
   const handleSelectPlant = (plant) => {
-    console.log('🌱 Selected plant:', plant.common_name);
-    
     setSelectedPlant(plant);
     setSearchResults([]);
-    setSearchQuery(plant.common_name);
+    setSearchQuery(plant.common_name || '');
     setShowInventory(false);
     setShowSearchHistory(false);
     setErrors({});
-    
-    // Clear images when selecting a new plant
     setImages([]);
-    
-    // Auto-populate plant details
     setFormData(prev => ({
       ...prev,
-      name: plant.common_name,
+      name: plant.common_name || '',
       description: plant.careInstructions || `${plant.common_name} - Beautiful indoor plant`,
       quantity: '1',
       price: '',
@@ -426,51 +368,29 @@ export default function AddInventoryScreen({ navigation, route }) {
       dimensions: '',
       weight: '',
     }));
-    
-    // Animate header height reduction
-    Animated.timing(headerHeightAnim, {
-      toValue: 85,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    Animated.timing(headerHeightAnim, { toValue: 85, duration: 300, useNativeDriver: false }).start();
   };
 
-  // Enhanced form handling
+  // Form change
   const handleInputChange = (field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value,
-    }));
-    
-    // Clear error when field is changed
-    if (errors[field]) {
-      setErrors(prev => ({
-        ...prev,
-        [field]: null,
-      }));
-    }
+    setFormData(prev => ({ ...prev, [field]: value }));
+    if (errors[field]) setErrors(prev => ({ ...prev, [field]: null }));
   };
 
-  // NEW: Web file picker handler
+  // Web file picker
   const handleWebFilePick = async (event) => {
-    const file = event.target.files[0];
+    const file = event.target.files?.[0];
     if (!file) return;
-    
     try {
-      // Validate file type
       if (!file.type.startsWith('image/')) {
         Alert.alert('Error', 'Please select an image file');
         return;
       }
-      
-      // Validate file size (5MB limit)
-      const maxSize = 5 * 1024 * 1024; // 5MB
+      const maxSize = 5 * 1024 * 1024;
       if (file.size > maxSize) {
         Alert.alert('Error', 'Image size must be less than 5MB');
         return;
       }
-      
-      // FIXED: Upload to Azure instead of creating local blob
       try {
         const formData = new FormData();
         formData.append('file', file);
@@ -484,7 +404,7 @@ export default function AddInventoryScreen({ navigation, route }) {
 
         if (uploadResponse.ok) {
           const result = await uploadResponse.json();
-          setImages(prev => [...prev, result.url]); // Use Azure URL
+          setImages(prev => [...prev, result.url]);
         } else {
           throw new Error('Upload failed');
         }
@@ -492,20 +412,16 @@ export default function AddInventoryScreen({ navigation, route }) {
         console.error('Image upload error:', uploadError);
         Alert.alert('Error', 'Failed to upload image. Please try again.');
       }
-      
-      // Reset input
       event.target.value = '';
-      
     } catch (error) {
       console.error('Web image pick error:', error);
       Alert.alert('Error', 'Failed to select image');
     }
   };
 
-  // NEW: Mobile image picker
+  // Mobile gallery
   const pickImageMobile = async () => {
     try {
-      // Check permissions first
       if (ImagePicker.getMediaLibraryPermissionsAsync) {
         const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
         if (status !== 'granted') {
@@ -516,14 +432,10 @@ export default function AddInventoryScreen({ navigation, route }) {
           }
         }
       }
-
-      // Check if we have too many images
       if (images.length >= 5) {
         Alert.alert('Too Many Images', 'You can only upload up to 5 images per product');
         return;
       }
-
-      // Launch image picker with fallback options
       let result;
       try {
         result = await ImagePicker.launchImageLibraryAsync({
@@ -533,9 +445,7 @@ export default function AddInventoryScreen({ navigation, route }) {
           quality: 0.8,
           base64: false,
         });
-      } catch (primaryError) {
-        console.log('Primary image picker failed, trying fallback...');
-        // Fallback with string format
+      } catch {
         result = await ImagePicker.launchImageLibraryAsync({
           mediaTypes: 'images',
           allowsEditing: true,
@@ -543,28 +453,11 @@ export default function AddInventoryScreen({ navigation, route }) {
           quality: 0.8,
         });
       }
-      
-      console.log('ImagePicker result:', result);
-      
       if (!result.canceled) {
-        if (result.assets && result.assets.length > 0) {
-          const selectedImage = result.assets[0];
-          console.log('Image selected:', selectedImage.uri);
-          setImages(prev => [...prev, selectedImage.uri]);
-          
-          // Clear error if images were required
-          if (errors.images) {
-            setErrors(prev => ({ ...prev, images: null }));
-          }
-        } else if (result.uri) {
-          // Fallback for older versions
-          console.log('Image selected (fallback):', result.uri);
-          setImages(prev => [...prev, result.uri]);
-          
-          // Clear error if images were required
-          if (errors.images) {
-            setErrors(prev => ({ ...prev, images: null }));
-          }
+        const selectedImage = result.assets?.[0]?.uri || result.uri;
+        if (selectedImage) {
+          setImages(prev => [...prev, selectedImage]);
+          if (errors.images) setErrors(prev => ({ ...prev, images: null }));
         }
       }
     } catch (error) {
@@ -573,42 +466,30 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // NEW: Camera handler
+  // Camera
   const takePhoto = async () => {
     try {
       setIsImageLoading(true);
-      
-      // Special handling for web platform
+
       if (Platform.OS === 'web') {
-        // Check if the browser supports the MediaDevices API
         if (!navigator?.mediaDevices?.getUserMedia) {
           Alert.alert('Not Supported', 'Your browser does not support camera access. Please use the gallery option instead.');
           setIsImageLoading(false);
           return;
         }
-        
         try {
-          // Request camera permissions via browser API
           await navigator.mediaDevices.getUserMedia({ video: true });
-          
-          // If we get here, permission was granted. Now use ImagePicker
           const result = await ImagePicker.launchCameraAsync({
             mediaTypes: ImagePicker.MediaTypeOptions.Images,
             allowsEditing: true,
             aspect: [4, 3],
             quality: 0.8,
           });
-          
-          if (result.canceled) {
-            setIsImageLoading(false);
-            return;
-          }
-          
-          const selectedAsset = result.assets?.[0] || { uri: result.uri };
-          if (selectedAsset?.uri) {
-            setImages(prev => [...prev, selectedAsset.uri]);
-            if (errors.images) {
-              setErrors(prev => ({ ...prev, images: null }));
+          if (!result.canceled) {
+            const selectedAsset = result.assets?.[0] || { uri: result.uri };
+            if (selectedAsset?.uri) {
+              setImages(prev => [...prev, selectedAsset.uri]);
+              if (errors.images) setErrors(prev => ({ ...prev, images: null }));
             }
           }
         } catch (err) {
@@ -618,37 +499,31 @@ export default function AddInventoryScreen({ navigation, route }) {
         setIsImageLoading(false);
         return;
       }
-      
-      // Original code for native platforms
+
       const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
       if (!permissionResult.granted) {
         Alert.alert('Permission Required', 'We need camera permission to take photos');
         setIsImageLoading(false);
         return;
       }
-      
+
       if (images.length >= 5) {
         Alert.alert('Too Many Images', 'You can only upload up to 5 images per product');
         setIsImageLoading(false);
         return;
       }
-      
+
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.8,
       });
-      
-      if (result.canceled) {
-        setIsImageLoading(false);
-        return;
-      }
-      
-      const selectedAsset = result.assets?.[0] || { uri: result.uri };
-      if (selectedAsset?.uri) {
-        setImages(prev => [...prev, selectedAsset.uri]);
-        if (errors.images) {
-          setErrors(prev => ({ ...prev, images: null }));
+
+      if (!result.canceled) {
+        const selectedAsset = result.assets?.[0] || { uri: result.uri };
+        if (selectedAsset?.uri) {
+          setImages(prev => [...prev, selectedAsset.uri]);
+          if (errors.images) setErrors(prev => ({ ...prev, images: null }));
         }
       }
     } catch (error) {
@@ -659,25 +534,23 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // NEW: Unified image picker function
+  // Unified picker
   const pickImage = async () => {
     if (Platform.OS === 'web') {
-      // Trigger web file input
       webFileInputRef.current?.click();
     } else {
-      // Use mobile image picker
       await pickImageMobile();
     }
   };
 
-  // NEW: Image removal handler
+  // Remove image
   const removeImage = (index) => {
     const newImages = [...images];
     newImages.splice(index, 1);
     setImages(newImages);
   };
 
-  // NEW: Product type categories
+  // Categories
   const productCategories = {
     plant: [
       'Indoor Plants', 'Outdoor Plants', 'Succulents', 'Herbs', 'Flowering Plants',
@@ -693,71 +566,63 @@ export default function AddInventoryScreen({ navigation, route }) {
     ]
   };
 
-  // Enhanced form validation
+  // Validate
   const validateForm = () => {
     const newErrors = {};
-    
-    // Common validations
+
     if (productType === 'plant' && !selectedPlant) {
       newErrors.plant = 'Please select a plant from the search results';
     }
-    
+
     if (productType !== 'plant' && !formData.name.trim()) {
       newErrors.name = 'Please enter a product name';
     }
-    
-    const quantity = parseInt(formData.quantity);
+
+    const quantity = parseInt(formData.quantity, 10);
     if (!formData.quantity || isNaN(quantity) || quantity <= 0) {
       newErrors.quantity = 'Please enter a valid quantity';
     }
-    
+
     const price = parseFloat(formData.price);
     if (!formData.price || isNaN(price) || price <= 0) {
       newErrors.price = 'Please enter a valid price';
     }
-    
+
     if (!formData.category) {
       newErrors.category = 'Please select a category';
     }
-    
-    // Image validation
+
     if (images.length === 0) {
       newErrors.images = 'Please add at least one product image';
     }
-    
-    // Product-specific validations
-    if (productType === 'tool' || productType === 'accessory') {
-      if (!formData.description.trim()) {
-        newErrors.description = 'Please provide a product description';
-      }
+
+    if ((productType === 'tool' || productType === 'accessory') && !formData.description.trim()) {
+      newErrors.description = 'Please provide a product description';
     }
-    
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  // NEW: Upload images to server - FIXED for mobile platforms
+  // Upload images
   const prepareImageData = async () => {
     try {
       const uploaded = [];
       for (const uri of images) {
-        // Skip if already a URL (web uploads)
         if (uri.startsWith('http')) {
           uploaded.push(uri);
           continue;
         }
-        
-        // For mobile platforms, convert file URI to FormData upload
         if (Platform.OS !== 'web') {
           const response = await fetch(uri);
           const blob = await response.blob();
-          
+
           const formData = new FormData();
           formData.append('file', blob, `business-product-${Date.now()}.jpg`);
           formData.append('type', 'business-product');
           formData.append('contentType', 'image/jpeg');
 
-          const uploadResponse = await fetch(`${config.API_BASE_URL}/marketplace/uploadImage`, {
+          const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
             method: 'POST',
             body: formData,
           });
@@ -769,7 +634,6 @@ export default function AddInventoryScreen({ navigation, route }) {
             throw new Error(`Upload failed for image: ${uploadResponse.status}`);
           }
         } else {
-          // Fallback to original upload method for web
           const result = await uploadImage(uri, 'business-product');
           if (result?.url) uploaded.push(result.url);
         }
@@ -781,19 +645,17 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // NEW: Enhanced save function for all product types
+  // Save
   const handleSave = async () => {
     if (!validateForm()) return;
-    
+
     setIsLoading(true);
     setNetworkStatus('loading');
-    
+
     try {
-      // Upload images first
       const imageData = await prepareImageData();
-      
       let inventoryItem;
-      
+
       if (productType === 'plant') {
         inventoryItem = {
           productType: 'plant',
@@ -814,9 +676,9 @@ export default function AddInventoryScreen({ navigation, route }) {
           },
           name: selectedPlant.common_name,
           description: formData.careInstructions || `${selectedPlant.common_name} - Beautiful indoor plant`,
-          quantity: parseInt(formData.quantity),
+          quantity: parseInt(formData.quantity, 10),
           price: parseFloat(formData.price),
-          minThreshold: parseInt(formData.minThreshold) || 5,
+          minThreshold: parseInt(formData.minThreshold, 10) || 5,
           discount: parseFloat(formData.discount) || 0,
           notes: formData.notes,
           category: formData.category || 'Indoor Plants',
@@ -824,27 +686,24 @@ export default function AddInventoryScreen({ navigation, route }) {
           mainImage: imageData[0],
           images: imageData,
           imageUrls: imageData,
-          // NEW: Include site information
           site: formData.site || 'indoor',
         };
       } else {
-        // For tools and accessories
         inventoryItem = {
-          productType: productType,
+          productType,
           name: formData.name,
           description: formData.description,
           category: formData.category,
           brand: formData.brand,
-          quantity: parseInt(formData.quantity),
+          quantity: parseInt(formData.quantity, 10),
           price: parseFloat(formData.price),
-          minThreshold: parseInt(formData.minThreshold) || 5,
+          minThreshold: parseInt(formData.minThreshold, 10) || 5,
           discount: parseFloat(formData.discount) || 0,
           notes: formData.notes,
           status: 'active',
           mainImage: imageData[0],
           images: imageData,
           imageUrls: imageData,
-          // Additional fields for tools/accessories
           specifications: {
             material: formData.material,
             dimensions: formData.dimensions,
@@ -852,54 +711,28 @@ export default function AddInventoryScreen({ navigation, route }) {
           }
         };
       }
-      
-      console.log('💾 Creating inventory item:', inventoryItem);
-      const result = await createInventoryItem(inventoryItem);
-      console.log('✅ Item created successfully:', result);
-      
+
+      await createInventoryItem(inventoryItem);
       const productName = productType === 'plant' ? selectedPlant?.common_name : formData.name;
-      
+
       Alert.alert(
         '✅ Success!',
         `${productName} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
         [
-          {
-            text: 'Add Another',
-            style: 'default',
-            onPress: () => {
-              resetForm();
-              setShowInventory(false);
-              if (productType === 'plant') {
-                searchInputRef.current?.focus();
-              }
-            },
-          },
-          {
-            text: 'View Inventory',
-            style: 'default',
-            onPress: () => {
-              resetForm();
-              setShowInventory(true);
-            },
-          },
+          { text: 'Add Another', onPress: () => { resetForm(); setShowInventory(false); if (productType === 'plant') searchInputRef.current?.focus(); } },
+          { text: 'View Inventory', onPress: () => { resetForm(); setShowInventory(true); } },
         ]
       );
-      
-      // Enhanced success animation
-      setShowSuccessAnimation(true);
-      setTimeout(() => setShowSuccessAnimation(false), 2000);
-      
-      // Store last saved item
+
       setLastSavedItem({
         name: productName || 'Item',
         quantity: formData.quantity,
         price: formData.price,
         imageCount: images.length
       });
-      
-      // Auto-reload inventory
+
+      setShowSuccessAnimation(true);
       await loadCurrentInventory();
-      
       setNetworkStatus('online');
     } catch (error) {
       console.error('❌ Save error:', error);
@@ -910,7 +743,7 @@ export default function AddInventoryScreen({ navigation, route }) {
     }
   };
 
-  // NEW: Reset form for different product types
+  // Reset form
   const resetForm = () => {
     setSelectedPlant(null);
     setSearchQuery('');
@@ -933,86 +766,116 @@ export default function AddInventoryScreen({ navigation, route }) {
     });
     setErrors({});
     setShowSearchHistory(false);
-    
-    // Reset animations
-    Animated.timing(headerHeightAnim, {
-      toValue: 100,
-      duration: 300,
-      useNativeDriver: false,
-    }).start();
+    Animated.timing(headerHeightAnim, { toValue: 100, duration: 300, useNativeDriver: false }).start();
   };
 
-  // NEW: Product type selector component
   const renderProductTypeSelector = () => (
     <View style={styles.productTypeSection}>
       <Text style={styles.sectionTitle}>Product Type</Text>
+
       <View style={styles.productTypeContainer}>
-        {[{
-          key: 'plant',
-          label: 'Plants',
-          icon: 'leaf',
-          color: '#4CAF50'
-        },
-        {
-          key: 'tool',
-          label: 'Tools',
-          icon: 'hammer-wrench',
-          color: '#FF9800'
-        },
-        {
-          key: 'accessory',
-          label: 'Accessories',
-          icon: 'flower',
-          color: '#9C27B0'
-        }].map((type) => (
-          <TouchableOpacity
-            key={type.key}
-            style={[
-              styles.productTypeButton,
-              productType === type.key && styles.productTypeButtonActive
-            ]}
-            onPress={() => {
-              setProductType(type.key);
-              resetForm(); // Reset form when changing type
-              setFormData(prev => ({ ...prev, category: '' })); // Reset category
-            }}
-          >
-            <View style={[
-              styles.productTypeIcon,
-              { backgroundColor: productType === type.key ? type.color : '#f5f5f5' }
-            ]}>
-              <MaterialCommunityIcons 
-                name={productType === 'tool' ? 'hammer-wrench' : 'flower'} 
-                size={24} 
-                color={productType === type.key ? '#fff' : type.color} 
-              />
-            </View>
-            <Text style={[
-              styles.productTypeLabel,
-              productType === type.key && { color: type.color, fontWeight: 'bold' }
-            ]}>
-              {type.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {[
+          { key: 'plant', label: 'Plants', icon: 'leaf', color: '#4CAF50' },
+          { key: 'tool', label: 'Tools', icon: 'hammer-wrench', color: '#FF9800' },
+          { key: 'accessory', label: 'Accessories', icon: 'flower', color: '#9C27B0' },
+        ].map((type) => {
+          const isActive = productType === type.key;
+          return (
+            <TouchableOpacity
+              key={type.key}
+              style={[styles.productTypeButton, isActive && styles.productTypeButtonActive]}
+              onPress={() => {
+                if (!isActive) {
+                  setProductType(type.key);
+                  resetForm();
+                  setFormData(prev => ({ ...prev, category: '' }));
+                }
+              }}
+              activeOpacity={0.9}
+            >
+              <View
+                style={[
+                  styles.productTypeIcon,
+                  { backgroundColor: isActive ? type.color : '#f5f5f5' }
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name={type.icon}
+                  size={24}
+                  color={isActive ? '#fff' : type.color}
+                />
+              </View>
+              <Text
+                style={[
+                  styles.productTypeLabel,
+                  isActive && { color: type.color, fontWeight: 'bold' }
+                ]}
+              >
+                {type.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
+
+      {/* SEARCH BELOW THE BUTTONS */}
+      {!showInventory && productType === 'plant' && (
+        <Animated.View
+          style={[
+            styles.searchContainer,
+            styles.searchBelow,
+            {
+              borderColor: searchBarFocusAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: ['#e0e0e0', '#4CAF50'],
+              }),
+            },
+          ]}
+        >
+          <MaterialIcons name="search" size={20} color="#4CAF50" />
+          <TextInput
+            ref={searchInputRef}
+            style={styles.searchInput}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search plants by name..."
+            autoCapitalize="none"
+            placeholderTextColor="#999"
+            onFocus={() =>
+              Animated.timing(searchBarFocusAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start()
+            }
+            onBlur={() =>
+              Animated.timing(searchBarFocusAnim, { toValue: 0, duration: 200, useNativeDriver: false }).start()
+            }
+            returnKeyType="search"
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialIcons name="close" size={20} color="#999" />
+            </TouchableOpacity>
+          ) : null}
+          <SpeechToTextComponent onTranscriptionResult={handleSpeechResult} style={styles.speechButton} />
+          {isSearching && <ActivityIndicator size="small" color="#4CAF50" />}
+        </Animated.View>
+      )}
     </View>
   );
 
-  // NEW: Manual product form for tools and accessories
+
+  // Manual product form (tools/accessories)
   const renderManualProductForm = () => (
     <View style={styles.section}>
       <Text style={styles.sectionTitle}>
-        <MaterialCommunityIcons 
-          name={productType === 'tool' ? 'hammer-wrench' : 'flower'} 
-          size={20} 
-          color="#4CAF50" 
-        />
-        {' '}Add {productType === 'tool' ? 'Tool' : 'Accessory'} Details
+        <MaterialCommunityIcons
+          name={productType === 'tool' ? 'hammer-wrench' : 'flower'}
+          size={20}
+          color="#4CAF50"
+        />{' '}
+        Add {productType === 'tool' ? 'Tool' : 'Accessory'} Details
       </Text>
-      
+
       {renderImagePicker()}
-      
+
       <View style={styles.formContainer}>
         <View style={styles.inputGroup}>
           <Text style={styles.label}>Product Name *</Text>
@@ -1022,9 +885,7 @@ export default function AddInventoryScreen({ navigation, route }) {
             onChangeText={(text) => handleInputChange('name', text)}
             placeholder={`Enter ${productType} name`}
           />
-          {errors.name && (
-            <Text style={styles.errorText}>{errors.name}</Text>
-          )}
+          {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
         </View>
 
         <View style={styles.inputGroup}>
@@ -1048,9 +909,7 @@ export default function AddInventoryScreen({ navigation, route }) {
               </TouchableOpacity>
             ))}
           </View>
-          {errors.category && (
-            <Text style={styles.errorText}>{errors.category}</Text>
-          )}
+          {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
         </View>
 
         <View style={styles.inputGroup}>
@@ -1063,9 +922,7 @@ export default function AddInventoryScreen({ navigation, route }) {
             multiline
             numberOfLines={3}
           />
-          {errors.description && (
-            <Text style={styles.errorText}>{errors.description}</Text>
-          )}
+          {errors.description && <Text style={styles.errorText}>{errors.description}</Text>}
         </View>
 
         <View style={styles.row}>
@@ -1122,9 +979,7 @@ export default function AddInventoryScreen({ navigation, route }) {
               placeholder="0"
               keyboardType="numeric"
             />
-            {errors.quantity && (
-              <Text style={styles.errorText}>{errors.quantity}</Text>
-            )}
+            {errors.quantity && <Text style={styles.errorText}>{errors.quantity}</Text>}
           </View>
 
           <View style={styles.halfInput}>
@@ -1136,9 +991,7 @@ export default function AddInventoryScreen({ navigation, route }) {
               placeholder="0.00"
               keyboardType="decimal-pad"
             />
-            {errors.price && (
-              <Text style={styles.errorText}>{errors.price}</Text>
-            )}
+            {errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
           </View>
         </View>
 
@@ -1181,67 +1034,13 @@ export default function AddInventoryScreen({ navigation, route }) {
     </View>
   );
 
-  // Handle inventory item edit
-  const handleEditInventoryItem = (item) => {
-    console.log('✏️ Editing inventory item:', item.id);
-    setProductToEdit(item);
-    setShowEditModal(true);
-  };
-
-  // Handle product save from modal
-  const handleProductSave = async (updatedProduct) => {
-    try {
-      console.log('💾 Saving updated product:', updatedProduct);
-      await loadCurrentInventory(); // Refresh inventory
-      setShowEditModal(false);
-      setProductToEdit(null);
-      
-      // Show success feedback
-      Alert.alert('✅ Success', 'Product updated successfully!');
-    } catch (error) {
-      console.error('Error saving product:', error);
-      Alert.alert('Error', 'Failed to save product changes');
-    }
-  };
-
-  // Handle restock from low stock banner
-  const handleRestock = (item) => {
-    setProductToEdit(item);
-    setShowEditModal(true);
-  };
-
-  // Handle refresh
-  const onRefresh = () => {
-    loadCurrentInventory();
-  };
-
-  // Handle KPI widget press
-  const handleKPIPress = (type) => {
-    switch (type) {
-      case 'lowStock':
-        if (lowStockItems.length > 0) {
-          Alert.alert('Low Stock Items', 
-            lowStockItems.map(item => `• ${item.name}: ${item.quantity} left`).join('\n'));
-        }
-        break;
-      case 'totalValue':
-        Alert.alert('Inventory Value', 
-          `Total inventory value: $${kpiData.totalValue.toFixed(2)}\nBased on ${kpiData.totalItems} items`);
-        break;
-      default:
-        setShowInventory(true);
-    }
-  };
-
-  // NEW: Image picker component
+  // Image picker UI
   const renderImagePicker = () => (
     <View style={styles.imageSection}>
       <Text style={styles.sectionTitle}>
-        <MaterialCommunityIcons name="camera" size={20} color="#4CAF50" />
-        {' '}Product Images *
+        <MaterialCommunityIcons name="camera" size={20} color="#4CAF50" /> Product Images *
       </Text>
-      
-      {/* Hidden file input for web */}
+
       {Platform.OS === 'web' && (
         <input
           ref={webFileInputRef}
@@ -1251,29 +1050,20 @@ export default function AddInventoryScreen({ navigation, route }) {
           onChange={handleWebFilePick}
         />
       )}
-      
-      {/* Image grid */}
+
       <View style={styles.imageGrid}>
         {images.map((image, index) => (
-          <View key={index} style={styles.imageContainer}>
+          <View key={`${image}-${index}`} style={styles.imageContainer}>
             <Image source={{ uri: image }} style={styles.selectedImage} />
-            <TouchableOpacity
-              style={styles.removeImageButton}
-              onPress={() => removeImage(index)}
-            >
+            <TouchableOpacity style={styles.removeImageButton} onPress={() => removeImage(index)}>
               <MaterialIcons name="close" size={20} color="#fff" />
             </TouchableOpacity>
           </View>
         ))}
-        
-        {/* Add image buttons */}
+
         {images.length < 5 && (
           <View style={styles.addImageButtons}>
-            <TouchableOpacity
-              style={styles.addImageButton}
-              onPress={pickImage}
-              disabled={isImageLoading}
-            >
+            <TouchableOpacity style={styles.addImageButton} onPress={pickImage} disabled={isImageLoading}>
               {isImageLoading ? (
                 <ActivityIndicator size="small" color="#4CAF50" />
               ) : (
@@ -1283,12 +1073,8 @@ export default function AddInventoryScreen({ navigation, route }) {
                 </>
               )}
             </TouchableOpacity>
-            
-            <TouchableOpacity
-              style={styles.addImageButton}
-              onPress={takePhoto}
-              disabled={isImageLoading}
-            >
+
+            <TouchableOpacity style={styles.addImageButton} onPress={takePhoto} disabled={isImageLoading}>
               {isImageLoading ? (
                 <ActivityIndicator size="small" color="#4CAF50" />
               ) : (
@@ -1301,24 +1087,19 @@ export default function AddInventoryScreen({ navigation, route }) {
           </View>
         )}
       </View>
-      
+
       <Text style={styles.imageHint}>
         Add up to 5 high-quality images of your product. First image will be the main display image.
       </Text>
-      
-      {errors.images && (
-        <Text style={styles.errorText}>{errors.images}</Text>
-      )}
+
+      {errors.images && <Text style={styles.errorText}>{errors.images}</Text>}
     </View>
   );
 
-  // Render search result
+  // Search result row
   const renderSearchResult = ({ item, index }) => (
-    <TouchableOpacity 
-      style={[
-        styles.searchResultItem, 
-        index === searchResults.length - 1 && styles.lastSearchResultItem
-      ]}
+    <TouchableOpacity
+      style={[styles.searchResultItem, index === searchResults.length - 1 && styles.lastSearchResultItem]}
       onPress={() => handleSelectPlant(item)}
       activeOpacity={0.7}
     >
@@ -1326,7 +1107,7 @@ export default function AddInventoryScreen({ navigation, route }) {
         <View style={styles.plantIcon}>
           <MaterialCommunityIcons name="leaf" size={28} color="#4CAF50" />
         </View>
-        
+
         <View style={styles.searchResultInfo}>
           <Text style={styles.searchResultName} numberOfLines={1}>
             {item.common_name || 'Unknown Plant'}
@@ -1334,15 +1115,15 @@ export default function AddInventoryScreen({ navigation, route }) {
           <Text style={styles.searchResultScientific} numberOfLines={1}>
             {item.scientific_name || 'Scientific name not available'}
           </Text>
-          
-          <View style={styles.attributesRow}>
-            {item.water_days && (
-              <View style={styles.attribute}>
+
+          <View style={{ flexDirection: 'row' }}>
+            {!!item.water_days && (
+              <View style={[styles.attribute, { marginRight: 8 }]}>
                 <MaterialCommunityIcons name="water" size={12} color="#2196F3" />
                 <Text style={styles.attributeText}>Every {item.water_days} days</Text>
               </View>
             )}
-            {item.difficulty && (
+            {!!item.difficulty && (
               <View style={styles.attribute}>
                 <MaterialIcons name="bar-chart" size={12} color="#9C27B0" />
                 <Text style={styles.attributeText}>Level {item.difficulty}/10</Text>
@@ -1350,7 +1131,7 @@ export default function AddInventoryScreen({ navigation, route }) {
             )}
           </View>
         </View>
-        
+
         <View style={styles.addButtonContainer}>
           <MaterialIcons name="add-circle" size={32} color="#4CAF50" />
           <Text style={styles.addButtonText}>Add</Text>
@@ -1359,197 +1140,111 @@ export default function AddInventoryScreen({ navigation, route }) {
     </TouchableOpacity>
   );
 
-  // NEW: Handle back navigation based on entry point
-  const handleBackNavigation = () => {
-    const { returnTo, isNewBusiness } = route.params || {};
-    
-    // Always navigate to business home screen for inventory
-    if (showInventory) {
-      navigation.navigate('BusinessTabs', {
-        screen: 'BusinessDashboard'
-      });
-      return;
-    }
-    
-    // If coming from BusinessInventoryChoiceScreen (first time setup)
-    if (isNewBusiness && returnTo) {
-      navigation.navigate('BusinessInventoryChoiceScreen', {
-        businessId: currentBusinessId,
-        businessName: route.params?.businessName || 'Your Business',
-        isNewUser: true
-      });
-    } else if (returnTo === 'BusinessTabs') {
-      // If coming from main app, go to business dashboard
-      navigation.navigate('BusinessTabs', {
-        screen: 'BusinessDashboard',
-        params: { businessId: currentBusinessId }
-      });
-    } else {
-      // Default: navigate to business home screen
-      navigation.navigate('BusinessTabs', {
-        screen: 'BusinessDashboard'
-      });
+  const onRefresh = () => {
+    loadCurrentInventory();
+  };
+
+  const handleEditInventoryItem = (item) => {
+    setProductToEdit(item);
+    setShowEditModal(true);
+  };
+
+  const handleProductSave = async () => {
+    try {
+      await loadCurrentInventory();
+      setShowEditModal(false);
+      setProductToEdit(null);
+      Alert.alert('✅ Success', 'Product updated successfully!');
+    } catch (error) {
+      console.error('Error saving product:', error);
+      Alert.alert('Error', 'Failed to save product changes');
     }
   };
 
+  const handleRestock = (item) => {
+    setProductToEdit(item);
+    setShowEditModal(true);
+  };
+
+  // Header title dynamic
+  const headerTitle = showInventory
+    ? 'Inventory'
+    : productType === 'plant'
+      ? 'Add Plant'
+      : productType === 'tool'
+        ? 'Add Tool'
+        : 'Add Accessory';
+
+  // Header to inject above the inventory list (FlatList header)
+  const InventoryHeader = (
+    <View>
+      <View style={styles.kpiRow}>
+        <KPIWidget title="Total Items" value={kpiData.totalItems} icon="package-variant" color="#2196F3" onPress={() => { }} />
+        <KPIWidget title="Active Items" value={kpiData.activeItems} icon="check-circle" color="#4CAF50" onPress={() => { }} />
+        <KPIWidget title="Low Stock" value={kpiData.lowStockCount} icon="alert" color={kpiData.lowStockCount > 0 ? "#FF9800" : "#9E9E9E"} onPress={() => { }} />
+        <KPIWidget title="Total Value" value={kpiData.totalValue} format="currency" icon="currency-usd" color="#9C27B0" onPress={() => { }} />
+      </View>
+
+      <LowStockBanner
+        lowStockItems={lowStockItems}
+        onManageStock={() => setShowInventory(true)}
+        onRestock={handleRestock}
+      />
+    </View>
+  );
+
+  const EmptyInventory = (
+    <View style={[styles.emptyState, { marginHorizontal: 16, marginTop: 8 }]}>
+      <MaterialCommunityIcons name="inbox" size={56} color="#B0BEC5" />
+      <Text style={styles.emptyTitle}>Your inventory is empty</Text>
+      <Text style={styles.emptySubtitle}>Add your first product to get started.</Text>
+
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => setShowInventory(false)}>
+        <MaterialIcons name="add" size={18} color="#fff" />
+        <Text style={styles.primaryBtnText}>Add an item</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
-      
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-        style={styles.keyboardAvoid}
-      >
-        {/* Enhanced Header */}
-        <Animated.View 
-          style={[
-            styles.header,
-            {
-              height: headerHeightAnim,
-              transform: [{ translateX: shakeAnim }],
-            }
-          ]}
-        >
-          <View style={styles.headerTop}>
-            <TouchableOpacity 
-              onPress={handleBackNavigation}
-              style={styles.headerButton}
-            >
-              <MaterialIcons name="arrow-back" size={24} color="#216a94" />
-            </TouchableOpacity>
-            
-            <View style={styles.headerCenter}>
-              <Text style={styles.headerTitle}>
-                {showInventory ? 'Plant Inventory' : 'Add Plant'}
-              </Text>
-              <View style={styles.networkStatusContainer}>
-                {networkStatus === 'loading' && (
-                  <ActivityIndicator size="small" color="#216a94" />
-                )}
-                {networkStatus === 'online' && (
-                  <MaterialIcons name="wifi" size={16} color="#4CAF50" />
-                )}
-                {networkStatus === 'error' && (
-                  <MaterialIcons name="wifi-off" size={16} color="#f44336" />
-                )}
-                <Text style={styles.headerSubtitle}>
-                  Business: {currentBusinessId?.split('@')[0]}
-                </Text>
-              </View>
+    <BusinessLayout
+      navigation={navigation}
+      businessId={currentBusinessId}
+      currentTab="inventory"
+      badges={{}}
+    >
+      <SafeAreaView style={{ flex: 1, backgroundColor: '#f5f7fa' }}>
+        {/* Top app header */}
+        <View style={styles.navHeader}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+          </TouchableOpacity>
+
+          <View style={styles.titleWrap}>
+            <Text style={styles.navTitle} numberOfLines={1}>{headerTitle}</Text>
+            <View style={styles.subRow}>
+              {networkStatus === 'loading' && <ActivityIndicator size="small" color="#216a94" />}
+              {networkStatus === 'online' && <MaterialIcons name="wifi" size={16} color="#4CAF50" />}
+              {networkStatus === 'error' && <MaterialIcons name="wifi-off" size={16} color="#f44336" />}
+              <Text style={styles.subText}>Business: {currentBusinessId?.split('@')[0]}</Text>
             </View>
-            
-            <TouchableOpacity 
-              onPress={() => setShowInventory(!showInventory)}
-              style={styles.headerButton}
-            >
-              <MaterialIcons 
-                name={showInventory ? "add" : "inventory"}
-                size={24} 
-                color="#216a94" 
-              />
-            </TouchableOpacity>
           </View>
 
-          {/* Enhanced Search Bar */}
-          {!showInventory && (
-            <Animated.View 
-              style={[
-                styles.searchContainer,
-                {
-                  borderColor: searchBarFocusAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ['#e0e0e0', '#4CAF50'],
-                  }),
-                }
-              ]}
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              style={styles.headerButton}
+              onPress={() => setShowInventory(prev => !prev)}
+              accessibilityLabel={showInventory ? 'Add item' : 'View inventory'}
             >
-              <MaterialIcons name="search" size={20} color="#4CAF50" />
-              
-              <TextInput
-                ref={searchInputRef}
-                style={styles.searchInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                placeholder="Search plants by name..."
-                autoCapitalize="none"
-                placeholderTextColor="#999"
-                onFocus={() => {
-                  Animated.timing(searchBarFocusAnim, {
-                    toValue: 1,
-                    duration: 200,
-                    useNativeDriver: false,
-                  }).start();
-                }}
-                onBlur={() => {
-                  Animated.timing(searchBarFocusAnim, {
-                    toValue: 0,
-                    duration: 200,
-                    useNativeDriver: false,
-                  }).start();
-                }}
-              />
-              
-              {searchQuery ? (
-                <TouchableOpacity onPress={() => setSearchQuery('')}>
-                  <MaterialIcons name="close" size={20} color="#999" />
-                </TouchableOpacity>
-              ) : null}
-              
-              <SpeechToTextComponent 
-                onTranscriptionResult={handleSpeechResult}
-                style={styles.speechButton}
-              />
-              
-              {isSearching && (
-                <ActivityIndicator size="small" color="#4CAF50" />
-              )}
-            </Animated.View>
-          )}
-        </Animated.View>
+              <MaterialIcons name={showInventory ? 'add' : 'inventory'} size={22} color="#216a94" />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {/* Content Area */}
-        {showInventory ? (
-          // Enhanced Inventory View with Components
-          <View style={styles.inventoryContainer}>
-            {/* KPI Widgets Row */}
-            <View style={styles.kpiRow}>
-              <KPIWidget
-                title="Total Items"
-                value={kpiData.totalItems}
-                icon="package-variant"
-                color="#2196F3"
-                onPress={() => handleKPIPress('total')}
-              />
-              <KPIWidget
-                title="Active Items"
-                value={kpiData.activeItems}
-                icon="check-circle"
-                color="#4CAF50"
-                onPress={() => handleKPIPress('active')}
-              />
-              <KPIWidget
-                title="Low Stock"
-                value={kpiData.lowStockCount}
-                icon="alert"
-                color={kpiData.lowStockCount > 0 ? "#FF9800" : "#9E9E9E"}
-                onPress={() => handleKPIPress('lowStock')}
-              />
-              <KPIWidget
-                title="Total Value"
-                value={kpiData.totalValue}
-                format="currency"
-                icon="currency-usd"
-                color="#9C27B0"
-                onPress={() => handleKPIPress('totalValue')}
-              />
-            </View>
-            {/* Low Stock Banner */}
-            <LowStockBanner
-              lowStockItems={lowStockItems}
-              onManageStock={() => setShowInventory(true)}
-              onRestock={handleRestock}
-            />
-            {/* Inventory Table Component */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoid}>
+          {/* Content */}
+          {showInventory ? (
+            // Better performance: let InventoryTable's FlatList be the only scroller.
             <InventoryTable
               inventory={currentInventory}
               isLoading={isLoading}
@@ -1559,450 +1254,368 @@ export default function AddInventoryScreen({ navigation, route }) {
               onDeleteProduct={(item) => console.log('Delete:', item.id)}
               onProductPress={handleEditInventoryItem}
               businessId={currentBusinessId}
-              error={inventoryError} // NEW: pass error to table
+              error={inventoryError}
+              // Forwarded to FlatList inside InventoryTable (see note below)
+              ListHeaderComponent={InventoryHeader}
+              ListEmptyComponent={isInventoryEmpty && !inventoryError ? EmptyInventory : null}
             />
-            {/* Show error or empty state below table if needed */}
-            {inventoryError && (
-              <View style={styles.errorContainer} accessibilityRole="alert">
-                <Text style={styles.errorText}>{inventoryError}</Text>
-              </View>
-            )}
-          </View>
-        ) : (
-          // Add Plant View
-          <ScrollView 
-            style={styles.content}
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-            refreshControl={
-              <RefreshControl
-                refreshing={refreshing}
-                onRefresh={onRefresh}
-                colors={['#4CAF50']}
-                tintColor="#4CAF50"
-              />
-            }
-          >
-            {/* Search results */}
-            {searchResults.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                  Search Results ({searchResults.length})
-                </Text>
-                
-                <View style={styles.searchResultsContainer}>
-                  <FlatList
-                    data={searchResults}
-                    renderItem={renderSearchResult}
-                    keyExtractor={(item, index) => item.id || `search-${index}`}
-                    scrollEnabled={false}
-                    showsVerticalScrollIndicator={false}
-                  />
-                </View>
-              </View>
-            )}
+          ) : (
+            <ScrollView
+              style={styles.content}
+              contentContainerStyle={styles.scrollContent}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              refreshControl={
+                <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
+              }
+            >
+              {renderProductTypeSelector()}
 
-            {/* Selected plant form */}
-            {selectedPlant && (
-              <View style={styles.selectedPlantSection}>
-                <Text style={styles.sectionTitle}>
-                  <MaterialCommunityIcons name="check-circle" size={20} color="#4CAF50" />
-                  {' '}Selected: {selectedPlant.common_name}
-                </Text>
-                
-                {/* NEW: Auto-populated Plant Care Information */}
-                <View style={styles.plantCareSection}>
-                  <Text style={styles.sectionTitle}>
-                    <MaterialCommunityIcons name="information" size={20} color="#4CAF50" />
-                    {' '}Plant Care Information (Auto-filled)
-                  </Text>
-                  
-                  <View style={styles.careInfoGrid}>
-                    {/* Watering Information */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="water" size={20} color="#2196F3" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Watering</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.water_days ? `Every ${selectedPlant.water_days} days` : 'Not specified'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Light Requirements */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="weather-sunny" size={20} color="#FFC107" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Light</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.light || 'Not specified'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Temperature Range */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="thermometer" size={20} color="#FF5722" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Temperature</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.temperature 
-                            ? `${selectedPlant.temperature.min}°C - ${selectedPlant.temperature.max}°C`
-                            : 'Not specified'
-                          }
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Humidity */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="water-percent" size={20} color="#00BCD4" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Humidity</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.humidity || 'Not specified'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Pet Safety */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons 
-                          name={selectedPlant.pets === 'Pet-friendly' ? 'paw' : 'paw-off'} 
-                          size={20} 
-                          color={selectedPlant.pets === 'Pet-friendly' ? '#4CAF50' : '#FF5722'} 
+              {productType === 'plant' && (
+                <>
+                  {searchResults.length > 0 && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Search Results ({searchResults.length})</Text>
+                      <View style={styles.searchResultsContainer}>
+                        <FlatList
+                          data={searchResults}
+                          renderItem={renderSearchResult}
+                          keyExtractor={(item, index) => item.id || `search-${index}`}
+                          scrollEnabled={false}
+                          showsVerticalScrollIndicator={false}
                         />
                       </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Pet Safety</Text>
-                        <Text style={[
-                          styles.careInfoValue,
-                          { color: selectedPlant.pets === 'Pet-friendly' ? '#4CAF50' : '#FF5722' }
-                        ]}>
-                          {selectedPlant.pets || 'Not specified'}
-                        </Text>
-                      </View>
                     </View>
+                  )}
 
-                    {/* Difficulty Level */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="chart-line" size={20} color="#9C27B0" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Care Difficulty</Text>
-                        <View style={styles.difficultyContainer}>
-                          <Text style={styles.careInfoValue}>
-                            Level {selectedPlant.difficulty || 'N/A'}/10
-                          </Text>
-                          {selectedPlant.difficulty && (
-                            <View style={styles.difficultyBar}>
-                              <View 
-                                style={[
-                                  styles.difficultyFill,
-                                  { 
-                                    width: `${(selectedPlant.difficulty / 10) * 100}%`,
-                                    backgroundColor: 
-                                      selectedPlant.difficulty <= 3 ? '#4CAF50' :
-                                      selectedPlant.difficulty <= 6 ? '#FFC107' : '#FF5722'
-                                  }
-                                ]} 
+                  {selectedPlant && (
+                    <View style={styles.selectedPlantSection}>
+                      <Text style={styles.sectionTitle}>
+                        <MaterialCommunityIcons name="check-circle" size={20} color="#4CAF50" /> Selected: {selectedPlant.common_name}
+                      </Text>
+
+                      {/* Plant care info */}
+                      <View style={styles.plantCareSection}>
+                        <Text style={styles.sectionTitle}>
+                          <MaterialCommunityIcons name="information" size={20} color="#4CAF50" /> Plant Care Information (Auto-filled)
+                        </Text>
+
+                        <View style={styles.careInfoGrid}>
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="water" size={20} color="#2196F3" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Watering</Text>
+                              <Text style={styles.careInfoValue}>
+                                {selectedPlant.water_days ? `Every ${selectedPlant.water_days} days` : 'Not specified'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="weather-sunny" size={20} color="#FFC107" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Light</Text>
+                              <Text style={styles.careInfoValue}>{selectedPlant.light || 'Not specified'}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="thermometer" size={20} color="#FF5722" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Temperature</Text>
+                              <Text style={styles.careInfoValue}>
+                                {selectedPlant.temperature
+                                  ? `${selectedPlant.temperature.min}°C - ${selectedPlant.temperature.max}°C`
+                                  : 'Not specified'}
+                              </Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="water-percent" size={20} color="#00BCD4" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Humidity</Text>
+                              <Text style={styles.careInfoValue}>{selectedPlant.humidity || 'Not specified'}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}>
+                              <MaterialCommunityIcons
+                                name={selectedPlant.pets === 'Pet-friendly' ? 'paw' : 'paw-off'}
+                                size={20}
+                                color={selectedPlant.pets === 'Pet-friendly' ? '#4CAF50' : '#FF5722'}
                               />
                             </View>
-                          )}
-                        </View>
-                      </View>
-                    </View>
-
-                    {/* Repotting */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="flower" size={20} color="#795548" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Repotting</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.repot || 'Not specified'}
-                        </Text>
-                      </View>
-                    </View>
- 
-                    {/* Origin */}
-                    <View style={styles.careInfoItem}>
-                      <View style={styles.careInfoIcon}>
-                        <MaterialCommunityIcons name="earth" size={20} color="#607D8B" />
-                      </View>
-                      <View style={styles.careInfoContent}>
-                        <Text style={styles.careInfoLabel}>Origin</Text>
-                        <Text style={styles.careInfoValue}>
-                          {selectedPlant.origin || 'Not specified'}
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-
-                  {/* Common Problems Accordion */}
-                  {selectedPlant.common_problems && selectedPlant.common_problems.length > 0 && (
-                    <View style={styles.commonProblemsSection}>
-                      <TouchableOpacity 
-                        style={styles.commonProblemsHeader}
-                        onPress={() => setShowCommonProblems(!showCommonProblems)}
-                      >
-                        <MaterialCommunityIcons name="alert-circle" size={20} color="#FF9800" />
-                        <Text style={styles.commonProblemsTitle}>Common Problems & Solutions</Text>
-                        <MaterialCommunityIcons 
-                          name={showCommonProblems ? "chevron-up" : "chevron-down"} 
-                          size={20} 
-                          color="#666" 
-                        />
-                      </TouchableOpacity>
-                      
-                      {showCommonProblems && (
-                        <View style={styles.commonProblemsList}>
-                          {selectedPlant.common_problems.map((problem, index) => (
-                            <View key={index} style={styles.problemItem}>
-                              <Text style={styles.problemSymptom}>
-                                <MaterialCommunityIcons name="circle" size={6} color="#FF9800" />
-                                {' '}{problem.symptom}
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Pet Safety</Text>
+                              <Text style={[styles.careInfoValue, { color: selectedPlant.pets === 'Pet-friendly' ? '#4CAF50' : '#FF5722' }]}>
+                                {selectedPlant.pets || 'Not specified'}
                               </Text>
-                              <Text style={styles.problemCause}>{problem.cause}</Text>
                             </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="chart-line" size={20} color="#9C27B0" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Care Difficulty</Text>
+                              <View style={styles.difficultyContainer}>
+                                <Text style={styles.careInfoValue}>Level {selectedPlant.difficulty || 'N/A'}/10</Text>
+                                {!!selectedPlant.difficulty && (
+                                  <View style={styles.difficultyBar}>
+                                    <View
+                                      style={[
+                                        styles.difficultyFill,
+                                        {
+                                          width: `${(selectedPlant.difficulty / 10) * 100}%`,
+                                          backgroundColor:
+                                            selectedPlant.difficulty <= 3 ? '#4CAF50' :
+                                              selectedPlant.difficulty <= 6 ? '#FFC107' : '#FF5722'
+                                        }
+                                      ]}
+                                    />
+                                  </View>
+                                )}
+                              </View>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="flower" size={20} color="#795548" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Repotting</Text>
+                              <Text style={styles.careInfoValue}>{selectedPlant.repot || 'Not specified'}</Text>
+                            </View>
+                          </View>
+
+                          <View style={styles.careInfoItem}>
+                            <View style={styles.careInfoIcon}><MaterialCommunityIcons name="earth" size={20} color="#607D8B" /></View>
+                            <View style={styles.careInfoContent}>
+                              <Text style={styles.careInfoLabel}>Origin</Text>
+                              <Text style={styles.careInfoValue}>{selectedPlant.origin || 'Not specified'}</Text>
+                            </View>
+                          </View>
+                        </View>
+
+                        {selectedPlant.common_problems?.length > 0 && (
+                          <View style={styles.commonProblemsSection}>
+                            <TouchableOpacity
+                              style={styles.commonProblemsHeader}
+                              onPress={() => setShowCommonProblems(!showCommonProblems)}
+                            >
+                              <MaterialCommunityIcons name="alert-circle" size={20} color="#FF9800" />
+                              <Text style={styles.commonProblemsTitle}>Common Problems & Solutions</Text>
+                              <MaterialCommunityIcons
+                                name={showCommonProblems ? "chevron-up" : "chevron-down"}
+                                size={20}
+                                color="#666"
+                              />
+                            </TouchableOpacity>
+
+                            {showCommonProblems && (
+                              <View style={styles.commonProblemsList}>
+                                {selectedPlant.common_problems.map((problem, index) => (
+                                  <View key={index} style={styles.problemItem}>
+                                    <Text style={styles.problemSymptom}>
+                                      <MaterialCommunityIcons name="circle" size={6} color="#FF9800" /> {problem.symptom}
+                                    </Text>
+                                    <Text style={styles.problemCause}>{problem.cause}</Text>
+                                  </View>
+                                ))}
+                              </View>
+                            )}
+                          </View>
+                        )}
+
+                        <Text style={styles.careInfoNote}>
+                          💡 This information is automatically filled from our plant database and will help customers make informed decisions.
+                        </Text>
+                      </View>
+
+                      {/* Category */}
+                      <View style={styles.categorySection}>
+                        <Text style={styles.label}>Plant Category *</Text>
+                        <Text style={styles.categoryHelper}>Choose the best category for marketplace filtering</Text>
+                        <View style={styles.categoryContainer}>
+                          {productCategories.plant.map((category) => (
+                            <TouchableOpacity
+                              key={category}
+                              style={[
+                                styles.categoryChip,
+                                formData.category === category && styles.categoryChipActive
+                              ]}
+                              onPress={() => handleInputChange('category', category)}
+                            >
+                              <Text style={[
+                                styles.categoryChipText,
+                                formData.category === category && styles.categoryChipTextActive
+                              ]}>
+                                {category}
+                              </Text>
+                            </TouchableOpacity>
                           ))}
                         </View>
-                      )}
+                        {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
+                      </View>
+
+                      {/* Images */}
+                      {renderImagePicker()}
+
+                      {/* Business fields */}
+                      <View style={styles.formContainer}>
+                        <View style={styles.inputGroup}>
+                          <Text style={styles.label}>Quantity *</Text>
+                          <TextInput
+                            style={[styles.input, errors.quantity && styles.inputError]}
+                            value={formData.quantity}
+                            onChangeText={(text) => handleInputChange('quantity', text)}
+                            placeholder="Enter quantity"
+                            keyboardType="numeric"
+                          />
+                          {errors.quantity && <Text style={styles.errorText}>{errors.quantity}</Text>}
+                        </View>
+
+                        <View style={styles.inputGroup}>
+                          <Text style={styles.label}>Price *</Text>
+                          <TextInput
+                            style={[styles.input, errors.price && styles.inputError]}
+                            value={formData.price}
+                            onChangeText={(text) => handleInputChange('price', text)}
+                            placeholder="0.00"
+                            keyboardType="decimal-pad"
+                          />
+                          {errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
+                        </View>
+
+                        <View style={{ flexDirection: 'row' }}>
+                          <View style={[styles.halfInput, { marginRight: 12 }]}>
+                            <Text style={styles.label}>Min. Threshold</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={formData.minThreshold}
+                              onChangeText={(text) => handleInputChange('minThreshold', text)}
+                              placeholder="5"
+                              keyboardType="numeric"
+                            />
+                          </View>
+
+                          <View style={styles.halfInput}>
+                            <Text style={styles.label}>Discount (%)</Text>
+                            <TextInput
+                              style={styles.input}
+                              value={formData.discount}
+                              onChangeText={(text) => handleInputChange('discount', text)}
+                              placeholder="0"
+                              keyboardType="decimal-pad"
+                            />
+                          </View>
+                        </View>
+
+                        <View className="inputGroup">
+                          <Text style={styles.label}>Notes (Optional)</Text>
+                          <TextInput
+                            style={[styles.input, styles.textArea]}
+                            value={formData.notes}
+                            onChangeText={(text) => handleInputChange('notes', text)}
+                            placeholder="Additional notes..."
+                            multiline
+                            numberOfLines={3}
+                          />
+                        </View>
+                      </View>
                     </View>
                   )}
-
-                  <Text style={styles.careInfoNote}>
-                    💡 This information is automatically filled from our plant database and will help customers make informed decisions.
-                  </Text>
-                </View>
-
-                {/* Enhanced Category Selection */}
-                <View style={styles.categorySection}>
-                  <Text style={styles.label}>Plant Category *</Text>
-                  <Text style={styles.categoryHelper}>
-                    Choose the best category for marketplace filtering
-                  </Text>
-                  <View style={styles.categoryContainer}>
-                    {productCategories.plant.map((category) => (
-                      <TouchableOpacity
-                        key={category}
-                        style={[
-                          styles.categoryChip,
-                          formData.category === category && styles.categoryChipActive
-                        ]}
-                        onPress={() => handleInputChange('category', category)}
-                      >
-                        <Text style={[
-                          styles.categoryChipText,
-                          formData.category === category && styles.categoryChipTextActive
-                        ]}>
-                          {category}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  {errors.category && (
-                    <Text style={styles.errorText}>{errors.category}</Text>
-                  )}
-                </View>
-                
-                {/* NEW: Image Picker Section */}
-                {renderImagePicker()}
-                
-                {/* Business-specific form fields */}
-                <View style={styles.formContainer}>
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Quantity *</Text>
-                    <TextInput
-                      style={[styles.input, errors.quantity && styles.inputError]}
-                      value={formData.quantity}
-                      onChangeText={(text) => handleInputChange('quantity', text)}
-                      placeholder="Enter quantity"
-                      keyboardType="numeric"
-                    />
-                    {errors.quantity && (
-                      <Text style={styles.errorText}>{errors.quantity}</Text>
-                    )}
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Price *</Text>
-                    <TextInput
-                      style={[styles.input, errors.price && styles.inputError]}
-                      value={formData.price}
-                      onChangeText={(text) => handleInputChange('price', text)}
-                      placeholder="0.00"
-                      keyboardType="decimal-pad"
-                    />
-                    {errors.price && (
-                      <Text style={styles.errorText}>{errors.price}</Text>
-                    )}
-                  </View>
-
-                  <View style={styles.row}>
-                    <View style={styles.halfInput}>
-                      <Text style={styles.label}>Min. Threshold</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={formData.minThreshold}
-                        onChangeText={(text) => handleInputChange('minThreshold', text)}
-                        placeholder="5"
-                        keyboardType="numeric"
-                      />
-                    </View>
-
-                    <View style={styles.halfInput}>
-                      <Text style={styles.label}>Discount (%)</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={formData.discount}
-                        onChangeText={(text) => handleInputChange('discount', text)}
-                        placeholder="0"
-                        keyboardType="decimal-pad"
-                      />
-                    </View>
-                  </View>
-
-                  <View style={styles.inputGroup}>
-                    <Text style={styles.label}>Notes (Optional)</Text>
-                    <TextInput
-                      style={[styles.input, styles.textArea]}
-                      value={formData.notes}
-                      onChangeText={(text) => handleInputChange('notes', text)}
-                      placeholder="Additional notes..."
-                      multiline
-                      numberOfLines={3}
-                    />
-                  </View>
-                </View>
-              </View>
-            )}
-          </ScrollView>
-        )}
-
-        {/* Enhanced Save Button */}
-        {selectedPlant && !showInventory && (
-          <Animated.View 
-            style={[
-              styles.footer,
-              { opacity: fadeAnim }
-            ]}
-          >
-            <TouchableOpacity 
-              style={[styles.saveButton, isLoading && styles.saveButtonDisabled]} 
-              onPress={handleSave}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
-                  <Text style={styles.saveButtonText}>Add to Inventory</Text>
                 </>
               )}
-            </TouchableOpacity>
-          </Animated.View>
-        )}
 
-        {/* Product Edit Modal */}
-        <ProductEditModal
-          visible={showEditModal}
-          product={productToEdit}
-          onClose={() => {
-            setShowEditModal(false);
-            setProductToEdit(null);
-          }}
-          onSave={handleProductSave}
-          businessId={currentBusinessId}
-        />
+              {/* Tools / Accessories */}
+              {productType !== 'plant' && renderManualProductForm()}
+            </ScrollView>
+          )}
 
-        {/* Success Animation */}
-        {showSuccessAnimation && (
-          <Animated.View 
-            style={[
-              styles.successOverlay,
-              { opacity: successAnim }
-            ]}
-          >
-            <MaterialCommunityIcons name="check-circle" size={64} color="#4CAF50" />
-            <Text style={styles.successText}>Plant Added!</Text>
-            {lastSavedItem?.imageCount && (
-              <Text style={styles.successSubtext}>
-                With {lastSavedItem.imageCount} image{lastSavedItem.imageCount > 1 ? 's' : ''}
-              </Text>
-            )}
-          </Animated.View>
-        )}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+          {/* Save Button (when adding) */}
+          {!showInventory && (
+            ((productType === 'plant' && selectedPlant) || (productType !== 'plant' && formData.name.trim())) && (
+              <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
+                <TouchableOpacity
+                  style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
+                  onPress={handleSave}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <MaterialCommunityIcons name="plus-circle" size={20} color="#fff" />
+                      <Text style={styles.saveButtonText}>Add to Inventory</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </Animated.View>
+            )
+          )}
+
+          {/* Product Edit Modal */}
+          <ProductEditModal
+            visible={showEditModal}
+            product={productToEdit}
+            onClose={() => {
+              setShowEditModal(false);
+              setProductToEdit(null);
+            }}
+            onSave={handleProductSave}
+            businessId={currentBusinessId}
+          />
+
+          {/* Success Animation */}
+          {showSuccessAnimation && (
+            <Animated.View style={[styles.successOverlay, { opacity: successAnim }]}>
+              <MaterialCommunityIcons name="check-circle" size={64} color="#4CAF50" />
+              <Text style={styles.successText}>Item Added!</Text>
+              {!!lastSavedItem?.imageCount && (
+                <Text style={styles.successSubtext}>
+                  With {lastSavedItem.imageCount} image{lastSavedItem.imageCount > 1 ? 's' : ''}
+                </Text>
+              )}
+            </Animated.View>
+          )}
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </BusinessLayout>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  keyboardAvoid: {
-    flex: 1,
-  },
-  header: {
+  container: { flex: 1, backgroundColor: '#f8f9fa' },
+  keyboardAvoid: { flex: 1 },
+  navHeader: {
     backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  headerTop: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
   },
-  headerButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f8ff',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 16,
-  },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#216a94',
-  },
-  networkStatusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-  },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
+  backButton: { padding: 8 },
+  titleWrap: { flex: 1, marginHorizontal: 8 },
+  navTitle: { fontSize: 16, fontWeight: 'bold', color: '#216a94' },
+  subRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
+  subText: { fontSize: 12, color: '#666', marginLeft: 4 },
+  headerActions: { flexDirection: 'row', gap: 8 },
+  headerButton: { padding: 8, borderRadius: 6, backgroundColor: '#f0f8ff' },
+  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  headerCenter: { flex: 1, alignItems: 'center', marginHorizontal: 16 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#216a94' },
+  networkStatusContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+  headerSubtitle: { fontSize: 12, color: '#666', marginLeft: 4 },
+
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -2012,33 +1625,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e0e0e0',
     marginTop: 8,
+    marginHorizontal: 16
   },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: '#333',
-    marginLeft: 8,
-  },
-  speechButton: {
-    paddingHorizontal: 8,
-  },
-  content: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 120,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 16,
-  },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 16, color: '#333', marginLeft: 8 },
+  speechButton: { paddingHorizontal: 8 },
+
+  content: { flex: 1 },
+  scrollContent: { padding: 16, paddingBottom: 120 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '700', color: '#333', marginBottom: 16 },
+
   searchResultsContainer: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -2049,468 +1645,177 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
   },
-  searchResultItem: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  lastSearchResultItem: {
-    borderBottomWidth: 0,
-  },
-  searchResultContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-  },
+  searchResultItem: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#f0f0f0' },
+  lastSearchResultItem: { borderBottomWidth: 0 },
+  searchResultContent: { flexDirection: 'row', alignItems: 'center', padding: 16 },
   plantIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#f0f9f3',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
+    width: 40, height: 40, borderRadius: 20, backgroundColor: '#f0f9f3', justifyContent: 'center', alignItems: 'center', marginRight: 12
   },
-  searchResultInfo: {
-    flex: 1,
-  },
-  searchResultName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
-  },
-  searchResultScientific: {
-    fontSize: 14,
-    fontStyle: 'italic',
-    color: '#666',
-    marginBottom: 6,
-  },
-  attributesRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  attribute: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  attributeText: {
-    fontSize: 10,
-    color: '#666',
-    marginLeft: 4,
-  },
-  addButtonContainer: {
-    alignItems: 'center',
-  },
-  addButtonText: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  selectedPlantSection: {
-    marginTop: 20,
-  },
-  
-  // NEW: Image picker styles
+  searchResultInfo: { flex: 1 },
+  searchResultName: { fontSize: 16, fontWeight: '600', color: '#333', marginBottom: 4 },
+  searchResultScientific: { fontSize: 14, fontStyle: 'italic', color: '#666', marginBottom: 6 },
+  attribute: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
+  attributeText: { fontSize: 10, color: '#666', marginLeft: 4 },
+  addButtonContainer: { alignItems: 'center' },
+  addButtonText: { fontSize: 10, color: '#4CAF50', fontWeight: '600', marginTop: 2 },
+  selectedPlantSection: { marginTop: 20 },
+
+  // Image picker
   imageSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
+    elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
-  imageGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginVertical: 12,
-  },
-  imageContainer: {
-    position: 'relative',
-  },
-  selectedImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
-  },
+  imageGrid: { flexDirection: 'row', flexWrap: 'wrap', marginVertical: 12 },
+  imageContainer: { position: 'relative', marginRight: 12, marginBottom: 12 },
+  selectedImage: { width: 80, height: 80, borderRadius: 8, backgroundColor: '#f5f5f5' },
   removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#f44336',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
+    position: 'absolute', top: -8, right: -8, backgroundColor: '#f44336', borderRadius: 12,
+    width: 24, height: 24, justifyContent: 'center', alignItems: 'center',
   },
-  addImageButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  addImageButtons: { flexDirection: 'row' },
   addImageButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    borderStyle: 'dashed',
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f9f3',
+    width: 80, height: 80, borderRadius: 8, borderWidth: 2, borderColor: '#4CAF50', borderStyle: 'dashed',
+    justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f9f3', marginRight: 12
   },
-  addImageButtonText: {
-    fontSize: 10,
-    color: '#4CAF50',
-    fontWeight: '600',
-    marginTop: 4,
-  },
-  imageHint: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-    textAlign: 'center',
-  },
-  
+  addImageButtonText: { fontSize: 10, color: '#4CAF50', fontWeight: '600', marginTop: 4 },
+  imageHint: { fontSize: 12, color: '#666', fontStyle: 'italic', textAlign: 'center' },
+
   formContainer: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    backgroundColor: '#fafafa',
-  },
-  inputError: {
-    borderColor: '#f44336',
-    backgroundColor: '#ffebee',
-  },
-  textArea: {
-    height: 60,
-    textAlignVertical: 'top',
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  halfInput: {
-    flex: 1,
-  },
-  errorText: {
-    color: '#f44336',
-    fontSize: 12,
-    marginTop: 4,
-  },
-  footer: {
-    padding: 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-  },
-  saveButton: {
-    backgroundColor: '#4CAF50',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 8,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#bdbdbd',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  inventoryContainer: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  kpiRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 8,
-  },
+  inputGroup: { marginBottom: 16 },
+  label: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 6 },
+  input: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, backgroundColor: '#fafafa' },
+  inputError: { borderColor: '#f44336', backgroundColor: '#ffebee' },
+  textArea: { height: 60, textAlignVertical: 'top' },
+  row: { flexDirection: 'row', gap: 12 },
+  halfInput: { flex: 1 },
+  errorText: { color: '#f44336', fontSize: 12, marginTop: 4 },
+
+  inventoryContainer: { flex: 1, backgroundColor: '#f8f9fa' },
+  kpiRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 12, justifyContent: 'space-between' },
+
   successOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
+    position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center', alignItems: 'center', zIndex: 1000,
   },
-  successText: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#fff',
-    marginTop: 16,
-  },
-  successSubtext: {
-    fontSize: 14,
-    color: '#fff',
-    marginTop: 8,
-    opacity: 0.8,
-  },
+  successText: { fontSize: 20, fontWeight: '700', color: '#fff', marginTop: 16 },
+  successSubtext: { fontSize: 14, color: '#fff', marginTop: 8, opacity: 0.8 },
+
   productTypeSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
+    elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
-  productTypeContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 8,
-  },
+  productTypeContainer: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 8 },
   productTypeButton: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
-    marginHorizontal: 4,
-       backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    alignItems: 'center',
-    justifyContent: 'center',
+    flex: 1, paddingVertical: 12, borderRadius: 8, marginHorizontal: 4, backgroundColor: '#f5f5f5',
+    borderWidth: 1, borderColor: '#e0e0e0', alignItems: 'center', justifyContent: 'center',
   },
-  productTypeButtonActive: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#388E3C',
-  },
-  productTypeIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  productTypeLabel: {
-    fontSize: 14,
-    color: '#333',
-  },
-  categoryContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  categoryChip: {
-    backgroundColor: '#f0f9f3',
-    borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-  },
-  categoryChipActive: {
-    backgroundColor: '#4CAF50',
-  },
-  categoryChipText: {
-    color: '#4CAF50',
-    fontWeight: '500',
-  },
-  categoryChipTextActive: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  
-  // NEW: Plant Care Information Styles
+  productTypeButtonActive: { backgroundColor: '#4CAF50', borderColor: '#388E3C' },
+  productTypeIcon: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginBottom: 4 },
+  productTypeLabel: { fontSize: 14, color: '#333' },
+
+  categoryContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
+  categoryChip: { backgroundColor: '#f0f9f3', borderRadius: 16, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: '#4CAF50', marginRight: 8, marginBottom: 8 },
+  categoryChipActive: { backgroundColor: '#4CAF50' },
+  categoryChipText: { color: '#4CAF50', fontWeight: '500' },
+  categoryChipTextActive: { color: '#fff', fontWeight: '700' },
+
   plantCareSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
-  careInfoGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-    marginVertical: 12,
+  searchBelow: {
+    marginTop: 12,   // space under the cards
+    marginHorizontal: 0,
   },
+  careInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', marginVertical: 12 },
   careInfoItem: {
-    flexDirection: 'row',
-    width: '48%', // Two items per row
-    alignItems: 'center',
-    backgroundColor: '#f9f9f9',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#e8e8e8',
+    flexDirection: 'row', width: '48%', alignItems: 'center', backgroundColor: '#f9f9f9',
+    borderRadius: 8, padding: 12, marginBottom: 8, borderWidth: 1, borderColor: '#e8e8e8', marginRight: '4%'
   },
   careInfoIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    backgroundColor: '#fff',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center', marginRight: 12,
+    backgroundColor: '#fff', elevation: 1, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.1, shadowRadius: 2,
   },
-  careInfoContent: {
-    flex: 1,
-  },
-  careInfoLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 2,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  careInfoValue: {
-    fontSize: 14,
-    color: '#333',
-    fontWeight: '500',
-  },
-  difficultyContainer: {
-    alignItems: 'flex-start',
-  },
-  difficultyBar: {
-    width: '100%',
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#e0e0e0',
-    overflow: 'hidden',
-    marginTop: 4,
-  },
-  difficultyFill: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  commonProblemsSection: {
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingTop: 16,
-  },
+  careInfoContent: { flex: 1 },
+  careInfoLabel: { fontSize: 12, fontWeight: '600', color: '#666', marginBottom: 2, textTransform: 'uppercase', letterSpacing: 0.5 },
+  careInfoValue: { fontSize: 14, color: '#333', fontWeight: '500' },
+  difficultyContainer: { alignItems: 'flex-start' },
+  difficultyBar: { width: '100%', height: 6, borderRadius: 3, backgroundColor: '#e0e0e0', overflow: 'hidden', marginTop: 4 },
+  difficultyFill: { height: '100%', borderRadius: 3 },
+  commonProblemsSection: { marginTop: 16, borderTopWidth: 1, borderTopColor: '#e0e0e0', paddingTop: 16 },
   commonProblemsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    backgroundColor: '#fff8e1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 8,
+    backgroundColor: '#fff8e1', borderRadius: 8, paddingHorizontal: 12, marginBottom: 8,
   },
-  commonProblemsTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#E65100',
-    flex: 1,
-    marginLeft: 8,
-  },
-  commonProblemsList: {
-    backgroundColor: '#fafafa',
-    borderRadius: 8,
-    padding: 12,
-  },
-  problemItem: {
-    marginBottom: 12,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  problemSymptom: {
-    fontSize: 14,
-    color: '#E65100',
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  problemCause: {
-    fontSize: 13,
-    color: '#666',
-    fontStyle: 'italic',
-    paddingLeft: 12,
-  },
+  commonProblemsTitle: { fontSize: 14, fontWeight: '600', color: '#E65100', flex: 1, marginLeft: 8 },
+  commonProblemsList: { backgroundColor: '#fafafa', borderRadius: 8, padding: 12 },
+  problemItem: { marginBottom: 12, paddingBottom: 8, borderBottomWidth: 1, borderBottomColor: '#e0e0e0' },
+  problemSymptom: { fontSize: 14, color: '#E65100', fontWeight: '600', marginBottom: 4 },
+  problemCause: { fontSize: 13, color: '#666', fontStyle: 'italic', paddingLeft: 12 },
   careInfoNote: {
-    fontSize: 12,
-    color: '#4CAF50',
-    fontStyle: 'italic',
-    textAlign: 'center',
-    marginTop: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    backgroundColor: '#f0f9f3',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+    fontSize: 12, color: '#4CAF50', fontStyle: 'italic', textAlign: 'center', marginTop: 16, paddingHorizontal: 16,
+    paddingVertical: 8, backgroundColor: '#f0f9f3', borderRadius: 8, borderWidth: 1, borderColor: '#4CAF50',
   },
   categorySection: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16, elevation: 1,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
+  },
+  categoryHelper: { fontSize: 12, color: '#666', marginBottom: 8, fontStyle: 'italic' },
+
+  // Empty state
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  categoryHelper: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 8,
-    fontStyle: 'italic',
-  },
-  errorContainer: {
-    padding: 16,
-    backgroundColor: '#fff3f3',
-    borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#f44336',
-    marginTop: 16,
+    borderColor: '#eef2f5',
   },
+  emptyTitle: { marginTop: 12, fontSize: 18, fontWeight: '700', color: '#37474F' },
+  emptySubtitle: { marginTop: 6, fontSize: 14, color: '#78909C', textAlign: 'center', paddingHorizontal: 16 },
+  primaryBtn: { flexDirection: 'row', alignItems: 'center', marginTop: 16, paddingHorizontal: 16, paddingVertical: 10, backgroundColor: '#216a94', borderRadius: 20 },
+  primaryBtnText: { color: '#fff', fontWeight: '700', marginLeft: 6 },
+
+  errorContainer: { padding: 16, backgroundColor: '#fff3f3', borderRadius: 8, borderWidth: 1, borderColor: '#f44336', marginTop: 16 },
+
+  // Floating action button (ensure it exists)
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#216a94',
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.5,
+  },
+  inlineSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    width: '100%',
+  },
+  inlineSearchInput: {
+    flex: 1,
+    marginLeft: 8,
+    paddingVertical: 6,
+    fontSize: 14,
+    color: '#333',
+  },
+
 });

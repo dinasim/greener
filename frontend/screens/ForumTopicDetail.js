@@ -3,8 +3,8 @@ import { View, Text, ScrollView, ActivityIndicator, TextInput, TouchableOpacity,
 import { MaterialIcons, MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import ToastMessage from '../marketplace/components/ToastMessage';
-import NavigationBar from '../components/NavigationBar';
-
+import MainLayout from '../components/MainLayout';
+import BusinessLayout from '../Business/components/BusinessLayout';
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
 
 function getInitials(name) {
@@ -59,11 +59,24 @@ export default function ForumTopicDetail({ route, navigation }) {
   const [deletingReply, setDeletingReply] = useState(false);
   const [userEmail, setUserEmail] = useState('');
   const likeAnim = useRef(new Animated.Value(1)).current;
-
+  const fromBusiness = route?.params?.fromBusiness === true;
+  const [businessId, setBusinessId] = useState(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedBusinessId = await AsyncStorage.getItem('businessId');
+        const email = await AsyncStorage.getItem('userEmail');
+        setBusinessId(storedBusinessId || email || null);
+      } catch {
+        setBusinessId(null);
+      }
+    })();
+  }, []);
   useEffect(() => {
     fetchTopicAndReplies();
     AsyncStorage.getItem('userEmail').then(email => setUserEmail(email || ''));
   }, [topicId]);
+  const Layout = fromBusiness ? BusinessLayout : MainLayout;
 
   const fetchTopicAndReplies = async () => {
     setLoading(true);
@@ -194,128 +207,133 @@ export default function ForumTopicDetail({ route, navigation }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Go Back Arrow */}
-        <View style={styles.headerRow}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back" size={28} color="#205d29" />
-          </TouchableOpacity>
-        </View>
-        <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 90 }}>
-          {/* Topic Card */}
-          <View style={styles.topicCard}>
-            <View style={styles.topicHeader}>
-              <Avatar name={topic.author} size={44} uri={topic.authorAvatar} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.title}>{topic.title}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
-                  <Text style={styles.author}>{topic.author || 'Anonymous'}</Text>
-                  <MaterialCommunityIcons name="circle-small" size={18} color="#bbb" />
-                  <Text style={styles.metaText}>{new Date(topic.timestamp).toLocaleString()}</Text>
-                </View>
-              </View>
-              {/* Removed like/upvote for main topic */}
-            </View>
-            <Text style={styles.content}>{topic.content}</Text>
-            <View style={styles.topicMetaRow}>
-              <View style={styles.topicMetaItem}>
-                <MaterialCommunityIcons name="comment-multiple-outline" size={16} color="#888" />
-                <Text style={styles.metaText}>{replies.length} Replies</Text>
-              </View>
-              {topic.category && (
-                <View style={styles.categoryBadgeSmall}>
-                  <MaterialCommunityIcons 
-                    name={getCategoryIcon(topic.category)} 
-                    size={12} 
-                    color="#4CAF50" 
-                  />
-                  <Text style={styles.categoryText}>{getCategoryDisplayName(topic.category)}</Text>
-                </View>
-              )}
-            </View>
+    <Layout
+      navigation={navigation}
+      currentTab="forum"
+      {...(fromBusiness ? { businessId, badges: {} } : {})}
+    >
+      <SafeAreaView style={styles.container}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {/* Go Back Arrow */}
+          <View style={styles.headerRow}>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <MaterialIcons name="arrow-back" size={28} color="#205d29" />
+            </TouchableOpacity>
           </View>
+          <ScrollView style={styles.scroll} contentContainerStyle={{ paddingBottom: 140 }}>
+            {/* Topic Card */}
+            <View style={styles.topicCard}>
+              <View style={styles.topicHeader}>
+                <Avatar name={topic.author} size={44} uri={topic.authorAvatar} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={styles.title}>{topic.title}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 2 }}>
+                    <Text style={styles.author}>{topic.author || 'Anonymous'}</Text>
+                    <MaterialCommunityIcons name="circle-small" size={18} color="#bbb" />
+                    <Text style={styles.metaText}>{new Date(topic.timestamp).toLocaleString()}</Text>
+                  </View>
+                </View>
+                {/* Removed like/upvote for main topic */}
+              </View>
+              <Text style={styles.content}>{topic.content}</Text>
+              <View style={styles.topicMetaRow}>
+                <View style={styles.topicMetaItem}>
+                  <MaterialCommunityIcons name="comment-multiple-outline" size={16} color="#888" />
+                  <Text style={styles.metaText}>{replies.length} Replies</Text>
+                </View>
+                {topic.category && (
+                  <View style={styles.categoryBadgeSmall}>
+                    <MaterialCommunityIcons
+                      name={getCategoryIcon(topic.category)}
+                      size={12}
+                      color="#4CAF50"
+                    />
+                    <Text style={styles.categoryText}>{getCategoryDisplayName(topic.category)}</Text>
+                  </View>
+                )}
+              </View>
+            </View>
 
-          {/* Replies Section */}
-          <Text style={styles.repliesHeader}>Replies</Text>
-          {replies.length === 0 ? (
-            <Text style={styles.noReplies}>No replies yet. Be the first to reply!</Text>
-          ) : (
-            replies.map((reply, idx) => (
-              <View key={reply.id || idx} style={styles.replyCard}>
-                <View style={styles.replyHeader}>
-                  <Avatar name={reply.author} size={32} uri={reply.authorAvatar} />
-                  <View style={{ flex: 1, marginLeft: 10 }}>
-                    <Text style={styles.replyAuthor}>{reply.author || 'Anonymous'}</Text>
-                    <Text style={styles.replyTime}>{reply.timestamp ? new Date(reply.timestamp).toLocaleString() : ''}</Text>
+            {/* Replies Section */}
+            <Text style={styles.repliesHeader}>Replies</Text>
+            {replies.length === 0 ? (
+              <Text style={styles.noReplies}>No replies yet. Be the first to reply!</Text>
+            ) : (
+              replies.map((reply, idx) => (
+                <View key={reply.id || idx} style={styles.replyCard}>
+                  <View style={styles.replyHeader}>
+                    <Avatar name={reply.author} size={32} uri={reply.authorAvatar} />
+                    <View style={{ flex: 1, marginLeft: 10 }}>
+                      <Text style={styles.replyAuthor}>{reply.author || 'Anonymous'}</Text>
+                      <Text style={styles.replyTime}>{reply.timestamp ? new Date(reply.timestamp).toLocaleString() : ''}</Text>
+                    </View>
+                    {/* Voting buttons */}
+                    <View style={{ alignItems: 'center', marginRight: 8 }}>
+                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, 1)} style={{ padding: 2 }}>
+                        <MaterialIcons name="thumb-up" size={20} color="#4CAF50" />
+                      </TouchableOpacity>
+                      <Text style={{ fontSize: 13, color: '#333', fontWeight: '600', textAlign: 'center' }}>{reply.votes || 0}</Text>
+                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, -1)} style={{ padding: 2 }}>
+                        <MaterialIcons name="thumb-down" size={20} color="#e53935" />
+                      </TouchableOpacity>
+                    </View>
+                    {/* Delete button for reply author or topic author */}
+                    {(reply.author === userEmail || topic?.author === userEmail) && (
+                      <TouchableOpacity onPress={() => deleteReply(reply.id, reply.category)} style={{ marginLeft: 4 }}>
+                        <MaterialIcons name="delete" size={20} color="#f44336" />
+                      </TouchableOpacity>
+                    )}
                   </View>
-                  {/* Voting buttons */}
-                  <View style={{ alignItems: 'center', marginRight: 8 }}>
-                    <TouchableOpacity onPress={() => handleVoteReply(reply.id, 1)} style={{ padding: 2 }}>
-                      <MaterialIcons name="thumb-up" size={20} color="#4CAF50" />
-                    </TouchableOpacity>
-                    <Text style={{ fontSize: 13, color: '#333', fontWeight: '600', textAlign: 'center' }}>{reply.votes || 0}</Text>
-                    <TouchableOpacity onPress={() => handleVoteReply(reply.id, -1)} style={{ padding: 2 }}>
-                      <MaterialIcons name="thumb-down" size={20} color="#e53935" />
-                    </TouchableOpacity>
-                  </View>
-                  {/* Delete button for reply author or topic author */}
-                  {(reply.author === userEmail || topic?.author === userEmail) && (
-                    <TouchableOpacity onPress={() => deleteReply(reply.id, reply.category)} style={{ marginLeft: 4 }}>
-                      <MaterialIcons name="delete" size={20} color="#f44336" />
-                    </TouchableOpacity>
-                  )}
+                  <Text style={styles.replyContent}>{reply.content}</Text>
                 </View>
-                <Text style={styles.replyContent}>{reply.content}</Text>
+              ))
+            )}
+          </ScrollView>
+          {/* Sticky Reply Bar */}
+          <View style={styles.replyBoxSticky}>
+            <TextInput
+              style={styles.replyInput}
+              placeholder="Write a reply..."
+              value={replyText}
+              onChangeText={setReplyText}
+              multiline
+              maxLength={1000}
+              placeholderTextColor="#aaa"
+            />
+            <TouchableOpacity style={styles.replyButton} onPress={handlePostReply} disabled={posting || !replyText.trim()}>
+              {posting ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={24} color="#fff" />}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+        {/* Toast Message always visible at root */}
+        <ToastMessage
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+          duration={3000}
+        />
+        {/* Delete Reply Confirmation Modal */}
+        {deleteReplyConfirm.visible && (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.25)', zIndex: 100, justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, minWidth: 260, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Delete Reply</Text>
+              <Text style={{ fontSize: 14, color: '#444', marginBottom: 20, textAlign: 'center' }}>
+                Are you sure you want to delete this reply? This action cannot be undone.
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+                <TouchableOpacity onPress={cancelDeleteReply} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#eee' }}>
+                  <Text style={{ color: '#333', fontWeight: 'bold' }}>No</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmDeleteReply} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#f44336' }}>
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Yes</Text>
+                </TouchableOpacity>
               </View>
-            ))
-          )}
-        </ScrollView>
-        {/* Sticky Reply Bar */}
-        <View style={styles.replyBoxSticky}>
-          <TextInput
-            style={styles.replyInput}
-            placeholder="Write a reply..."
-            value={replyText}
-            onChangeText={setReplyText}
-            multiline
-            maxLength={1000}
-            placeholderTextColor="#aaa"
-          />
-          <TouchableOpacity style={styles.replyButton} onPress={handlePostReply} disabled={posting || !replyText.trim()}>
-            {posting ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={24} color="#fff" />}
-          </TouchableOpacity>
-        </View>
-      </KeyboardAvoidingView>
-      {/* Toast Message always visible at root */}
-      <ToastMessage
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onHide={hideToast}
-        duration={3000}
-      />
-      {/* Delete Reply Confirmation Modal */}
-      {deleteReplyConfirm.visible && (
-        <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.25)', zIndex: 100, justifyContent: 'center', alignItems: 'center' }}>
-          <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, minWidth: 260, alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Delete Reply</Text>
-            <Text style={{ fontSize: 14, color: '#444', marginBottom: 20, textAlign: 'center' }}>
-              Are you sure you want to delete this reply? This action cannot be undone.
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
-              <TouchableOpacity onPress={cancelDeleteReply} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#eee' }}>
-                <Text style={{ color: '#333', fontWeight: 'bold' }}>No</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={confirmDeleteReply} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#f44336' }}>
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Yes</Text>
-              </TouchableOpacity>
             </View>
           </View>
-        </View>
-      )}
-      <NavigationBar currentTab="forum" navigation={navigation} />
-    </SafeAreaView>
+        )}
+      </SafeAreaView>
+    </Layout>
   );
 }
 

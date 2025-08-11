@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect} from 'react';
 import {
   View,
   Text,
@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { captureRef } from 'react-native-view-shot';
 import * as Sharing from 'expo-sharing';
 import MainLayout from '../components/MainLayout';
-
+import BusinessLayout from '../Business/components/BusinessLayout';
 const { width } = Dimensions.get('window');
 
 export default function DiseaseCheckerScreen({ navigation, route }) {
@@ -26,79 +26,11 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
   const [result, setResult] = useState(null);
   const [showPopup, setShowPopup] = useState(false);
   const [history, setHistory] = useState([]);
-  const [isBusiness, setIsBusiness] = useState(false);
-
+const fromBusiness = route?.params?.fromBusiness === true;
+ const [businessId, setBusinessId] = useState(null);
   const resultCardRef = useRef();
 
-  // Tabs navigation handler - match your PlantCareForumScreen
-  const handleTabPress = (tab) => {
-    if (isBusiness) {
-      switch (tab) {
-        case 'home':
-          navigation.navigate('BusinessDashboard');
-          break;
-        case 'locations':
-          navigation.navigate('BusinessLocations');
-          break;
-        case 'marketplace':
-          navigation.navigate('BusinessInventory');
-          break;
-        case 'forum':
-          navigation.navigate('BusinessForum');
-          break;
-        case 'disease':
-          navigation.navigate('DiseaseChecker');
-          break;
-        default:
-          navigation.goBack();
-      }
-    } else {
-      switch (tab) {
-        case 'home':
-          navigation.navigate('Home');
-          break;
-        case 'plants':
-          navigation.navigate('Locations');
-          break;
-        case 'marketplace':
-          navigation.navigate('MainTabs');
-          break;
-        case 'forum':
-          navigation.navigate('PlantCareForumScreen');
-          break;
-        case 'disease':
-          navigation.navigate('DiseaseChecker');
-          break;
-        default:
-          navigation.goBack();
-      }
-    }
-  };
-
-  useEffect(() => {
-    const checkUserType = async () => {
-      try {
-        if (route?.params?.business === true) {
-          setIsBusiness(true);
-          return;
-        }
-        const userType = await AsyncStorage.getItem('userType');
-        const businessId = await AsyncStorage.getItem('businessId');
-        if (userType === 'business' || businessId) {
-          setIsBusiness(true);
-        }
-        const currentRouteName = navigation.getState()?.routeNames?.[0];
-        if (currentRouteName?.includes('Business') ||
-          navigation.getState()?.routes?.some(route => route.name.includes('Business'))) {
-          setIsBusiness(true);
-        }
-      } catch (error) {
-        console.log('Error checking user type:', error);
-      }
-    };
-    checkUserType();
-  }, [route?.params, navigation]);
-
+const Layout = fromBusiness ? BusinessLayout : MainLayout;
   const renderMultiLine = (text) => {
     return text
       .split(/(?:\.\s+|;)/)
@@ -229,9 +161,9 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
   const handleOptionPress = (type) => {
     setShowPopup(false);
     if (type === 'plant') {
-      navigation.navigate(isBusiness ? 'BusinessAddPlant' : 'AddPlant');
+      navigation.navigate(fromBusiness  ? 'BusinessAddPlant' : 'AddPlant');
     } else if (type === 'site') {
-      navigation.navigate(isBusiness ? 'BusinessAddSite' : 'AddSite');
+      navigation.navigate(fromBusiness  ? 'BusinessAddSite' : 'AddSite');
     }
   };
 
@@ -254,17 +186,15 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={24} color="#4CAF50" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
-          {isBusiness ? 'Plant Health Scanner' : 'Disease Checker'}
+          {fromBusiness  ? 'Plant Health Scanner' : 'Disease Checker'}
         </Text>
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.container,
-          isBusiness && { paddingBottom: 40 }
-        ]}
-      >
+      <ScrollView contentContainerStyle={[
+   styles.container,
+   { paddingBottom: fromBusiness ? 40 : 100 }
+ ]}>
         {/* Animated Loading Indicator */}
         {loading && (
           <View style={{ alignItems: 'center', marginTop: 30 }}>
@@ -484,31 +414,19 @@ export default function DiseaseCheckerScreen({ navigation, route }) {
           </TouchableOpacity>
         </Modal>
       )}
-
-      {/* Floating Action Buttons: Only for consumers */}
-      {!isBusiness && (
-        <View style={styles.floatingContainer}>
-          <TouchableOpacity style={styles.floatingButton} onPress={() => handleTabPress('disease')}>
-            <Ionicons name="search" size={32} color="#4CAF50" />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.addButton} onPress={handleAddPress}>
-            <Ionicons name="add" size={36} color="#fff" />
-          </TouchableOpacity>
-        </View>
-      )}
     </View>
   );
 
-  // ---- Use MainLayout for consumers, plain view for business ----
-  if (!isBusiness) {
-    return (
-      <MainLayout currentTab="disease" navigation={navigation}>
-        {screenContent}
-      </MainLayout>
-    );
-  } else {
-    return screenContent;
-  }
+
+ return (
+   <Layout
+   navigation={navigation}
+    currentTab="disease"
+    {...(fromBusiness ? { businessId, badges: {} } : {})}
+   >
+     {screenContent}
+   </Layout>
+ );
 }
 
 const styles = StyleSheet.create({

@@ -16,6 +16,7 @@ import {
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
+import BusinessLayout from '../components/BusinessLayout';
 
 // Import REAL API services
 import {
@@ -69,7 +70,7 @@ const WateringChecklistScreen = ({ navigation }) => {
       ]);
 
       console.log('✅ Loaded checklist:', checklistData.totalCount, 'plants');
-      
+
       setChecklist(checklistData.checklist || []);
       setWeather(weatherData);
 
@@ -94,7 +95,7 @@ const WateringChecklistScreen = ({ navigation }) => {
       console.log('💧 Marking plant as watered:', plantId);
 
       const result = await markPlantAsWatered(plantId, 'manual');
-      
+
       console.log('✅ Plant marked as watered:', result);
 
       // Show success message
@@ -165,20 +166,20 @@ const WateringChecklistScreen = ({ navigation }) => {
   );
 
   const renderPlantItem = ({ item }) => {
-    const priorityColor = item.overdueDays > 0 ? '#F44336' : 
-                         item.needsWatering ? '#FF9800' : '#4CAF50';
-    
-    const statusIcon = item.overdueDays > 0 ? 'alert-circle' : 
-                      item.needsWatering ? 'water-outline' : 'check-circle';
+    const priorityColor = item.overdueDays > 0 ? '#F44336' :
+      item.needsWatering ? '#FF9800' : '#4CAF50';
+
+    const statusIcon = item.overdueDays > 0 ? 'alert-circle' :
+      item.needsWatering ? 'water-outline' : 'check-circle';
 
     return (
       <View style={[styles.plantItem, { borderLeftColor: priorityColor }]}>
         <View style={styles.plantInfo}>
           <View style={styles.plantHeader}>
-            <MaterialCommunityIcons 
-              name={statusIcon} 
-              size={24} 
-              color={priorityColor} 
+            <MaterialCommunityIcons
+              name={statusIcon}
+              size={24}
+              color={priorityColor}
             />
             <View style={styles.plantNames}>
               <Text style={styles.plantName}>{item.name}</Text>
@@ -227,17 +228,17 @@ const WateringChecklistScreen = ({ navigation }) => {
         </View>
 
         <TouchableOpacity
-          style={[styles.waterButton, { 
+          style={[styles.waterButton, {
             backgroundColor: item.needsWatering ? priorityColor : '#E0E0E0'
           }]}
           onPress={() => handleMarkWatered(item.id, item.name)}
           disabled={!item.needsWatering}
           accessibilityLabel={`Mark ${item.name} as watered`}
         >
-          <MaterialCommunityIcons 
-            name="water" 
-            size={20} 
-            color={item.needsWatering ? '#FFFFFF' : '#999'} 
+          <MaterialCommunityIcons
+            name="water"
+            size={20}
+            color={item.needsWatering ? '#FFFFFF' : '#999'}
           />
         </TouchableOpacity>
       </View>
@@ -249,13 +250,13 @@ const WateringChecklistScreen = ({ navigation }) => {
       <MaterialCommunityIcons name="sprout" size={64} color="#E0E0E0" />
       <Text style={styles.emptyTitle}>No Plants Found</Text>
       <Text style={styles.emptyText}>
-        {selectedFilter === 'all' 
+        {selectedFilter === 'all'
           ? 'Add plants to your inventory to see them here'
           : selectedFilter === 'needs-watering'
-          ? 'No plants need watering right now'
-          : 'No plants are overdue for watering'}
+            ? 'No plants need watering right now'
+            : 'No plants are overdue for watering'}
       </Text>
-      <TouchableOpacity 
+      <TouchableOpacity
         style={styles.addPlantButton}
         onPress={() => navigation.navigate('AddPlantScreen')}
         accessibilityLabel="Add a new plant"
@@ -268,12 +269,15 @@ const WateringChecklistScreen = ({ navigation }) => {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading watering checklist...</Text>
-        </View>
-      </SafeAreaView>
+      <BusinessLayout navigation={navigation} businessId={businessId} currentTab="insights">
+
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading watering checklist...</Text>
+          </View>
+        </SafeAreaView>
+      </BusinessLayout>
     );
   }
 
@@ -295,154 +299,161 @@ const WateringChecklistScreen = ({ navigation }) => {
   const filteredPlants = showRainSkipped ? getRainSkippedPlants() : getFilteredAndSortedPlants();
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* FIXED: Single header component with proper structure */}
-      <View style={styles.screenHeader}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-          accessible={true}
-          accessibilityLabel="Go back"
-        >
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-        
-        <Text style={styles.screenTitle}>Watering Checklist</Text>
-        
-        <TouchableOpacity 
-          style={styles.routeButton}
-          onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
-        >
-          <MaterialCommunityIcons name="routes" size={24} color="#216a94" />
-        </TouchableOpacity>
-      </View>
+    <BusinessLayout
+      navigation={navigation}
+      businessId={businessId}
+      currentTab="insights"
+      badges={{}} // optional
+    >
+      <SafeAreaView style={styles.container}>
+        {/* FIXED: Single header component with proper structure */}
+        <View style={styles.screenHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+            accessible={true}
+            accessibilityLabel="Go back"
+          >
+            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
+          </TouchableOpacity>
 
-      <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 8, marginBottom: 4 }}>
-        <TouchableOpacity
-          style={{
-            backgroundColor: !showRainSkipped ? '#4CAF50' : '#E0E0E0',
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            borderRadius: 20,
-            marginRight: 8,
-          }}
-          onPress={() => setShowRainSkipped(false)}
-        >
-          <Text style={{ color: !showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Checklist</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={{
-            backgroundColor: showRainSkipped ? '#4CAF50' : '#E0E0E0',
-            paddingHorizontal: 16,
-            paddingVertical: 8,
-            borderRadius: 20,
-          }}
-          onPress={() => setShowRainSkipped(true)}
-        >
-          <Text style={{ color: showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Auto-Watered by Rain</Text>
-        </TouchableOpacity>
-      </View>
+          <Text style={styles.screenTitle}>Watering Checklist</Text>
 
-      <FlatList
-        data={filteredPlants}
-        renderItem={renderPlantItem}
-        keyExtractor={(item) => item.id}
-        ListHeaderComponent={() => (
-          <>
-            {/* Weather card */}
-            {weather && (
-              <View style={styles.weatherCard}>
-                <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
-                <View style={styles.weatherInfo}>
-                  <Text style={styles.weatherLocation}>{weather.location}</Text>
-                  <Text style={styles.weatherCondition}>
-                    {weather.temperature}°C, {weather.condition}
-                  </Text>
-                  {weather.rainToday ? (
-                    <Text style={styles.weatherNote}>
-                      🌧️ It rained today - some plants may not need watering
+          <TouchableOpacity
+            style={styles.routeButton}
+            onPress={() => navigation.navigate('WateringRouteScreen', { businessId })}
+          >
+            <MaterialCommunityIcons name="routes" size={24} color="#216a94" />
+          </TouchableOpacity>
+        </View>
+
+        <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 8, marginBottom: 4 }}>
+          <TouchableOpacity
+            style={{
+              backgroundColor: !showRainSkipped ? '#4CAF50' : '#E0E0E0',
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+              marginRight: 8,
+            }}
+            onPress={() => setShowRainSkipped(false)}
+          >
+            <Text style={{ color: !showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Checklist</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={{
+              backgroundColor: showRainSkipped ? '#4CAF50' : '#E0E0E0',
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 20,
+            }}
+            onPress={() => setShowRainSkipped(true)}
+          >
+            <Text style={{ color: showRainSkipped ? '#fff' : '#333', fontWeight: 'bold' }}>Auto-Watered by Rain</Text>
+          </TouchableOpacity>
+        </View>
+
+        <FlatList
+          data={filteredPlants}
+          renderItem={renderPlantItem}
+          keyExtractor={(item) => item.id}
+          ListHeaderComponent={() => (
+            <>
+              {/* Weather card */}
+              {weather && (
+                <View style={styles.weatherCard}>
+                  <MaterialCommunityIcons name="weather-partly-cloudy" size={24} color="#4CAF50" />
+                  <View style={styles.weatherInfo}>
+                    <Text style={styles.weatherLocation}>{weather.location}</Text>
+                    <Text style={styles.weatherCondition}>
+                      {weather.temperature}°C, {weather.condition}
                     </Text>
-                  ) : null}
+                    {weather.rainToday ? (
+                      <Text style={styles.weatherNote}>
+                        🌧️ It rained today - some plants may not need watering
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              )}
+
+              {/* Summary cards */}
+              <View style={styles.summaryCards}>
+                <View style={styles.summaryCard}>
+                  <Text style={styles.summaryNumber}>{checklist.length}</Text>
+                  <Text style={styles.summaryLabel}>Total Plants</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={[styles.summaryNumber, { color: '#FF9800' }]}>
+                    {checklist.filter(p => p.needsWatering).length}
+                  </Text>
+                  <Text style={styles.summaryLabel}>Need Watering</Text>
+                </View>
+                <View style={styles.summaryCard}>
+                  <Text style={[styles.summaryNumber, { color: '#F44336' }]}>
+                    {checklist.filter(p => p.overdueDays > 0).length}
+                  </Text>
+                  <Text style={styles.summaryLabel}>Overdue</Text>
                 </View>
               </View>
-            )}
 
-            {/* Summary cards */}
-            <View style={styles.summaryCards}>
-              <View style={styles.summaryCard}>
-                <Text style={styles.summaryNumber}>{checklist.length}</Text>
-                <Text style={styles.summaryLabel}>Total Plants</Text>
-              </View>
-              <View style={styles.summaryCard}>
-                <Text style={[styles.summaryNumber, { color: '#FF9800' }]}>
-                  {checklist.filter(p => p.needsWatering).length}
-                </Text>
-                <Text style={styles.summaryLabel}>Need Watering</Text>
-              </View>
-              <View style={styles.summaryCard}>
-                <Text style={[styles.summaryNumber, { color: '#F44336' }]}>
-                  {checklist.filter(p => p.overdueDays > 0).length}
-                </Text>
-                <Text style={styles.summaryLabel}>Overdue</Text>
-              </View>
-            </View>
+              {/* Filter and sort controls */}
+              <View style={styles.filterRow}>
+                <View style={styles.filterButtons}>
+                  {['all', 'needs-watering', 'overdue'].map(filter => (
+                    <TouchableOpacity
+                      key={filter}
+                      style={[styles.filterButton, selectedFilter === filter && styles.filterButtonActive]}
+                      onPress={() => setSelectedFilter(filter)}
+                      accessibilityLabel={`Filter plants: ${filter === 'all' ? 'All' : filter === 'needs-watering' ? 'Need Water' : 'Overdue'}`}
+                    >
+                      <Text style={[
+                        styles.filterButtonText,
+                        selectedFilter === filter && styles.filterButtonTextActive
+                      ]}>
+                        {filter === 'all' ? 'All' :
+                          filter === 'needs-watering' ? 'Need Water' : 'Overdue'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
-            {/* Filter and sort controls */}
-            <View style={styles.filterRow}>
-              <View style={styles.filterButtons}>
-                {['all', 'needs-watering', 'overdue'].map(filter => (
-                  <TouchableOpacity
-                    key={filter}
-                    style={[styles.filterButton, selectedFilter === filter && styles.filterButtonActive]}
-                    onPress={() => setSelectedFilter(filter)}
-                    accessibilityLabel={`Filter plants: ${filter === 'all' ? 'All' : filter === 'needs-watering' ? 'Need Water' : 'Overdue'}`}
-                  >
-                    <Text style={[
-                      styles.filterButtonText,
-                      selectedFilter === filter && styles.filterButtonTextActive
-                    ]}>
-                      {filter === 'all' ? 'All' : 
-                       filter === 'needs-watering' ? 'Need Water' : 'Overdue'}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                <TouchableOpacity
+                  style={styles.sortButton}
+                  onPress={() => {
+                    const options = [
+                      { text: 'Priority', value: 'priority' },
+                      { text: 'Name', value: 'name' },
+                      { text: 'Last Watered', value: 'last-watered' }
+                    ];
+                    const currentIndex = options.findIndex(opt => opt.value === sortBy);
+                    const nextIndex = (currentIndex + 1) % options.length;
+                    setSortBy(options[nextIndex].value);
+                  }}
+                  accessibilityLabel="Sort plants"
+                >
+                  <MaterialIcons name="sort" size={20} color="#666" />
+                </TouchableOpacity>
               </View>
-              
-              <TouchableOpacity 
-                style={styles.sortButton}
-                onPress={() => {
-                  const options = [
-                    { text: 'Priority', value: 'priority' },
-                    { text: 'Name', value: 'name' },
-                    { text: 'Last Watered', value: 'last-watered' }
-                  ];
-                  const currentIndex = options.findIndex(opt => opt.value === sortBy);
-                  const nextIndex = (currentIndex + 1) % options.length;
-                  setSortBy(options[nextIndex].value);
-                }}
-                accessibilityLabel="Sort plants"
-              >
-                <MaterialIcons name="sort" size={20} color="#666" />
-              </TouchableOpacity>
-            </View>
 
-            {/* Divider */}
-            <View style={styles.divider} />
-          </>
-        )}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#4CAF50']}
-            tintColor="#4CAF50"
-          />
-        }
-        contentContainerStyle={filteredPlants.length === 0 ? styles.emptyListContainer : { paddingBottom: 20 }}
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
+              {/* Divider */}
+              <View style={styles.divider} />
+            </>
+          )}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#4CAF50']}
+              tintColor="#4CAF50"
+            />
+          }
+          contentContainerStyle={filteredPlants.length === 0 ? styles.emptyListContainer : { paddingBottom: 20 }}
+          showsVerticalScrollIndicator={false}
+        />
+      </SafeAreaView>
+    </BusinessLayout>
   );
 };
 

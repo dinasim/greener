@@ -17,7 +17,7 @@ const TABS = [
 
 export default function NavigationBar({ currentTab, navigation: propNavigation }) {
   const hookNavigation = useNavigation();
-  
+
   // Use prop navigation if provided, otherwise use hook navigation
   const navigation = propNavigation || hookNavigation;
 
@@ -27,14 +27,19 @@ export default function NavigationBar({ currentTab, navigation: propNavigation }
       console.warn('Navigation is not available or navigate function is missing');
       return;
     }
-    
+
     try {
       if (tabKey === 'home') navigation.navigate('Home');
       else if (tabKey === 'plants') navigation.navigate('Locations');
       else if (tabKey === 'ai') navigation.navigate('SmartPlantCareAssistant');
-      else if (tabKey === 'disease') navigation.navigate('DiseaseChecker');
       else if (tabKey === 'marketplace') navigation.navigate('MainTabs');
-      else if (tabKey === 'forum') navigation.navigate('PlantCareForumScreen');
+      else if (tabKey === 'disease') {
+        navigation.navigate('DiseaseChecker', { fromBusiness: false });
+      }
+      else if (tabKey === 'forum') {
+        navigation.navigate('PlantCareForumScreen', { fromBusiness: false });
+      }
+
     } catch (error) {
       console.error('Navigation error:', error);
     }

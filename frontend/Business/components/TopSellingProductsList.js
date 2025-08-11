@@ -245,163 +245,229 @@ const TopSellingProductsList = ({
   );
 
   if (isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#4CAF50" />
+  return (
+    <View style={styles.cardWrap}>
+      <View style={styles.card}>
+        <ActivityIndicator size="large" color="#216a94" />
         <Text style={styles.loadingText}>Loading sales data...</Text>
       </View>
-    );
+    </View>
+  );
   }
 
   if (error) {
     return (
-      <View style={styles.emptyContainer}>
-        <MaterialCommunityIcons name="alert-circle-outline" size={64} color="#F44336" />
-        <Text style={styles.emptyTitle}>Unable to Load Sales Data</Text>
-        <Text style={styles.emptyText}>{error}</Text>
-        <TouchableOpacity style={styles.retryButton} onPress={() => loadTopSellingProducts()}>
-          <Text style={styles.retryButtonText}>Try Again</Text>
-        </TouchableOpacity>
+      <View style={styles.cardWrap}>
+        <View style={styles.card}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#F44336" />
+          <Text style={styles.emptyTitle}>Unable to load</Text>
+          <Text style={styles.emptyText}>{error}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={() => loadTopSellingProducts()}>
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
   if (products.length === 0) {
-    return renderEmptyState();
+    return (
+      <View style={styles.cardWrap}>
+        <View style={styles.card}>
+          <MaterialCommunityIcons name="chart-line-variant" size={48} color="#E0E0E0" />
+          <Text style={styles.emptyTitle}>No Sales Data Available</Text>
+          <Text style={styles.emptyText}>
+            Start selling products to see your top performers here
+          </Text>
+        </View>
+      </View>
+    );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.listWrap}>
       <FlatList
         data={products}
-        renderItem={renderProduct}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item) => String(item.id)}
+        renderItem={({ item }) => (
+          <TouchableOpacity
+            style={styles.productCard}
+            activeOpacity={0.8}
+            onPress={() => onProductPress && onProductPress(item)}
+          >
+            {/* header row: name + pill */}
+            <View style={styles.cardHeader}>
+              <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+              <View style={[styles.pill, { backgroundColor: '#2196F3' }]}>
+                <Text style={styles.pillText}>{item.totalSold} sold</Text>
+              </View>
+            </View>
+
+            {/* details row */}
+            <View style={styles.cardDetails}>
+              <Text style={styles.detailLeft} numberOfLines={1}>
+                Last sale: {item.lastSaleDate ? new Date(item.lastSaleDate).toLocaleDateString() : '—'}
+              </Text>
+            </View>
+
+            {/* footer row */}
+            <View style={styles.cardFooter}>
+              <Text style={styles.totalText}>₪{(item.totalRevenue || 0).toFixed(2)}</Text>
+              <Text style={styles.itemsText}>Avg ₪{(item.averagePrice || 0).toFixed(2)}</Text>
+            </View>
+          </TouchableOpacity>
+        )}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={handleRefresh}
-            colors={['#4CAF50']}
-            tintColor="#4CAF50"
+            colors={['#216a94']}
+            tintColor="#216a94"
           />
         }
         showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.separator} />}
       />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
+  // Keep a base container if you need it elsewhere
   container: {
     flex: 1,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
+
+  // Match Recent Orders spacing
+  listWrap: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+  cardWrap: {
+    marginHorizontal: 16,
+    marginBottom: 24,
+  },
+
+  // Generic card (used for empty/loading/error)
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
     alignItems: 'center',
-    padding: 20,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+
+  // Loading state
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingText: {
     marginTop: 10,
-    color: '#666',
+    color: '#216a94',
     fontSize: 16,
   },
-  productItem: {
+
+  // Product item styled like an order card
+  productCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+
+  // Header row: name + small pill (like status)
+  cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#FFFFFF',
-  },
-  rankContainer: {
-    width: 40,
-    alignItems: 'center',
-  },
-  rankText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-  },
-  productInfo: {
-    flex: 1,
-    marginHorizontal: 12,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   productName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 2,
-  },
-  scientificName: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-    marginBottom: 6,
-  },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  statItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  statText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  rightSection: {
-    alignItems: 'flex-end',
-  },
-  growthContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 4,
-  },
-  growthText: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    color: '#333',
+    flex: 1,
+    marginRight: 8,
   },
-  avgPriceText: {
+  pill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: '#2196F3',
+  },
+  pillText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  // Middle row: small details
+  cardDetails: {
+    marginBottom: 8,
+  },
+  detailLeft: {
     fontSize: 12,
     color: '#666',
   },
+
+  // Footer row: totals
+  cardFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  totalText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#216a94',
+  },
+  itemsText: {
+    fontSize: 12,
+    color: '#666',
+  },
+
+  // Optional separator (not used when each row is a card)
   separator: {
     height: 1,
     backgroundColor: '#F0F0F0',
     marginHorizontal: 16,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
+
+  // Empty / error UI in a card
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 16,
+    fontSize: 16,
+    color: '#666',
+    marginTop: 12,
     textAlign: 'center',
   },
   emptyText: {
-    fontSize: 14,
-    color: '#666',
+    fontSize: 12,
+    color: '#999',
+    marginTop: 4,
     textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
   },
+
+  // Retry button styled like your "Create Order" button
   retryButton: {
-    marginTop: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    backgroundColor: '#4CAF50',
-    borderRadius: 6,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#216a94',
+    backgroundColor: '#f0f8ff',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
   },
-  retryButtonText: {
-    color: '#FFFFFF',
+  retryText: {
+    color: '#216a94',
     fontSize: 14,
     fontWeight: '600',
   },

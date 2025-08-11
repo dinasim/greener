@@ -1,7 +1,8 @@
 // Business/BusinessNavigation.js - UPDATED VERSION
-import React from 'react';
+import React, { useCallback } from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
 // Import ALL EXISTING Business Screens
@@ -38,28 +39,38 @@ const Tab = createBottomTabNavigator();
 
 // Business Tabs Navigator
 const BusinessTabs = () => {
+  const navigation = useNavigation();
+
+  // Hide the parent (user) tab bar while in business area
+  useFocusEffect(
+    useCallback(() => {
+      const parent = navigation.getParent?.();
+      parent?.setOptions({ tabBarStyle: { display: 'none' } });
+      return () => parent?.setOptions({ tabBarStyle: undefined });
+    }, [navigation])
+  );
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         headerShown: false,
-        tabBarIcon: ({ focused, color, size }) => {
+        tabBarIcon: ({ color, size }) => {
           let iconName;
-          let iconType = 'MaterialIcons';
+          let IconComponent = MaterialIcons;
 
           if (route.name === 'BusinessDashboard') {
             iconName = 'dashboard';
           } else if (route.name === 'BusinessInventory') {
             iconName = 'inventory';
           } else if (route.name === 'BusinessOrders') {
-            iconName = 'receipt-long'; // FIXED: Changed from 'receipt' to valid icon
+            iconName = 'receipt-long';
           } else if (route.name === 'BusinessProfile') {
             iconName = 'person';
           } else if (route.name === 'WateringChecklist') {
-            iconName = 'water-drop'; // FIXED: Changed to valid icon
-            iconType = 'MaterialIcons';
+            iconName = 'water-drop';
+            IconComponent = MaterialIcons;
           }
 
-          const IconComponent = iconType === 'MaterialIcons' ? MaterialIcons : MaterialCommunityIcons;
           return <IconComponent name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#216a94',
@@ -78,29 +89,29 @@ const BusinessTabs = () => {
         },
       })}
     >
-      <Tab.Screen 
-        name="BusinessDashboard" 
+      <Tab.Screen
+        name="BusinessDashboard"
         component={BusinessHomeScreen}
         options={{ title: 'Dashboard' }}
       />
-      <Tab.Screen 
-        name="BusinessInventory" 
+      <Tab.Screen
+        name="BusinessInventory"
         component={AddInventoryScreen}
         options={{ title: 'Inventory' }}
         initialParams={{ businessId: null, showInventory: true }}
       />
-      <Tab.Screen 
-        name="WateringChecklist" 
+      <Tab.Screen
+        name="WateringChecklist"
         component={WateringChecklistScreen}
         options={{ title: 'Watering' }}
       />
-      <Tab.Screen 
-        name="BusinessOrders" 
+      <Tab.Screen
+        name="BusinessOrders"
         component={BusinessOrdersScreen}
         options={{ title: 'Orders' }}
       />
-      <Tab.Screen 
-        name="BusinessProfile" 
+      <Tab.Screen
+        name="BusinessProfile"
         component={BusinessProfileScreen}
         options={{ title: 'Profile' }}
       />
@@ -108,7 +119,7 @@ const BusinessTabs = () => {
   );
 };
 
-// Main Business Stack Navigator - UPDATED WITH NEW FLOW
+// Main Business Stack Navigator
 const BusinessNavigation = () => {
   return (
     <Stack.Navigator
@@ -120,157 +131,139 @@ const BusinessNavigation = () => {
       }}
     >
       {/* Auth Flow */}
-      <Stack.Screen 
-        name="BusinessWelcomeScreen" 
-        component={BusinessWelcomeScreen} 
-      />
-      <Stack.Screen 
-        name="BusinessSignUpScreen" 
-        component={BusinessSignUpScreen}
-      />
-      <Stack.Screen 
-        name="BusinessSignInScreen" 
-        component={BusinessSignInScreen}
-      />
-      
+      <Stack.Screen name="BusinessWelcomeScreen" component={BusinessWelcomeScreen} />
+      <Stack.Screen name="BusinessSignUpScreen" component={BusinessSignUpScreen} />
+      <Stack.Screen name="BusinessSignInScreen" component={BusinessSignInScreen} />
+
       {/* Post-signup choice screen */}
-      <Stack.Screen 
-        name="BusinessInventoryChoiceScreen" 
+      <Stack.Screen
+        name="BusinessInventoryChoiceScreen"
         component={BusinessInventoryChoiceScreen}
         options={{ title: 'Setup Your Business' }}
       />
-      
+
       {/* Setup Flow */}
-      <Stack.Screen 
-        name="BusinessInventoryScreen" 
-        component={BusinessInventoryScreen}
-      />
-      <Stack.Screen 
-        name="BusinessInventorySetupScreen" 
+      <Stack.Screen name="BusinessInventoryScreen" component={BusinessInventoryScreen} />
+      <Stack.Screen
+        name="BusinessInventorySetupScreen"
         component={BusinessInventoryScreen}
         options={{ title: 'Setup Inventory' }}
       />
-      
+
       {/* Main App Flow */}
-      <Stack.Screen 
-        name="BusinessHomeScreen" 
-        component={BusinessHomeScreen}
+      <Stack.Screen name="BusinessHomeScreen" component={BusinessHomeScreen} />
+      <Stack.Screen name="BusinessTabs" component={BusinessTabs} />
+
+      {/* Orders / Profile */}
+      <Stack.Screen
+        name="BusinessOrdersScreen"
+        component={BusinessOrdersScreen}
+        options={{ title: 'Orders' }}
       />
-      <Stack.Screen 
-        name="BusinessTabs" 
-        component={BusinessTabs}
+      <Stack.Screen
+        name="BusinessProfileScreen"
+        component={BusinessProfileScreen}
+        options={{ title: 'Business Profile' }}
       />
-      
-      {/* FIXED: All previously missing screens are now properly defined */}
-      <Stack.Screen 
-        name="BusinessOrdersScreen" 
-        component={BusinessOrdersScreen} 
-        options={{ title: 'Orders' }} 
-      />
-      <Stack.Screen 
-        name="BusinessProfileScreen" 
-        component={BusinessProfileScreen} 
-        options={{ title: 'Business Profile' }} 
-      />
-      
-      {/* Individual Screens */}
-      <Stack.Screen 
-        name="CustomerListScreen" 
+
+      {/* Customers */}
+      <Stack.Screen
+        name="CustomerListScreen"
         component={CustomerListScreen}
         options={{ title: 'Customers' }}
       />
-      
-      {/* Watering & Plant Care Screens */}
-      <Stack.Screen 
-        name="WateringChecklistScreen" 
+      <Stack.Screen
+        name="BusinessCustomersScreen"
+        component={BusinessCustomersScreen}
+        options={{ title: 'Customers' }}
+      />
+
+      {/* Watering */}
+      <Stack.Screen
+        name="WateringChecklistScreen"
         component={WateringChecklistScreen}
         options={{ title: 'Watering Checklist' }}
       />
-      <Stack.Screen 
-        name="GPSWateringNavigator" 
+      <Stack.Screen
+        name="GPSWateringNavigator"
         component={GPSWateringNavigator}
         options={{ title: 'GPS Navigation' }}
       />
-      <Stack.Screen 
-        name="WateringRouteScreen" 
+      <Stack.Screen
+        name="WateringRouteScreen"
         component={WateringRouteScreen}
         options={{ title: 'Watering Routes' }}
       />
-      
-      {/* Notification Screens */}
-      <Stack.Screen 
-        name="NotificationCenterScreen" 
+
+      {/* Notifications */}
+      <Stack.Screen
+        name="NotificationCenterScreen"
         component={NotificationCenterScreen}
         options={{ title: 'Notifications' }}
       />
-      <Stack.Screen 
-        name="NotificationSettingsScreen" 
+      <Stack.Screen
+        name="NotificationSettingsScreen"
         component={NotificationSettingsScreen}
         options={{ title: 'Notification Settings' }}
       />
-      <Stack.Screen 
-        name="BusinessNotificationsScreen" 
+      <Stack.Screen
+        name="BusinessNotificationsScreen"
         component={BusinessNotificationsScreen}
         options={{ title: 'Business Notifications' }}
       />
-      
-      {/* Forum Screens - FIXED: Added missing ForumTopicDetail */}
-      <Stack.Screen 
-        name="PlantCareForumScreen" 
+
+      {/* Forum */}
+      <Stack.Screen
+        name="PlantCareForumScreen"
         component={PlantCareForumScreen}
         options={{ title: 'Plant Care Forum' }}
       />
-      <Stack.Screen 
-        name="ForumTopicDetail" 
+      <Stack.Screen
+        name="ForumTopicDetail"
         component={require('../screens/ForumTopicDetail').default}
         options={{ title: 'Forum Topic' }}
       />
-      
-      {/* Other Screens */}
-      <Stack.Screen 
-        name="BusinessProductDetailScreen" 
+
+      {/* Products / Settings / Insights / Weather */}
+      <Stack.Screen
+        name="BusinessProductDetailScreen"
         component={BusinessProductDetailScreen}
         options={{ title: 'Product Details' }}
       />
-      <Stack.Screen 
-        name="AddInventoryScreen" 
+      <Stack.Screen
+        name="AddInventoryScreen"
         component={AddInventoryScreen}
         options={{ title: 'Add Product' }}
       />
-      <Stack.Screen 
-        name="CreateOrderScreen" 
+      <Stack.Screen
+        name="CreateOrderScreen"
         component={CreateOrderScreen}
         options={{ title: 'Create Order' }}
       />
-      <Stack.Screen 
-        name="BusinessSettingsScreen" 
+      <Stack.Screen
+        name="BusinessSettingsScreen"
         component={BusinessSettingsScreen}
         options={{ title: 'Settings' }}
       />
-      <Stack.Screen 
-        name="EditProductScreen" 
+      <Stack.Screen
+        name="EditProductScreen"
         component={AddInventoryScreen}
         options={{ title: 'Edit Product' }}
         initialParams={{ editMode: true }}
       />
-      <Stack.Screen 
-        name="ProductDetailScreen" 
+      <Stack.Screen
+        name="ProductDetailScreen"
         component={BusinessProductDetailScreen}
         options={{ title: 'Product Details' }}
         initialParams={{ detailMode: true }}
       />
-      <Stack.Screen 
-        name="BusinessWeatherScreen" 
+      <Stack.Screen
+        name="BusinessWeatherScreen"
         component={BusinessWeatherScreen}
         options={{ title: 'Weather' }}
       />
-      <Stack.Screen 
-        name="BusinessCustomersScreen" 
-        component={BusinessCustomersScreen}
-        options={{ title: 'Customers' }}
-      />
-      <Stack.Screen 
-        name="BusinessInsightsScreen" 
+      <Stack.Screen
+        name="BusinessInsightsScreen"
         component={BusinessInsightsScreen}
         options={{ title: 'Business Insights' }}
       />

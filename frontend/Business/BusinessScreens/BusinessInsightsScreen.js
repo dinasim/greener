@@ -20,6 +20,7 @@ import BusinessDashboardCharts from '../components/BusinessDashboardCharts';
 import KPIWidget from '../components/KPIWidget';
 import { getBusinessAnalytics, createAnalyticsStream } from '../services/businessAnalyticsApi';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BusinessLayout from '../components/BusinessLayout';
 
 const { width: screenWidth } = Dimensions.get('window');
 
@@ -41,12 +42,12 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, [activeTab, timeframe]);
-  
+
   // Set up real-time data stream for auto-refresh (every 60 seconds)
   useEffect(() => {
     // Only enable auto-refresh for overview tab
     if (activeTab !== 'overview') return;
-    
+
     console.log('🔄 Setting up analytics auto-refresh stream...');
     const cleanupStream = createAnalyticsStream(
       timeframe,
@@ -64,7 +65,7 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       },
       60000 // 60 seconds refresh interval
     );
-    
+
     // Cleanup function
     return () => {
       console.log('🛑 Stopping analytics auto-refresh stream');
@@ -81,69 +82,69 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       if (!id) {
         id = await AsyncStorage.getItem('businessId');
       }
-      
+
       if (!id) {
         throw new Error('Business ID is required');
       }
 
       // Call the real API using the businessAnalyticsApi service
       const response = await getBusinessAnalytics(timeframe, 'all', false);
-      
+
       if (!response || !response.data) {
         throw new Error('Invalid response from analytics API');
       }
-      
+
       const apiData = response.data;
-      
+
       // Transform API data to the format expected by UI components
       const formattedData = {
         kpis: [
-          { 
-            title: 'Total Revenue', 
-            value: apiData.sales?.totalRevenue || 0, 
-            icon: 'cash', 
-            color: '#4CAF50', 
-            format: 'currency' 
+          {
+            title: 'Total Revenue',
+            value: apiData.sales?.totalRevenue || 0,
+            icon: 'cash',
+            color: '#4CAF50',
+            format: 'currency'
           },
-          { 
-            title: 'Total Orders', 
-            value: apiData.sales?.totalOrders || 0, 
-            icon: 'shopping-cart', 
-            color: '#2196F3', 
-            format: 'number' 
+          {
+            title: 'Total Orders',
+            value: apiData.sales?.totalOrders || 0,
+            icon: 'shopping-cart',
+            color: '#2196F3',
+            format: 'number'
           },
-          { 
-            title: 'Avg Order Value', 
-            value: apiData.sales?.averageOrderValue || 0, 
-            icon: 'attach-money', 
-            color: '#FF9800', 
-            format: 'currency' 
+          {
+            title: 'Avg Order Value',
+            value: apiData.sales?.averageOrderValue || 0,
+            icon: 'attach-money',
+            color: '#FF9800',
+            format: 'currency'
           },
-          { 
-            title: 'Customers', 
-            value: apiData.customers?.totalCustomers || 0, 
-            icon: 'people', 
-            color: '#9C27B0', 
-            format: 'number' 
+          {
+            title: 'Customers',
+            value: apiData.customers?.totalCustomers || 0,
+            icon: 'people',
+            color: '#9C27B0',
+            format: 'number'
           },
         ],
         chartData: {
           sales: {
-            labels: apiData.sales?.weeklyLabels || [], 
-            values: apiData.sales?.weeklyValues || [], 
-            total: apiData.sales?.totalRevenue || 0, 
+            labels: apiData.sales?.weeklyLabels || [],
+            values: apiData.sales?.weeklyValues || [],
+            total: apiData.sales?.totalRevenue || 0,
             average: apiData.sales?.averageWeeklyRevenue || 0
           },
           orders: {
-            pending: apiData.sales?.pendingOrders || 0, 
-            confirmed: apiData.sales?.confirmedOrders || 0, 
-            ready: apiData.sales?.readyOrders || 0, 
-            completed: apiData.sales?.completedOrders || 0, 
+            pending: apiData.sales?.pendingOrders || 0,
+            confirmed: apiData.sales?.confirmedOrders || 0,
+            ready: apiData.sales?.readyOrders || 0,
+            completed: apiData.sales?.completedOrders || 0,
             total: apiData.sales?.totalOrders || 0
           },
           inventory: {
-            inStock: apiData.inventory?.inStockItems || 0, 
-            lowStock: apiData.inventory?.lowStockItems || 0, 
+            inStock: apiData.inventory?.inStockItems || 0,
+            lowStock: apiData.inventory?.lowStockItems || 0,
             outOfStock: apiData.inventory?.outOfStockItems || 0
           },
         },
@@ -151,13 +152,13 @@ export default function BusinessInsightsScreen({ navigation, route }) {
         topCustomers: apiData.customers?.topCustomers || [],
         generatedAt: apiData.generatedAt || new Date().toISOString()
       };
-      
+
       setData(formattedData);
       console.log('✅ Analytics data loaded successfully!');
     } catch (e) {
       console.error('❌ Failed to load analytics data:', e);
       setError(`Failed to load data: ${e.message}`);
-      
+
       // Try to load cached data as fallback
       try {
         const cachedData = await AsyncStorage.getItem('cached_analytics');
@@ -168,52 +169,52 @@ export default function BusinessInsightsScreen({ navigation, route }) {
             // Transform cached data (similar to above)
             const formattedCachedData = {
               kpis: [
-                { 
-                  title: 'Total Revenue', 
-                  value: cachedApiData.sales?.totalRevenue || 0, 
-                  icon: 'cash', 
-                  color: '#4CAF50', 
-                  format: 'currency' 
+                {
+                  title: 'Total Revenue',
+                  value: cachedApiData.sales?.totalRevenue || 0,
+                  icon: 'cash',
+                  color: '#4CAF50',
+                  format: 'currency'
                 },
-                { 
-                  title: 'Total Orders', 
-                  value: cachedApiData.sales?.totalOrders || 0, 
-                  icon: 'shopping-cart', 
-                  color: '#2196F3', 
-                  format: 'number' 
+                {
+                  title: 'Total Orders',
+                  value: cachedApiData.sales?.totalOrders || 0,
+                  icon: 'shopping-cart',
+                  color: '#2196F3',
+                  format: 'number'
                 },
-                { 
-                  title: 'Avg Order Value', 
-                  value: cachedApiData.sales?.averageOrderValue || 0, 
-                  icon: 'attach-money', 
-                  color: '#FF9800', 
-                  format: 'currency' 
+                {
+                  title: 'Avg Order Value',
+                  value: cachedApiData.sales?.averageOrderValue || 0,
+                  icon: 'attach-money',
+                  color: '#FF9800',
+                  format: 'currency'
                 },
-                { 
-                  title: 'Customers', 
-                  value: cachedApiData.customers?.totalCustomers || 0, 
-                  icon: 'people', 
-                  color: '#9C27B0', 
-                  format: 'number' 
+                {
+                  title: 'Customers',
+                  value: cachedApiData.customers?.totalCustomers || 0,
+                  icon: 'people',
+                  color: '#9C27B0',
+                  format: 'number'
                 },
               ],
               chartData: {
                 sales: {
-                  labels: cachedApiData.sales?.weeklyLabels || [], 
-                  values: cachedApiData.sales?.weeklyValues || [], 
-                  total: cachedApiData.sales?.totalRevenue || 0, 
+                  labels: cachedApiData.sales?.weeklyLabels || [],
+                  values: cachedApiData.sales?.weeklyValues || [],
+                  total: cachedApiData.sales?.totalRevenue || 0,
                   average: cachedApiData.sales?.averageWeeklyRevenue || 0
                 },
                 orders: {
-                  pending: cachedApiData.sales?.pendingOrders || 0, 
-                  confirmed: cachedApiData.sales?.confirmedOrders || 0, 
-                  ready: cachedApiData.sales?.readyOrders || 0, 
-                  completed: cachedApiData.sales?.completedOrders || 0, 
+                  pending: cachedApiData.sales?.pendingOrders || 0,
+                  confirmed: cachedApiData.sales?.confirmedOrders || 0,
+                  ready: cachedApiData.sales?.readyOrders || 0,
+                  completed: cachedApiData.sales?.completedOrders || 0,
                   total: cachedApiData.sales?.totalOrders || 0
                 },
                 inventory: {
-                  inStock: cachedApiData.inventory?.inStockItems || 0, 
-                  lowStock: cachedApiData.inventory?.lowStockItems || 0, 
+                  inStock: cachedApiData.inventory?.inStockItems || 0,
+                  lowStock: cachedApiData.inventory?.lowStockItems || 0,
                   outOfStock: cachedApiData.inventory?.outOfStockItems || 0
                 },
               },
@@ -221,7 +222,7 @@ export default function BusinessInsightsScreen({ navigation, route }) {
               topCustomers: cachedApiData.customers?.topCustomers || [],
               generatedAt: cachedApiData.generatedAt || new Date().toISOString()
             };
-            
+
             setData(formattedCachedData);
             setError(null); // Clear error since we are using cached data
             console.log('📂 Cached analytics data loaded successfully!');
@@ -358,12 +359,15 @@ export default function BusinessInsightsScreen({ navigation, route }) {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading insights...</Text>
-        </View>
-      </SafeAreaView>
+      <BusinessLayout navigation={navigation} businessId={businessId} currentTab="insights">
+
+        <SafeAreaView style={styles.container}>
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#4CAF50" />
+            <Text style={styles.loadingText}>Loading insights...</Text>
+          </View>
+        </SafeAreaView>
+      </BusinessLayout>
     );
   }
 
@@ -383,63 +387,73 @@ export default function BusinessInsightsScreen({ navigation, route }) {
 
   if (!data) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="info-outline" size={48} color="#2196F3" />
-          <Text style={styles.noDataText}>No data available for this timeframe</Text>
-        </View>
-      </SafeAreaView>
+      <BusinessLayout navigation={navigation} businessId={businessId} currentTab="insights">
+
+        <SafeAreaView style={styles.container}>
+          <View style={styles.errorContainer}>
+            <MaterialIcons name="info-outline" size={48} color="#2196F3" />
+            <Text style={styles.noDataText}>No data available for this timeframe</Text>
+          </View>
+        </SafeAreaView>
+      </BusinessLayout>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Business Insights</Text>
-        <View style={{ width: 32 }} />
-      </View>
-      <View style={styles.tabBar}>
-        {tabs.map(tab => (
-          <TouchableOpacity
-            key={tab.key}
-            style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-            onPress={() => setActiveTab(tab.key)}
-          >
-            <MaterialIcons name={tab.icon} size={20} color={activeTab === tab.key ? '#4CAF50' : '#999'} />
-            <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
+    <BusinessLayout
+      navigation={navigation}
+      businessId={businessId}
+      currentTab="insights"
+      badges={{}} // optional
+    >
+      <SafeAreaView style={styles.container}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
           </TouchableOpacity>
-        ))}
-      </View>
-      <View style={styles.timeframeBar}>
-        {timeframes.map(tf => (
-          <TouchableOpacity
-            key={tf}
-            style={[styles.timeframeBtn, timeframe === tf && styles.activeTimeframeBtn]}
-            onPress={() => setTimeframe(tf)}
-          >
-            <Text style={[styles.timeframeText, timeframe === tf && styles.activeTimeframeText]}>{tf.charAt(0).toUpperCase() + tf.slice(1)}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-      <ScrollView
-        style={styles.scrollView}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-        showsVerticalScrollIndicator={false}
-      >
-        <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>
-          {data.fromCache && (
-            <View style={styles.cacheNotice}>
-              <MaterialIcons name="info-outline" size={16} color="#FFC107" />
-              <Text style={styles.cacheText}>Showing cached data from {new Date(data.generatedAt).toLocaleString()}</Text>
-            </View>
-          )}
-          {renderTabContent()}
-        </Animated.View>
-      </ScrollView>
-    </SafeAreaView>
+          <Text style={styles.headerTitle}>Business Insights</Text>
+          <View style={{ width: 32 }} />
+        </View>
+        <View style={styles.tabBar}>
+          {tabs.map(tab => (
+            <TouchableOpacity
+              key={tab.key}
+              style={[styles.tab, activeTab === tab.key && styles.activeTab]}
+              onPress={() => setActiveTab(tab.key)}
+            >
+              <MaterialIcons name={tab.icon} size={20} color={activeTab === tab.key ? '#4CAF50' : '#999'} />
+              <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>{tab.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={styles.timeframeBar}>
+          {timeframes.map(tf => (
+            <TouchableOpacity
+              key={tf}
+              style={[styles.timeframeBtn, timeframe === tf && styles.activeTimeframeBtn]}
+              onPress={() => setTimeframe(tf)}
+            >
+              <Text style={[styles.timeframeText, timeframe === tf && styles.activeTimeframeText]}>{tf.charAt(0).toUpperCase() + tf.slice(1)}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <ScrollView
+          style={styles.scrollView}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+          showsVerticalScrollIndicator={false}
+        >
+          <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>
+            {data.fromCache && (
+              <View style={styles.cacheNotice}>
+                <MaterialIcons name="info-outline" size={16} color="#FFC107" />
+                <Text style={styles.cacheText}>Showing cached data from {new Date(data.generatedAt).toLocaleString()}</Text>
+              </View>
+            )}
+            {renderTabContent()}
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+    </BusinessLayout >
   );
 }
 

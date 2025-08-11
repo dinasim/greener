@@ -22,14 +22,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import ToastMessage from '../marketplace/components/ToastMessage';
 import MainLayout from '../components/MainLayout';
+import BusinessLayout from '../Business/components/BusinessLayout'; // adjust path if different
 
 const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
-
-export default function PlantCareForumScreen({ navigation }) {
+export default function PlantCareForumScreen({ navigation, route, hideBottomBar }) {
+  const fromBusiness = route?.params?.fromBusiness === true;
   const { userType, userProfile } = useCurrentUserType();
   const [userPlants, setUserPlants] = useState([]);
   const [currentLocation, setCurrentLocation] = useState(null);
-
+  const [businessId, setBusinessId] = useState(null);
   const [topics, setTopics] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -77,6 +78,17 @@ export default function PlantCareForumScreen({ navigation }) {
 
   // --- Delete confirmation modal state ---
   const [deleteConfirm, setDeleteConfirm] = useState({ visible: false, topicId: null, category: null });
+  useEffect(() => {
+    (async () => {
+      try {
+        const storedBusinessId = await AsyncStorage.getItem('businessId');
+        const email = await AsyncStorage.getItem('userEmail');
+        setBusinessId(storedBusinessId || email || null);
+      } catch (e) {
+        setBusinessId(null);
+      }
+    })();
+  }, []);
 
   useEffect(() => {
     loadUserEmail();
@@ -323,22 +335,13 @@ export default function PlantCareForumScreen({ navigation }) {
   };
 
   const handleTopicPress = (topic) => {
-    navigation.navigate('ForumTopicDetail', { 
-      topicId: topic.id, 
+    navigation.navigate('ForumTopicDetail', {
+      topicId: topic.id,
       topic,
-      category: topic.category
+      category: topic.category,
+      fromBusiness : fromBusiness,
     });
   };
-
-  // ------- FIX: Add handleTabPress at top-level, not in renderSuggestions -------
-  const handleTabPress = (tab) => {
-    if (tab === 'home') navigation.navigate('Home');
-    else if (tab === 'plants') navigation.navigate('Locations');
-    else if (tab === 'marketplace') navigation.navigate('MainTabs');
-    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
-    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
-  };
-  // ------------------------------------------------------------------------------
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -436,10 +439,10 @@ export default function PlantCareForumScreen({ navigation }) {
           </Text>
         </View>
         <View style={styles.categoryBadgeSmall}>
-          <MaterialCommunityIcons 
-            name={getCategoryIcon(topic.category)} 
-            size={12} 
-            color="#4CAF50" 
+          <MaterialCommunityIcons
+            name={getCategoryIcon(topic.category)}
+            size={12}
+            color="#4CAF50"
           />
           <Text style={styles.categoryText}>
             {getCategoryDisplayName(topic.category)}
@@ -458,16 +461,16 @@ export default function PlantCareForumScreen({ navigation }) {
 
       {/* Display topic images if available */}
       {topic.images && topic.images.length > 0 && (
-        <ScrollView 
-          horizontal 
+        <ScrollView
+          horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.topicImagesContainer}
           contentContainerStyle={styles.topicImagesContent}
         >
           {topic.images.slice(0, 3).map((imageUrl, index) => (
-            <Image 
+            <Image
               key={index}
-              source={{ uri: imageUrl }} 
+              source={{ uri: imageUrl }}
               style={styles.topicImage}
               resizeMode="cover"
             />
@@ -492,7 +495,7 @@ export default function PlantCareForumScreen({ navigation }) {
 
       <View style={styles.topicFooter}>
         <Text style={styles.authorText}>by {topic.author}</Text>
-        
+
         <View style={styles.topicStats}>
           {topic.hasImages && (
             <View style={styles.statItem}>
@@ -500,17 +503,17 @@ export default function PlantCareForumScreen({ navigation }) {
               <Text style={styles.statText}>{topic.images?.length || 0}</Text>
             </View>
           )}
-          
+
           <View style={styles.statItem}>
             <MaterialIcons name="chat-bubble" size={14} color="#666" />
             <Text style={styles.statText}>{topic.replies || 0}</Text>
           </View>
-          
+
           <View style={styles.statItem}>
             <MaterialIcons name="visibility" size={14} color="#666" />
             <Text style={styles.statText}>{topic.views || 0}</Text>
           </View>
-          
+
           <Text style={styles.timeText}>{formatDateTime24(topic.lastActivity || topic.timestamp)}</Text>
         </View>
       </View>
@@ -566,307 +569,311 @@ export default function PlantCareForumScreen({ navigation }) {
       </View>
     );
   };
-
+  const Layout = fromBusiness ? BusinessLayout : MainLayout;
   return (
-  <MainLayout currentTab="forum" navigation={navigation}>
-        <SafeAreaView style={styles.container}>
-      {/* Toast Message always visible at root */}
-      <ToastMessage
-        visible={toast.visible}
-        message={toast.message}
-        type={toast.type}
-        onHide={hideToast}
-        duration={3000}
-      />
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>🌱 Plant Care Forum</Text>
-        <TouchableOpacity 
-          style={styles.createButton}
-          onPress={() => setShowCreateModal(true)}
-        >
-          <MaterialIcons name="add" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <MaterialIcons name="search" size={20} color="#666" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder={`Search by ${searchMode === 'tag' ? 'tag' : 'text'} in ${getCategoryDisplayName(selectedCategory)}`}
-          value={searchQuery}
-          onChangeText={text => {
-            setSearchQuery(text);
-            setShowSuggestions(!!text);
-          }}
-          onFocus={() => setShowSuggestions(!!searchQuery)}
+    <Layout
+      navigation={navigation}
+      currentTab="forum"
+      {...(fromBusiness ? { businessId, badges: {} } : {})}
+    >
+      <SafeAreaView style={styles.container}>
+        {/* Toast Message always visible at root */}
+        <ToastMessage
+          visible={toast.visible}
+          message={toast.message}
+          type={toast.type}
+          onHide={hideToast}
+          duration={3000}
         />
-        {/* Toggle search mode button */}
-        <TouchableOpacity
-          style={{ marginLeft: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#e0e0e0' }}
-          onPress={() => setSearchMode(searchMode === 'text' ? 'tag' : 'text')}
-          accessibilityLabel={searchMode === 'text' ? 'Switch to tag search' : 'Switch to text search'}
-        >
-          <Text style={{ fontSize: 12, color: '#333', fontWeight: 'bold' }}>{searchMode === 'text' ? 'Text' : 'Tag'}</Text>
-        </TouchableOpacity>
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <MaterialIcons name="clear" size={20} color="#999" />
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
           </TouchableOpacity>
-        ) : null}
-        {renderSuggestions()}
-      </View>
-
-      {/* Categories */}
-      <ScrollView 
-        horizontal 
-        showsHorizontalScrollIndicator={false}
-        style={styles.categoriesContainer}
-        contentContainerStyle={styles.categoriesContent}
-      >
-        {categories.map((category) => (
+          <Text style={styles.headerTitle}>🌱 Plant Care Forum</Text>
           <TouchableOpacity
-            key={category.id}
-            style={[
-              styles.categoryButton,
-              selectedCategory === category.id && styles.activeCategoryButton
-            ]}
-            onPress={() => setSelectedCategory(category.id)}
+            style={styles.createButton}
+            onPress={() => setShowCreateModal(true)}
           >
-            <MaterialCommunityIcons 
-              name={category.icon} 
-              size={16} 
-              color={selectedCategory === category.id ? '#fff' : '#666'} 
-            />
-            <Text style={[
-              styles.categoryButtonText,
-              selectedCategory === category.id && styles.activeCategoryButtonText
-            ]}>
-              {category.name}
-              {categoryStats[category.id] ? ` (${categoryStats[category.id]})` : ''}
-            </Text>
+            <MaterialIcons name="add" size={24} color="#4CAF50" />
           </TouchableOpacity>
-        ))}
-      </ScrollView>
+        </View>
 
-      {/* Topics List */}
-      <ScrollView
-        style={styles.topicsContainer}
-        refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={onRefresh}
-            colors={['#4CAF50']}
-            tintColor="#4CAF50"
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <MaterialIcons name="search" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder={`Search by ${searchMode === 'tag' ? 'tag' : 'text'} in ${getCategoryDisplayName(selectedCategory)}`}
+            value={searchQuery}
+            onChangeText={text => {
+              setSearchQuery(text);
+              setShowSuggestions(!!text);
+            }}
+            onFocus={() => setShowSuggestions(!!searchQuery)}
           />
-        }
-      >
-        {isLoading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#4CAF50" />
-            <Text style={styles.loadingText}>Loading topics...</Text>
-          </View>
-        ) : topics.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <MaterialCommunityIcons name="forum" size={64} color="#ccc" />
-            <Text style={styles.emptyTitle}>No topics found</Text>
-            <Text style={styles.emptyText}>
-              {searchQuery ? 'Try a different search term' : 'Be the first to start a discussion!'}
-            </Text>
-            <TouchableOpacity 
-              style={styles.createTopicButton}
-              onPress={() => setShowCreateModal(true)}
-            >
-              <Text style={styles.createTopicButtonText}>Create First Topic</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          topics.map(renderTopic)
-        )}
-      </ScrollView>
-
-      {/* Create Topic Modal */}
-      <Modal
-        visible={showCreateModal}
-        animationType="slide"
-        onRequestClose={closeCreateModal}
-        transparent={true}
-      >
-        <SafeAreaView style={styles.modalContainer}>
-          {/* ToastMessage also inside modal for feedback */}
-          <ToastMessage
-            visible={toast.visible}
-            message={toast.message}
-            type={toast.type}
-            onHide={hideToast}
-            duration={3000}
-          />
-          <KeyboardAvoidingView 
-            style={styles.modalContent}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            ref={modalContentRef}
+          {/* Toggle search mode button */}
+          <TouchableOpacity
+            style={{ marginLeft: 8, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8, backgroundColor: '#e0e0e0' }}
+            onPress={() => setSearchMode(searchMode === 'text' ? 'tag' : 'text')}
+            accessibilityLabel={searchMode === 'text' ? 'Switch to tag search' : 'Switch to text search'}
           >
-            {/* Modal Header */}
-            <View style={styles.modalHeader}>
-              <TouchableOpacity onPress={closeCreateModal}>
-                <MaterialIcons name="close" size={24} color="#666" />
-              </TouchableOpacity>
-              <Text style={styles.modalTitle}>Create New Topic</Text>
-              <TouchableOpacity 
-                style={[styles.postButton, isCreatingTopic && styles.postButtonDisabled]}
-                onPress={createNewTopic}
-                disabled={isCreatingTopic}
+            <Text style={{ fontSize: 12, color: '#333', fontWeight: 'bold' }}>{searchMode === 'text' ? 'Text' : 'Tag'}</Text>
+          </TouchableOpacity>
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialIcons name="clear" size={20} color="#999" />
+            </TouchableOpacity>
+          ) : null}
+          {renderSuggestions()}
+        </View>
+
+        {/* Categories */}
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.categoriesContainer}
+          contentContainerStyle={styles.categoriesContent}
+        >
+          {categories.map((category) => (
+            <TouchableOpacity
+              key={category.id}
+              style={[
+                styles.categoryButton,
+                selectedCategory === category.id && styles.activeCategoryButton
+              ]}
+              onPress={() => setSelectedCategory(category.id)}
+            >
+              <MaterialCommunityIcons
+                name={category.icon}
+                size={16}
+                color={selectedCategory === category.id ? '#fff' : '#666'}
+              />
+              <Text style={[
+                styles.categoryButtonText,
+                selectedCategory === category.id && styles.activeCategoryButtonText
+              ]}>
+                {category.name}
+                {categoryStats[category.id] ? ` (${categoryStats[category.id]})` : ''}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* Topics List */}
+        <ScrollView
+          style={styles.topicsContainer}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={['#4CAF50']}
+              tintColor="#4CAF50"
+            />
+          }
+        >
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#4CAF50" />
+              <Text style={styles.loadingText}>Loading topics...</Text>
+            </View>
+          ) : topics.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <MaterialCommunityIcons name="forum" size={64} color="#ccc" />
+              <Text style={styles.emptyTitle}>No topics found</Text>
+              <Text style={styles.emptyText}>
+                {searchQuery ? 'Try a different search term' : 'Be the first to start a discussion!'}
+              </Text>
+              <TouchableOpacity
+                style={styles.createTopicButton}
+                onPress={() => setShowCreateModal(true)}
               >
-                {isCreatingTopic ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <Text style={styles.postButtonText}>Post</Text>
-                )}
+                <Text style={styles.createTopicButtonText}>Create First Topic</Text>
               </TouchableOpacity>
             </View>
+          ) : (
+            topics.map(renderTopic)
+          )}
+        </ScrollView>
 
-            <ScrollView style={styles.formContainer}>
-              {/* Title */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Title *</Text>
-                <TextInput
-                  style={styles.titleInput}
-                  placeholder="What's your question or topic?"
-                  value={newTopic.title}
-                  onChangeText={(text) => setNewTopic(prev => ({ ...prev, title: text }))}
-                  maxLength={100}
-                />
+        {/* Create Topic Modal */}
+        <Modal
+          visible={showCreateModal}
+          animationType="slide"
+          onRequestClose={closeCreateModal}
+          transparent={true}
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            {/* ToastMessage also inside modal for feedback */}
+            <ToastMessage
+              visible={toast.visible}
+              message={toast.message}
+              type={toast.type}
+              onHide={hideToast}
+              duration={3000}
+            />
+            <KeyboardAvoidingView
+              style={styles.modalContent}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              ref={modalContentRef}
+            >
+              {/* Modal Header */}
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={closeCreateModal}>
+                  <MaterialIcons name="close" size={24} color="#666" />
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Create New Topic</Text>
+                <TouchableOpacity
+                  style={[styles.postButton, isCreatingTopic && styles.postButtonDisabled]}
+                  onPress={createNewTopic}
+                  disabled={isCreatingTopic}
+                >
+                  {isCreatingTopic ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.postButtonText}>Post</Text>
+                  )}
+                </TouchableOpacity>
               </View>
 
-              {/* Category */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Category</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                  <View style={styles.categoryOptions}>
-                    {categories.filter(c => c.id !== 'all').map((category) => (
-                      <TouchableOpacity
-                        key={category.id}
-                        style={[
-                          styles.categoryOption,
-                          newTopic.category === category.id && styles.selectedCategoryOption
-                        ]}
-                        onPress={() => setNewTopic(prev => ({ ...prev, category: category.id }))}
-                      >
-                        <MaterialCommunityIcons 
-                          name={category.icon} 
-                          size={16} 
-                          color={newTopic.category === category.id ? '#fff' : '#666'} 
-                        />
-                        <Text style={[
-                          styles.categoryOptionText,
-                          newTopic.category === category.id && styles.selectedCategoryOptionText
-                        ]}>
-                          {category.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </ScrollView>
-              </View>
-
-              {/* Content */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Description *</Text>
-                <TextInput
-                  style={styles.contentInput}
-                  placeholder="Describe your question or share your experience..."
-                  value={newTopic.content}
-                  onChangeText={(text) => setNewTopic(prev => ({ ...prev, content: text }))}
-                  multiline
-                  numberOfLines={6}
-                  textAlignVertical="top"
-                />
-              </View>
-
-              {/* Tags */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Tags (optional)</Text>
-                <TextInput
-                  style={styles.tagsInput}
-                  placeholder="e.g. monstera, watering, indoor (comma separated)"
-                  value={newTopic.tags}
-                  onChangeText={(text) => setNewTopic(prev => ({ ...prev, tags: text }))}
-                />
-              </View>
-
-              {/* Image Upload */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Upload Image (optional)</Text>
-                <View style={styles.imageUploadContainer}>
-                  <TouchableOpacity 
-                    style={styles.imageUploadButton}
-                    onPress={pickImageFromGallery}
-                  >
-                    <MaterialIcons name="image" size={24} color="#4CAF50" />
-                    <Text style={styles.imageUploadButtonText}>Choose from Gallery</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity 
-                    style={styles.imageUploadButton}
-                    onPress={takePhotoWithCamera}
-                  >
-                    <MaterialIcons name="camera-alt" size={24} color="#4CAF50" />
-                    <Text style={styles.imageUploadButtonText}>Take a Photo</Text>
-                  </TouchableOpacity>
+              <ScrollView style={styles.formContainer}>
+                {/* Title */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Title *</Text>
+                  <TextInput
+                    style={styles.titleInput}
+                    placeholder="What's your question or topic?"
+                    value={newTopic.title}
+                    onChangeText={(text) => setNewTopic(prev => ({ ...prev, title: text }))}
+                    maxLength={100}
+                  />
                 </View>
 
-                {topicImages.length > 0 && (
-                  <View style={styles.selectedImagesContainer}>
-                    {topicImages.map((image, index) => (
-                      <View key={index} style={styles.selectedImageWrapper}>
-                        <Image source={{ uri: image.uri }} style={styles.selectedImage} />
-                        <TouchableOpacity 
-                          style={styles.removeImageButton}
-                          onPress={() => removeImage(index)}
+                {/* Category */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Category</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                    <View style={styles.categoryOptions}>
+                      {categories.filter(c => c.id !== 'all').map((category) => (
+                        <TouchableOpacity
+                          key={category.id}
+                          style={[
+                            styles.categoryOption,
+                            newTopic.category === category.id && styles.selectedCategoryOption
+                          ]}
+                          onPress={() => setNewTopic(prev => ({ ...prev, category: category.id }))}
                         >
-                          <MaterialIcons name="remove-circle" size={20} color="#f44336" />
+                          <MaterialCommunityIcons
+                            name={category.icon}
+                            size={16}
+                            color={newTopic.category === category.id ? '#fff' : '#666'}
+                          />
+                          <Text style={[
+                            styles.categoryOptionText,
+                            newTopic.category === category.id && styles.selectedCategoryOptionText
+                          ]}>
+                            {category.name}
+                          </Text>
                         </TouchableOpacity>
-                      </View>
-                    ))}
-                  </View>
-                )}
-              </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
-      </Modal>
+                      ))}
+                    </View>
+                  </ScrollView>
+                </View>
 
-      {/* --- Custom Delete Confirmation Modal --- */}
-      {deleteConfirm.visible && (
-        <View style={{
-          position: 'absolute',
-          top: 0, left: 0, right: 0, bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.25)',
-          justifyContent: 'center', alignItems: 'center',
-          zIndex: 9999
-        }}>
-          <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, minWidth: 260, alignItems: 'center' }}>
-            <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Delete Topic</Text>
-            <Text style={{ fontSize: 14, color: '#444', marginBottom: 20, textAlign: 'center' }}>
-              Are you sure you want to delete this topic? This action cannot be undone.
-            </Text>
-            <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
-              <TouchableOpacity onPress={cancelDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#eee' }}>
-                <Text style={{ color: '#333', fontWeight: 'bold' }}>No</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={confirmDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#f44336' }}>
-                <Text style={{ color: '#fff', fontWeight: 'bold' }}>Yes</Text>
-              </TouchableOpacity>
+                {/* Content */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Description *</Text>
+                  <TextInput
+                    style={styles.contentInput}
+                    placeholder="Describe your question or share your experience..."
+                    value={newTopic.content}
+                    onChangeText={(text) => setNewTopic(prev => ({ ...prev, content: text }))}
+                    multiline
+                    numberOfLines={6}
+                    textAlignVertical="top"
+                  />
+                </View>
+
+                {/* Tags */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Tags (optional)</Text>
+                  <TextInput
+                    style={styles.tagsInput}
+                    placeholder="e.g. monstera, watering, indoor (comma separated)"
+                    value={newTopic.tags}
+                    onChangeText={(text) => setNewTopic(prev => ({ ...prev, tags: text }))}
+                  />
+                </View>
+
+                {/* Image Upload */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Upload Image (optional)</Text>
+                  <View style={styles.imageUploadContainer}>
+                    <TouchableOpacity
+                      style={styles.imageUploadButton}
+                      onPress={pickImageFromGallery}
+                    >
+                      <MaterialIcons name="image" size={24} color="#4CAF50" />
+                      <Text style={styles.imageUploadButtonText}>Choose from Gallery</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.imageUploadButton}
+                      onPress={takePhotoWithCamera}
+                    >
+                      <MaterialIcons name="camera-alt" size={24} color="#4CAF50" />
+                      <Text style={styles.imageUploadButtonText}>Take a Photo</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {topicImages.length > 0 && (
+                    <View style={styles.selectedImagesContainer}>
+                      {topicImages.map((image, index) => (
+                        <View key={index} style={styles.selectedImageWrapper}>
+                          <Image source={{ uri: image.uri }} style={styles.selectedImage} />
+                          <TouchableOpacity
+                            style={styles.removeImageButton}
+                            onPress={() => removeImage(index)}
+                          >
+                            <MaterialIcons name="remove-circle" size={20} color="#f44336" />
+                          </TouchableOpacity>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </Modal>
+
+        {/* --- Custom Delete Confirmation Modal --- */}
+        {deleteConfirm.visible && (
+          <View style={{
+            position: 'absolute',
+            top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.25)',
+            justifyContent: 'center', alignItems: 'center',
+            zIndex: 9999
+          }}>
+            <View style={{ backgroundColor: '#fff', borderRadius: 12, padding: 24, minWidth: 260, alignItems: 'center' }}>
+              <Text style={{ fontSize: 16, fontWeight: 'bold', marginBottom: 12 }}>Delete Topic</Text>
+              <Text style={{ fontSize: 14, color: '#444', marginBottom: 20, textAlign: 'center' }}>
+                Are you sure you want to delete this topic? This action cannot be undone.
+              </Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
+                <TouchableOpacity onPress={cancelDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#eee' }}>
+                  <Text style={{ color: '#333', fontWeight: 'bold' }}>No</Text>
+                </TouchableOpacity>
+                <TouchableOpacity onPress={confirmDelete} style={{ padding: 10, marginHorizontal: 8, borderRadius: 8, backgroundColor: '#f44336' }}>
+                  <Text style={{ color: '#fff', fontWeight: 'bold' }}>Yes</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      )}
-    </SafeAreaView>
-    </MainLayout>
+        )}
+      </SafeAreaView>
+    </Layout>
   );
 }
 

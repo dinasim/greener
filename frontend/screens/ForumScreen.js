@@ -4,21 +4,39 @@ import { SafeAreaView, View, Text, TouchableOpacity, StyleSheet } from 'react-na
 import { Ionicons } from '@expo/vector-icons';
 import PlantCareForumScreen from './PlantCareForumScreen';
 
-export default function ForumScreen({ navigation }) {
+// Import the business layout to get the business navigation bar
+import BusinessLayout from '../Business/components/BusinessLayout';
+
+export default function ForumScreen({ navigation, route }) {
+  const fromBusiness = !!route?.params?.fromBusiness;
+
+  const Header = () => (
+    <View style={styles.header}>
+      <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+        <Ionicons name="arrow-back" size={24} color="#4CAF50" />
+      </TouchableOpacity>
+      <Text style={styles.headerTitle}>Plant Care Forum</Text>
+      <View style={styles.backButton} /> {/* Placeholder for centering */}
+    </View>
+  );
+
+  if (fromBusiness) {
+    // Show business nav bar
+    return (
+      <BusinessLayout navigation={navigation} currentTab="forum">
+        <SafeAreaView style={styles.container}>
+          <Header />
+          {/* Prevent double nav bars */}
+          <PlantCareForumScreen navigation={navigation} hideBottomBar />
+        </SafeAreaView>
+      </BusinessLayout>
+    );
+  }
+
+  // Default: user version
   return (
     <SafeAreaView style={styles.container}>
-      {/* Standardized Header with Back Arrow */}
-      <View style={styles.header}>
-        <TouchableOpacity 
-          style={styles.backButton} 
-          onPress={() => navigation.goBack()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Plant Care Forum</Text>
-        <View style={styles.backButton} /> {/* Placeholder for centering */}
-      </View>
-      
+      <Header />
       <PlantCareForumScreen navigation={navigation} />
     </SafeAreaView>
   );

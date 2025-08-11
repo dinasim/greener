@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import BusinessLayout from '../components/BusinessLayout';
 
 export default function BusinessCustomersScreen({ navigation, route }) {
   const { businessId } = route.params || {};
@@ -49,10 +50,10 @@ export default function BusinessCustomersScreen({ navigation, route }) {
   const loadCustomers = async () => {
     try {
       setError(null);
-      
+
       const userEmail = await AsyncStorage.getItem('userEmail');
       const authToken = await AsyncStorage.getItem('googleAuthToken');
-      
+
       if (!userEmail) {
         setError('Business authentication required');
         return;
@@ -62,13 +63,13 @@ export default function BusinessCustomersScreen({ navigation, route }) {
         'Content-Type': 'application/json',
         'X-User-Email': userEmail,
       };
-      
+
       if (authToken) {
         headers['Authorization'] = `Bearer ${authToken}`;
       }
 
       console.log('👥 Fetching customers data for business:', userEmail);
-      
+
       const response = await fetch(
         'https://usersfunctions.azurewebsites.net/api/business/customers',
         {
@@ -88,7 +89,7 @@ export default function BusinessCustomersScreen({ navigation, route }) {
 
       const data = await response.json();
       console.log('✅ Customers data loaded:', data);
-      
+
       if (data.success) {
         setCustomers(data.customers || []);
         setFilteredCustomers(data.customers || []);
@@ -164,20 +165,23 @@ export default function BusinessCustomersScreen({ navigation, route }) {
 
   if (isLoading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Customers</Text>
-          <View style={styles.placeholder} />
-        </View>
-        <View style={styles.centered}>
-          <ActivityIndicator size="large" color="#216a94" />
-          <Text style={styles.loadingText}>Loading customers...</Text>
-        </View>
-      </SafeAreaView>
+      <BusinessLayout navigation={navigation} businessId={businessId} currentTab="customers">
+
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+          <View style={styles.header}>
+            <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+              <MaterialIcons name="arrow-back" size={24} color="#216a94" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Customers</Text>
+            <View style={styles.placeholder} />
+          </View>
+          <View style={styles.centered}>
+            <ActivityIndicator size="large" color="#216a94" />
+            <Text style={styles.loadingText}>Loading customers...</Text>
+          </View>
+        </SafeAreaView>
+      </BusinessLayout>
     );
   }
 
@@ -204,75 +208,83 @@ export default function BusinessCustomersScreen({ navigation, route }) {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      
-      {/* Header with Back Button */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#216a94" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Customers</Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-          <MaterialIcons name="refresh" size={24} color="#216a94" />
-        </TouchableOpacity>
-      </View>
+    <BusinessLayout
+      navigation={navigation}
+      businessId={businessId}
+      currentTab="customers"
+      badges={{}} // or e.g. { customers: stats.totalCustomers }
+    >
 
-      {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <MaterialIcons name="search" size={20} color="#666" />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search customers..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
-        {searchQuery ? (
-          <TouchableOpacity onPress={() => setSearchQuery('')}>
-            <MaterialIcons name="close" size={20} color="#666" />
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+
+        {/* Header with Back Button */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
           </TouchableOpacity>
-        ) : null}
-      </View>
+          <Text style={styles.headerTitle}>Customers</Text>
+          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
+            <MaterialIcons name="refresh" size={24} color="#216a94" />
+          </TouchableOpacity>
+        </View>
 
-      {/* Customer Stats */}
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <MaterialIcons name="people" size={24} color="#216a94" />
-          <Text style={styles.statNumber}>{stats.totalCustomers}</Text>
-          <Text style={styles.statLabel}>Total Customers</Text>
+        {/* Search Bar */}
+        <View style={styles.searchContainer}>
+          <MaterialIcons name="search" size={20} color="#666" />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search customers..."
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+          {searchQuery ? (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <MaterialIcons name="close" size={20} color="#666" />
+            </TouchableOpacity>
+          ) : null}
         </View>
-        <View style={styles.statCard}>
-          <MaterialIcons name="monetization-on" size={24} color="#4CAF50" />
-          <Text style={styles.statNumber}>₪{stats.totalRevenue}</Text>
-          <Text style={styles.statLabel}>Total Revenue</Text>
-        </View>
-        <View style={styles.statCard}>
-          <MaterialIcons name="shopping-cart" size={24} color="#FF9800" />
-          <Text style={styles.statNumber}>₪{stats.averageOrderValue}</Text>
-          <Text style={styles.statLabel}>Avg Order Value</Text>
-        </View>
-      </View>
 
-      {/* Error Message */}
-      {error && (
-        <View style={styles.errorContainer}>
-          <Text style={styles.errorText}>{error}</Text>
+        {/* Customer Stats */}
+        <View style={styles.statsContainer}>
+          <View style={styles.statCard}>
+            <MaterialIcons name="people" size={24} color="#216a94" />
+            <Text style={styles.statNumber}>{stats.totalCustomers}</Text>
+            <Text style={styles.statLabel}>Total Customers</Text>
+          </View>
+          <View style={styles.statCard}>
+            <MaterialIcons name="monetization-on" size={24} color="#4CAF50" />
+            <Text style={styles.statNumber}>₪{stats.totalRevenue}</Text>
+            <Text style={styles.statLabel}>Total Revenue</Text>
+          </View>
+          <View style={styles.statCard}>
+            <MaterialIcons name="shopping-cart" size={24} color="#FF9800" />
+            <Text style={styles.statNumber}>₪{stats.averageOrderValue}</Text>
+            <Text style={styles.statLabel}>Avg Order Value</Text>
+          </View>
         </View>
-      )}
 
-      {/* Customer List */}
-      <FlatList
-        data={filteredCustomers}
-        renderItem={renderCustomerItem}
-        keyExtractor={(item) => item.id || item.email}
-        style={styles.customerList}
-        ListEmptyComponent={renderEmptyState}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-        }
-        showsVerticalScrollIndicator={false}
-      />
-    </SafeAreaView>
+        {/* Error Message */}
+        {error && (
+          <View style={styles.errorContainer}>
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        {/* Customer List */}
+        <FlatList
+          data={filteredCustomers}
+          renderItem={renderCustomerItem}
+          keyExtractor={(item) => item.id || item.email}
+          style={styles.customerList}
+          ListEmptyComponent={renderEmptyState}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+          }
+          showsVerticalScrollIndicator={false}
+        />
+      </SafeAreaView>
+    </BusinessLayout>
   );
 }
 
