@@ -11,6 +11,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
+  Alert,            // 👈 added
+  Linking,          // 👈 added (for optional "Email us" action)
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,13 +20,38 @@ import { useForm } from '../../context/FormContext';
 import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 import ToastMessage from '../../marketplace/components/ToastMessage';
 
+const COLORS = {
+  primary: '#216a94',      // app blue
+  primaryDark: '#194e6a',
+  primaryLight: '#eaf3fb', // soft blue surface
+  surfaceLight: '#f0f8ff',
+  border: '#cfe1ec',
+  text: '#333',
+  textMuted: '#556570',
+  error: '#c62828',
+  white: '#fff',
+};
+
 export default function BusinessSignInScreen({ navigation }) {
   const { updateFormData } = useForm();
-  const { initialize } = useUniversalNotifications(); // Extract initialize function
+  const { initialize } = useUniversalNotifications();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
+
+  const handleForgotPassword = () => {
+    Alert.alert(
+      'Forgot Password',
+      'Contact us at dina2@gmail.com',
+      [
+        { text: 'Email us', onPress: () => Linking.openURL('mailto:dina2@gmail.com?subject=Password%20Reset%20Help') },
+        { text: 'OK', style: 'cancel' },
+      ]
+    );
+    // If you prefer a toast instead of an alert, use:
+    // setToast({ visible: true, message: 'Contact us at dina2@gmail.com', type: 'info' });
+  };
 
   const handleSignIn = async () => {
     if (!email.trim()) {
@@ -40,63 +67,43 @@ export default function BusinessSignInScreen({ navigation }) {
     setToast({ visible: false, message: '', type: 'info' });
     
     try {
-      console.log('🔐 Attempting business login for:', email);
-      
-      // Use the original business-login endpoint for business authentication
       const res = await fetch('https://usersfunctions.azurewebsites.net/api/business-login', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
       });
       
-      console.log('📡 Login response status:', res.status);
-      
-      // Handle response text parsing more safely
-      let data = null;
       const responseText = await res.text();
-      
-      console.log('📄 Response text length:', responseText?.length || 0);
-      
+      let data = null;
       if (responseText) {
         try {
           data = JSON.parse(responseText);
-          console.log('✅ Parsed response data:', { success: data.success, hasEmail: !!data.email });
-        } catch (parseError) {
-          console.error('❌ Failed to parse response:', parseError);
+        } catch {
           setToast({ visible: true, message: 'Invalid server response. Please try again.', type: 'error' });
           setIsLoading(false);
           return;
         }
       } else {
-        console.error('❌ Empty response from server');
         setToast({ visible: true, message: 'No response from server. Please check your connection.', type: 'error' });
         setIsLoading(false);
         return;
       }
       
-      // Check for specific error responses
       if (!res.ok) {
         const errorMessage = data?.error || `Server error (${res.status})`;
-        console.error('❌ Server error:', errorMessage);
         setToast({ visible: true, message: errorMessage, type: 'error' });
         setIsLoading(false);
         return;
       }
       
-      // Validate response structure
       if (!data || !data.success || !data.business) {
         const errorMessage = data?.error || 'Invalid login response from server';
-        console.error('❌ Invalid response structure:', errorMessage);
         setToast({ visible: true, message: errorMessage, type: 'error' });
         setIsLoading(false);
         return;
       }
       
-      console.log('✅ Business login successful');
-      
-      // Set persona to business for proper AI assistant behavior
+      // Persist business persona
       await AsyncStorage.setItem('persona', 'business');
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('businessId', data.email);
@@ -107,26 +114,21 @@ export default function BusinessSignInScreen({ navigation }) {
       updateFormData('email', data.email);
       updateFormData('businessId', data.email);
       
-      // Initialize notifications in background (non-blocking)
+      // Initialize notifications in background
       setTimeout(async () => {
         try {
           await initialize('business', data.email, data.email);
-          console.log('✅ Business notifications initialized after login');
         } catch (notificationError) {
           console.warn('⚠️ Business notifications failed to initialize:', notificationError);
-          // Don't block login for notification failures
         }
       }, 1000);
       
       setToast({ visible: true, message: 'Login successful! Redirecting...', type: 'success' });
-      
-      // Navigate to business home after short delay
       setTimeout(() => {
         navigation.navigate('BusinessHomeScreen');
       }, 1000);
       
-    } catch (err) {
-      console.error('❌ Network/connection error:', err);
+    } catch {
       setToast({ 
         visible: true, 
         message: 'Connection failed. Please check your internet and try again.', 
@@ -143,12 +145,18 @@ export default function BusinessSignInScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          {/* Header */}
           <View style={styles.header}>
-            <MaterialCommunityIcons name="store" size={28} color="#216a94" />
+            <View style={styles.logoBadge}>
+              <MaterialCommunityIcons name="store" size={26} color={COLORS.white} />
+            </View>
             <Text style={styles.headerTitle}>Business Sign In</Text>
+            <Text style={styles.headerSubtitle}>Access your shop dashboard</Text>
           </View>
-          <View style={styles.formContainer}>
+
+          {/* Card */}
+          <View style={styles.card}>
             <View style={styles.inputGroup}>
               <Text style={styles.label}>Business Email</Text>
               <TextInput
@@ -156,8 +164,11 @@ export default function BusinessSignInScreen({ navigation }) {
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Enter your business email"
+                placeholderTextColor="#93a7b5"
                 keyboardType="email-address"
                 autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="next"
               />
             </View>
             
@@ -168,21 +179,23 @@ export default function BusinessSignInScreen({ navigation }) {
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Enter your password"
+                placeholderTextColor="#93a7b5"
                 secureTextEntry
+                returnKeyType="done"
               />
             </View>
             
-            <TouchableOpacity style={styles.forgotPassword}>
+            <TouchableOpacity style={styles.forgotPassword} onPress={handleForgotPassword}>
               <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
-              style={styles.signInButton}
+              style={[styles.signInButton, isLoading && { opacity: 0.85 }]}
               onPress={handleSignIn}
               disabled={isLoading}
             >
               {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
+                <ActivityIndicator size="small" color={COLORS.white} />
               ) : (
                 <Text style={styles.signInButtonText}>Sign In</Text>
               )}
@@ -193,7 +206,7 @@ export default function BusinessSignInScreen({ navigation }) {
               onPress={() => navigation.navigate('BusinessSignUpScreen')}
             >
               <Text style={styles.createAccountText}>
-                Don't have a business account? <Text style={styles.createAccountLink}>Create One</Text>
+                Don’t have a business account? <Text style={styles.createAccountLink}>Create One</Text>
               </Text>
             </TouchableOpacity>
             
@@ -205,6 +218,7 @@ export default function BusinessSignInScreen({ navigation }) {
             </TouchableOpacity>
           </View>
         </ScrollView>
+
         <ToastMessage
           visible={toast.visible}
           message={toast.message}
@@ -220,7 +234,7 @@ export default function BusinessSignInScreen({ navigation }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: COLORS.primaryLight, // soft blue background
   },
   container: {
     flex: 1,
@@ -228,71 +242,118 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     padding: 16,
+    paddingBottom: 24,
   },
+
+  // Header
   header: {
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 40,
+    marginTop: 18,
+    marginBottom: 18,
+  },
+  logoBadge: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORS.primary,
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 3,
   },
   headerTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#216a94',
-    marginTop: 8,
+    fontWeight: '800',
+    color: COLORS.primaryDark,
+    marginTop: 12,
   },
+  headerSubtitle: {
+    fontSize: 13,
+    color: COLORS.textMuted,
+    marginTop: 4,
+  },
+
+  // Card
+  card: {
+    backgroundColor: COLORS.white,
+    borderRadius: 14,
+    paddingVertical: 20,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+
+  // Form
   formContainer: {
     paddingHorizontal: 20,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 16,
-    marginBottom: 8,
-    color: '#333',
+    fontSize: 14,
+    marginBottom: 6,
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
   input: {
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
+    borderColor: COLORS.border,
+    borderRadius: 10,
     padding: 12,
     fontSize: 16,
-    backgroundColor: '#f9f9f9',
+    backgroundColor: COLORS.surfaceLight,
+    color: COLORS.text,
   },
+
+  // Actions
   forgotPassword: {
     alignSelf: 'flex-end',
-    marginBottom: 20,
+    marginTop: 2,
+    marginBottom: 18,
   },
   forgotPasswordText: {
-    color: '#216a94',
+    color: COLORS.primary,
+    fontWeight: '600',
   },
   signInButton: {
-    backgroundColor: '#216a94',
+    backgroundColor: COLORS.primary,
     paddingVertical: 14,
-    borderRadius: 8,
+    borderRadius: 10,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   signInButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
+    color: COLORS.white,
+    fontWeight: '800',
     fontSize: 16,
+    letterSpacing: 0.2,
   },
   createAccountButton: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 12,
   },
   createAccountText: {
-    color: '#666',
+    color: COLORS.textMuted,
   },
   createAccountLink: {
-    color: '#216a94',
-    fontWeight: '600',
+    color: COLORS.primary,
+    fontWeight: '700',
   },
   backButton: {
     alignItems: 'center',
+    paddingVertical: 8,
   },
   backButtonText: {
-    color: '#666',
+    color: COLORS.textMuted,
+    fontWeight: '600',
   },
 });

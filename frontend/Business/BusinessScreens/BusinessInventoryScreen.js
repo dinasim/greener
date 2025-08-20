@@ -1,932 +1,396 @@
-// Business/BusinessScreens/BusinessInventorySetupScreen.js - ENHANCED VERSION
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
-  TouchableOpacity,
   SafeAreaView,
-  Alert,
   ActivityIndicator,
-  Animated,
-  Easing,
+  SectionList,
+  TouchableOpacity,
+  TextInput,
   RefreshControl,
-  Platform,
-  Dimensions,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getBusinessInventory } from '../services/businessApi';
 
-// Import business services - UPDATED to use proper service structure
-import { 
-  getBusinessInventory, 
-  getBusinessDashboard,
-  checkApiHealth,
-  createInventoryItem,
-  updateInventoryItem,
-  deleteInventoryItem 
-} from '../services/businessApi';
-import { 
-  getBusinessMarketplaceProfile 
-} from '../services/businessMarketplaceApi';
-import { 
-  getDetailedAnalytics 
-} from '../services/businessReportsApi';
-import { 
-  searchPlantsForBusiness,
-  getBusinessWeatherAdvice 
-} from '../services/businessPlantApi';
-
-// Import reusable components
-import KPIWidget from '../components/KPIWidget';
-import LowStockBanner from '../components/LowStockBanner';
-
-const { width, height } = Dimensions.get('window');
-
-export default function BusinessInventorySetupScreen({ navigation, route }) {
-  // State management
-  const [businessId, setBusinessId] = useState(null);
-  const [userEmail, setUserEmail] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isFinishing, setIsFinishing] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [inventoryStatus, setInventoryStatus] = useState(null);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [error, setError] = useState(null);
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  
-  // Animation refs
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.8)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  
-  // Auto-refresh timer
-  const refreshTimer = useRef(null);
-
-  // Initialize component
-  useEffect(() => {
-    initializeSetup();
-    startEntranceAnimation();
-    
-    // Setup auto-refresh
-    if (autoRefreshEnabled) {
-      setupAutoRefresh();
-    }
-    
-    return () => {
-      if (refreshTimer.current) {
-        clearInterval(refreshTimer.current);
-      }
-    };
-  }, []);
-
-  // Auto-refresh setup
-  const setupAutoRefresh = () => {
-    refreshTimer.current = setInterval(() => {
-      if (!isLoading && !isFinishing) {
-        checkInventoryStatus();
-      }
-    }, 30000); // Refresh every 30 seconds
-  };
-
-  // Entrance animations
-  const startEntranceAnimation = () => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
-
-  // Initialize setup data
-  const initializeSetup = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Load user data
-      const [email, storedBusinessId] = await Promise.all([
-        AsyncStorage.getItem('userEmail'),
-        AsyncStorage.getItem('businessId')
-      ]);
-      
-      setUserEmail(email);
-      setBusinessId(storedBusinessId || email);
-      
-      // FIXED: Check API health first - but don't fail on API issues
-      console.log('🏥 Checking API health...');
-      const healthCheck = await checkApiHealth();
-      console.log('🏥 Health check result:', healthCheck);
-      
-      if (!healthCheck.healthy) {
-        console.warn('⚠️ API health check failed, but continuing with setup:', healthCheck.error);
-        // Don't throw error - just warn and continue
-        // The individual API calls will handle their own errors
-      } else {
-        console.log('✅ API is healthy, proceeding with full setup');
-      }
-      
-      // Load inventory and dashboard data - handle errors gracefully
-      await Promise.all([
-        checkInventoryStatus().catch(err => {
-          console.warn('⚠️ Inventory check failed:', err.message);
-          // Don't fail setup for this
-        }),
-        loadDashboardData().catch(err => {
-          console.warn('⚠️ Dashboard load failed:', err.message);
-          // Don't fail setup for this
-        })
-      ]);
-      
-      console.log('✅ Setup initialization completed');
-      
-    } catch (error) {
-      console.error('❌ Setup initialization error:', error);
-      
-      // Only set error for critical failures, not API connectivity issues
-      if (error.message.includes('userEmail') || error.message.includes('businessId')) {
-        setError('Failed to load user information. Please try signing in again.');
-      } else {
-        console.warn('⚠️ Non-critical setup error, continuing anyway:', error.message);
-        // Don't show error to user for API connectivity issues
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // Check inventory status
-  const checkInventoryStatus = useCallback(async () => {
-    if (!businessId) return;
-    
-    try {
-      const inventoryData = await getBusinessInventory(businessId);
-      setInventoryStatus(inventoryData);
-      
-      // If inventory exists, auto-navigate after animation
-      if (inventoryData.inventory.length > 0 && route.params?.autoRedirect) {
-        setTimeout(() => {
-          handleFinishLater();
-        }, 2000);
-      }
-      
-    } catch (error) {
-      console.warn('Failed to check inventory status:', error);
-      // Don't set error for inventory check as it's expected to be empty initially
-    }
-  }, [businessId]);
-
-  // Load dashboard data
-  const loadDashboardData = useCallback(async () => {
-    if (!businessId) return;
-    
-    try {
-      const dashboard = await getBusinessDashboard();
-      setDashboardData(dashboard);
-    } catch (error) {
-      console.warn('Failed to load dashboard data:', error);
-    }
-  }, [businessId]);
-
-  // Refresh handler
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await Promise.all([
-      checkInventoryStatus(),
-      loadDashboardData()
-    ]);
-    setRefreshing(false);
-  }, [checkInventoryStatus, loadDashboardData]);
-
-  // Navigation handlers
-  const handleAddPlants = () => {
-    console.log('🌱 Creating inventory - navigating to AddInventoryScreen...');
-    
-    try {
-      // Start loading pulse animation
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
-            toValue: 1,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-      
-      // Navigate to AddInventoryScreen
-      navigation.navigate('AddInventoryScreen', { 
-        businessId,
-        returnTo: 'BusinessInventorySetupScreen'
-      });
-      
-      console.log('✅ Navigation initiated successfully');
-    } catch (error) {
-      console.error('❌ Navigation error:', error);
-      Alert.alert(
-        'Navigation Error',
-        'Unable to open inventory setup. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleViewInventory = () => {
-    console.log('📦 Opening inventory management...');
-    
-    try {
-      // Try multiple possible screen names for inventory management
-      const inventoryScreens = ['BusinessInventory', 'InventoryScreen', 'BusinessInventoryScreen'];
-      
-      // Try the first available screen
-      navigation.navigate(inventoryScreens[0], { businessId });
-      
-      console.log('✅ Inventory navigation initiated');
-    } catch (error) {
-      console.error('❌ Inventory navigation error:', error);
-      Alert.alert(
-        'Navigation Error',
-        'Unable to open inventory management. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  const handleFinishLater = () => {
-    console.log('⏭️ Finishing setup later - navigating to dashboard...');
-    
-    setIsFinishing(true);
-    
-    try {
-      // Start completion animation
-      const rotateAnimation = Animated.loop(
-        Animated.timing(rotateAnim, {
-          toValue: 1,
-          duration: 2000,
-          easing: Easing.linear,
-          useNativeDriver: true,
-        })
-      );
-      
-      rotateAnimation.start();
-      
-      // Complete setup process
-      setTimeout(() => {
-        Animated.parallel([
-          Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scaleAnim, {
-            toValue: 0.8,
-            duration: 500,
-            useNativeDriver: true,
-          }),
-        ]).start(() => {
-          try {
-            rotateAnimation.stop();
-            
-            // Try multiple possible navigation targets
-            const dashboardScreens = ['BusinessTabs', 'BusinessDashboard', 'BusinessNavigation'];
-            
-            // Try replace first, then navigate as fallback
-            try {
-              navigation.replace(dashboardScreens[0]);
-              console.log('✅ Successfully navigated to dashboard');
-            } catch (replaceError) {
-              console.warn('⚠️ Replace failed, trying navigate:', replaceError);
-              navigation.navigate(dashboardScreens[0]);
-            }
-          } catch (navError) {
-            console.error('❌ Dashboard navigation error:', navError);
-            
-            // Fallback: just go back to previous screen
-            setIsFinishing(false);
-            Alert.alert(
-              'Navigation Error',
-              'Setup completed but unable to open dashboard. You can access it from the main menu.',
-              [
-                {
-                  text: 'Go Back',
-                  onPress: () => navigation.goBack()
-                }
-              ]
-            );
-          }
-        });
-      }, 2500);
-    } catch (error) {
-      console.error('❌ Finish later error:', error);
-      setIsFinishing(false);
-      Alert.alert(
-        'Error',
-        'Unable to complete setup. Please try again.',
-        [{ text: 'OK' }]
-      );
-    }
-  };
-
-  // Skip setup
-  const handleSkipSetup = () => {
-    Alert.alert(
-      'Skip Inventory Setup?',
-      'You can always add products later from your dashboard. Continue?',
-      [
-        { text: 'Add Products Now', style: 'cancel' },
-        { 
-          text: 'Skip for Now', 
-          style: 'default',
-          onPress: handleFinishLater 
-        }
-      ]
-    );
-  };
-
-  // Animation interpolations
-  const rotateInterpolate = rotateAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
+const groupBy = (arr, keyGetter) => {
+  const map = new Map();
+  arr.forEach((item) => {
+    const key = keyGetter(item);
+    const list = map.get(key);
+    if (list) list.push(item);
+    else map.set(key, [item]);
   });
+  return Array.from(map, ([title, data]) => ({ title, data }));
+};
 
-  // Render loading state
-  if (isLoading) {
+export default function BusinessInventoryScreen({ navigation, route }) {
+  const { businessId: routeBizId } = route.params || {};
+
+  const [businessId, setBusinessId] = useState(routeBizId || null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [inventory, setInventory] = useState([]);
+  const [search, setSearch] = useState('');
+
+  const load = useCallback(async () => {
+    try {
+      setError(null);
+      setLoading(true);
+      let id = routeBizId;
+      if (!id) {
+        const [email, storedBiz] = await Promise.all([
+          AsyncStorage.getItem('userEmail'),
+          AsyncStorage.getItem('businessId'),
+        ]);
+        id = storedBiz || email;
+        setBusinessId(id);
+      }
+      if (!id) throw new Error('Business ID not found');
+
+      const res = await getBusinessInventory(id);
+
+      let items = [];
+      if (Array.isArray(res)) items = res;
+      else if (res?.inventory) items = res.inventory;
+      else if (res?.data) items = res.data;
+
+      // Normalize + filter out inactive
+      items = (items || [])
+        .filter((i) => (i?.status || 'active') === 'active')
+        .map((i) => ({
+          id: i.id || i._id || i.productId,
+          name: i.name || i.common_name || i.productName || 'Unnamed',
+          scientific_name: i.scientific_name,
+          price: Number(i.finalPrice ?? i.price ?? 0),
+          quantity: Number(i.quantity ?? 0),
+          category: i.category || i.productType || 'Uncategorized',
+          isLowStock: !!i.isLowStock,
+          raw: i,
+        }));
+
+      setInventory(items);
+    } catch (e) {
+      console.error('Inventory load error:', e);
+      setError(e.message || 'Failed to load inventory');
+      setInventory([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [routeBizId]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return inventory;
+    const q = search.trim().toLowerCase();
+    return inventory.filter(
+      (i) =>
+        i.name.toLowerCase().includes(q) ||
+        (i.scientific_name || '').toLowerCase().includes(q) ||
+        (i.category || '').toLowerCase().includes(q)
+    );
+  }, [inventory, search]);
+
+  const sections = useMemo(() => {
+    const grouped = groupBy(filtered, (i) => i.category || 'Uncategorized');
+    // sort categories by name
+    grouped.sort((a, b) => a.title.localeCompare(b.title));
+    // sort items within each category by name
+    grouped.forEach((s) => s.data.sort((a, b) => a.name.localeCompare(b.name)));
+    return grouped;
+  }, [filtered]);
+
+  const onRefresh = () => {
+    setRefreshing(true);
+    load();
+  };
+
+  const renderSectionHeader = ({ section }) => (
+    <View style={styles.sectionHeader}>
+      <View style={styles.sectionHeaderChip}>
+        <MaterialCommunityIcons name="shape" size={16} color="#216a94" />
+        <Text style={styles.sectionHeaderText} numberOfLines={1}>
+          {section.title}
+        </Text>
+      </View>
+    </View>
+  );
+
+  const renderItem = ({ item }) => (
+    <TouchableOpacity
+      style={styles.itemRow}
+      activeOpacity={0.7}
+      onPress={() => {
+        // navigate to edit/details if you have it
+        navigation.navigate?.('EditProductScreen', { product: item.raw });
+      }}
+    >
+      <View style={styles.itemLeftGutter}>
+        <MaterialCommunityIcons
+          name={item.category?.toLowerCase().includes('plant') ? 'leaf' : 'cube-outline'}
+          size={20}
+          color="#4CAF50"
+        />
+      </View>
+
+      <View style={styles.itemBody}>
+        <Text style={styles.itemName} numberOfLines={1}>
+          {item.name}
+        </Text>
+        {!!item.scientific_name && (
+          <Text style={styles.itemSci} numberOfLines={1}>
+            {item.scientific_name}
+          </Text>
+        )}
+
+        {/* THE IMPORTANT BIT: single-line price + stock row */}
+        <View style={styles.metaRow}>
+          <Text style={styles.metaPrice} numberOfLines={1}>
+            ₪{item.price.toFixed(2)}
+          </Text>
+          <Text style={styles.metaStock} numberOfLines={1}>
+            Stock: {item.quantity}
+          </Text>
+        </View>
+      </View>
+
+      <MaterialIcons name="chevron-right" size={22} color="#c0c6cc" />
+    </TouchableOpacity>
+  );
+
+  if (loading) {
     return (
       <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Animated.View style={{ transform: [{ rotate: rotateInterpolate }] }}>
-            <MaterialCommunityIcons name="store-settings" size={60} color="#4CAF50" />
-          </Animated.View>
-          <Text style={styles.loadingText}>Setting up your business...</Text>
-          <Text style={styles.loadingSubtext}>
-            Checking your inventory and preparing your dashboard
-          </Text>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#216a94" />
+          <Text style={styles.loadingText}>Loading inventory…</Text>
         </View>
       </SafeAreaView>
     );
   }
-
-  // Render finishing state
-  if (isFinishing) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Animated.View style={[
-          styles.finishingContainer,
-          {
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }],
-          }
-        ]}>
-          <Animated.View style={{
-            transform: [{ rotate: rotateInterpolate }],
-          }}>
-            <MaterialCommunityIcons name="check-circle" size={80} color="#4CAF50" />
-          </Animated.View>
-          <Text style={styles.finishingTitle}>Setup Complete!</Text>
-          <Text style={styles.finishingSubtitle}>
-            Your business dashboard is ready. You can add products anytime.
-          </Text>
-          <View style={styles.progressDots}>
-            <View style={[styles.dot, styles.activeDot]} />
-            <View style={[styles.dot, styles.activeDot]} />
-            <View style={[styles.dot, styles.completeDot]} />
-          </View>
-        </Animated.View>
-      </SafeAreaView>
-    );
-  }
-
-  // Render error state
-  if (error) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="error-outline" size={64} color="#f44336" />
-          <Text style={styles.errorTitle}>Setup Failed</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={initializeSetup}>
-            <MaterialIcons name="refresh" size={20} color="#fff" />
-            <Text style={styles.retryButtonText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  const hasInventory = inventoryStatus?.inventory?.length > 0;
 
   return (
     <SafeAreaView style={styles.container}>
-      <Animated.ScrollView 
-        contentContainerStyle={styles.content}
-        style={{
-          opacity: fadeAnim,
-          transform: [{ scale: scaleAnim }],
-        }}
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.headerBtn}>
+          <MaterialIcons name="arrow-back" size={22} color="#216a94" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Inventory</Text>
+        <TouchableOpacity onPress={onRefresh} style={styles.headerBtn}>
+          <MaterialIcons name="refresh" size={22} color="#216a94" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Search */}
+      <View style={styles.searchBar}>
+        <MaterialIcons name="search" size={20} color="#7b8794" />
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder="Search name, scientific name, or category…"
+          placeholderTextColor="#a0aec0"
+          style={styles.searchInput}
+        />
+        {!!search && (
+          <TouchableOpacity onPress={() => setSearch('')}>
+            <MaterialIcons name="close" size={18} color="#a0aec0" />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Error */}
+      {!!error && (
+        <View style={styles.errorBox}>
+          <MaterialIcons name="error-outline" size={18} color="#f44336" />
+          <Text style={styles.errorText} numberOfLines={2}>
+            {error}
+          </Text>
+        </View>
+      )}
+
+      {/* List */}
+      <SectionList
+        sections={sections}
+        keyExtractor={(it) => String(it.id)}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderItem}
+        contentContainerStyle={styles.listContent}
+        stickySectionHeadersEnabled={false}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#4CAF50']}
-            tintColor="#4CAF50"
-          />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#216a94']} tintColor="#216a94" />
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <MaterialCommunityIcons name="package-variant-closed" size={54} color="#e2e8f0" />
+            <Text style={styles.emptyText}>No inventory yet</Text>
+          </View>
         }
         showsVerticalScrollIndicator={false}
-      >
-        {/* Header Section */}
-        <Animated.View 
-          style={[
-            styles.header,
-            { transform: [{ translateY: slideAnim }] }
-          ]}
-        >
-          <View style={styles.headerIconContainer}>
-            <MaterialCommunityIcons name="store" size={64} color="#4CAF50" />
-            {autoRefreshEnabled && (
-              <View style={styles.autoRefreshIndicator}>
-                <MaterialCommunityIcons name="sync" size={12} color="#4CAF50" />
-              </View>
-            )}
-          </View>
-          <Text style={styles.title}>
-            {hasInventory ? 'Inventory Ready!' : 'Setup Your Inventory'}
-          </Text>
-          <Text style={styles.subtitle}>
-            {hasInventory 
-              ? `You have ${inventoryStatus.inventory.length} products in your inventory`
-              : 'Add plants and products to start selling on the marketplace'
-            }
-          </Text>
-        </Animated.View>
-
-        {/* Inventory Status Cards */}
-        {hasInventory && inventoryStatus && (
-          <Animated.View style={styles.statusContainer}>
-            <View style={styles.statusRow}>
-              <KPIWidget
-                title="Total Products"
-                value={inventoryStatus.summary.totalItems}
-                icon="package-variant"
-                color="#4CAF50"
-                onPress={handleViewInventory}
-              />
-              <KPIWidget
-                title="Active Items"
-                value={inventoryStatus.summary.activeItems}
-                icon="check-circle"
-                color="#2196F3"
-              />
-            </View>
-            <View style={styles.statusRow}>
-              <KPIWidget
-                title="Low Stock"
-                value={inventoryStatus.summary.lowStockItems}
-                icon="alert-circle"
-                color="#FF9800"
-                subtitle={inventoryStatus.summary.lowStockItems > 0 ? 'Needs attention' : 'All good'}
-              />
-              <KPIWidget
-                title="Total Value"
-                value={inventoryStatus.summary.totalValue}
-                format="currency"
-                icon="currency-usd"
-                color="#9C27B0"
-              />
-            </View>
-            
-            {/* Low Stock Banner */}
-            {inventoryStatus.summary.lowStockItems > 0 && (
-              <LowStockBanner
-                lowStockItems={inventoryStatus.inventory.filter(item => item.isLowStock)}
-                onManageStock={handleViewInventory}
-                onRestock={(item) => {
-                  navigation.navigate('EditProductScreen', { product: item });
-                }}
-              />
-            )}
-          </Animated.View>
-        )}
-
-        {/* Action Options */}
-        <Animated.View 
-          style={[
-            styles.optionsContainer,
-            { transform: [{ translateY: slideAnim }] }
-          ]}
-        >
-          <TouchableOpacity 
-            style={[styles.primaryOption, hasInventory && styles.secondaryOptionStyle]} 
-            onPress={handleAddPlants}
-          >
-            <Animated.View 
-              style={[styles.optionIcon, { transform: [{ scale: pulseAnim }] }]}
-            >
-              <MaterialCommunityIcons name="leaf" size={32} color="#fff" />
-            </Animated.View>
-            <View style={styles.optionContent}>
-              <Text style={styles.optionTitle}>
-                {hasInventory ? 'Add More Products' : 'Create Inventory'}
-              </Text>
-              <Text style={styles.optionDescription}>
-                {hasInventory 
-                  ? 'Expand your inventory with more plants and products'
-                  : 'Build your product catalog by adding plants and accessories'
-                }
-              </Text>
-            </View>
-            <MaterialIcons name="arrow-forward" size={24} color="#4CAF50" />
-          </TouchableOpacity>
-
-          {hasInventory && (
-            <TouchableOpacity style={styles.inventoryOption} onPress={handleViewInventory}>
-              <View style={[styles.optionIcon, { backgroundColor: '#2196F3' }]}>
-                <MaterialCommunityIcons name="package-variant" size={28} color="#fff" />
-              </View>
-              <View style={styles.optionContent}>
-                <Text style={styles.optionTitle}>Manage Inventory</Text>
-                <Text style={styles.optionDescription}>
-                  View, edit, and manage your existing products
-                </Text>
-              </View>
-              <MaterialIcons name="arrow-forward" size={24} color="#2196F3" />
-            </TouchableOpacity>
-          )}
-
-          <TouchableOpacity 
-            style={styles.finishOption} 
-            onPress={hasInventory ? handleFinishLater : handleSkipSetup}
-          >
-            <View style={styles.optionIcon}>
-              <MaterialIcons 
-                name={hasInventory ? "dashboard" : "schedule"} 
-                size={28} 
-                color="#666" 
-              />
-            </View>
-            <View style={styles.optionContent}>
-              <Text style={styles.secondaryOptionTitle}>
-                {hasInventory ? 'Go to Dashboard' : 'Finish This Later'}
-              </Text>
-              <Text style={styles.optionDescription}>
-                {hasInventory 
-                  ? 'Access your full business dashboard'
-                  : 'Skip for now and set up inventory later'
-                }
-              </Text>
-            </View>
-          </TouchableOpacity>
-        </Animated.View>
-
-        {/* Information Section */}
-        {!hasInventory && (
-          <Animated.View 
-            style={[
-              styles.infoSection,
-              { transform: [{ translateY: slideAnim }] }
-            ]}
-          >
-            <Text style={styles.infoTitle}>What you can add:</Text>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" />
-              <Text style={styles.infoText}>Live plants with care instructions</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="hammer-wrench" size={20} color="#FF9800" />
-              <Text style={styles.infoText}>Gardening tools and accessories</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="seed" size={20} color="#8BC34A" />
-              <Text style={styles.infoText}>Seeds and plant supplies</Text>
-            </View>
-            <View style={styles.infoItem}>
-              <MaterialCommunityIcons name="flower" size={20} color="#E91E63" />
-              <Text style={styles.infoText}>Decorative pots and planters</Text>
-            </View>
-          </Animated.View>
-        )}
-
-        {/* Encouragement Section */}
-        <Animated.View 
-          style={[
-            styles.encouragementSection,
-            { transform: [{ translateY: slideAnim }] }
-          ]}
-        >
-          <MaterialCommunityIcons name="lightbulb-on" size={24} color="#FFC107" />
-          <Text style={styles.encouragementText}>
-            {hasInventory 
-              ? 'Your inventory is set up! You can always add more products or manage existing ones from your dashboard.'
-              : "Don't worry! You can always add more products later from your dashboard."
-            }
-          </Text>
-        </Animated.View>
-
-        {/* Auto-refresh indicator */}
-        {autoRefreshEnabled && !hasInventory && (
-          <View style={styles.autoRefreshInfo}>
-            <MaterialCommunityIcons name="sync" size={16} color="#4CAF50" />
-            <Text style={styles.autoRefreshText}>
-              Auto-checking for inventory updates...
-            </Text>
-          </View>
-        )}
-      </Animated.ScrollView>
+      />
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  loadingText: {
-    marginTop: 20,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-  },
-  loadingSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#f44336',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f44336',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  finishingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  finishingTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4CAF50',
-    marginTop: 20,
-    textAlign: 'center',
-  },
-  finishingSubtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 12,
-    lineHeight: 22,
-  },
-  progressDots: {
-    flexDirection: 'row',
-    marginTop: 30,
-  },
-  dot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#e0e0e0',
-    marginHorizontal: 6,
-  },
-  activeDot: {
-    backgroundColor: '#4CAF50',
-  },
-  completeDot: {
-    backgroundColor: '#4CAF50',
-    transform: [{ scale: 1.2 }],
-  },
-  content: {
-    flexGrow: 1,
-    padding: 20,
-  },
+  container: { flex: 1, backgroundColor: '#f5f7fa' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  loadingText: { marginTop: 12, color: '#667085' },
+
   header: {
+    backgroundColor: '#fff',
+    flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 20,
-    marginBottom: 32,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#edf2f7',
   },
-  headerIconContainer: {
-    position: 'relative',
-    marginBottom: 16,
-  },
-  autoRefreshIndicator: {
-    position: 'absolute',
-    top: -5,
-    right: -5,
-    backgroundColor: '#f0f9f3',
+  headerBtn: {
+    padding: 8,
     borderRadius: 10,
-    padding: 4,
+    backgroundColor: '#eef5f9',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333',
+  headerTitle: {
+    flex: 1,
     textAlign: 'center',
-    marginBottom: 8,
+    color: '#216a94',
+    fontWeight: '700',
+    fontSize: 18,
   },
-  subtitle: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  statusContainer: {
-    marginBottom: 24,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 12,
-  },
-  optionsContainer: {
-    marginBottom: 32,
-  },
-  primaryOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f9f3',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  secondaryOptionStyle: {
-    backgroundColor: '#fff',
-    borderColor: '#4CAF50',
-  },
-  inventoryOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f0f8ff',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: '#2196F3',
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  finishOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
+
+  searchBar: {
+    margin: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  optionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#4CAF50',
-    justifyContent: 'center',
+    borderColor: '#e2e8f0',
+    flexDirection: 'row',
     alignItems: 'center',
-    marginRight: 16,
+    gap: 8,
   },
-  optionContent: {
-    flex: 1,
+  searchInput: { flex: 1, color: '#1f2937', fontSize: 15 },
+
+  errorBox: {
+    marginHorizontal: 12,
+    marginBottom: 6,
+    padding: 10,
+    backgroundColor: '#fff5f5',
+    borderLeftWidth: 3,
+    borderLeftColor: '#f44336',
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  optionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 4,
+  errorText: { color: '#9b2c2c', flex: 1, fontSize: 13 },
+
+  listContent: {
+    paddingHorizontal: 8,
+    paddingBottom: 20,
   },
-  secondaryOptionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#666',
-    marginBottom: 4,
+
+  // CATEGORY HEADER with clean indent
+  sectionHeader: {
+    paddingTop: 16,
+    paddingBottom: 8,
+    paddingLeft: 16, // header left pad
   },
-  optionDescription: {
-    fontSize: 14,
-    color: '#666',
-    lineHeight: 18,
-  },
-  infoSection: {
-    backgroundColor: '#fff',
+  sectionHeaderChip: {
+    alignSelf: 'flex-start',
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#eef5f9',
+    borderWidth: 1,
+    borderColor: '#cfe3ef',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  sectionHeaderText: {
+    color: '#216a94',
+    fontWeight: '700',
+    fontSize: 13,
+    maxWidth: 280,
+  },
+
+  // ITEM ROW neatly indented under header
+  itemRow: {
+    marginHorizontal: 10,
+    marginBottom: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#edf2f7',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingRight: 10,
+    // subtle elevation
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
     elevation: 1,
   },
-  infoTitle: {
+  // left “gutter” ensures visual indent from header
+  itemLeftGutter: {
+    width: 28,
+    alignItems: 'center',
+    marginLeft: 16, // actual indent from the screen edge
+    marginRight: 8,
+  },
+  itemBody: {
+    flex: 1,
+    minWidth: 0, // allow text to ellipsize
+  },
+  itemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#333',
-    marginBottom: 16,
+    color: '#1f2937',
   },
-  infoItem: {
+  itemSci: {
+    fontSize: 13,
+    color: '#6b7280',
+    fontStyle: 'italic',
+    marginTop: 2,
+  },
+
+  // *** CRITICAL LAYOUT FIX ***
+  // keep on one line, baseline aligned, no wrapping
+  metaRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    flexWrap: 'nowrap',
+    width: '100%',
+    marginTop: 6,
   },
-  infoText: {
+  metaPrice: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#216a94',
+    flexShrink: 0,
+    marginRight: 8,
+  },
+  metaStock: {
     fontSize: 14,
-    color: '#666',
-    marginLeft: 12,
-    flex: 1,
+    color: '#64748b',
+    flexShrink: 0,
+    marginLeft: 8,
+    textAlign: 'right',
+    minWidth: 90, // keeps it from collapsing and wrapping
   },
-  encouragementSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff9e6',
-    borderRadius: 16,
-    padding: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FFC107',
-    marginBottom: 20,
-  },
-  encouragementText: {
-    fontSize: 14,
-    color: '#666',
-    marginLeft: 12,
-    flex: 1,
-    lineHeight: 18,
-  },
-  autoRefreshInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-  },
-  autoRefreshText: {
-    fontSize: 12,
-    color: '#4CAF50',
-    marginLeft: 6,
-  },
+
+  empty: { alignItems: 'center', paddingVertical: 60 },
+  emptyText: { color: '#94a3b8', marginTop: 10 },
 });

@@ -1,23 +1,15 @@
-// screens/MapScreen.js - FIXED VERSION (Working User Location + Pins)
+// screens/MapScreen.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View,
-  StyleSheet,
-  ActivityIndicator,
-  Text,
-  SafeAreaView,
-  TouchableOpacity,
-  Alert,
-  Platform,
-  BackHandler,
-  Linking,
+  View, StyleSheet, ActivityIndicator, Text, SafeAreaView, TouchableOpacity,
+  Alert, Platform, BackHandler, Linking, useWindowDimensions,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import * as Location from 'expo-location';
 
 import MarketplaceHeader from '../components/MarketplaceHeader';
-import CrossPlatformAzureMapView from '../components/CrossPlatformAzureMapView';
+import CrossPlatformWebMap from '../components/CrossPlatformWebMap';
 import MapSearchBox from '../components/MapSearchBox';
 import RadiusControl from '../components/RadiusControl';
 import ProductListView from '../components/ProductListView';
@@ -27,31 +19,36 @@ import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
 import MapModeToggle from '../components/MapModeToggle';
 import { getNearbyProducts } from '../services/marketplaceApi';
 import { getNearbyBusinesses } from '../../Business/services/businessApi';
-import { getAzureMapsKey, reverseGeocode } from '../services/azureMapsService';
+import { getMapTilerKey, reverseGeocode } from '../services/maptilerService';
 
-/**
- * Enhanced MapScreen with Plants/Businesses toggle and FIXED user location
- */
+const TLV = { latitude: 32.0853, longitude: 34.7818, city: 'Tel Aviv', formattedAddress: 'Tel Aviv, Israel' };
+// Emulator default mock location (Googleplex)
+const looksLikeEmulatorMock = (lat, lng) =>
+  Math.abs(lat - 37.4220936) < 0.02 && Math.abs(lng + 122.083922) < 0.02;
+
 const MapScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const { height } = useWindowDimensions();
   const { products = [], initialLocation } = route.params || {};
 
-  // State variables
+  const FLOATING_BOTTOM = Math.max(24, Math.round(height * 0.16));
+  const CARD_POPUP_BOTTOM = Math.max(200, Math.round(height * 0.22));
+
   const [mapMode, setMapMode] = useState('plants');
   const [mapProducts, setMapProducts] = useState(products);
   const [mapBusinesses, setMapBusinesses] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedLocation, setSelectedLocation] = useState(initialLocation);
+
+  // ✅ start on TLV to avoid the emulator's Mountain View flash
+  const [selectedLocation, setSelectedLocation] = useState(initialLocation || TLV);
+
   const [searchRadius, setSearchRadius] = useState(10);
-  const [azureMapsKey, setAzureMapsKey] = useState(null);
-  const [isKeyLoading, setIsKeyLoading] = useState(true);
   const [nearbyProducts, setNearbyProducts] = useState([]);
   const [nearbyBusinesses, setNearbyBusinesses] = useState([]);
   const [sortOrder, setSortOrder] = useState('nearest');
   const [viewMode, setViewMode] = useState('map');
-  const [showResults, setShowResults] = useState(false);
   const [searchingLocation, setSearchingLocation] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [selectedBusiness, setSelectedBusiness] = useState(null);
@@ -65,11 +62,8 @@ const MapScreen = () => {
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
-  // Refs
   const mapRef = useRef(null);
-  const listRef = useRef(null);
 
-  // Handle Android back button
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
@@ -79,175 +73,142 @@ const MapScreen = () => {
         }
         return false;
       };
-
-      const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-      return () => subscription.remove();
+      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      return () => sub.remove();
     }, [viewMode])
   );
 
-  // FIXED: Load Azure Maps key when component mounts
-  useEffect(() => {
-    const loadMapsKey = async () => {
-      try {
-        setIsKeyLoading(true);
-        console.log('🗺️ Loading Azure Maps key...');
-        const key = await getAzureMapsKey();
-        console.log('✅ Azure Maps key loaded successfully');
-        setAzureMapsKey(key);
-        setIsKeyLoading(false);
-      } catch (err) {
-        console.error('❌ Error fetching Azure Maps key:', err);
-        setError('Failed to load map configuration. Please check your internet connection.');
-        setIsKeyLoading(false);
-      }
-    };
-
-    loadMapsKey();
-  }, []);
-
-  // FIXED: Initialize user location on mount
-  useEffect(() => {
-    initializeUserLocation();
-  }, []);
-
-  // FIXED: Initialize map with products if provided
+  // Use products / initialLocation on focus
   useFocusEffect(
     useCallback(() => {
       if (products.length > 0) {
-        console.log('📍 Processing', products.length, 'products for map');
-        
-        // Filter products with valid coordinates
-        const productsWithCoords = products.filter(p => {
-          const hasCoords = p.location?.latitude && p.location?.longitude;
-          if (!hasCoords) {
-            console.log('⚠️ Product missing coordinates:', p.id || p._id, p.title || p.name);
-          }
-          return hasCoords;
-        });
-        
-        console.log('✅ Products with coordinates:', productsWithCoords.length);
-        
-        setMapProducts(productsWithCoords);
-        setCounts(prev => ({ ...prev, plants: productsWithCoords.length }));
-        
-        // Set initial location from first product if no location set
-        if (productsWithCoords.length > 0 && !selectedLocation) {
-          const firstProduct = productsWithCoords[0];
+        const withCoords = products.filter(p => p?.location?.latitude && p?.location?.longitude);
+        setMapProducts(withCoords);
+        setCounts(prev => ({ ...prev, plants: withCoords.length }));
+        if (withCoords.length > 0 && !initialLocation && !selectedLocation) {
+          const first = withCoords[0];
           setSelectedLocation({
-            latitude: firstProduct.location.latitude,
-            longitude: firstProduct.location.longitude,
-            city: firstProduct.location?.city || firstProduct.city || 'Location'
+            latitude: first.location.latitude,
+            longitude: first.location.longitude,
+            city: first.location?.city || first.city || 'Location',
           });
-          console.log('📍 Set initial location from product:', firstProduct.location);
         }
       }
-      
       if (initialLocation?.latitude && initialLocation?.longitude) {
-        console.log('📍 Using initial location:', initialLocation);
         setSelectedLocation(initialLocation);
-        if (products.length === 0) {
-          loadNearbyData(initialLocation, searchRadius);
-        }
+        if (products.length === 0) loadNearbyData(initialLocation, Number(searchRadius) || 10);
       }
     }, [products, initialLocation])
   );
 
-  // FIXED: Initialize user location with better error handling
-  const initializeUserLocation = async () => {
-    try {
-      console.log('📱 Checking location permissions...');
-      
-      // Check current permission status
-      let { status } = await Location.getForegroundPermissionsAsync();
-      console.log('📱 Current permission status:', status);
-      
-      if (status !== 'granted') {
-        console.log('📱 Requesting location permission...');
-        const { status: newStatus } = await Location.requestForegroundPermissionsAsync();
-        status = newStatus;
-        console.log('📱 New permission status:', status);
+  // Smoothly recenter when selection changes
+  useEffect(() => {
+    if (selectedLocation?.latitude && selectedLocation?.longitude) {
+      mapRef.current?.flyTo?.(selectedLocation.latitude, selectedLocation.longitude, 12);
+    }
+  }, [selectedLocation]);
+
+  // Location initialization with emulator guard
+  useEffect(() => {
+    const initLocation = async () => {
+      // 1) If screen was called with a location → use it.
+      if (initialLocation?.latitude && initialLocation?.longitude) {
+        setSelectedLocation(initialLocation);
+        if (products.length === 0) loadNearbyData(initialLocation, Number(searchRadius) || 10);
+        return;
       }
-      
-      if (status === 'granted') {
-        setLocationPermissionGranted(true);
-        console.log('✅ Location permission granted');
-        
-        // Try to get current location
-        try {
-          console.log('📍 Getting current location...');
-          const location = await Location.getCurrentPositionAsync({
-            accuracy: Location.Accuracy.Balanced,
-            maximumAge: 30000, // 30 seconds
-            timeout: 10000 // 10 seconds
-          });
-          
-          const { latitude, longitude } = location.coords;
-          console.log('✅ Got current location:', latitude, longitude);
-          
-          setMyLocation({ latitude, longitude });
-          setShowMyLocation(true);
-          
-          // Set as selected location if none exists
-          if (!selectedLocation) {
-            try {
-              const addressData = await reverseGeocode(latitude, longitude);
-              const locationData = {
-                latitude,
-                longitude,
-                formattedAddress: addressData.formattedAddress,
-                city: addressData.city || 'Current Location',
-              };
-              setSelectedLocation(locationData);
-              console.log('✅ Set current location as selected:', locationData);
-            } catch (geocodeError) {
-              console.warn('⚠️ Geocoding failed, using coordinates only:', geocodeError);
-              setSelectedLocation({
-                latitude,
-                longitude,
-                formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-                city: 'Current Location',
-              });
+
+      try {
+        let { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') {
+          const req = await Location.requestForegroundPermissionsAsync();
+          status = req.status;
+        }
+
+        if (status === 'granted') {
+          setLocationPermissionGranted(true);
+          try {
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+              maximumAge: 30000,
+              timeout: 15000,
+            });
+
+            let { latitude, longitude } = location.coords;
+
+            // Emulator default → fall back to TLV
+            if (looksLikeEmulatorMock(latitude, longitude)) {
+              latitude = TLV.latitude;
+              longitude = TLV.longitude;
+            }
+
+            setMyLocation({ latitude, longitude });
+            setShowMyLocation(true);
+
+            if (!selectedLocation) {
+              try {
+                const addr = await reverseGeocode(latitude, longitude);
+                const locationData = {
+                  latitude, longitude,
+                  formattedAddress: addr.formattedAddress,
+                  city: addr.city || 'Current Location',
+                };
+                setSelectedLocation(locationData);
+                loadNearbyData(locationData, Number(searchRadius) || 10);
+              } catch {
+                const fallbackData = {
+                  latitude, longitude,
+                  formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
+                  city: 'Current Location',
+                };
+                setSelectedLocation(fallbackData);
+                loadNearbyData(fallbackData, Number(searchRadius) || 10);
+              }
+            }
+          } catch {
+            setLocationPermissionGranted(false);
+            if (!selectedLocation && !initialLocation) {
+              setSelectedLocation(TLV);
+              loadNearbyData(TLV, Number(searchRadius) || 10);
             }
           }
-        } catch (locationError) {
-          console.warn('⚠️ Could not get current location:', locationError);
-          // Don't show error to user, just continue without location
+        } else {
+          setLocationPermissionGranted(false);
+          if (!selectedLocation && !initialLocation) {
+            setSelectedLocation(TLV);
+            loadNearbyData(TLV, Number(searchRadius) || 10);
+          }
         }
-      } else {
-        console.log('⚠️ Location permission denied');
+      } catch {
         setLocationPermissionGranted(false);
       }
-    } catch (error) {
-      console.error('❌ Error initializing user location:', error);
-      setLocationPermissionGranted(false);
-    }
-  };
+    };
 
-  // Handle location selection
-  const handleLocationSelect = (location) => {
-    console.log('📍 Location selected:', location);
-    setSelectedLocation(location);
-    if (location?.latitude && location?.longitude) {
+    initLocation();
+  }, []); // once
+
+  const handleLocationSelect = (loc) => {
+    setSelectedLocation(loc);
+    if (loc?.latitude && loc?.longitude) {
       setRadiusVisible(true);
-      loadNearbyData(location, searchRadius);
+      loadNearbyData(loc, Number(searchRadius) || 10);
     }
   };
 
-  // Handle radius change
-  const handleRadiusChange = (radius) => {
-    setSearchRadius(radius);
+  const handleRadiusChange = (r) => {
+    const n = Number(r);
+    setSearchRadius(Number.isFinite(n) ? n : 10);
   };
-
-  // Apply radius change and reload data
-  const handleApplyRadius = (radius) => {
+  const handleApplyRadius = (r) => {
+    const n = Number(r);
+    const safe = Number.isFinite(n) ? n : 10;
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyData(selectedLocation, radius);
+      loadNearbyData(selectedLocation, safe);
     }
   };
 
-  // Handle map mode change
-  const handleMapModeChange = (newMode) => {
-    setMapMode(newMode);
+  const handleMapModeChange = (mode) => {
+    setMapMode(mode);
     setShowDetailCard(false);
     setSelectedProduct(null);
     setSelectedBusiness(null);
@@ -255,12 +216,10 @@ const MapScreen = () => {
     setSelectedBusinessData(null);
   };
 
-  // Load nearby data based on current map mode
-  const loadNearbyData = async (location, radius) => {
-    if (!location?.latitude || !location?.longitude) {
-      console.warn('⚠️ Invalid location for nearby data:', location);
-      return;
-    }
+  const loadNearbyData = async (loc, radius) => {
+    if (!loc?.latitude || !loc?.longitude) return;
+    const radNum = Number(radius);
+    const radiusKm = Number.isFinite(radNum) ? radNum : 10;
 
     try {
       setIsLoading(true);
@@ -269,15 +228,12 @@ const MapScreen = () => {
       setShowDetailCard(false);
       setRadiusVisible(true);
 
-      console.log(`🔍 Loading nearby ${mapMode} for:`, location, 'radius:', radius);
-
       if (mapMode === 'plants') {
-        await loadNearbyProducts(location, radius);
+        await loadNearbyProducts(loc, radiusKm);
       } else {
-        await loadNearbyBusinesses(location, radius);
+        await loadNearbyBusinesses(loc, radiusKm);
       }
-    } catch (err) {
-      console.error('❌ Error loading nearby data:', err);
+    } catch {
       setError('Failed to load nearby data. Please try again.');
     } finally {
       setIsLoading(false);
@@ -285,150 +241,81 @@ const MapScreen = () => {
     }
   };
 
-  // Load nearby products
-  const loadNearbyProducts = async (location, radius) => {
-    try {
-      const result = await getNearbyProducts(
-        location.latitude,
-        location.longitude,
-        radius
-      );
-
-      if (result && result.products) {
-        const products = result.products
-          .filter(product => product.location?.latitude && product.location?.longitude)
-          .map(product => ({
-            ...product,
-            distance: product.distance || 0
-          }));
-
-        console.log(`✅ Found ${products.length} nearby products`);
-        
-        const sortedProducts = sortProductsByDistance(products, sortOrder === 'nearest');
-        
-        setMapProducts(sortedProducts);
-        setNearbyProducts(sortedProducts);
-        setCounts(prev => ({ ...prev, plants: sortedProducts.length }));
-        setShowResults(true);
-      } else {
-        console.log('📭 No nearby products found');
-        setMapProducts([]);
-        setNearbyProducts([]);
-        setCounts(prev => ({ ...prev, plants: 0 }));
-        setShowResults(true);
-      }
-    } catch (error) {
-      console.error('❌ Error loading nearby products:', error);
-      throw error;
+  const loadNearbyProducts = async (loc, radius) => {
+    const res = await getNearbyProducts(loc.latitude, loc.longitude, radius);
+    if (res?.products) {
+      const items = res.products
+        .filter(p => p?.location?.latitude && p?.location?.longitude)
+        .map(p => ({ ...p, distance: p.distance || 0 }));
+      const sorted = sortProductsByDistance(items, sortOrder === 'nearest');
+      setMapProducts(sorted);
+      setNearbyProducts(sorted);
+      setCounts(prev => ({ ...prev, plants: sorted.length }));
+    } else {
+      setMapProducts([]); setNearbyProducts([]);
+      setCounts(prev => ({ ...prev, plants: 0 }));
     }
   };
 
-  // Load nearby businesses
-  const loadNearbyBusinesses = async (location, radius) => {
-    try {
-      const result = await getNearbyBusinesses(
-        location.latitude,
-        location.longitude,
-        radius
-      );
-
-      if (result && result.businesses) {
-        const businesses = result.businesses
-          .filter(business => {
-            const hasCoords = business.location?.latitude && business.location?.longitude ||
-                              business.address?.latitude && business.address?.longitude;
-            if (!hasCoords) {
-              console.log('⚠️ Business missing coordinates:', business.id, business.businessName);
-            }
-            return hasCoords;
-          })
-          .map(business => ({
-            ...business,
-            distance: business.distance || 0,
-            // Ensure location data is properly structured
-            location: business.location || {
-              latitude: business.address?.latitude,
-              longitude: business.address?.longitude,
-              city: business.address?.city || 'Unknown location'
-            }
-          }));
-
-        console.log(`✅ Found ${businesses.length} nearby businesses`);
-        
-        const sortedBusinesses = sortBusinessesByDistance(businesses, sortOrder === 'nearest');
-        
-        setMapBusinesses(sortedBusinesses);
-        setNearbyBusinesses(sortedBusinesses);
-        setCounts(prev => ({ ...prev, businesses: sortedBusinesses.length }));
-        setShowResults(true);
-      } else {
-        console.log('📭 No nearby businesses found');
-        setMapBusinesses([]);
-        setNearbyBusinesses([]);
-        setCounts(prev => ({ ...prev, businesses: 0 }));
-        setShowResults(true);
-      }
-    } catch (error) {
-      console.error('❌ Error loading nearby businesses:', error);
-      throw error;
+  const loadNearbyBusinesses = async (loc, radius) => {
+    const res = await getNearbyBusinesses(loc.latitude, loc.longitude, radius);
+    if (res?.businesses) {
+      const items = res.businesses
+        .filter(b => (b?.location?.latitude && b?.location?.longitude) || (b?.address?.latitude && b?.address?.longitude))
+        .map(b => ({
+          ...b,
+          distance: b.distance || 0,
+          location: b.location || {
+            latitude: b.address?.latitude,
+            longitude: b.address?.longitude,
+            city: b.address?.city || 'Unknown location',
+          },
+        }));
+      const sorted = sortBusinessesByDistance(items, sortOrder === 'nearest');
+      setMapBusinesses(sorted);
+      setNearbyBusinesses(sorted);
+      setCounts(prev => ({ ...prev, businesses: sorted.length }));
+    } else {
+      setMapBusinesses([]); setNearbyBusinesses([]);
+      setCounts(prev => ({ ...prev, businesses: 0 }));
     }
   };
 
-  // Handle product selection from map
-  const handleProductSelect = (productId) => {
-    const product = mapProducts.find(p => p.id === productId || p._id === productId);
-    
-    if (product) {
-      console.log("📦 Product selected:", product.title || product.name);
-      setSelectedProduct(product);
-      setSelectedProductData(product);
+  const handleProductSelect = (id) => {
+    const p = mapProducts.find(x => x.id === id || x._id === id);
+    if (p) {
+      setSelectedProduct(p);
+      setSelectedProductData(p);
       setSelectedBusiness(null);
       setSelectedBusinessData(null);
       setShowDetailCard(true);
     }
   };
 
-  // Handle business selection from map
-  const handleBusinessSelect = (businessId) => {
-    const business = mapBusinesses.find(b => b.id === businessId);
-    
-    if (business) {
-      console.log("🏢 Business selected:", business.businessName || business.name);
-      setSelectedBusiness(business);
-      setSelectedBusinessData(business);
+  const handleBusinessSelect = (id) => {
+    const b = mapBusinesses.find(x => x.id === id);
+    if (b) {
+      setSelectedBusiness(b);
+      setSelectedBusinessData(b);
       setSelectedProduct(null);
       setSelectedProductData(null);
       setShowDetailCard(true);
     }
   };
 
-  // Handle closing the detail card
-  const handleCloseDetailCard = () => {
-    setShowDetailCard(false);
-  };
-
-  // Handle view details button on mini cards
   const handleViewProductDetails = () => {
     if (selectedProductData) {
-      navigation.navigate('PlantDetail', { 
-        plantId: selectedProductData.id || selectedProductData._id 
-      });
+      navigation.navigate('PlantDetail', { plantId: selectedProductData.id || selectedProductData._id });
     }
   };
-
   const handleViewBusinessDetails = () => {
     if (selectedBusinessData) {
-      navigation.navigate('BusinessSellerProfile', { 
-        sellerId: selectedBusinessData.id,
-        businessId: selectedBusinessData.id
-      });
+      navigation.navigate('BusinessSellerProfile', { sellerId: selectedBusinessData.id, businessId: selectedBusinessData.id });
     }
   };
 
-  // Handle get directions
   const handleGetDirections = () => {
     let lat, lng, label;
-    
     if (mapMode === 'plants' && selectedProductData) {
       lat = selectedProductData.location?.latitude;
       lng = selectedProductData.location?.longitude;
@@ -438,31 +325,22 @@ const MapScreen = () => {
       lng = selectedBusinessData.location?.longitude || selectedBusinessData.address?.longitude;
       label = selectedBusinessData.businessName || selectedBusinessData.name;
     }
-    
     if (!lat || !lng) {
       Alert.alert('Error', 'Location coordinates not available');
       return;
     }
-    
     const encodedLabel = encodeURIComponent(label);
-    let url;
-    
-    if (Platform.OS === 'ios') {
-      url = `maps://app?daddr=${lat},${lng}&ll=${lat},${lng}&q=${encodedLabel}`;
-    } else {
-      url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedLabel}`;
-    }
-    
-    Linking.openURL(url).catch(err => {
-      console.error('❌ Error opening maps app:', err);
+    const url =
+      Platform.OS === 'ios'
+        ? `maps://app?daddr=${lat},${lng}&ll=${lat},${lng}&q=${encodedLabel}`
+        : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedLabel}`;
+    Linking.openURL(url).catch(() => {
       Alert.alert('Error', 'Could not open maps application');
     });
   };
 
-  // FIXED: Get current location with better UX
   const handleGetCurrentLocation = async () => {
     if (isGettingLocation) return;
-
     try {
       setIsGettingLocation(true);
       setIsLoading(true);
@@ -470,63 +348,48 @@ const MapScreen = () => {
       setShowDetailCard(false);
       setRadiusVisible(true);
 
-      console.log('📱 Getting current location...');
-
       if (!locationPermissionGranted) {
-        console.log('📱 Requesting location permission...');
         let { status } = await Location.requestForegroundPermissionsAsync();
         if (status !== 'granted') {
-          Alert.alert('Permission Required', 'Location permission is required to show your current position on the map.');
+          Alert.alert('Permission Required', 'Location permission is required to show your position.');
           return;
         }
         setLocationPermissionGranted(true);
       }
 
-      // Get high-accuracy location
-      const location = await Location.getCurrentPositionAsync({
+      const loc = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.High,
-        maximumAge: 10000, // 10 seconds
-        timeout: 15000 // 15 seconds
+        maximumAge: 10000,
+        timeout: 15000,
       });
+      let { latitude, longitude } = loc.coords;
+      if (looksLikeEmulatorMock(latitude, longitude)) {
+        latitude = TLV.latitude; longitude = TLV.longitude;
+      }
 
-      const { latitude, longitude } = location.coords;
-      console.log('✅ Got current location:', latitude, longitude);
-      
       setMyLocation({ latitude, longitude });
       setShowMyLocation(true);
 
-      // Try to get address information
       try {
-        const addressData = await reverseGeocode(latitude, longitude);
-        const locationData = {
-          latitude,
-          longitude,
-          formattedAddress: addressData.formattedAddress,
-          city: addressData.city || 'Current Location',
+        const addr = await reverseGeocode(latitude, longitude);
+        const data = {
+          latitude, longitude,
+          formattedAddress: addr.formattedAddress,
+          city: addr.city || 'Current Location',
         };
-
-        console.log('✅ Geocoded address:', addressData);
-        setSelectedLocation(locationData);
-        loadNearbyData(locationData, searchRadius);
-      } catch (geocodeError) {
-        console.warn('⚠️ Geocoding failed:', geocodeError);
-        const locationData = {
-          latitude,
-          longitude,
+        setSelectedLocation(data);
+        loadNearbyData(data, Number(searchRadius) || 10);
+      } catch {
+        const data = {
+          latitude, longitude,
           formattedAddress: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
           city: 'Current Location',
         };
-
-        setSelectedLocation(locationData);
-        loadNearbyData(locationData, searchRadius);
+        setSelectedLocation(data);
+        loadNearbyData(data, Number(searchRadius) || 10);
       }
-    } catch (err) {
-      console.error('❌ Error getting current location:', err);
-      Alert.alert(
-        'Location Error', 
-        'Could not get your current location. Please make sure location services are enabled and try again.',
-        [{ text: 'OK' }]
-      );
+    } catch {
+      Alert.alert('Location Error', 'Could not get your current location. Please try again.');
     } finally {
       setIsGettingLocation(false);
       setIsLoading(false);
@@ -534,137 +397,80 @@ const MapScreen = () => {
     }
   };
 
-  // Toggle sort order
   const toggleSortOrder = () => {
-    const newOrder = sortOrder === 'nearest' ? 'farthest' : 'nearest';
-    setSortOrder(newOrder);
-    
+    const next = sortOrder === 'nearest' ? 'farthest' : 'nearest';
+    setSortOrder(next);
     if (mapMode === 'plants') {
-      const sorted = sortProductsByDistance(nearbyProducts, newOrder === 'nearest');
+      const sorted = sortProductsByDistance(nearbyProducts, next === 'nearest');
       setMapProducts(sorted);
       setNearbyProducts(sorted);
     } else {
-      const sorted = sortBusinessesByDistance(nearbyBusinesses, newOrder === 'nearest');
+      const sorted = sortBusinessesByDistance(nearbyBusinesses, next === 'nearest');
       setMapBusinesses(sorted);
       setNearbyBusinesses(sorted);
     }
   };
 
-  // Toggle view mode between map and list
   const toggleViewMode = () => {
-    if (showDetailCard) {
-      setShowDetailCard(false);
-    }
+    if (showDetailCard) setShowDetailCard(false);
     setViewMode(viewMode === 'map' ? 'list' : 'map');
   };
 
-  // Sort products by distance
-  const sortProductsByDistance = (productList, ascending = true) => {
-    return [...productList].sort((a, b) => {
-      const distA = a.distance || 0;
-      const distB = b.distance || 0;
-      return ascending ? distA - distB : distB - distA;
-    });
-  };
+  const sortProductsByDistance = (list, asc = true) =>
+    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
 
-  // Sort businesses by distance
-  const sortBusinessesByDistance = (businessList, ascending = true) => {
-    return [...businessList].sort((a, b) => {
-      const distA = a.distance || 0;
-      const distB = b.distance || 0;
-      return ascending ? distA - distB : distB - distA;
-    });
-  };
+  const sortBusinessesByDistance = (list, asc = true) =>
+    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
 
-  // Handle map click
-  const handleMapPress = (coordinates) => {
-    if (showDetailCard) {
-      setShowDetailCard(false);
-      return;
-    }
-    
-    if (coordinates?.latitude && coordinates?.longitude) {
-      console.log('📍 Map clicked at:', coordinates);
+  const handleMapPress = (coords) => {
+    if (showDetailCard) { setShowDetailCard(false); return; }
+    if (coords?.latitude && coords?.longitude) {
       setSelectedLocation({
-        latitude: coordinates.latitude,
-        longitude: coordinates.longitude,
-        formattedAddress: `${coordinates.latitude.toFixed(6)}, ${coordinates.longitude.toFixed(6)}`,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        formattedAddress: `${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)}`,
         city: 'Selected Location',
       });
-      
       setRadiusVisible(true);
-      loadNearbyData(coordinates, searchRadius);
+      loadNearbyData(coords, Number(searchRadius) || 10);
     }
   };
 
-  // Retry loading data
   const handleRetry = () => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyData(selectedLocation, searchRadius);
+      loadNearbyData(selectedLocation, Number(searchRadius) || 10);
     } else {
-      // Try to get current location again
       handleGetCurrentLocation();
     }
   };
 
-  // Custom back handler
-  const handleBackPress = () => {
-    if (viewMode === 'list') {
-      setViewMode('map');
-    } else {
-      navigation.goBack();
-    }
-  };
+  const headerTitle =
+    viewMode === 'list'
+      ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation?.city || 'you'}`
+      : selectedLocation?.city
+        ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation.city}`
+        : 'Map View';
 
-  // Render loading state
-  if (isKeyLoading) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <MarketplaceHeader
-          title="Map View"
-          showBackButton={true}
-          onBackPress={() => navigation.goBack()}
-          onNotificationsPress={() => navigation.navigate('Messages')}
-        />
-        <View style={styles.centerContainer}>
-          <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading map...</Text>
-          <Text style={styles.subText}>Please wait while we initialize the map</Text>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // Prepare header title
-  const headerTitle = viewMode === 'list' 
-    ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation?.city || 'you'}`
-    : (selectedLocation?.city ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation.city}` : "Map View");
-
-  // Get current map data based on mode
   const currentMapData = mapMode === 'plants' ? mapProducts : mapBusinesses;
-  const currentNearbyData = mapMode === 'plants' ? nearbyProducts : nearbyBusinesses;
+  const maptilerKey = getMapTilerKey();
 
   return (
     <SafeAreaView style={styles.container}>
       <MarketplaceHeader
         title={headerTitle}
-        showBackButton={true}
-        onBackPress={handleBackPress}
+        showBackButton
+        onBackPress={() => {
+          if (viewMode === 'list') setViewMode('map');
+          else navigation.goBack();
+        }}
         onNotificationsPress={() => navigation.navigate('Messages')}
       />
 
       <View style={styles.mapContainer}>
-        {/* Map Mode Toggle */}
-        <MapModeToggle 
-          mapMode={mapMode}
-          onMapModeChange={handleMapModeChange}
-          counts={counts}
-        />
+        <MapModeToggle mapMode={mapMode} onMapModeChange={setMapMode} counts={counts} />
 
-        {/* Map View */}
         {viewMode === 'map' && (
           <>
-            {/* Loading/Error Overlays */}
             {isLoading && searchingLocation ? (
               <View style={styles.searchingOverlay}>
                 <ActivityIndicator size="large" color="#4CAF50" />
@@ -676,17 +482,14 @@ const MapScreen = () => {
               <View style={styles.errorOverlay}>
                 <MaterialIcons name="error-outline" size={48} color="#f44336" />
                 <Text style={styles.errorText}>{error}</Text>
-                <TouchableOpacity 
-                  style={styles.retryButton}
-                  onPress={handleRetry}
-                >
+                <TouchableOpacity style={styles.retryButton} onPress={handleRetry}>
                   <Text style={styles.retryButtonText}>Retry</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
-            
-            {/* Map Component */}
-            <CrossPlatformAzureMapView
+
+            <CrossPlatformWebMap
+              key={`${mapMode}:${selectedLocation?.latitude || myLocation?.latitude}:${selectedLocation?.longitude || myLocation?.longitude}:${searchRadius}`}
               ref={mapRef}
               products={mapMode === 'plants' ? mapProducts : []}
               businesses={mapMode === 'businesses' ? mapBusinesses : []}
@@ -695,48 +498,31 @@ const MapScreen = () => {
               onSelectBusiness={handleBusinessSelect}
               initialRegion={
                 selectedLocation
-                  ? {
-                      latitude: selectedLocation.latitude,
-                      longitude: selectedLocation.longitude,
-                      zoom: 12,
-                    }
+                  ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
                   : myLocation
-                  ? {
-                      latitude: myLocation.latitude,
-                      longitude: myLocation.longitude,
-                      zoom: 12,
-                    }
-                  : {
-                      latitude: 32.0853,
-                      longitude: 34.7818,
-                      zoom: 10,
-                    }
+                    ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
+                    : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
               }
-              showControls={true}
-              azureMapsKey={azureMapsKey}
               searchRadius={searchRadius}
               onMapPress={handleMapPress}
-              showMyLocation={showMyLocation}
-              myLocation={myLocation}
-              useCustomPin={true}
+              maptilerKey={maptilerKey}
             />
-            
-            {/* Detail Mini Cards */}
+
             {showDetailCard && selectedProductData && mapMode === 'plants' && (
-              <View style={styles.detailCardContainer}>
+              <View style={[styles.detailCardContainer, { bottom: CARD_POPUP_BOTTOM }]}>
                 <PlantDetailMiniCard
                   plant={selectedProductData}
-                  onClose={handleCloseDetailCard}
+                  onClose={() => setShowDetailCard(false)}
                   onViewDetails={handleViewProductDetails}
                 />
               </View>
             )}
 
             {showDetailCard && selectedBusinessData && mapMode === 'businesses' && (
-              <View style={styles.detailCardContainer}>
+              <View style={[styles.detailCardContainer, { bottom: CARD_POPUP_BOTTOM }]}>
                 <BusinessDetailMiniCard
                   business={selectedBusinessData}
-                  onClose={handleCloseDetailCard}
+                  onClose={() => setShowDetailCard(false)}
                   onViewDetails={handleViewBusinessDetails}
                   onGetDirections={handleGetDirections}
                 />
@@ -745,7 +531,6 @@ const MapScreen = () => {
           </>
         )}
 
-        {/* List View */}
         {viewMode === 'list' && (
           <View style={styles.listContainer}>
             {mapMode === 'plants' ? (
@@ -764,37 +549,28 @@ const MapScreen = () => {
                 isLoading={isLoading}
                 error={error}
                 onRetry={handleRetry}
-                onBusinessSelect={(businessId) => navigation.navigate('BusinessSellerProfile', { 
-                  sellerId: businessId,
-                  businessId: businessId
-                })}
+                onBusinessSelect={(businessId) =>
+                  navigation.navigate('BusinessSellerProfile', { sellerId: businessId, businessId })
+                }
                 sortOrder={sortOrder}
                 onSortChange={toggleSortOrder}
               />
             )}
-            
-            {/* Back to Map Button */}
-            <TouchableOpacity
-              style={styles.backToMapButton}
-              onPress={toggleViewMode}
-            >
+
+            <TouchableOpacity style={styles.backToMapButton} onPress={toggleViewMode}>
               <MaterialIcons name="map" size={24} color="#fff" />
               <Text style={styles.backToMapText}>Map View</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* Search Box */}
-        <MapSearchBox 
-          onLocationSelect={handleLocationSelect} 
-          azureMapsKey={azureMapsKey}
-        />
+        <MapSearchBox onLocationSelect={handleLocationSelect} maptilerKey={maptilerKey} />
 
-        {/* Current Location Button */}
         <TouchableOpacity
           style={[
             styles.currentLocationButton,
-            isGettingLocation && styles.disabledButton
+            isGettingLocation && styles.disabledButton,
+            { bottom: FLOATING_BOTTOM },
           ]}
           onPress={handleGetCurrentLocation}
           disabled={isGettingLocation}
@@ -802,26 +578,20 @@ const MapScreen = () => {
           {isGettingLocation ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <MaterialIcons 
-              name="my-location" 
-              size={24} 
-              color={showMyLocation ? "#4CAF50" : "#fff"}
-            />
+            <MaterialIcons name="my-location" size={24} color={showMyLocation ? '#C8E6C9' : '#fff'} />
           )}
         </TouchableOpacity>
 
-        {/* Toggle View Button (only shown in map view) */}
         {viewMode === 'map' && currentMapData.length > 0 && (
           <TouchableOpacity
-            style={styles.viewToggleButton}
-            onPress={toggleViewMode}
+            style={[styles.viewToggleButton, { bottom: FLOATING_BOTTOM }]}
+            onPress={() => setViewMode('list')}
           >
             <MaterialIcons name="view-list" size={22} color="#fff" />
             <Text style={styles.viewToggleText}>List</Text>
           </TouchableOpacity>
         )}
 
-        {/* Enhanced Radius Control */}
         {selectedLocation && viewMode === 'map' && radiusVisible && (
           <RadiusControl
             radius={searchRadius}
@@ -831,7 +601,7 @@ const MapScreen = () => {
             isLoading={isLoading}
             error={error}
             onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
-            onToggleViewMode={toggleViewMode}
+            onViewModeChange={() => setViewMode('list')}
             dataType={mapMode}
           />
         )}
@@ -841,169 +611,49 @@ const MapScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  mapContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  listContainer: {
-    flex: 1,
-    position: 'relative',
-  },
-  centerContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 18,
-    color: '#4CAF50',
-    fontWeight: '600',
-  },
-  subText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
+  container: { flex: 1, backgroundColor: '#F7FAF7' },
+  mapContainer: { flex: 1, position: 'relative' },
+  listContainer: { flex: 1, position: 'relative' },
+
   searchingOverlay: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    padding: 16,
-    alignItems: 'center',
-    zIndex: 5,
-    borderRadius: 8,
-    margin: 16,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    position: 'absolute', top: 64, left: 16, right: 16, backgroundColor: 'rgba(255,255,255,0.98)',
+    paddingVertical: 14, paddingHorizontal: 16, alignItems: 'center', zIndex: 5, borderRadius: 14,
+    flexDirection: 'row', justifyContent: 'center', elevation: 6, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8,
   },
-  searchingText: {
-    marginLeft: 12,
-    fontSize: 16,
-    color: '#4CAF50',
-    fontWeight: '500',
-  },
+  searchingText: { marginLeft: 10, fontSize: 16, color: '#2E7D32', fontWeight: '600' },
+
   errorOverlay: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    padding: 16,
-    alignItems: 'center',
-    zIndex: 5,
-    borderRadius: 8,
-    margin: 16,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    position: 'absolute', top: 64, left: 16, right: 16, backgroundColor: '#fff',
+    paddingVertical: 16, paddingHorizontal: 16, alignItems: 'center', zIndex: 5, borderRadius: 14,
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.12, shadowRadius: 8,
   },
-  errorText: {
-    color: '#f44336',
-    textAlign: 'center',
-    padding: 12,
-    fontSize: 16,
-    marginBottom: 8,
-  },
-  retryButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 6,
-    elevation: 2,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-  },
+  errorText: { color: '#d32f2f', textAlign: 'center', padding: 8, fontSize: 15, marginBottom: 8 },
+  retryButton: { backgroundColor: '#4CAF50', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 999, elevation: 2 },
+  retryButtonText: { color: '#fff', fontWeight: '700', fontSize: 15, letterSpacing: 0.2 },
+
   currentLocationButton: {
-    position: 'absolute',
-    right: 16,
-    bottom: Platform.OS === 'ios' ? 450 : 420,
-    backgroundColor: '#4CAF50',
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    zIndex: 50, // Set appropriate z-index
+    position: 'absolute', right: 16, backgroundColor: '#2E7D32', width: 56, height: 56, borderRadius: 28,
+    justifyContent: 'center', alignItems: 'center', elevation: 8, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, zIndex: 50,
   },
-  disabledButton: {
-    opacity: 0.7,
-  },
+  disabledButton: { opacity: 0.7 },
+
   viewToggleButton: {
-    position: 'absolute',
-    right: 80,
-    bottom: Platform.OS === 'ios' ? 450 : 420,
-    backgroundColor: '#2196F3',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 25,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 50, // Set appropriate z-index
+    position: 'absolute', right: 84, backgroundColor: '#1976D2', paddingHorizontal: 16, paddingVertical: 12,
+    borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6, zIndex: 50,
   },
-  viewToggleText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 6,
-  },
+  viewToggleText: { color: '#fff', fontWeight: '700', marginLeft: 6, fontSize: 14 },
+
   backToMapButton: {
-    position: 'absolute',
-    right: 16,
-    bottom: 16,
-    backgroundColor: '#4CAF50',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 25,
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    zIndex: 50, // Set appropriate z-index
+    position: 'absolute', right: 16, bottom: 16, backgroundColor: '#2E7D32', flexDirection: 'row',
+    alignItems: 'center', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 26,
+    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6, zIndex: 50,
   },
-  backToMapText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  detailCardContainer: {
-    position: 'absolute',
-    bottom: 400,
-    left: 16,
-    right: 16,
-    zIndex: 500, // High z-index for detail cards
-  },
+  backToMapText: { color: '#fff', fontWeight: '700', marginLeft: 8 },
+
+  detailCardContainer: { position: 'absolute', left: 16, right: 16, zIndex: 500 },
 });
 
 export default MapScreen;

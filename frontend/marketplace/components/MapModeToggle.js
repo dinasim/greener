@@ -1,142 +1,105 @@
-// components/MapModeToggle.js
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-} from 'react-native';
-import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { View, TouchableOpacity, StyleSheet, Text } from 'react-native';
+import { MaterialIcons } from '@expo/vector-icons';
 
 /**
- * Toggle component for switching between plants and businesses on map
- * 
- * @param {Object} props
- * @param {string} props.mapMode - Current map mode ('plants' or 'businesses')
- * @param {Function} props.onMapModeChange - Callback when map mode changes
- * @param {Object} props.counts - Counts of plants and businesses
+ * Compact MapToggle
+ * @param {string}  viewMode              'grid' | 'list' | 'map'
+ * @param {Function}onViewModeChange
+ * @param {Object}  style                 container extra styles
+ * @param {boolean} showMapLabel          show "Map" next to the icon (default false)
  */
-const MapModeToggle = ({ 
-  mapMode = 'plants', 
-  onMapModeChange,
-  counts = { plants: 0, businesses: 0 }
-}) => {
-  
+const MapToggle = ({ viewMode, onViewModeChange, style, showMapLabel = false }) => {
+  const handleViewChange = (mode) => {
+    if (viewMode !== mode) onViewModeChange(mode);
+  };
+
+  const ICON   = 16; // smaller icons
+  const HEIGHT = 32; // compact height
+
   return (
-    <View style={styles.container}>
-      <View style={styles.toggleContainer}>
-        <TouchableOpacity 
-          style={[
-            styles.toggleButton, 
-            mapMode === 'plants' && styles.activeButton
-          ]} 
-          onPress={() => onMapModeChange('plants')}
+    <View style={[styles.container, style]}>
+      {/* Grid / List segmented */}
+      <View style={[styles.segmentGroup, { height: HEIGHT }]}>
+        <TouchableOpacity
+          style={[styles.segmentBtn, { height: HEIGHT - 2 }, viewMode === 'grid' && styles.segmentActive]}
+          onPress={() => handleViewChange('grid')}
+          accessibilityLabel="Grid View"
           accessibilityRole="button"
-          accessibilityLabel="Show plants on map"
-          accessibilityState={{ selected: mapMode === 'plants' }}
+          accessibilityState={{ selected: viewMode === 'grid' }}
         >
-          <MaterialIcons 
-            name="eco" 
-            size={20} 
-            color={mapMode === 'plants' ? '#ffffff' : '#4CAF50'} 
-          />
-          <Text style={[
-            styles.toggleText,
-            mapMode === 'plants' && styles.activeText
-          ]}>
-            Plants ({counts.plants})
-          </Text>
+          <MaterialIcons name="grid-view" size={ICON} color="#2e7d32" />
+          <Text style={styles.segmentText} numberOfLines={1}>Grid</Text>
         </TouchableOpacity>
-        
-        <TouchableOpacity 
-          style={[
-            styles.toggleButton, 
-            mapMode === 'businesses' && styles.activeButton
-          ]} 
-          onPress={() => onMapModeChange('businesses')}
+
+        <TouchableOpacity
+          style={[styles.segmentBtn, { height: HEIGHT - 2 }, viewMode === 'list' && styles.segmentActive]}
+          onPress={() => handleViewChange('list')}
+          accessibilityLabel="List View"
           accessibilityRole="button"
-          accessibilityLabel="Show businesses on map"
-          accessibilityState={{ selected: mapMode === 'businesses' }}
+          accessibilityState={{ selected: viewMode === 'list' }}
         >
-          <MaterialCommunityIcons 
-            name="store" 
-            size={20} 
-            color={mapMode === 'businesses' ? '#ffffff' : '#FF9800'} 
-          />
-          <Text style={[
-            styles.toggleText,
-            mapMode === 'businesses' && styles.activeText
-          ]}>
-            Businesses ({counts.businesses})
-          </Text>
+          <MaterialIcons name="view-list" size={ICON} color="#2e7d32" />
+          <Text style={styles.segmentText} numberOfLines={1}>List</Text>
         </TouchableOpacity>
       </View>
-      
-      <View style={styles.infoContainer}>
-        <MaterialIcons name="info-outline" size={14} color="#666" />
-        <Text style={styles.infoText}>
-          {mapMode === 'plants' 
-            ? 'Showing individual plant listings' 
-            : 'Showing plant businesses and nurseries'
-          }
-        </Text>
-      </View>
+
+      {/* Map chip (icon-only by default) */}
+      <TouchableOpacity
+        style={[styles.mapBtn, { width: HEIGHT, height: HEIGHT }, viewMode === 'map' && styles.mapActive]}
+        onPress={() => handleViewChange('map')}
+        accessibilityLabel="Map View"
+        accessibilityRole="button"
+        accessibilityState={{ selected: viewMode === 'map' }}
+      >
+        <MaterialIcons name="map" size={ICON} color="#2e7d32" />
+        {showMapLabel && <Text style={styles.segmentText}>Map</Text>}
+      </TouchableOpacity>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  container: { flexDirection: 'row', alignItems: 'center' },
+
+  segmentGroup: {
+    flexDirection: 'row',
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderWidth: 1,
+    borderColor: '#DDE7DD',
+    borderRadius: 10,
+    overflow: 'hidden',
   },
-  toggleContainer: {
-    flexDirection: 'row',
-    backgroundColor: '#f5f5f5',
-    borderRadius: 25,
-    padding: 4,
-  },
-  toggleButton: {
-    flex: 1,
+  segmentBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 20,
-    backgroundColor: 'transparent',
+    paddingHorizontal: 10,
   },
-  activeButton: {
-    backgroundColor: '#4CAF50',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
-    elevation: 2,
+  segmentActive: {
+    backgroundColor: '#E8F6ED',
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: '#CBE6CF',
   },
-  toggleText: {
+  segmentText: {
     marginLeft: 6,
-    fontSize: 14,
-    color: '#4CAF50',
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#2e7d32',
   },
-  activeText: {
-    color: '#ffffff',
-  },
-  infoContainer: {
-    flexDirection: 'row',
+
+  mapBtn: {
+    marginLeft: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DDE7DD',
+    backgroundColor: '#fff',
     alignItems: 'center',
-    marginTop: 8,
     justifyContent: 'center',
+    flexDirection: 'row',
+    paddingHorizontal: 0, // icon-only by default
   },
-  infoText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 4,
-  },
+  mapActive: { backgroundColor: '#E8F6ED', borderColor: '#CBE6CF' },
 });
 
-export default MapModeToggle;
+export default MapToggle;

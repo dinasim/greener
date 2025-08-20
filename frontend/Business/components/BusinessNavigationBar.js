@@ -7,7 +7,6 @@ const TABS = [
   { key: 'inventory',  label: 'Inventory', icon: <MaterialIcons name="inventory" size={22} color="#fff" /> },
   { key: 'orders',     label: 'Orders',    icon: <MaterialIcons name="receipt-long" size={22} color="#fff" /> },
   { key: 'customers',  label: 'Customers', icon: <MaterialIcons name="people" size={22} color="#fff" /> },
-  { key: 'water',      label: 'Watering',  icon: <MaterialCommunityIcons name="water" size={22} color="#fff" /> },
   { key: 'disease',    label: 'Disease',   icon: <MaterialCommunityIcons name="microscope" size={22} color="#fff" /> },
   { key: 'forum',      label: 'Forum',     icon: <MaterialCommunityIcons name="forum" size={22} color="#fff" /> },
 ];
@@ -29,8 +28,6 @@ export default function BusinessNavigationBar({
         navigation.navigate('BusinessOrdersScreen', { businessId }); break;
       case 'customers':
         navigation.navigate('BusinessCustomersScreen', { businessId }); break;
-      case 'water':
-        navigation.navigate('WateringChecklistScreen', { businessId }); break;
       case 'disease':
         navigation.navigate('DiseaseChecker',  { fromBusiness: true, businessId }); break;
       case 'forum':

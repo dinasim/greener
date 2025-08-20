@@ -1,102 +1,132 @@
-import React from "react";
-import { View, TouchableOpacity, Text, StyleSheet, Platform } from "react-native";
-import { MaterialIcons, Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import React from 'react';
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  Platform,
+} from 'react-native';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
-// Smaller size for compact nav
-const ICON_SIZE = 19;
+const ICON_SIZE = 20;
 
 const TABS = [
-  { key: "home", label: "Home", icon: (focused) => <MaterialIcons name="home" size={ICON_SIZE} color={focused ? "#4CAF50" : "#9E9E9E"} /> },
-  { key: "plants", label: "My Plants", icon: (focused) => <Ionicons name="leaf" size={ICON_SIZE} color={focused ? "#4CAF50" : "#9E9E9E"} /> },
-  { key: "ai", label: "AI Assistant", icon: (focused) => <MaterialCommunityIcons name="robot-excited" size={ICON_SIZE} color={focused ? "#FF5722" : "#9E9E9E"} /> },
-  { key: "disease", label: "Disease Check", icon: (focused) => <Ionicons name="medkit" size={ICON_SIZE} color={focused ? "#E91E63" : "#9E9E9E"} /> },
-  { key: "marketplace", label: "Market", icon: (focused) => <Ionicons name="cart-outline" size={ICON_SIZE} color={focused ? "#FF9800" : "#9E9E9E"} /> },
-  { key: "forum", label: "Forum", icon: (focused) => <MaterialCommunityIcons name="forum" size={ICON_SIZE} color={focused ? "#2196F3" : "#9E9E9E"} /> },
+  { key: 'home',        label: 'Home',     icon: 'home-outline',           activeColor: '#4CAF50' },
+  { key: 'plants',      label: 'My Plants',icon: 'leaf',                    activeColor: '#4CAF50' },
+  { key: 'ai',          label: 'AI',       icon: 'robot-outline',          activeColor: '#FF7043' },
+  { key: 'disease',     label: 'Disease',  icon: 'medical-bag',            activeColor: '#E91E63' },
+  { key: 'marketplace', label: 'Market',   icon: 'cart-outline',           activeColor: '#FF9800' },
+  { key: 'forum',       label: 'Forum',    icon: 'forum-outline',          activeColor: '#2196F3' },
 ];
 
-export default function NavigationBar({ currentTab, navigation: propNavigation }) {
+export default function NavigationBar({
+  currentTab,
+  navigation: propNavigation,
+  onTabPress, // optional override
+}) {
   const hookNavigation = useNavigation();
-
-  // Use prop navigation if provided, otherwise use hook navigation
   const navigation = propNavigation || hookNavigation;
 
-  const handleTabPress = (tabKey) => {
-    // Add null check for navigation
-    if (!navigation || typeof navigation.navigate !== 'function') {
-      console.warn('Navigation is not available or navigate function is missing');
-      return;
-    }
-
-    try {
-      if (tabKey === 'home') navigation.navigate('Home');
-      else if (tabKey === 'plants') navigation.navigate('Locations');
-      else if (tabKey === 'ai') navigation.navigate('SmartPlantCareAssistant');
-      else if (tabKey === 'marketplace') navigation.navigate('MainTabs');
-      else if (tabKey === 'disease') {
-        navigation.navigate('DiseaseChecker', { fromBusiness: false });
-      }
-      else if (tabKey === 'forum') {
-        navigation.navigate('PlantCareForumScreen', { fromBusiness: false });
-      }
-
-    } catch (error) {
-      console.error('Navigation error:', error);
+  const defaultNavigate = (tabKey) => {
+    if (!navigation || typeof navigation.navigate !== 'function') return;
+    switch (tabKey) {
+      case 'home':        navigation.navigate('Home'); break;
+      case 'plants':      navigation.navigate('Locations'); break;
+      case 'ai':          navigation.navigate('SmartPlantCareAssistant'); break;
+      case 'marketplace': navigation.navigate('MainTabs'); break;
+      case 'disease':     navigation.navigate('DiseaseChecker', { fromBusiness: false }); break;
+      case 'forum':       navigation.navigate('PlantCareForumScreen', { fromBusiness: false }); break;
+      default: break;
     }
   };
 
+  const handlePress = (tabKey) => {
+    if (typeof onTabPress === 'function') onTabPress(tabKey);
+    else defaultNavigate(tabKey);
+  };
+
   return (
-    <View style={styles.bottomBar}>
-      {TABS.map(tab => (
-        <TouchableOpacity
-          key={tab.key}
-          style={styles.bottomBarItem}
-          onPress={() => handleTabPress(tab.key)}
-          activeOpacity={0.7}
-        >
-          {tab.icon(currentTab === tab.key)}
-          <Text style={[
-            styles.bottomBarLabel,
-            currentTab === tab.key && { color: "#4CAF50", fontWeight: "700" }
-          ]}>
-            {tab.label}
-          </Text>
-        </TouchableOpacity>
-      ))}
+    <View style={styles.bar} accessible accessibilityRole="tablist">
+      {TABS.map((tab) => {
+        const focused = currentTab === tab.key;
+        return (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.item, focused && styles.itemFocused]}
+            onPress={() => handlePress(tab.key)}
+            activeOpacity={0.8}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: focused }}
+            accessibilityLabel={tab.label}
+            hitSlop={{ top: 8, bottom: 8, left: 12, right: 12 }}
+          >
+            <View style={[styles.iconWrap, focused && styles.iconWrapFocused]}>
+              <MaterialCommunityIcons
+                name={tab.icon}
+                size={ICON_SIZE}
+                color={focused ? tab.activeColor : '#9E9E9E'}
+              />
+            </View>
+            <Text style={[styles.label, focused && { color: tab.activeColor }]}>
+              {tab.label}
+            </Text>
+            {focused ? <View style={[styles.dot, { backgroundColor: tab.activeColor }]} /> : null}
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 const isWeb = Platform.OS === 'web';
+
 const styles = StyleSheet.create({
-  bottomBar: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-    backgroundColor: "#fff",
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    backgroundColor: '#ffffff',
     borderTopWidth: 1,
-    borderTopColor: "#e8f5e8",
-    paddingVertical: isWeb ? 6 : 6,
-    elevation: 20,
-    ...(!isWeb ? {
-      shadowColor: "#000",
-      shadowOffset: { width: 0, height: -2 },
-      shadowOpacity: 0.13,
-      shadowRadius: 9,
-    } : {
-      boxShadow: "0 -2px 12px rgba(76,175,80,0.07)",
-    }),
-    zIndex: 100,
+    borderTopColor: '#E8F2EA',
+    paddingTop: 6,
+    paddingBottom: Platform.OS === 'ios' ? 12 : 8,
+    ...(!isWeb
+      ? {
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -2 },
+          shadowOpacity: 0.12,
+          shadowRadius: 8,
+          elevation: 10,
+        }
+      : { boxShadow: '0 -4px 14px rgba(0,0,0,0.05)' }),
   },
-  bottomBarItem: {
-    alignItems: "center",
+  item: {
     flex: 1,
-    paddingVertical: 0,
-    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
   },
-  bottomBarLabel: {
-    fontSize: 10,
-    color: "#222",
-    marginTop: 1,
+  itemFocused: {
+    // give a subtle pill effect behind the icon+label
+  },
+  iconWrap: {
+    padding: 8,
+    borderRadius: 16,
+  },
+  iconWrapFocused: {
+    backgroundColor: '#EDF7EE',
+  },
+  label: {
+    fontSize: 11,
+    marginTop: 2,
+    color: '#4A4A4A',
+    fontWeight: '600',
+  },
+  dot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginTop: 4,
   },
 });

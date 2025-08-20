@@ -13,6 +13,7 @@ import {
   RefreshControl,
   Modal,
   Linking,
+  useWindowDimensions,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import PropTypes from 'prop-types';
@@ -40,10 +41,14 @@ const InventoryTable = React.memo(({
   businessId,
   navigation,
 
-  // NEW: external header/empty to compose a single scroll surface
+  // external header/empty to compose a single scroll surface
   ListHeaderComponent = null,
   ListEmptyComponent = null,
 }) => {
+  // responsive
+  const { width: screenWidth } = useWindowDimensions();
+  const compact = screenWidth < 420;
+
   // local UI state
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState('name');
@@ -216,6 +221,7 @@ const InventoryTable = React.memo(({
     <Animated.View
       style={[
         styles.tableRow,
+        compact && styles.tableRowCompact,
         { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
         index % 2 === 0 && styles.evenRow,
         isSelected && styles.selectedRow,
@@ -223,7 +229,7 @@ const InventoryTable = React.memo(({
     >
       {bulkActionMode && (
         <TouchableOpacity
-          style={styles.tableCell}
+          style={[styles.tableCell, styles.colCheck]}
           onPress={() => toggleItemSelection(item.id)}
           accessibilityRole="checkbox"
           accessibilityState={{ checked: isSelected }}
@@ -237,7 +243,7 @@ const InventoryTable = React.memo(({
       )}
 
       <TouchableOpacity
-        style={[styles.tableCell, styles.nameCell]}
+        style={[styles.tableCell, styles.colName, compact && styles.colNameCompact]}
         onPress={() => onProductPress(item)}
         accessibilityRole="button"
         accessibilityLabel={`View details for ${item.name || item.common_name}`}
@@ -251,41 +257,43 @@ const InventoryTable = React.memo(({
             />
           </View>
           <View style={styles.productDetails}>
-            <Text style={styles.productName} numberOfLines={1}>
+            <Text style={[styles.productName, compact && { fontSize: 14 }]} numberOfLines={1}>
               {item.name || item.common_name || 'Unknown Product'}
             </Text>
-            {item.scientific_name && (
+            {item.scientific_name && !compact && (
               <Text style={styles.productScientific} numberOfLines={1}>
                 {item.scientific_name}
               </Text>
             )}
-            <View style={styles.productMetaInfo}>
-              {item.location?.coordinates && (
-                <TouchableOpacity
-                  style={styles.metaInfoItem}
-                  onPress={() => handleLocationPress(item)}
-                  accessibilityRole="button"
-                  accessibilityLabel="View location on map"
-                >
-                  <MaterialIcons name="location-on" size={12} color="#2196F3" />
-                  <Text style={styles.metaInfoText}>GPS</Text>
-                </TouchableOpacity>
-              )}
-              {item.lastWatered && (
-                <View style={styles.metaInfoItem}>
-                  <MaterialCommunityIcons name="water" size={12} color="#00BCD4" />
-                  <Text style={styles.metaInfoText}>
-                    {new Date(item.lastWatered).toLocaleDateString()}
-                  </Text>
-                </View>
-              )}
-            </View>
+            {!compact && (
+              <View style={styles.productMetaInfo}>
+                {item.location?.coordinates && (
+                  <TouchableOpacity
+                    style={styles.metaInfoItem}
+                    onPress={() => handleLocationPress(item)}
+                    accessibilityRole="button"
+                    accessibilityLabel="View location on map"
+                  >
+                    <MaterialIcons name="location-on" size={12} color="#2196F3" />
+                    <Text style={styles.metaInfoText}>GPS</Text>
+                  </TouchableOpacity>
+                )}
+                {item.lastWatered && (
+                  <View style={styles.metaInfoItem}>
+                    <MaterialCommunityIcons name="water" size={12} color="#00BCD4" />
+                    <Text style={styles.metaInfoText}>
+                      {new Date(item.lastWatered).toLocaleDateString()}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
           </View>
         </View>
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.tableCell}
+        style={[styles.tableCell, styles.colStock, compact && styles.colStockCompact]}
         onPress={() => handleQuickStockEdit(item)}
         accessibilityRole="button"
         accessibilityLabel="Edit stock quantity"
@@ -303,15 +311,15 @@ const InventoryTable = React.memo(({
             <MaterialIcons name="alert" size={14} color="#FF9800" />
           )}
         </View>
-        <Text style={styles.thresholdText}>Min: {item.minThreshold || 5}</Text>
+        {!compact && <Text style={styles.thresholdText}>Min: {item.minThreshold || 5}</Text>}
       </TouchableOpacity>
 
-      <View style={styles.tableCell}>
+      <View style={[styles.tableCell, styles.colPrice, compact && styles.colPriceCompact]}>
         <Text style={styles.priceText}>${(item.finalPrice || item.price || 0).toFixed(2)}</Text>
-        {item.discount > 0 && <Text style={styles.discountText}>-{item.discount}%</Text>}
+        {!compact && item.discount > 0 && <Text style={styles.discountText}>-{item.discount}%</Text>}
       </View>
 
-      <View style={styles.tableCell}>
+      <View style={[styles.tableCell, styles.colStatus, compact && styles.colStatusCompact]}>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
           <Text style={styles.statusText}>
             {(item.status || 'active').replace(/^./, c => c.toUpperCase())}
@@ -319,8 +327,8 @@ const InventoryTable = React.memo(({
         </View>
       </View>
 
-      <View style={styles.tableCell}>
-        <View style={styles.actionsContainer}>
+      <View style={[styles.tableCell, styles.colActions, compact && styles.colActionsCompact]}>
+        <View style={[styles.actionsContainer, compact && { gap: 6 }]}>
           <TouchableOpacity
             style={styles.actionButton}
             onPress={() => handleEditPress(item)}
@@ -387,12 +395,13 @@ const InventoryTable = React.memo(({
     <Animated.View
       style={[
         styles.tableHeader,
+        compact && styles.tableHeaderCompact,
         { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
       ]}
     >
       {bulkActionMode && (
         <TouchableOpacity
-          style={styles.headerCell}
+          style={[styles.headerCell, styles.colCheck]}
           onPress={() => {
             if (selectedItems.size === filteredInventory.length) setSelectedItems(new Set());
             else setSelectedItems(new Set(filteredInventory.map(i => i.id)));
@@ -409,7 +418,7 @@ const InventoryTable = React.memo(({
       )}
 
       <TouchableOpacity
-        style={[styles.headerCell, styles.nameCell]}
+        style={[styles.headerCell, styles.colName, compact && styles.colNameCompact]}
         onPress={() => handleSort('name')}
         accessibilityRole="button"
         accessibilityLabel="Sort by product name"
@@ -419,7 +428,7 @@ const InventoryTable = React.memo(({
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.headerCell}
+        style={[styles.headerCell, styles.colStock, compact && styles.colStockCompact]}
         onPress={() => handleSort('quantity')}
         accessibilityRole="button"
         accessibilityLabel="Sort by stock quantity"
@@ -429,7 +438,7 @@ const InventoryTable = React.memo(({
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.headerCell}
+        style={[styles.headerCell, styles.colPrice, compact && styles.colPriceCompact]}
         onPress={() => handleSort('price')}
         accessibilityRole="button"
         accessibilityLabel="Sort by price"
@@ -439,7 +448,7 @@ const InventoryTable = React.memo(({
       </TouchableOpacity>
 
       <TouchableOpacity
-        style={styles.headerCell}
+        style={[styles.headerCell, styles.colStatus, compact && styles.colStatusCompact]}
         onPress={() => handleSort('status')}
         accessibilityRole="button"
         accessibilityLabel="Sort by status"
@@ -448,17 +457,17 @@ const InventoryTable = React.memo(({
         <MaterialIcons name={getSortIcon('status')} size={16} color="#666" />
       </TouchableOpacity>
 
-      <View style={styles.headerCell}><Text style={styles.headerText}>Actions</Text></View>
+      <View style={[styles.headerCell, styles.colActions, compact && styles.colActionsCompact]}>
+        <Text style={styles.headerText}>Actions</Text>
+      </View>
     </Animated.View>
-  ), [fadeAnim, slideAnim, bulkActionMode, selectedItems, filteredInventory, sortBy, sortOrder]);
+  ), [fadeAnim, slideAnim, bulkActionMode, selectedItems, filteredInventory, sortBy, sortOrder, compact]);
 
-  // Build one unified list header (external header + our controls + table header)
+  // unified list header (external header + controls + table header)
   const UnifiedHeader = useMemo(() => (
     <View>
-      {/* external header from parent (e.g., KPI widgets) */}
       {ListHeaderComponent ? <View>{ListHeaderComponent}</View> : null}
 
-      {/* low stock banner */}
       {lowStockItems.length > 0 && (
         <LowStockBanner
           lowStockItems={lowStockItems}
@@ -466,7 +475,6 @@ const InventoryTable = React.memo(({
         />
       )}
 
-      {/* controls */}
       <View style={styles.controlsContainer}>
         <View style={styles.searchContainer}>
           <MaterialIcons name="search" size={20} color="#4CAF50" />
@@ -534,7 +542,6 @@ const InventoryTable = React.memo(({
         </View>
       </View>
 
-      {/* results count */}
       <View style={styles.resultsContainer}>
         <Text style={styles.resultsText}>
           Showing {filteredInventory.length} of {inventory.length} products
@@ -544,7 +551,6 @@ const InventoryTable = React.memo(({
         )}
       </View>
 
-      {/* column header */}
       <TableHeader />
     </View>
   ), [ListHeaderComponent, lowStockItems, searchQuery, filterStatus, filterTabs, bulkActionMode, selectedItems, filteredInventory.length, inventory.length, TableHeader]);
@@ -592,7 +598,7 @@ const InventoryTable = React.memo(({
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#4CAF50']} tintColor="#4CAF50" />
         }
-        ListHeaderComponent={UnifiedHeader}   // << single scrolling surface
+        ListHeaderComponent={UnifiedHeader}
         ListEmptyComponent={ListEmptyComponent || DefaultEmpty}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews
@@ -717,9 +723,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', paddingVertical: 16, paddingHorizontal: 16,
     backgroundColor: '#f8f9fa', borderBottomWidth: 2, borderBottomColor: '#e0e0e0',
   },
+  tableHeaderCompact: { paddingVertical: 10 },
+
   headerCell: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6 },
-  nameCell: { flex: 2.5 },
   headerText: { fontSize: 13, fontWeight: '700', color: '#2d3436' },
+
+  // Column sizing (shared by header + rows)
+  colCheck: { width: 36 },
+  colName: { flex: 2.6 },      // main column
+  colStock: { flex: 0.9, alignItems: 'flex-start' },
+  colPrice: { flex: 1, alignItems: 'flex-start' },
+  colStatus: { flex: 0.9, alignItems: 'flex-start' },
+  colActions: { width: 120, alignItems: 'flex-end' },
+
+  // Compact tweaks
+  colNameCompact: { flex: 1.8 },
+  colStockCompact: { flex: 0.8 },
+  colPriceCompact: { flex: 0.9 },
+  colStatusCompact: { flex: 0.7 },
+  colActionsCompact: { width: 92 },
 
   tableRow: {
     flexDirection: 'row', alignItems: 'center',
@@ -728,6 +750,7 @@ const styles = StyleSheet.create({
     minHeight: ROW_HEIGHT,
     backgroundColor: '#fff',
   },
+  tableRowCompact: { paddingVertical: 10, paddingHorizontal: 12 },
   evenRow: { backgroundColor: '#fafafa' },
   selectedRow: { backgroundColor: '#e8f5e8' },
 

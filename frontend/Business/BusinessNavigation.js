@@ -4,6 +4,9 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+// Business/BusinessNavigation.js
+import MessagesScreen from '../marketplace/screens/MessagesScreen'; 
+// or '../marketplace/screens/MessagesScreen' / '../MessagesScreen'
 
 // Import ALL EXISTING Business Screens
 import BusinessWelcomeScreen from './BusinessScreens/BusinessWelcomeScreen';
@@ -18,7 +21,6 @@ import BusinessSettingsScreen from './BusinessScreens/BusinessSettingsScreen';
 import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import CreateOrderScreen from './BusinessScreens/CreateOrderScreen';
 import BusinessProductDetailScreen from './BusinessScreens/BusinessProductDetailScreen';
-import WateringChecklistScreen from './BusinessScreens/WateringChecklistScreen';
 import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
 import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
 import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
@@ -30,7 +32,6 @@ import BusinessWeatherScreen from './BusinessScreens/BusinessWeatherScreen';
 import BusinessCustomersScreen from './BusinessScreens/BusinessCustomersScreen';
 
 // Import the missing screens that exist but weren't imported
-import WateringRouteScreen from './BusinessScreens/WateringRouteScreen';
 import BusinessNotificationsScreen from './BusinessScreens/BusinessNotificationsScreen';
 import BusinessInsightsScreen from './BusinessScreens/BusinessInsightsScreen';
 
@@ -66,11 +67,7 @@ const BusinessTabs = () => {
             iconName = 'receipt-long';
           } else if (route.name === 'BusinessProfile') {
             iconName = 'person';
-          } else if (route.name === 'WateringChecklist') {
-            iconName = 'water-drop';
-            IconComponent = MaterialIcons;
           }
-
           return <IconComponent name={iconName} size={size} color={color} />;
         },
         tabBarActiveTintColor: '#216a94',
@@ -99,11 +96,6 @@ const BusinessTabs = () => {
         component={AddInventoryScreen}
         options={{ title: 'Inventory' }}
         initialParams={{ businessId: null, showInventory: true }}
-      />
-      <Tab.Screen
-        name="WateringChecklist"
-        component={WateringChecklistScreen}
-        options={{ title: 'Watering' }}
       />
       <Tab.Screen
         name="BusinessOrders"
@@ -161,6 +153,12 @@ const BusinessNavigation = () => {
         options={{ title: 'Orders' }}
       />
       <Stack.Screen
+        name="Messages"
+        component={MessagesScreen}
+        options={{ headerShown: false }}
+      />
+
+      <Stack.Screen
         name="BusinessProfileScreen"
         component={BusinessProfileScreen}
         options={{ title: 'Business Profile' }}
@@ -178,21 +176,10 @@ const BusinessNavigation = () => {
         options={{ title: 'Customers' }}
       />
 
-      {/* Watering */}
-      <Stack.Screen
-        name="WateringChecklistScreen"
-        component={WateringChecklistScreen}
-        options={{ title: 'Watering Checklist' }}
-      />
       <Stack.Screen
         name="GPSWateringNavigator"
         component={GPSWateringNavigator}
         options={{ title: 'GPS Navigation' }}
-      />
-      <Stack.Screen
-        name="WateringRouteScreen"
-        component={WateringRouteScreen}
-        options={{ title: 'Watering Routes' }}
       />
 
       {/* Notifications */}

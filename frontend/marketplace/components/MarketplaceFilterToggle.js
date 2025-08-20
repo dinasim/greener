@@ -1,110 +1,79 @@
-// components/MarketplaceFilterToggle.js - FIXED VERSION with proper refresh
+// components/MarketplaceFilterToggle.js - COMPACT & EQUAL WIDTH
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { View, Text, TouchableOpacity, StyleSheet, Dimensions } from 'react-native';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 
-const MarketplaceFilterToggle = ({ 
-  sellerType, 
-  onSellerTypeChange, 
-  counts = { all: 0, individual: 0, business: 0 },
-  style 
+const GREEN = '#2e7d32';
+const BORDER = '#DDE7DD';
+const INACTIVE_TEXT = '#444';
+const INACTIVE_ICON = '#777';
+
+const MarketplaceFilterToggle = ({
+  sellerType,
+  onSellerTypeChange,
+  style,
 }) => {
-  
+  const width = Dimensions.get('window').width;
+  const narrow = width < 370;      // shrink a bit more on small phones
+
+  const HEIGHT     = narrow ? 34 : 36;
+  const ICON       = narrow ? 14 : 16;
+  const FS_LABEL   = narrow ? 13 : 14;
+  const FS_COUNT   = narrow ? 11 : 12;
+
+  const labelIndividual = narrow ? 'Indiv.' : 'Individual';
+  const labelBusiness   = narrow ? 'Business' : 'Business';
+
   const handlePress = (type) => {
-    console.log('🔄 MarketplaceFilterToggle: Changing from', sellerType, 'to', type);
-    
-    // Only trigger change if it's actually different
-    if (type !== sellerType) {
-      onSellerTypeChange(type);
-    }
+    if (type !== sellerType) onSellerTypeChange?.(type);
   };
 
-  const formatCount = (count) => {
-    if (count === undefined || count === null) return '0';
-    if (count > 999) return `${Math.floor(count / 1000)}k+`;
-    return count.toString();
-  };
+  const fmt = (n) => (n == null ? '0' : n > 999 ? `${Math.floor(n / 1000)}k+` : String(n));
 
-  const getButtonStyle = (type) => [
-    styles.filterButton,
-    sellerType === type && styles.activeFilterButton
-  ];
-
-  const getTextStyle = (type) => [
-    styles.filterButtonText,
-    sellerType === type && styles.activeFilterButtonText
-  ];
-
-  const getCountStyle = (type) => [
-    styles.countText,
-    sellerType === type && styles.activeCountText
-  ];
+  const Chip = ({ active, onPress, icon, label, count }) => (
+    <TouchableOpacity
+      style={[styles.chip, { height: HEIGHT }, active && styles.chipActive]}
+      onPress={onPress}
+      activeOpacity={0.8}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+    >
+      {icon(ICON, active ? GREEN : INACTIVE_ICON)}
+      <Text
+        numberOfLines={1}
+        ellipsizeMode="tail"
+        style={[
+          styles.label,
+          { fontSize: FS_LABEL, color: active ? GREEN : INACTIVE_TEXT },
+        ]}
+      >
+        {label}{' '}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
     <View style={[styles.container, style]}>
-      <View style={styles.filterRow}>
-        
-        {/* All Products */}
-        <TouchableOpacity
-          style={getButtonStyle('all')}
+      <View style={styles.row}>
+        <Chip
+          active={sellerType === 'all'}
           onPress={() => handlePress('all')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.buttonContent}>
-            <MaterialIcons 
-              name="apps" 
-              size={16} 
-              color={sellerType === 'all' ? '#fff' : '#666'} 
-            />
-            <Text style={getTextStyle('all')}>All</Text>
-            <Text style={getCountStyle('all')}>({formatCount(counts.all)})</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Individual Sellers */}
-        <TouchableOpacity
-          style={getButtonStyle('individual')}
+          icon={(s, c) => <MaterialIcons name="apps" size={s} color={c} />}
+          label="All"
+        />
+        <Chip
+          active={sellerType === 'individual'}
           onPress={() => handlePress('individual')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.buttonContent}>
-            <MaterialIcons 
-              name="person" 
-              size={16} 
-              color={sellerType === 'individual' ? '#fff' : '#666'} 
-            />
-            <Text style={getTextStyle('individual')}>Individual</Text>
-            <Text style={getCountStyle('individual')}>({formatCount(counts.individual)})</Text>
-          </View>
-        </TouchableOpacity>
-
-        {/* Business Sellers */}
-        <TouchableOpacity
-          style={getButtonStyle('business')}
+          icon={(s, c) => <MaterialIcons name="person" size={s} color={c} />}
+          label={labelIndividual}
+        />
+        <Chip
+          active={sellerType === 'business'}
           onPress={() => handlePress('business')}
-          activeOpacity={0.7}
-        >
-          <View style={styles.buttonContent}>
-            <MaterialIcons 
-              name="store" 
-              size={16} 
-              color={sellerType === 'business' ? '#fff' : '#666'} 
-            />
-            <Text style={getTextStyle('business')}>Business</Text>
-            <Text style={getCountStyle('business')}>({formatCount(counts.business)})</Text>
-          </View>
-        </TouchableOpacity>
-        
+          icon={(s, c) => <MaterialCommunityIcons name="store" size={s} color={c} />}
+          label={labelBusiness}
+        />
       </View>
-      
-      {/* Debug info in development - DISABLED */}
-      {__DEV__ && false && (
-        <View style={styles.debugInfo}>
-          <Text style={styles.debugText}>
-            Current: {sellerType} | Counts: A:{counts.all} I:{counts.individual} B:{counts.business}
-          </Text>
-        </View>
-      )}
     </View>
   );
 };
@@ -112,65 +81,38 @@ const MarketplaceFilterToggle = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee',
-  },
-  filterRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  filterButton: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 10,
     paddingHorizontal: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#f8f9fa',
+    paddingTop: 6,
+    paddingBottom: 2,
+  },
+  row: {
+    flexDirection: 'row',
     alignItems: 'center',
   },
-  activeFilterButton: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
-  buttonContent: {
+  chip: {
+    flex: 1,                      // equal widths
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexWrap: 'wrap',
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 10,
   },
-  filterButtonText: {
-    fontSize: 14,
+  chipActive: {
+    backgroundColor: '#E8F6ED',
+    borderColor: '#CBE6CF',
+  },
+  label: {
+    marginLeft: 8,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  count: {
+    color: '#7aa87a',
     fontWeight: '600',
-    color: '#666',
-    marginLeft: 6,
-    marginRight: 4,
-  },
-  activeFilterButtonText: {
-    color: '#fff',
-  },
-  countText: {
-    fontSize: 12,
-    color: '#999',
-    fontWeight: '500',
-  },
-  activeCountText: {
-    color: '#e8f5e8',
-  },
-  debugInfo: {
-    marginTop: 8,
-    padding: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 4,
-  },
-  debugText: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
   },
 });
 

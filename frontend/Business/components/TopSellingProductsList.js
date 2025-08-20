@@ -16,12 +16,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getBusinessOrders } from '../services/businessOrderApi';
 import { getBusinessInventory } from '../services/businessApi'; // Use existing businessApi.js
 
-const TopSellingProductsList = ({ 
-  businessId, 
-  sortBy = 'totalSold', 
-  limit = 10, 
+const TopSellingProductsList = ({
+  businessId,
+  sortBy = 'totalSold',
+  limit = 10,
   onProductPress,
-  refreshTrigger 
+  refreshTrigger,
 }) => {
   const [products, setProducts] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -33,99 +33,178 @@ const TopSellingProductsList = ({
    */
   const loadTopSellingProducts = async (silent = false) => {
     try {
-      if (!silent) {
-        setIsLoading(true);
-      }
+      if (!silent) setIsLoading(true);
       setError(null);
 
-      const currentBusinessId = businessId || await AsyncStorage.getItem('businessId');
-      if (!currentBusinessId) {
-        throw new Error('Business ID not available');
-      }
+      const toNum = (v) => {
+        const n = Number(v);
+        return Number.isFinite(n) ? n : 0;
+      };
 
-      console.log('📊 Loading REAL top selling products for business:', currentBusinessId);
+      const currentBusinessId =
+        businessId || (await AsyncStorage.getItem('businessId'));
+      if (!currentBusinessId) throw new Error('Business ID not available');
 
       // Load REAL orders and inventory data in parallel
       const [ordersResponse, inventoryResponse] = await Promise.all([
         getBusinessOrders(currentBusinessId),
-        getBusinessInventory(currentBusinessId)
+        getBusinessInventory(currentBusinessId),
       ]);
 
-      // FIXED: Handle different response formats from your APIs
-      const ordersData = ordersResponse?.orders || ordersResponse || [];
-      const inventoryData = inventoryResponse?.inventory || inventoryResponse?.data || [];
+      // Handle different response formats from your APIs
+      const ordersData =
+        ordersResponse?.orders ||
+        ordersResponse?.data?.orders ||
+        ordersResponse ||
+        [];
+      const inventoryData =
+        inventoryResponse?.inventory ||
+        inventoryResponse?.data ||
+        inventoryResponse ||
+        [];
 
-      console.log('✅ Loaded orders:', ordersData?.length || 0, 'inventory:', inventoryData?.length || 0);
+      // Build a quick lookup from inventory to enrich names if they’re missing
+      const invById = new Map(
+        (Array.isArray(inventoryData) ? inventoryData : []).map((p) => [
+          p.id || p.productId || p._id,
+          p,
+        ])
+      );
 
       let productData = [];
 
       // Process REAL order data to calculate sales statistics
-      if (ordersData && ordersData.length > 0) {
+      if (Array.isArray(ordersData) && ordersData.length > 0) {
         const salesMap = new Map();
-        
-        ordersData.forEach(order => {
-          if (order.status === 'completed' && order.items) {
-            order.items.forEach(item => {
-              const productId = item.productId || item.id;
-              const quantity = item.quantity || 1;
-              const price = item.price || 0;
-              
-              if (salesMap.has(productId)) {
-                const existing = salesMap.get(productId);
-                existing.totalSold += quantity;
-                existing.totalRevenue += (price * quantity);
-              } else {
-                salesMap.set(productId, {
-                  id: productId,
-                  name: item.name || item.title || 'Unknown Product',
-                  scientific_name: item.scientific_name || '',
-                  productType: item.productType || 'plant',
-                  category: item.category || 'houseplants',
-                  totalSold: quantity,
-                  totalRevenue: price * quantity,
-                  lastSaleDate: order.completedAt || order.createdAt
-                });
+
+        ordersData.forEach((order) => {
+          const status = String(order.status || '').toLowerCase();
+          // Count revenue for completed/paid orders only
+          const isRevenueOrder = ['completed', 'paid'].includes(status);
+
+          if (!isRevenueOrder || !Array.isArray(order.items)) return;
+
+          order.items.forEach((item) => {
+            // Robust product id detection
+            const productId =
+              item.productId ??
+              item.id ??
+              item.product?.id ??
+              item.sku ??
+              item.title ??
+              item.name;
+            if (!productId) return;
+
+            const qty = toNum(item.quantity ?? item.qty ?? 1);
+
+            // Prefer explicit line total; else use unit price * qty
+            const unit = toNum(
+              item.unitPrice ??
+                item.price ??
+                item.unit_price ??
+                item.amount ??
+                item.cost
+            );
+            const lineTotal = toNum(
+              item.total ??
+                item.lineTotal ??
+                item.extendedPrice ??
+                item.subtotal
+            );
+            const revenue = lineTotal > 0 ? lineTotal : unit * qty;
+
+            // Best-effort name
+            const inv = invById.get(productId);
+            const name =
+              item.productName ??
+              item.name ??
+              item.title ??
+              inv?.name ??
+              inv?.title ??
+              'Unknown Product';
+
+            const existing = salesMap.get(productId);
+            if (existing) {
+              existing.totalSold += qty;
+              existing.totalRevenue += revenue;
+              const candidate = new Date(
+                order.completedAt || order.createdAt || order.date || 0
+              );
+              if (!existing.lastSaleDate || candidate > existing.lastSaleDate) {
+                existing.lastSaleDate = candidate;
               }
-            });
-          }
+            } else {
+              salesMap.set(productId, {
+                id: productId,
+                name,
+                scientific_name: item.scientific_name || '',
+                productType: item.productType || 'plant',
+                category: item.category || 'houseplants',
+                totalSold: qty,
+                totalRevenue: revenue,
+                lastSaleDate: new Date(
+                  order.completedAt || order.createdAt || order.date || Date.now()
+                ),
+              });
+            }
+          });
         });
 
         // Convert sales map to array and calculate metrics
-        productData = Array.from(salesMap.values()).map(product => {
-          const averagePrice = product.totalSold > 0 ? product.totalRevenue / product.totalSold : 0;
-          
+        productData = Array.from(salesMap.values()).map((product) => {
+          const averagePrice =
+            product.totalSold > 0
+              ? product.totalRevenue / product.totalSold
+              : 0;
+
           // Calculate growth rate based on recent sales vs older sales
-          const recentSales = ordersData.filter(order => {
-            const orderDate = new Date(order.createdAt);
-            const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-            return orderDate >= thirtyDaysAgo && 
-                   order.items?.some(item => (item.productId || item.id) === product.id);
-          }).reduce((sum, order) => {
-            return sum + (order.items?.find(item => (item.productId || item.id) === product.id)?.quantity || 0);
-          }, 0);
+          const recentSales = ordersData
+            .filter((order) => {
+              const d = new Date(order.createdAt || order.completedAt || 0);
+              const thirtyDaysAgo = new Date(
+                Date.now() - 30 * 24 * 60 * 60 * 1000
+              );
+              const status = String(order.status || '').toLowerCase();
+              const completed = ['completed', 'paid'].includes(status);
+              return (
+                completed &&
+                d >= thirtyDaysAgo &&
+                order.items?.some(
+                  (it) =>
+                    (it.productId || it.id || it.product?.id) === product.id
+                )
+              );
+            })
+            .reduce((sum, order) => {
+              const it = order.items?.find(
+                (i) =>
+                  (i.productId || i.id || i.product?.id) === product.id
+              );
+              return sum + toNum(it?.quantity ?? it?.qty ?? 0);
+            }, 0);
 
           const oldSales = product.totalSold - recentSales;
-          const growthRate = oldSales > 0 ? ((recentSales - oldSales) / oldSales) * 100 : (recentSales > 0 ? 100 : 0);
+          const growthRate =
+            oldSales > 0
+              ? ((recentSales - oldSales) / oldSales) * 100
+              : recentSales > 0
+              ? 100
+              : 0;
 
           return {
             ...product,
             averagePrice: Math.round(averagePrice * 100) / 100,
             growthRate: Math.round(growthRate),
             recentSales,
-            oldSales
+            oldSales,
           };
         });
-
-        console.log('📈 Calculated sales data for', productData.length, 'products');
       }
 
       // If no sales data available, show empty state instead of mock data
       if (productData.length === 0) {
-        console.log('ℹ️ No sales data available - showing empty state');
         setProducts([]);
-        if (!silent) {
-          setIsLoading(false);
-        }
+        if (!silent) setIsLoading(false);
         return;
       }
 
@@ -151,18 +230,14 @@ const TopSellingProductsList = ({
 
       // Limit results
       const limitedProducts = sortedProducts.slice(0, limit);
-      
-      setProducts(limitedProducts);
-      console.log('✅ Top selling products loaded:', limitedProducts.length);
 
+      setProducts(limitedProducts);
     } catch (err) {
       console.error('❌ Error loading top selling products:', err);
       setError(err.message);
       setProducts([]);
     } finally {
-      if (!silent) {
-        setIsLoading(false);
-      }
+      if (!silent) setIsLoading(false);
       setRefreshing(false);
     }
   };
@@ -177,92 +252,32 @@ const TopSellingProductsList = ({
     loadTopSellingProducts(true);
   };
 
-  const renderProduct = ({ item, index }) => {
-    return (
-      <TouchableOpacity 
-        style={styles.productItem}
-        onPress={() => onProductPress && onProductPress(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.rankContainer}>
-          <Text style={styles.rankText}>#{index + 1}</Text>
-        </View>
-        
-        <View style={styles.productInfo}>
-          <Text style={styles.productName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          
-          {item.scientific_name ? (
-            <Text style={styles.scientificName} numberOfLines={1}>
-              {item.scientific_name}
-            </Text>
-          ) : null}
-          
-          <View style={styles.statsRow}>
-            <View style={styles.statItem}>
-              <MaterialCommunityIcons name="cart" size={16} color="#666" />
-              <Text style={styles.statText}>{item.totalSold} sold</Text>
-            </View>
-            
-            <View style={styles.statItem}>
-              <MaterialCommunityIcons name="currency-ils" size={16} color="#666" />
-              <Text style={styles.statText}>₪{item.totalRevenue?.toFixed(2) || '0.00'}</Text>
-            </View>
-          </View>
-        </View>
-        
-        <View style={styles.rightSection}>
-          <View style={styles.growthContainer}>
-            <MaterialCommunityIcons 
-              name={item.growthRate > 0 ? 'trending-up' : item.growthRate < 0 ? 'trending-down' : 'trending-neutral'} 
-              size={20} 
-              color={item.growthRate > 0 ? '#4CAF50' : item.growthRate < 0 ? '#F44336' : '#9E9E9E'} 
-            />
-            <Text style={[styles.growthText, { 
-              color: item.growthRate > 0 ? '#4CAF50' : item.growthRate < 0 ? '#F44336' : '#9E9E9E'
-            }]}>
-              {item.growthRate > 0 ? '+' : ''}{item.growthRate}%
-            </Text>
-          </View>
-          
-          <Text style={styles.avgPriceText}>
-            Avg: ₪{item.averagePrice?.toFixed(2) || '0.00'}
-          </Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
-
-  const renderEmptyState = () => (
-    <View style={styles.emptyContainer}>
-      <MaterialCommunityIcons name="chart-line-variant" size={64} color="#E0E0E0" />
-      <Text style={styles.emptyTitle}>No Sales Data Available</Text>
-      <Text style={styles.emptyText}>
-        Start selling products to see your top performers here
-      </Text>
-    </View>
-  );
-
   if (isLoading) {
-  return (
-    <View style={styles.cardWrap}>
-      <View style={styles.card}>
-        <ActivityIndicator size="large" color="#216a94" />
-        <Text style={styles.loadingText}>Loading sales data...</Text>
+    return (
+      <View style={styles.cardWrap}>
+        <View style={styles.card}>
+          <ActivityIndicator size="large" color="#216a94" />
+          <Text style={styles.loadingText}>Loading sales data...</Text>
+        </View>
       </View>
-    </View>
-  );
+    );
   }
 
   if (error) {
     return (
       <View style={styles.cardWrap}>
         <View style={styles.card}>
-          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#F44336" />
+          <MaterialCommunityIcons
+            name="alert-circle-outline"
+            size={48}
+            color="#F44336"
+          />
           <Text style={styles.emptyTitle}>Unable to load</Text>
           <Text style={styles.emptyText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => loadTopSellingProducts()}>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => loadTopSellingProducts()}
+          >
             <Text style={styles.retryText}>Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -274,7 +289,11 @@ const TopSellingProductsList = ({
     return (
       <View style={styles.cardWrap}>
         <View style={styles.card}>
-          <MaterialCommunityIcons name="chart-line-variant" size={48} color="#E0E0E0" />
+          <MaterialCommunityIcons
+            name="chart-line-variant"
+            size={48}
+            color="#E0E0E0"
+          />
           <Text style={styles.emptyTitle}>No Sales Data Available</Text>
           <Text style={styles.emptyText}>
             Start selling products to see your top performers here
@@ -297,7 +316,9 @@ const TopSellingProductsList = ({
           >
             {/* header row: name + pill */}
             <View style={styles.cardHeader}>
-              <Text style={styles.productName} numberOfLines={1}>{item.name}</Text>
+              <Text style={styles.productName} numberOfLines={1}>
+                {item.name}
+              </Text>
               <View style={[styles.pill, { backgroundColor: '#2196F3' }]}>
                 <Text style={styles.pillText}>{item.totalSold} sold</Text>
               </View>
@@ -306,14 +327,21 @@ const TopSellingProductsList = ({
             {/* details row */}
             <View style={styles.cardDetails}>
               <Text style={styles.detailLeft} numberOfLines={1}>
-                Last sale: {item.lastSaleDate ? new Date(item.lastSaleDate).toLocaleDateString() : '—'}
+                Last sale:{' '}
+                {item.lastSaleDate
+                  ? new Date(item.lastSaleDate).toLocaleDateString()
+                  : '—'}
               </Text>
             </View>
 
             {/* footer row */}
             <View style={styles.cardFooter}>
-              <Text style={styles.totalText}>₪{(item.totalRevenue || 0).toFixed(2)}</Text>
-              <Text style={styles.itemsText}>Avg ₪{(item.averagePrice || 0).toFixed(2)}</Text>
+              <Text style={styles.totalText}>
+                ₪{(item.totalRevenue || 0).toFixed(2)}
+              </Text>
+              <Text style={styles.itemsText}>
+                Avg ₪{(item.averagePrice || 0).toFixed(2)}
+              </Text>
             </View>
           </TouchableOpacity>
         )}
@@ -332,10 +360,7 @@ const TopSellingProductsList = ({
 };
 
 const styles = StyleSheet.create({
-  // Keep a base container if you need it elsewhere
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
 
   // Match Recent Orders spacing
   listWrap: {
@@ -360,11 +385,6 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
   },
 
-  // Loading state
-  loadingContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   loadingText: {
     marginTop: 10,
     color: '#216a94',
@@ -404,20 +424,11 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#2196F3',
   },
-  pillText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
+  pillText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
 
   // Middle row: small details
-  cardDetails: {
-    marginBottom: 8,
-  },
-  detailLeft: {
-    fontSize: 12,
-    color: '#666',
-  },
+  cardDetails: { marginBottom: 8 },
+  detailLeft: { fontSize: 12, color: '#666' },
 
   // Footer row: totals
   cardFooter: {
@@ -425,38 +436,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  totalText: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: '#216a94',
-  },
-  itemsText: {
-    fontSize: 12,
-    color: '#666',
-  },
+  totalText: { fontSize: 16, fontWeight: 'bold', color: '#216a94' },
+  itemsText: { fontSize: 12, color: '#666' },
 
-  // Optional separator (not used when each row is a card)
-  separator: {
-    height: 1,
-    backgroundColor: '#F0F0F0',
-    marginHorizontal: 16,
-  },
+  separator: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16 },
 
-  // Empty / error UI in a card
-  emptyTitle: {
-    fontSize: 16,
-    color: '#666',
-    marginTop: 12,
-    textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: 12,
-    color: '#999',
-    marginTop: 4,
-    textAlign: 'center',
-  },
+  emptyTitle: { fontSize: 16, color: '#666', marginTop: 12, textAlign: 'center' },
+  emptyText: { fontSize: 12, color: '#999', marginTop: 4, textAlign: 'center' },
 
-  // Retry button styled like your "Create Order" button
   retryButton: {
     marginTop: 12,
     borderWidth: 1,
@@ -466,11 +453,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 16,
   },
-  retryText: {
-    color: '#216a94',
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  retryText: { color: '#216a94', fontSize: 14, fontWeight: '600' },
 });
 
 export default TopSellingProductsList;

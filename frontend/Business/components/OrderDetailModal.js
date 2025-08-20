@@ -15,11 +15,7 @@ import {
   Share,
   FlatList,
 } from 'react-native';
-import { 
-  MaterialCommunityIcons, 
-  MaterialIcons,
-  Ionicons 
-} from '@expo/vector-icons';
+import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 
 export default function OrderDetailModal({
   visible = false,
@@ -27,22 +23,41 @@ export default function OrderDetailModal({
   onClose = () => {},
   onUpdateStatus = () => {},
   onContactCustomer = () => {},
-  onPrintReceipt = () => {},
   isLoading = false,
-  businessInfo = {}
+  businessInfo = {},
 }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
-  
+  const [showContactMenu, setShowContactMenu] = useState(false);
+
   // Animation refs
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const statusMenuAnim = useRef(new Animated.Value(0)).current;
   const modalContentRef = useRef(null); // Accessibility fix
-  
+
+  // ---- Currency helpers (default to ILS) ----
+  const CURRENCY = (businessInfo?.currency || 'ILS').toUpperCase();
+  const CURRENCY_SYMBOL =
+    businessInfo?.currencySymbol ||
+    (CURRENCY === 'ILS' ? '₪' : CURRENCY === 'USD' ? '$' : CURRENCY === 'EUR' ? '€' : '₪');
+
+  const fmt = (v) => {
+    const num = Number(v) || 0;
+    try {
+      return new Intl.NumberFormat('en-IL', {
+        style: 'currency',
+        currency: CURRENCY,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(num);
+    } catch {
+      // Fallback if Intl currency isn't available in the runtime
+      return `${CURRENCY_SYMBOL}${num.toFixed(2)}`;
+    }
+  };
+
   useEffect(() => {
     if (visible && order) {
-      // Entrance animation
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 0,
@@ -56,7 +71,6 @@ export default function OrderDetailModal({
         }),
       ]).start();
     } else {
-      // Exit animation
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: 300,
@@ -72,21 +86,83 @@ export default function OrderDetailModal({
     }
   }, [visible, order]);
 
-  // Handle status update
+  // --- helpers (web & native)
+  const sanitizePhone = (p) => (p || '').replace(/[^\d+]/g, '');
+
+  const openURL = async (url) => {
+    try {
+      if (Platform.OS === 'web') {
+        window.location.href = url;
+      } else {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) await Linking.openURL(url);
+        else Alert.alert('Cannot open', url);
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Could not open link');
+    }
+  };
+
+  // Build share text once
+  const buildShareText = () => {
+    const itemsText = (order.items || [])
+      .map((it) => {
+        const total = it.totalPrice ?? (it.unitPrice || 0) * (it.quantity || 0);
+        return `• ${it.quantity}x ${it.name} - ${fmt(total)}`;
+      })
+      .join('\n');
+
+    return (
+      `Order Summary\n\n` +
+      `Order: ${order.confirmationNumber}\n` +
+      `Customer: ${order.customerName}\n` +
+      `Total: ${fmt(order.total || 0)}\n` +
+      `Status: ${(order.status || '').toUpperCase()}\n\n` +
+      (itemsText ? `Items:\n${itemsText}` : '')
+    );
+  };
+
+  // ✅ Share (native Share API, web navigator.share or clipboard)
+  const handleShareOrder = async () => {
+    try {
+      const message = buildShareText();
+      const title = `Order ${order.confirmationNumber}`;
+
+      if (Platform.OS === 'web') {
+        if (typeof navigator !== 'undefined' && navigator.share) {
+          await navigator.share({ title, text: message });
+        } else if (
+          typeof navigator !== 'undefined' &&
+          navigator.clipboard &&
+          navigator.clipboard.writeText
+        ) {
+          await navigator.clipboard.writeText(message);
+          Alert.alert('Copied', 'Order summary copied to clipboard.');
+        } else {
+          // last-resort alert to let user copy manually
+          window.prompt('Copy the order summary:', message);
+        }
+      } else {
+        await Share.share({ title, message });
+      }
+    } catch (error) {
+      // user cancelled or an error occurred
+      if (error?.message) {
+        console.log('Share error:', error.message);
+      }
+    }
+  };
+
+  // Status update
   const handleStatusUpdate = async (newStatus) => {
     setIsUpdating(true);
     setShowStatusMenu(false);
-    
+
     try {
       await onUpdateStatus(order.id, newStatus);
-      
-      // Success feedback
-      Alert.alert(
-        '✅ Status Updated',
-        `Order status changed to ${newStatus.toUpperCase()}`,
-        [{ text: 'OK' }]
-      );
-      
+      Alert.alert('✅ Status Updated', `Order status changed to ${newStatus.toUpperCase()}`, [
+        { text: 'OK' },
+      ]);
     } catch (error) {
       Alert.alert('Error', `Failed to update status: ${error.message}`);
     } finally {
@@ -94,49 +170,62 @@ export default function OrderDetailModal({
     }
   };
 
-  // Handle contact customer
+  // Contact customer
   const handleContactCustomer = () => {
     if (!order.customerPhone && !order.customerEmail) {
       Alert.alert('No Contact Info', 'Customer contact information is not available');
       return;
     }
-    
+
+    if (Platform.OS === 'web') {
+      setShowContactMenu(true);
+      return;
+    }
+
     const options = [];
-    
+
     if (order.customerPhone) {
+      const phone = sanitizePhone(order.customerPhone);
       options.push({
         text: '📱 Call Customer',
-        onPress: () => Linking.openURL(`tel:${order.customerPhone}`)
+        onPress: () => openURL(`tel:${phone}`),
       });
-      
+
       options.push({
         text: '💬 Send SMS',
         onPress: () => {
-          const message = `Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup at ${businessInfo.businessName || 'our store'}!`;
-          Linking.openURL(`sms:${order.customerPhone}?body=${encodeURIComponent(message)}`);
-        }
+          const message = `Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup at ${
+            businessInfo.businessName || 'our store'
+          }!`;
+          openURL(`sms:${phone}?body=${encodeURIComponent(message)}`);
+        },
       });
     }
-    
+
     if (order.customerEmail) {
       options.push({
         text: '📧 Send Email',
         onPress: () => {
           const subject = `Order ${order.confirmationNumber} Update`;
-          const body = `Hi ${order.customerName},\n\nYour order is ready for pickup!\n\nOrder: ${order.confirmationNumber}\nTotal: $${order.total.toFixed(2)}\n\nThank you,\n${businessInfo.businessName || 'Your Plant Store'}`;
-          Linking.openURL(`mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
-        }
+          const body = `Hi ${order.customerName},\n\nYour order is ready for pickup!\n\nOrder: ${
+            order.confirmationNumber
+          }\nTotal: ${fmt(order.total || 0)}\n\nThank you,\n${
+            businessInfo.businessName || 'Your Plant Store'
+          }`;
+          openURL(
+            `mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+          );
+        },
       });
     }
-    
-    // Add chat option - always available for orders
+
     options.push({
       text: '💬 Chat with Customer',
-      onPress: () => onContactCustomer(order, 'chat')
+      onPress: () => onContactCustomer(order, 'chat'),
     });
-    
+
     options.push({ text: 'Cancel', style: 'cancel' });
-    
+
     Alert.alert(
       `Contact ${order.customerName}`,
       `Choose how to contact the customer about order ${order.confirmationNumber}`,
@@ -144,67 +233,60 @@ export default function OrderDetailModal({
     );
   };
 
-  // Handle share order
-  const handleShareOrder = async () => {
-    try {
-      const shareContent = {
-        message: `Order Summary\n\nOrder: ${order.confirmationNumber}\nCustomer: ${order.customerName}\nTotal: $${order.total.toFixed(2)}\nStatus: ${order.status.toUpperCase()}\n\nItems:\n${order.items?.map(item => `• ${item.quantity}x ${item.name} - $${item.totalPrice.toFixed(2)}`).join('\n')}`,
-        title: `Order ${order.confirmationNumber}`
-      };
-      
-      await Share.share(shareContent);
-    } catch (error) {
-      console.error('Error sharing order:', error);
-    }
-  };
-
-  // Get status color
+  // Colors/icons
   const getStatusColor = (status) => {
     switch (status) {
-      case 'pending': return '#FFA000';
-      case 'confirmed': return '#2196F3';
-      case 'ready': return '#9C27B0';
-      case 'completed': return '#4CAF50';
-      case 'cancelled': return '#F44336';
-      default: return '#757575';
+      case 'pending':
+        return '#FFA000';
+      case 'confirmed':
+        return '#2196F3';
+      case 'ready':
+        return '#9C27B0';
+      case 'completed':
+        return '#4CAF50';
+      case 'cancelled':
+        return '#F44336';
+      default:
+        return '#757575';
     }
   };
 
-  // Get status icon
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'pending': return 'hourglass-empty';
-      case 'confirmed': return 'check-circle-outline';
-      case 'ready': return 'shopping-bag';
-      case 'completed': return 'check-circle';
-      case 'cancelled': return 'cancel';
-      default: return 'help-outline';
+      case 'pending':
+        return 'hourglass-empty';
+      case 'confirmed':
+        return 'check-circle-outline';
+      case 'ready':
+        return 'local-shipping';
+      case 'completed':
+        return 'check-circle';
+      case 'cancelled':
+        return 'cancel';
+      default:
+        return 'help-outline';
     }
   };
 
-  // Get next status options
   const getNextStatusOptions = (currentStatus) => {
     switch (currentStatus) {
       case 'pending':
         return [
           { status: 'confirmed', label: 'Confirm Order', icon: 'check-circle-outline', color: '#2196F3' },
-          { status: 'cancelled', label: 'Cancel Order', icon: 'cancel', color: '#F44336' }
+          { status: 'cancelled', label: 'Cancel Order', icon: 'cancel', color: '#F44336' },
         ];
       case 'confirmed':
         return [
-          { status: 'ready', label: 'Mark as Ready', icon: 'shopping-bag', color: '#9C27B0' },
-          { status: 'cancelled', label: 'Cancel Order', icon: 'cancel', color: '#F44336' }
+          { status: 'ready', label: 'Mark as Ready', icon: 'local-shipping', color: '#9C27B0' },
+          { status: 'cancelled', label: 'Cancel Order', icon: 'cancel', color: '#F44336' },
         ];
       case 'ready':
-        return [
-          { status: 'completed', label: 'Complete Order', icon: 'check-circle', color: '#4CAF50' }
-        ];
+        return [{ status: 'completed', label: 'Complete Order', icon: 'check-circle', color: '#4CAF50' }];
       default:
         return [];
     }
   };
 
-  // Format date
   const formatDate = (dateString) => {
     const date = new Date(dateString);
     return date.toLocaleString('en-US', {
@@ -212,51 +294,47 @@ export default function OrderDetailModal({
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
     });
   };
 
-  // Calculate time ago
   const getTimeAgo = (dateString) => {
     const now = new Date();
     const date = new Date(dateString);
     const diffMs = now - date;
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
     const diffDays = Math.floor(diffHours / 24);
-    
+
     if (diffDays > 0) return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
     if (diffHours > 0) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
     return 'Just now';
   };
 
-  // Render order item
   const renderOrderItem = ({ item, index }) => (
     <View style={[styles.orderItem, index === 0 && styles.firstOrderItem]}>
       <View style={styles.itemIcon}>
-        <MaterialCommunityIcons 
-          name={item.productType === 'plant' ? 'leaf' : 'cube-outline'} 
-          size={20} 
-          color="#4CAF50" 
+        <MaterialCommunityIcons
+          name={item.productType === 'plant' ? 'leaf' : 'cube-outline'}
+          size={20}
+          color="#4CAF50"
         />
       </View>
-      
+
       <View style={styles.itemDetails}>
         <Text style={styles.itemName} numberOfLines={2}>
           {item.name}
         </Text>
-        <Text style={styles.itemUnit}>
-          ${item.unitPrice?.toFixed(2) || '0.00'} each
-        </Text>
+        <Text style={styles.itemUnit}>{`${fmt(item.unitPrice || 0)} each`}</Text>
       </View>
-      
+
       <View style={styles.itemQuantity}>
         <Text style={styles.quantityLabel}>Qty</Text>
         <Text style={styles.quantityValue}>{item.quantity}</Text>
       </View>
-      
+
       <View style={styles.itemTotal}>
         <Text style={styles.totalValue}>
-          ${item.totalPrice?.toFixed(2) || '0.00'}
+          {fmt(item.totalPrice ?? (item.unitPrice || 0) * (item.quantity || 0))}
         </Text>
       </View>
     </View>
@@ -266,34 +344,30 @@ export default function OrderDetailModal({
 
   const statusOptions = getNextStatusOptions(order.status);
 
-  // Accessibility fix: blur focus if inside modal before closing (web only)
+  // Web accessibility fix
   function handleCloseModal() {
     if (typeof document !== 'undefined' && modalContentRef.current) {
       const active = document.activeElement;
-      if (active && modalContentRef.current.contains(active)) {
-        active.blur();
-      }
+      if (active && modalContentRef.current.contains(active)) active.blur();
     }
     onClose();
   }
 
+  const contactIconName =
+    order?.customerPhone && order?.customerEmail
+      ? 'chat'
+      : order?.customerPhone
+      ? 'phone'
+      : order?.customerEmail
+      ? 'email'
+      : 'chat';
+
   return (
-    <Modal
-      visible={visible}
-      animationType="none"
-      transparent={true}
-      onRequestClose={handleCloseModal}
-    >
+    <Modal visible={visible} animationType="none" transparent onRequestClose={handleCloseModal}>
       <View style={styles.overlay}>
-        <Animated.View 
-          ref={modalContentRef} // Attach ref here
-          style={[
-            styles.modalContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            }
-          ]}
+        <Animated.View
+          ref={modalContentRef}
+          style={[styles.modalContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}
         >
           {/* Header */}
           <View style={styles.header}>
@@ -304,30 +378,17 @@ export default function OrderDetailModal({
               <View>
                 <Text style={styles.headerTitle}>#{order.confirmationNumber}</Text>
                 <Text style={styles.headerSubtitle}>
-                  {formatDate(order.orderDate)} • {getTimeAgo(order.orderDate)}
+                  {`${formatDate(order.orderDate)} • ${getTimeAgo(order.orderDate)}`}
                 </Text>
               </View>
             </View>
-            
+
             <View style={styles.headerActions}>
-              <TouchableOpacity 
-                style={styles.headerAction}
-                onPress={handleShareOrder}
-              >
+              <TouchableOpacity style={[styles.headerAction, { marginRight: 8 }]} onPress={handleShareOrder}>
                 <MaterialIcons name="share" size={20} color="#666" />
               </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.headerAction}
-                onPress={onPrintReceipt}
-              >
-                <MaterialIcons name="print" size={20} color="#666" />
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={styles.closeButton}
-                onPress={onClose}
-              >
+
+              <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                 <MaterialIcons name="close" size={20} color="#666" />
               </TouchableOpacity>
             </View>
@@ -344,9 +405,9 @@ export default function OrderDetailModal({
                     {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
                   </Text>
                 </View>
-                
+
                 {statusOptions.length > 0 && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.updateStatusButton}
                     onPress={() => setShowStatusMenu(true)}
                     disabled={isUpdating}
@@ -354,10 +415,10 @@ export default function OrderDetailModal({
                     {isUpdating ? (
                       <ActivityIndicator size="small" color="#4CAF50" />
                     ) : (
-                      <>
+                      <View style={styles.rowInline}>
                         <MaterialIcons name="edit" size={16} color="#4CAF50" />
                         <Text style={styles.updateStatusText}>Update Status</Text>
-                      </>
+                      </View>
                     )}
                   </TouchableOpacity>
                 )}
@@ -374,25 +435,27 @@ export default function OrderDetailModal({
                   </View>
                   <View style={styles.customerInfo}>
                     <Text style={styles.customerName}>{order.customerName}</Text>
-                    <Text style={styles.customerEmail}>{order.customerEmail}</Text>
-                    {order.customerPhone && (
-                      <Text style={styles.customerPhone}>{order.customerPhone}</Text>
-                    )}
+                    {!!order.customerEmail && <Text style={styles.customerEmail}>{order.customerEmail}</Text>}
+                    {!!order.customerPhone && <Text style={styles.customerPhone}>{order.customerPhone}</Text>}
                   </View>
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.contactButton}
                     onPress={handleContactCustomer}
+                    accessibilityRole="button"
+                    accessibilityLabel="Contact customer"
                   >
-                    <MaterialIcons name="phone" size={18} color="#4CAF50" />
+                    <MaterialIcons name={contactIconName} size={18} color="#4CAF50" />
+                    <Text style={styles.contactButtonText}>Contact</Text>
+                    <MaterialIcons name="arrow-drop-down" size={18} color="#4CAF50" />
                   </TouchableOpacity>
                 </View>
-                
+
                 {order.communication?.preferredMethod && (
-                  <View style={styles.communicationPref}>
+                  <View className="communicationPref" style={styles.communicationPref}>
                     <Text style={styles.prefLabel}>Preferred contact:</Text>
                     <Text style={styles.prefValue}>
-                      {order.communication.preferredMethod.charAt(0).toUpperCase() + 
-                       order.communication.preferredMethod.slice(1)}
+                      {order.communication.preferredMethod.charAt(0).toUpperCase() +
+                        order.communication.preferredMethod.slice(1)}
                     </Text>
                   </View>
                 )}
@@ -401,10 +464,8 @@ export default function OrderDetailModal({
 
             {/* Order Items */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>
-                Order Items ({order.items?.length || 0})
-              </Text>
-              
+              <Text style={styles.sectionTitle}>Order Items ({order.items?.length || 0})</Text>
+
               <View style={styles.itemsContainer}>
                 <FlatList
                   data={order.items || []}
@@ -422,36 +483,32 @@ export default function OrderDetailModal({
               <View style={styles.summaryContainer}>
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabel}>Subtotal:</Text>
-                  <Text style={styles.summaryValue}>
-                    ${(order.total || 0).toFixed(2)}
-                  </Text>
+                  <Text style={styles.summaryValue}>{fmt(order.total || 0)}</Text>
                 </View>
-                
-                {order.tax && order.tax > 0 && (
+
+                {!!order.tax && order.tax > 0 && (
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Tax:</Text>
-                    <Text style={styles.summaryValue}>${order.tax.toFixed(2)}</Text>
+                    <Text style={styles.summaryValue}>{fmt(order.tax)}</Text>
                   </View>
                 )}
-                
-                {order.discount && order.discount > 0 && (
+
+                {!!order.discount && order.discount > 0 && (
                   <View style={styles.summaryRow}>
                     <Text style={styles.summaryLabel}>Discount:</Text>
-                    <Text style={[styles.summaryValue, styles.discountValue]}>
-                      -${order.discount.toFixed(2)}
-                    </Text>
+                    <Text style={[styles.summaryValue, styles.discountValue]}>-{fmt(order.discount)}</Text>
                   </View>
                 )}
-                
+
                 <View style={[styles.summaryRow, styles.totalRow]}>
                   <Text style={styles.totalLabel}>Total:</Text>
-                  <Text style={styles.totalValue}>${(order.total || 0).toFixed(2)}</Text>
+                  <Text style={styles.totalValue}>{fmt(order.total || 0)}</Text>
                 </View>
               </View>
             </View>
 
             {/* Order Notes */}
-            {order.notes && (
+            {!!order.notes && (
               <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Order Notes</Text>
                 <View style={styles.notesContainer}>
@@ -460,7 +517,7 @@ export default function OrderDetailModal({
               </View>
             )}
 
-            {/* Payment Information */}
+            {/* Pickup Information */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Pickup Information</Text>
               <View style={styles.pickupContainer}>
@@ -469,19 +526,17 @@ export default function OrderDetailModal({
                   <Text style={styles.pickupLabel}>Order Date:</Text>
                   <Text style={styles.pickupValue}>{formatDate(order.orderDate)}</Text>
                 </View>
-                
+
                 <View style={styles.pickupItem}>
                   <MaterialIcons name="payment" size={16} color="#666" />
                   <Text style={styles.pickupLabel}>Payment:</Text>
                   <Text style={styles.pickupValue}>Pay on pickup</Text>
                 </View>
-                
+
                 <View style={styles.pickupItem}>
                   <MaterialIcons name="location-on" size={16} color="#666" />
                   <Text style={styles.pickupLabel}>Location:</Text>
-                  <Text style={styles.pickupValue}>
-                    {businessInfo.address || 'Store location'}
-                  </Text>
+                  <Text style={styles.pickupValue}>{businessInfo.address || 'Store location'}</Text>
                 </View>
               </View>
             </View>
@@ -492,22 +547,103 @@ export default function OrderDetailModal({
             <View style={styles.statusMenuOverlay}>
               <View style={styles.statusMenu}>
                 <Text style={styles.statusMenuTitle}>Update Order Status</Text>
-                
-                {statusOptions.map((option, index) => (
+
+                {statusOptions.map((option) => (
                   <TouchableOpacity
                     key={option.status}
                     style={[styles.statusOption, { borderLeftColor: option.color }]}
                     onPress={() => handleStatusUpdate(option.status)}
                   >
-                    <MaterialIcons name={option.icon} size={20} color={option.color} />
-                    <Text style={styles.statusOptionText}>{option.label}</Text>
+                    <View style={styles.rowInline}>
+                      <MaterialIcons name={option.icon} size={20} color={option.color} />
+                      <Text style={styles.statusOptionText}>{option.label}</Text>
+                    </View>
                   </TouchableOpacity>
                 ))}
-                
+
+                <TouchableOpacity style={styles.statusCancel} onPress={() => setShowStatusMenu(false)}>
+                  <Text style={styles.statusCancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+
+          {/* Contact Menu (web only) */}
+          {Platform.OS === 'web' && showContactMenu && (
+            <View style={styles.statusMenuOverlay}>
+              <View style={styles.statusMenu}>
+                <Text style={styles.statusMenuTitle}>Contact {order.customerName}</Text>
+
+                {!!order.customerPhone && (
+                  <TouchableOpacity
+                    style={[styles.statusOption, { borderLeftColor: '#4CAF50' }]}
+                    onPress={() => {
+                      setShowContactMenu(false);
+                      openURL(`tel:${sanitizePhone(order.customerPhone)}`);
+                    }}
+                  >
+                    <View style={styles.rowInline}>
+                      <MaterialIcons name="phone" size={20} color="#4CAF50" />
+                      <Text style={styles.statusOptionText}>Call</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {!!order.customerPhone && (
+                  <TouchableOpacity
+                    style={[styles.statusOption, { borderLeftColor: '#2196F3' }]}
+                    onPress={() => {
+                      setShowContactMenu(false);
+                      const msg = `Hi ${order.customerName}, your order ${order.confirmationNumber} is ready for pickup at ${
+                        businessInfo.businessName || 'our store'
+                      }!`;
+                      openURL(`sms:${sanitizePhone(order.customerPhone)}?body=${encodeURIComponent(msg)}`);
+                    }}
+                  >
+                    <View style={styles.rowInline}>
+                      <MaterialIcons name="sms" size={20} color="#2196F3" />
+                      <Text style={styles.statusOptionText}>SMS</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
+                {!!order.customerEmail && (
+                  <TouchableOpacity
+                    style={[styles.statusOption, { borderLeftColor: '#9C27B0' }]}
+                    onPress={() => {
+                      setShowContactMenu(false);
+                      const subject = `Order ${order.confirmationNumber} Update`;
+                      const body = `Hi ${order.customerName},\n\nYour order is ready for pickup!\n\nOrder: ${
+                        order.confirmationNumber
+                      }\nTotal: ${fmt(order.total || 0)}\n\nThank you,\n${
+                        businessInfo.businessName || 'Your Plant Store'
+                      }`;
+                      openURL(
+                        `mailto:${order.customerEmail}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+                      );
+                    }}
+                  >
+                    <View style={styles.rowInline}>
+                      <MaterialIcons name="email" size={20} color="#9C27B0" />
+                      <Text style={styles.statusOptionText}>Email</Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
-                  style={styles.statusCancel}
-                  onPress={() => setShowStatusMenu(false)}
+                  style={[styles.statusOption, { borderLeftColor: '#607D8B' }]}
+                  onPress={() => {
+                    setShowContactMenu(false);
+                    onContactCustomer(order, 'chat');
+                  }}
                 >
+                  <View style={styles.rowInline}>
+                    <MaterialIcons name="chat" size={20} color="#607D8B" />
+                    <Text style={styles.statusOptionText}>Chat</Text>
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.statusCancel} onPress={() => setShowContactMenu(false)}>
                   <Text style={styles.statusCancelText}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -566,7 +702,7 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
   },
   headerAction: {
     padding: 8,
@@ -660,9 +796,18 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   contactButton: {
-    padding: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: 8,
     backgroundColor: '#f0f9f3',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  contactButtonText: {
+    marginLeft: 6,
+    marginRight: 2,
+    color: '#4CAF50',
+    fontWeight: '600',
   },
   communicationPref: {
     flexDirection: 'row',
@@ -859,4 +1004,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
   },
+  rowInline: { flexDirection: 'row', alignItems: 'center' },
 });

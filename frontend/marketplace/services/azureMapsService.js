@@ -1,161 +1,133 @@
 // COST-OPTIMIZED Azure Maps Service - greener-marketplace-maps ONLY
+// React-Native safe: replaces AbortSignal.timeout with a local fetch-with-timeout
 import { Platform } from 'react-native';
 
-// Configuration - Using your deployed Azure Functions with greener-marketplace-maps
+// =================== Config ===================
 const BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
-const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days to minimize API calls
+const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days
 
-// Enhanced cache management for cost optimization
 let cachedKey = null;
 let keyTimestamp = null;
 const locationCache = new Map();
 const reverseCache = new Map();
 
-// Aggressive rate limiting to minimize costs
+// Rate limit & memory protection
 let lastApiCall = 0;
-const MIN_API_INTERVAL = 1000; // 1 second between calls (reduced from 500ms)
-const MAX_CACHE_SIZE = 1000; // Prevent memory issues
+const MIN_API_INTERVAL = 1000; // 1s between calls
+const MAX_CACHE_SIZE = 1000;
 
-// Request queue to batch similar requests
+// Debounce queue
 const requestQueue = new Map();
 
-const rateLimitedFetch = async (url, options) => {
-  const now = Date.now();
-  const timeSinceLastCall = now - lastApiCall;
-  
-  if (timeSinceLastCall < MIN_API_INTERVAL) {
-    await new Promise(resolve => setTimeout(resolve, MIN_API_INTERVAL - timeSinceLastCall));
+// ---------- RN-safe timeout wrapper ----------
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 15000) => {
+  // Prefer AbortController if present in RN
+  if (typeof AbortController === 'function') {
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(id);
+    }
   }
-  
-  lastApiCall = Date.now();
-  return fetch(url, options);
+  // Fallback race (older engines)
+  return Promise.race([
+    fetch(url, options),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+  ]);
 };
 
-const debouncedRequest = (key, requestFn, delay = 300) => {
-  return new Promise((resolve, reject) => {
-    if (requestQueue.has(key)) {
-      clearTimeout(requestQueue.get(key).timeout);
-    }
-    
+// ---------- Rate-limited fetch that also times out ----------
+const rateLimitedFetch = async (url, options, timeoutMs = 15000) => {
+  const now = Date.now();
+  const delta = now - lastApiCall;
+  if (delta < MIN_API_INTERVAL) {
+    await new Promise(r => setTimeout(r, MIN_API_INTERVAL - delta));
+  }
+  lastApiCall = Date.now();
+  return fetchWithTimeout(url, options, timeoutMs);
+};
+
+const debouncedRequest = (key, requestFn, delay = 300) =>
+  new Promise((resolve, reject) => {
+    if (requestQueue.has(key)) clearTimeout(requestQueue.get(key).timeout);
     const timeout = setTimeout(async () => {
       try {
         const result = await requestFn();
         requestQueue.delete(key);
         resolve(result);
-      } catch (error) {
+      } catch (e) {
         requestQueue.delete(key);
-        reject(error);
+        reject(e);
       }
     }, delay);
-    
     requestQueue.set(key, { timeout, resolve, reject });
   });
-};
 
-/**
- * Get Azure Maps key - ONLY greener-marketplace-maps account
- * @returns {Promise<string>} Azure Maps API key
- */
+// =================== API ===================
+/** Get Azure Maps key (cached & rate-limited) */
 export const getAzureMapsKey = async () => {
-  console.log('🗺️ Fetching greener-marketplace-maps key...');
-  
-  // Check cache first
-  if (cachedKey && keyTimestamp && (Date.now() - keyTimestamp < CACHE_DURATION)) {
-    console.log('✅ Using cached greener-marketplace-maps key');
+  if (cachedKey && keyTimestamp && Date.now() - keyTimestamp < CACHE_DURATION) {
     return cachedKey;
   }
-
   try {
-    const response = await rateLimitedFetch(`${BASE_URL}/marketplace/maps-config`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
+    const response = await rateLimitedFetch(
+      `${BASE_URL}/marketplace/maps-config`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       },
-      signal: AbortSignal.timeout(15000),
-    });
-
+      15000
+    );
     if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Maps config error: ${response.status} - ${errorText}`);
+      const text = await response.text();
+      throw new Error(`Maps config error: ${response.status} - ${text}`);
     }
-
     const data = await response.json();
-    
-    if (!data.azureMapsKey) {
-      throw new Error('No Azure Maps key in response');
-    }
-
-    // Verify this is the correct account
+    if (!data.azureMapsKey) throw new Error('No Azure Maps key in response');
     if (data.accountName !== 'greener-marketplace-maps') {
-      console.warn(`⚠️ Unexpected account: ${data.accountName}, expected: greener-marketplace-maps`);
+      console.warn(`⚠️ Unexpected account: ${data.accountName} (expected greener-marketplace-maps)`);
     }
-
-    console.log('✅ greener-marketplace-maps key retrieved with cost guidelines');
     cachedKey = data.azureMapsKey;
     keyTimestamp = Date.now();
-    return data.azureMapsKey;
-
-  } catch (error) {
-    console.error('❌ Failed to get greener-marketplace-maps key:', error.message);
-    throw error;
+    return cachedKey;
+  } catch (err) {
+    console.error('❌ Failed to get greener-marketplace-maps key:', err?.message || err);
+    throw err;
   }
 };
 
-/**
- * Geocode with aggressive cost optimization
- * @param {string} address Address to geocode
- * @returns {Promise<Object>} Geocoded location data
- */
+/** Geocode (address -> lat/lon), cached & debounced */
 export const geocodeAddress = async (address) => {
-  if (!address || address.trim().length < 3) {
-    throw new Error('Address must be at least 3 characters long');
+  if (!address || address.trim().length < 3) throw new Error('Address must be at least 3 characters long');
+  const normalized = address.trim().toLowerCase();
+
+  if (locationCache.has(normalized)) {
+    const { data, timestamp } = locationCache.get(normalized);
+    if (Date.now() - timestamp < CACHE_DURATION) return data;
   }
 
-  const normalizedAddress = address.trim().toLowerCase();
-  
-  // Check cache first (7-day cache for cost savings)
-  if (locationCache.has(normalizedAddress)) {
-    const { data, timestamp } = locationCache.get(normalizedAddress);
-    if (Date.now() - timestamp < CACHE_DURATION) {
-      console.log('✅ GEOCODE CACHE HIT - Avoided Azure Maps API call');
-      return data;
-    }
-  }
-
-  // Use debounced requests to prevent duplicate calls
-  return debouncedRequest(`geocode_${normalizedAddress}`, async () => {
+  return debouncedRequest(`geocode_${normalized}`, async () => {
     try {
-      console.log('🔍 Geocoding (rate-limited):', address);
-      
-      const response = await rateLimitedFetch(`${BASE_URL}/marketplace/geocode`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
+      const response = await rateLimitedFetch(
+        `${BASE_URL}/marketplace/geocode`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: JSON.stringify({ address: address.trim() }),
         },
-        body: JSON.stringify({ 
-          address: address.trim() 
-        }),
-        signal: AbortSignal.timeout(20000),
-      });
+        20000
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
-        
-        // Handle rate limiting gracefully
-        if (response.status === 429) {
-          throw new Error('Rate limit exceeded - please wait before making more requests');
-        }
-        
-        throw new Error(`Geocoding failed: ${response.status} - ${errorText}`);
+        const text = await response.text();
+        if (response.status === 429) throw new Error('Rate limit exceeded - please wait before making more requests');
+        throw new Error(`Geocoding failed: ${response.status} - ${text}`);
       }
 
       const data = await response.json();
-      
-      if (!data.latitude || !data.longitude) {
-        throw new Error('Invalid geocoding response: missing coordinates');
-      }
+      if (!data.latitude || !data.longitude) throw new Error('Invalid geocoding response: missing coordinates');
 
       const result = {
         latitude: parseFloat(data.latitude),
@@ -166,90 +138,52 @@ export const geocodeAddress = async (address) => {
         houseNumber: data.houseNumber || '',
         postalCode: data.postalCode || '',
         country: data.country || 'Israel',
-        source: data.source || 'greener-marketplace-maps'
+        source: data.source || 'greener-marketplace-maps',
       };
+      if (isNaN(result.latitude) || isNaN(result.longitude)) throw new Error('Invalid coordinates in response');
 
-      if (isNaN(result.latitude) || isNaN(result.longitude)) {
-        throw new Error('Invalid coordinates in response');
-      }
-
-      // Cache with 7-day expiry for cost optimization
       manageCacheSize(locationCache);
-      locationCache.set(normalizedAddress, {
-        data: result,
-        timestamp: Date.now()
-      });
-
-      console.log('✅ Geocoding successful - cached for 7 days');
+      locationCache.set(normalized, { data: result, timestamp: Date.now() });
       return result;
-
-    } catch (error) {
-      console.error('❌ Geocoding error:', error.message);
-      throw error;
+    } catch (err) {
+      console.error('❌ Geocoding error:', err?.message || err);
+      throw err;
     }
   });
 };
 
-/**
- * Reverse geocode with aggressive cost optimization
- * @param {number} latitude Latitude
- * @param {number} longitude Longitude
- * @returns {Promise<Object>} Address information
- */
+/** Reverse geocode (lat/lon -> address), cached & debounced */
 export const reverseGeocode = async (latitude, longitude) => {
-  if (!latitude || !longitude) {
-    throw new Error('Latitude and longitude are required');
-  }
-
+  if (!latitude || !longitude) throw new Error('Latitude and longitude are required');
   const lat = parseFloat(latitude);
   const lon = parseFloat(longitude);
-  
-  if (isNaN(lat) || isNaN(lon)) {
-    throw new Error('Invalid latitude or longitude values');
+  if (isNaN(lat) || isNaN(lon)) throw new Error('Invalid latitude or longitude values');
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) throw new Error('Coordinates out of valid range');
+
+  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  if (reverseCache.has(key)) {
+    const { data, timestamp } = reverseCache.get(key);
+    if (Date.now() - timestamp < CACHE_DURATION) return data;
   }
 
-  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
-    throw new Error('Coordinates out of valid range');
-  }
-
-  // Create cache key with reduced precision for better cache hits
-  const cacheKey = `${lat.toFixed(4)},${lon.toFixed(4)}`;
-  
-  if (reverseCache.has(cacheKey)) {
-    const { data, timestamp } = reverseCache.get(cacheKey);
-    if (Date.now() - timestamp < CACHE_DURATION) {
-      console.log('✅ REVERSE GEOCODE CACHE HIT - Avoided Azure Maps API call');
-      return data;
-    }
-  }
-
-  // Use debounced requests to prevent duplicate calls
-  return debouncedRequest(`reverse_${cacheKey}`, async () => {
+  return debouncedRequest(`reverse_${key}`, async () => {
     try {
-      console.log('🗺️ Reverse geocoding (rate-limited):', lat, lon);
-      
-      const response = await rateLimitedFetch(`${BASE_URL}/marketplace/reverseGeocode?lat=${lat}&lon=${lon}`, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
+      const response = await rateLimitedFetch(
+        `${BASE_URL}/marketplace/reverseGeocode?lat=${lat}&lon=${lon}`,
+        {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         },
-        signal: AbortSignal.timeout(20000),
-      });
+        20000
+      );
 
       if (!response.ok) {
-        const errorText = await response.text();
-        
-        // Handle rate limiting gracefully
-        if (response.status === 429) {
-          throw new Error('Rate limit exceeded - please wait before making more requests');
-        }
-        
-        throw new Error(`Reverse geocoding failed: ${response.status} - ${errorText}`);
+        const text = await response.text();
+        if (response.status === 429) throw new Error('Rate limit exceeded - please wait before making more requests');
+        throw new Error(`Reverse geocoding failed: ${response.status} - ${text}`);
       }
 
       const data = await response.json();
-      
       const result = {
         latitude: lat,
         longitude: lon,
@@ -260,123 +194,78 @@ export const reverseGeocode = async (latitude, longitude) => {
         postalCode: data.postalCode || '',
         country: data.country || 'Israel',
         countryCode: data.countryCode || '',
-        source: data.source || 'greener-marketplace-maps'
+        source: data.source || 'greener-marketplace-maps',
+        ...(data.cityHe ? { cityHe: data.cityHe } : {}),
+        ...(data.streetHe ? { streetHe: data.streetHe } : {}),
+        ...(data.regionHe ? { regionHe: data.regionHe } : {}),
+        ...(data.neighborhood ? { neighborhood: data.neighborhood } : {}),
       };
 
-      // Add additional fields if available
-      if (data.cityHe) result.cityHe = data.cityHe;
-      if (data.streetHe) result.streetHe = data.streetHe;
-      if (data.regionHe) result.regionHe = data.regionHe;
-      if (data.neighborhood) result.neighborhood = data.neighborhood;
-
-      // Cache with 7-day expiry for cost optimization
       manageCacheSize(reverseCache);
-      reverseCache.set(cacheKey, {
-        data: result,
-        timestamp: Date.now()
-      });
-
-      console.log('✅ Reverse geocoding successful - cached for 7 days');
+      reverseCache.set(key, { data: result, timestamp: Date.now() });
       return result;
-
-    } catch (error) {
-      console.error('❌ Reverse geocoding error:', error.message);
-      throw error;
+    } catch (err) {
+      console.error('❌ Reverse geocoding error:', err?.message || err);
+      throw err;
     }
   });
 };
 
-/**
- * Manage cache size to prevent memory issues
- */
+// =================== Helpers ===================
 const manageCacheSize = (cache) => {
   if (cache.size >= MAX_CACHE_SIZE) {
-    // Remove oldest 20% of entries
-    const entries = Array.from(cache.entries());
-    const sortedEntries = entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+    const entries = Array.from(cache.entries()).sort((a, b) => a[1].timestamp - b[1].timestamp);
     const toRemove = Math.floor(MAX_CACHE_SIZE * 0.2);
-    
-    for (let i = 0; i < toRemove; i++) {
-      cache.delete(sortedEntries[i][0]);
-    }
-    
+    for (let i = 0; i < toRemove; i++) cache.delete(entries[i][0]);
     console.log(`🧹 Cache cleanup: removed ${toRemove} old entries`);
   }
 };
 
-// Periodic cache cleanup to remove expired entries
+// periodic cleanup
 setInterval(() => {
   const now = Date.now();
-  
-  // Clean location cache
-  for (const [key, { timestamp }] of locationCache.entries()) {
-    if (now - timestamp > CACHE_DURATION) {
-      locationCache.delete(key);
-    }
-  }
-  
-  // Clean reverse geocode cache
-  for (const [key, { timestamp }] of reverseCache.entries()) {
-    if (now - timestamp > CACHE_DURATION) {
-      reverseCache.delete(key);
-    }
-  }
-}, 60 * 60 * 1000); // Clean every hour
+  for (const [k, v] of locationCache.entries()) if (now - v.timestamp > CACHE_DURATION) locationCache.delete(k);
+  for (const [k, v] of reverseCache.entries()) if (now - v.timestamp > CACHE_DURATION) reverseCache.delete(k);
+}, 60 * 60 * 1000);
 
-// Helper functions remain the same
-export const formatCoordinates = (latitude, longitude, precision = 4) => {
-  const lat = parseFloat(latitude);
-  const lon = parseFloat(longitude);
-  
-  if (isNaN(lat) || isNaN(lon)) {
-    return 'Invalid coordinates';
-  }
-  
-  return `${lat.toFixed(precision)}, ${lon.toFixed(precision)}`;
+export const formatCoordinates = (lat, lon, precision = 4) => {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+  if (isNaN(la) || isNaN(lo)) return 'Invalid coordinates';
+  return `${la.toFixed(precision)}, ${lo.toFixed(precision)}`;
 };
 
-export const validateCoordinates = (latitude, longitude) => {
-  const lat = parseFloat(latitude);
-  const lon = parseFloat(longitude);
-  
-  return !isNaN(lat) && !isNaN(lon) && 
-         lat >= -90 && lat <= 90 && 
-         lon >= -180 && lon <= 180;
+export const validateCoordinates = (lat, lon) => {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+  return !isNaN(la) && !isNaN(lo) && la >= -90 && la <= 90 && lo >= -180 && lo <= 180;
 };
 
 export const calculateDistance = (lat1, lon1, lat2, lon2) => {
-  const R = 6371; // Radius of the Earth in kilometers
-  const toRad = (value) => (value * Math.PI) / 180;
-  
+  const R = 6371;
+  const toRad = (v) => (v * Math.PI) / 180;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  
-  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-            Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-            Math.sin(dLon/2) * Math.sin(dLon/2);
-  
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c; // Distance in kilometers
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
-export const isInIsrael = (latitude, longitude) => {
-  const lat = parseFloat(latitude);
-  const lon = parseFloat(longitude);
-  
-  // Rough bounding box for Israel
-  return lat >= 29.5 && lat <= 33.4 && lon >= 34.2 && lon <= 35.9;
+export const isInIsrael = (lat, lon) => {
+  const la = parseFloat(lat);
+  const lo = parseFloat(lon);
+  return la >= 29.5 && la <= 33.4 && lo >= 34.2 && lo <= 35.9;
 };
 
-// Export cache statistics for monitoring
-export const getCacheStats = () => {
-  return {
-    locationCacheSize: locationCache.size,
-    reverseCacheSize: reverseCache.size,
-    totalCacheEntries: locationCache.size + reverseCache.size,
-    maxCacheSize: MAX_CACHE_SIZE,
-    cacheUtilization: ((locationCache.size + reverseCache.size) / (MAX_CACHE_SIZE * 2) * 100).toFixed(1) + '%'
-  };
-};
+export const getCacheStats = () => ({
+  locationCacheSize: locationCache.size,
+  reverseCacheSize: reverseCache.size,
+  totalCacheEntries: locationCache.size + reverseCache.size,
+  maxCacheSize: MAX_CACHE_SIZE,
+  cacheUtilization:
+    (((locationCache.size + reverseCache.size) / (MAX_CACHE_SIZE * 2)) * 100).toFixed(1) + '%',
+});
 
 export default {
   getAzureMapsKey,
@@ -386,5 +275,5 @@ export default {
   validateCoordinates,
   calculateDistance,
   isInIsrael,
-  getCacheStats
+  getCacheStats,
 };

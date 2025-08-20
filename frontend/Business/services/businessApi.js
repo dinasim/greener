@@ -471,42 +471,159 @@ export const fetchBusinessProfile = async (businessId) => {
 /**
  * Get Business Dashboard Data
  */
+// Business/services/businessApi.js
+// Business/services/businessApi.js
+// Business/services/businessApi.js
 export const getBusinessDashboard = async () => {
   try {
     console.log('📊 Loading business dashboard');
     const headers = await getEnhancedHeaders();
-    
     const url = `${API_BASE_URL}/business-dashboard`;
-    const response = await apiRequest(url, {
-      method: 'GET',
-      headers,
-    }, 3, 'Business Dashboard');
+    const resp = await apiRequest(url, { method: 'GET', headers }, 3, 'Business Dashboard');
+    const root = resp?.data || resp || {};
 
-    if (!response || response.success === false) {
-      throw new Error('Dashboard data not available');
+    const asArray = (x) => {
+      if (Array.isArray(x)) return x;
+      if (Array.isArray(x?.items)) return x.items;
+      if (Array.isArray(x?.data)) return x.data;
+      if (Array.isArray(x?.list)) return x.list;
+      if (Array.isArray(x?.recent)) return x.recent;
+      return [];
+    };
+
+    const inventory = asArray(root.inventory);
+    let ordersRaw = asArray(root.orders);
+
+    // Fallback to orders endpoint if dashboard didn't include orders
+    if (!ordersRaw.length) {
+      try {
+        const q = `${API_BASE_URL}/business-orders-get?limit=50`;
+        const o = await apiRequest(q, { method: 'GET', headers }, 1, 'Dashboard Orders Fallback');
+        ordersRaw = asArray(o?.orders || o);
+      } catch (e) {
+        console.log('ℹ️ No orders in fallback:', e.message);
+      }
     }
+
+    const s = root.stats || {};
+
+    // ---------- helpers for revenue derivation ----------
+    const amt = (o) => Number(o.total ?? o.totalAmount ?? o.amount ?? 0) || 0;
+    const statusOf = (o) => String(o.status || '').toLowerCase();
+    const isCompleted = (o) => ['completed', 'paid', 'fulfilled', 'delivered'].includes(statusOf(o));
+    const asDate = (d) => {
+      const t = new Date(d || 0);
+      return Number.isFinite(t.getTime()) ? t : null;
+    };
+    const isSameYMD = (a, b) => (
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate()
+    );
+
+    const now = new Date();
+    const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+
+    const completedOrders = ordersRaw.filter(isCompleted);
+    const totalSalesDerived = completedOrders.reduce((sum, o) => sum + amt(o), 0);
+
+    const salesTodayDerived = completedOrders
+      .filter(o => { const d = asDate(o.date || o.orderDate || o.createdAt); return d && isSameYMD(d, now); })
+      .reduce((sum, o) => sum + amt(o), 0);
+
+    const salesYesterday = completedOrders
+      .filter(o => { const d = asDate(o.date || o.orderDate || o.createdAt); return d && isSameYMD(d, yesterday); })
+      .reduce((sum, o) => sum + amt(o), 0);
+
+    const ordersToday = ordersRaw.filter(o => { const d = asDate(o.date || o.orderDate || o.createdAt); return d && isSameYMD(d, now); }).length;
+    const ordersYesterday = ordersRaw.filter(o => { const d = asDate(o.date || o.orderDate || o.createdAt); return d && isSameYMD(d, yesterday); }).length;
+
+    const pct = (curr, prev) => (prev > 0 ? ((curr - prev) / prev) * 100 : (curr > 0 ? 100 : 0));
+
+    // ---------- map orders for UI ----------
+    const recentOrders = ordersRaw.map(o => ({
+      id: o.id || o.orderId,
+      confirmationNumber: o.confirmationNumber || o.displayId || o.orderId || o.id,
+      customerName: o.customerName || o.customer?.name || (o.customerEmail && o.customerEmail.split('@')[0]) || 'Customer',
+      date: o.date || o.orderDate || o.createdAt,
+      total: amt(o),
+      items: o.items || o.lines || [],
+      status: o.status || 'pending',
+    }));
+
+    // ---------- derived counts ----------
+    const lowStockCnt = s.lowStockItems ?? s.lowStock ?? inventory.filter(i => (i.quantity || 0) <= (i.minThreshold ?? 5)).length;
+    const totalOrders = s.totalOrders ?? s.ordersTotal ?? ordersRaw.length;
+    const newOrdersDerived = s.newOrders ?? s.pendingOrders ??
+      recentOrders.filter(o => {
+        const t = new Date(o.date || 0).getTime();
+        return Number.isFinite(t) && (Date.now() - t) < 24 * 60 * 60 * 1000;
+      }).length;
+
+    // ---------- normalized payload ----------
+    const normalized = {
+      businessInfo: root.businessInfo || root.businessProfile || root.business || root.profile || {},
+      metrics: {
+        totalSales: s.totalSales ?? s.salesTotal ?? s.revenueTotal ?? totalSalesDerived,
+        salesToday: s.salesToday ?? s.todaySales ?? s.dailySales ?? salesTodayDerived,
+        newOrders: newOrdersDerived,
+        lowStockItems: lowStockCnt,
+        totalInventory: s.totalInventory ?? s.items ?? s.totalItems ?? inventory.length,
+        activeInventory: s.activeInventory ?? s.activeItems ?? inventory.filter(i => (i.status || 'active') === 'active').length,
+        totalOrders,
+        inventoryValue: s.inventoryValue ?? s.inventoryWorth ??
+          inventory.reduce((sum, it) => sum + ((Number(it.price) || 0) * (Number(it.quantity) || 0)), 0),
+
+        // % changes (safe fallbacks)
+        revenueGrowth: s.revenueGrowth ?? s.revenueChange ?? pct(totalSalesDerived, 0), // leave as 0 unless you track periods
+        dailyGrowth: s.dailyGrowth ?? s.salesChange ?? pct(salesTodayDerived, salesYesterday),
+        orderGrowth: s.orderGrowth ?? s.ordersChange ?? pct(ordersToday, ordersYesterday),
+        stockChange: s.stockChange ?? 0,
+      },
+      recentOrders,
+      lowStockDetails: (root.lowStockDetails || root.lowStock ||
+        inventory.filter(i => (i.quantity || 0) <= (i.minThreshold ?? 5))).map(i => ({
+          id: i.id || i.inventoryId,
+          name: i.name || i.common_name || i.displayName || 'Item',
+          quantity: i.quantity ?? 0,
+          minThreshold: i.minThreshold ?? 5,
+      })),
+      chartData: {
+        sales: root.chartData?.sales || root.salesChart || {
+          labels: [], values: [], total: s.totalSales ?? s.salesTotal ?? totalSalesDerived, average: 0,
+        },
+        orders: root.chartData?.orders || root.ordersChart || {
+          pending:   s.pendingOrders ?? recentOrders.filter(o => (o.status || '').toLowerCase() === 'pending').length,
+          confirmed: s.confirmedOrders ?? recentOrders.filter(o => (o.status || '').toLowerCase() === 'confirmed').length,
+          ready:     s.readyOrders ?? recentOrders.filter(o => (o.status || '').toLowerCase() === 'ready').length,
+          completed: s.completedOrders ?? recentOrders.filter(o => (o.status || '').toLowerCase() === 'completed').length,
+          total:     totalOrders,
+        },
+        inventory: root.chartData?.inventory || root.inventoryChart || {
+          inStock:  s.inStock ?? inventory.filter(i => (i.quantity || 0) > 0).length,
+          lowStock: lowStockCnt,
+          outOfStock: s.outOfStock ?? inventory.filter(i => (i.quantity || 0) === 0).length,
+        },
+      },
+      topProducts: root.topProducts || [],
+      lastUpdated: root.lastUpdated || new Date().toISOString(),
+    };
 
     try {
-      await AsyncStorage.setItem('cached_dashboard', JSON.stringify({
-        data: response,
-        timestamp: Date.now()
-      }));
-    } catch (cacheError) {
-      console.warn('Failed to cache dashboard data:', cacheError);
-    }
+      await AsyncStorage.setItem('cached_dashboard', JSON.stringify({ data: normalized, timestamp: Date.now() }));
+    } catch {}
 
-    notifyRefresh({ 
-      type: 'dashboard_loaded', 
-      data: response,
-      timestamp: new Date().toISOString()
-    });
-
-    return response;
+    notifyRefresh({ type: 'dashboard_loaded', data: normalized, timestamp: new Date().toISOString() });
+    console.log('🧮 Derived totals — all:', totalSalesDerived, 'today:', salesTodayDerived);
+    return normalized;
   } catch (error) {
     console.error('❌ Dashboard error:', error);
     throw new Error(`Dashboard unavailable: ${error.message}`);
   }
 };
+
+
+
 
 /**
  * Get Business Inventory

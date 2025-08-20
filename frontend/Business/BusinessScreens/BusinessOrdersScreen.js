@@ -16,12 +16,21 @@ import {
 } from 'react-native';
 import BusinessLayout from '../components/BusinessLayout';
 import { MaterialIcons } from '@expo/vector-icons';
-import { getBusinessOrders, updateOrderStatus } from '../services/businessApi'; // Fixed: Corrected import path from api to services
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// ✅ Use the order API (has getBusinessOrders + updateOrderStatus)
+import { getBusinessOrders, updateOrderStatus } from '../services/businessOrderApi';
+
 import OrderDetailModal from '../components/OrderDetailModal';
 import * as Linking from 'expo-linking';
 
+// --- helper: normalize emails the same way your lookup does
+const normalizeEmail = (e = '') => e.trim().toLowerCase();
+
 export default function BusinessOrdersScreen({ navigation, route }) {
-  const { businessId } = route.params || {};
+  const { businessId: routeBusinessId } = route.params || {};
+  const [businessId, setBusinessId] = useState(routeBusinessId || null);
+
   const [orders, setOrders] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -36,34 +45,73 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   const [isUpdatingStatus, setIsUpdatingStatus] = useState(false);
 
   useEffect(() => {
-    loadOrders();
-  }, []);
+    const ensureBusinessId = async () => {
+      if (routeBusinessId) {
+        setBusinessId(routeBusinessId);
+        return;
+      }
+      const stored =
+        (await AsyncStorage.getItem('businessId')) ||
+        (await AsyncStorage.getItem('userEmail'));
+      if (stored) setBusinessId(stored);
+    };
+    ensureBusinessId();
+  }, [routeBusinessId]);
 
   useEffect(() => {
-    // Filter orders based on search query and status
-    let filtered = orders;
+    if (businessId) loadOrders(businessId);
+  }, [businessId]);
 
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter(order => order.status === statusFilter);
+  useEffect(() => {
+    if (!orders?.length) {
+      setFilteredOrders([]);
+      return;
     }
 
-    if (searchQuery.trim()) {
-      filtered = filtered.filter(order =>
-        order.orderId?.toString().includes(searchQuery) ||
-        order.customerName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.items?.some(item =>
-          item.name?.toLowerCase().includes(searchQuery.toLowerCase())
-        )
-      );
+    let filtered = orders;
+
+    // status filter first
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(o => (o.status || '').toLowerCase() === statusFilter);
+    }
+
+    // text search
+    const raw = (searchQuery || '').trim().toLowerCase();
+    if (raw) {
+      filtered = filtered.filter((o) => {
+        const id = String(o.id || o.orderId || '').toLowerCase();
+        const conf = String(o.confirmationNumber || '').toLowerCase();
+        const name = String(o.customerName || '').toLowerCase();
+        const email = String(o.customerEmail || '').toLowerCase();
+        const status = String(o.status || '').toLowerCase();
+        const total = String(o.total ?? o.totalAmount ?? '').toLowerCase();
+
+        // items list
+        const items = Array.isArray(o.items) ? o.items : [];
+        const itemNames = items.map(i => String(i?.name || '').toLowerCase()).join(' ');
+
+        // match if any field includes the query
+        return (
+          id.includes(raw) ||
+          conf.includes(raw) ||
+          name.includes(raw) ||
+          email.includes(raw) ||
+          status.includes(raw) ||
+          total.includes(raw) ||
+          itemNames.includes(raw)
+        );
+      });
     }
 
     setFilteredOrders(filtered);
   }, [searchQuery, orders, statusFilter]);
 
-  const loadOrders = async () => {
+  const loadOrders = async (bId = businessId) => {
     try {
+      if (!bId) return;
       setError(null);
-      const orderData = await getBusinessOrders();
+      setIsLoading(true);
+      const orderData = await getBusinessOrders(bId);
       const orderList = orderData?.orders || [];
       setOrders(orderList);
       setFilteredOrders(orderList);
@@ -94,8 +142,8 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
   const handleOrderPress = (order) => {
     Alert.alert(
-      `Order #${order.orderId}`,
-      `Customer: ${order.customerName}\nStatus: ${order.status}\nTotal: ₪${order.totalAmount}`,
+      `Order #${order.confirmationNumber || order.orderId || order.id}`,
+      `Customer: ${order.customerName}\nStatus: ${order.status}\nTotal: ₪${order.total ?? order.totalAmount ?? 0}`,
       [
         { text: 'Close', style: 'cancel' },
         { text: 'View Details', onPress: () => console.log('View order details') }
@@ -103,14 +151,37 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     );
   };
 
-  const handleUpdateStatus = async (orderId, newStatus) => {
+  // You can optionally pass a "note" explaining the change
+  const handleUpdateStatus = async (orderId, newStatus, note = '') => {
     setIsUpdatingStatus(true);
     try {
-      await updateOrderStatus(orderId, newStatus);
+      // call API
+      const res = await updateOrderStatus(orderId, newStatus, note);
+
+      // normalize any updated order coming back
+      const updatedFromServer = res?.order || {};
+      const idMatches = (o) => String(o.id || o.orderId) === String(orderId);
+
+      // 1) update orders list immediately (no stale UI)
+      setOrders(prev =>
+        prev.map(o => (idMatches(o) ? { ...o, status: newStatus, ...updatedFromServer } : o))
+      );
+      setFilteredOrders(prev =>
+        prev.map(o => (idMatches(o) ? { ...o, status: newStatus, ...updatedFromServer } : o))
+      );
+
+      // 2) update the modal's selected order so the banner/pill re-renders
+      setSelectedOrder(prev => (prev && idMatches(prev)
+        ? { ...prev, status: newStatus, ...updatedFromServer }
+        : prev
+      ));
+
       Alert.alert('Success', 'Order status updated successfully');
+
+      // optional: background refresh (keeps everything in sync with server)
       loadOrders();
     } catch (err) {
-      Alert.alert('Error', 'Failed to update order status');
+      Alert.alert('Error', err.message || 'Failed to update order status');
       console.error('Update status error:', err);
     } finally {
       setIsUpdatingStatus(false);
@@ -163,60 +234,56 @@ export default function BusinessOrdersScreen({ navigation, route }) {
   const handleQuickStatusUpdate = async (orderId, newStatus) => {
     setIsUpdatingStatus(true);
     try {
-      await updateOrderStatus(orderId, newStatus);
+      const res = await updateOrderStatus(orderId, newStatus);
+      const updatedFromServer = res?.order || {};
+      const idMatches = (o) => String(o.id || o.orderId) === String(orderId);
+
+      setOrders(prev =>
+        prev.map(o => (idMatches(o) ? { ...o, status: newStatus, ...updatedFromServer } : o))
+      );
+      setFilteredOrders(prev =>
+        prev.map(o => (idMatches(o) ? { ...o, status: newStatus, ...updatedFromServer } : o))
+      );
+
+      // if the modal is open for this order, sync it too
+      setSelectedOrder(prev => (prev && idMatches(prev)
+        ? { ...prev, status: newStatus, ...updatedFromServer }
+        : prev
+      ));
+
       Alert.alert('Success', `Order status updated to ${newStatus}`);
       loadOrders();
     } catch (err) {
-      Alert.alert('Error', 'Failed to update order status');
+      Alert.alert('Error', err.message || 'Failed to update order status');
       console.error('Update status error:', err);
     } finally {
       setIsUpdatingStatus(false);
     }
   };
 
+  // ✅ Updated: pass both raw and normalized email to Messages screen
   const handleContactCustomer = (order) => {
-    Alert.alert(
-      'Contact Customer',
-      `Choose how to contact ${order.customerName}`,
-      [
-        {
-          text: 'Call',
-          onPress: () => {
-            if (order.customerPhone) {
-              Linking.openURL(`tel:${order.customerPhone}`);
-            } else {
-              Alert.alert('No Phone', 'Customer phone number not available');
-            }
-          }
-        },
-        {
-          text: 'Email',
-          onPress: () => {
-            if (order.customerEmail) {
-              Linking.openURL(`mailto:${order.customerEmail}`);
-            } else {
-              Alert.alert('No Email', 'Customer email not available');
-            }
-          }
-        },
-        {
-          text: 'Message',
-          onPress: () => {
-            // Navigate to chat/messaging screen
-            navigation.navigate('CustomerChat', {
-              orderId: order.id,
-              customerName: order.customerName
-            });
-          }
-        },
-        { text: 'Cancel', style: 'cancel' }
-      ]
-    );
-  };
+    const rawEmail = order.customerEmail || '';
+    const recipientEmailNorm = normalizeEmail(rawEmail);
 
-  const handlePrintReceipt = (order) => {
-    Alert.alert('Print Receipt', `Printing receipt for order #${order.orderId}...`);
-    // Implement receipt printing logic here
+    // tiny debug to verify what's being sent to Messages
+    console.log('[Orders -> Messages] email params', {
+      rawEmail,
+      recipientEmailNorm,
+      lenRaw: rawEmail.length,
+      lenNorm: recipientEmailNorm.length,
+      orderId: order.id || order.orderId,
+    });
+
+    navigation.navigate('Messages', {
+      recipientEmail: rawEmail,               // raw for display
+      recipientEmailNorm,                     // normalized for lookups
+      recipientName: order.customerName,
+      isOrderChat: true,
+      orderId: order.id || order.orderId,
+      orderNumber: order.confirmationNumber,
+      autoMessage: `Hi ${order.customerName}, I'm following up about order #${order.confirmationNumber}.`,
+    });
   };
 
   const renderOrderItem = ({ item }) => (
@@ -229,9 +296,9 @@ export default function BusinessOrdersScreen({ navigation, route }) {
     >
       <View style={styles.orderHeader}>
         <View style={styles.orderInfo}>
-          <Text style={styles.orderNumber}>Order #{item.orderId || item.id}</Text>
+          <Text style={styles.orderNumber}>Order #{item.confirmationNumber || item.orderId || item.id}</Text>
           <Text style={styles.orderDate}>
-            {new Date(item.orderDate).toLocaleDateString()}
+            {item.orderDate ? new Date(item.orderDate).toLocaleDateString() : ''}
           </Text>
         </View>
         <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) }]}>
@@ -247,11 +314,11 @@ export default function BusinessOrdersScreen({ navigation, route }) {
 
         <View style={styles.orderValue}>
           <MaterialIcons name="monetization-on" size={16} color="#4CAF50" />
-          <Text style={styles.orderAmount}>₪{item.totalAmount || 0}</Text>
+          <Text style={styles.orderAmount}>₪{item.total ?? item.totalAmount ?? 0}</Text>
         </View>
       </View>
 
-      {item.items && item.items.length > 0 && (
+      {Array.isArray(item.items) && item.items.length > 0 && (
         <View style={styles.orderItems}>
           <Text style={styles.itemsLabel}>Items:</Text>
           <Text style={styles.itemsList}>
@@ -261,7 +328,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
         </View>
       )}
 
-      {/* NEW: Quick Action Buttons */}
+      {/* Quick Action Buttons */}
       <View style={styles.orderActions}>
         <TouchableOpacity
           style={[styles.actionButton, styles.viewButton]}
@@ -280,7 +347,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             style={[styles.actionButton, styles.confirmButton]}
             onPress={(e) => {
               e.stopPropagation();
-              handleQuickStatusUpdate(item.id, 'confirmed');
+              handleQuickStatusUpdate(item.id || item.orderId, 'confirmed');
             }}
           >
             <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
@@ -293,7 +360,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             style={[styles.actionButton, styles.readyButton]}
             onPress={(e) => {
               e.stopPropagation();
-              handleQuickStatusUpdate(item.id, 'ready');
+              handleQuickStatusUpdate(item.id || item.orderId, 'ready');
             }}
           >
             <MaterialIcons name="local-shipping" size={16} color="#FF9800" />
@@ -306,7 +373,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             style={[styles.actionButton, styles.completeButton]}
             onPress={(e) => {
               e.stopPropagation();
-              handleQuickStatusUpdate(item.id, 'completed');
+              handleQuickStatusUpdate(item.id || item.orderId, 'completed');
             }}
           >
             <MaterialIcons name="check-circle" size={16} color="#4CAF50" />
@@ -378,7 +445,6 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           </View>
         </SafeAreaView>
       </BusinessLayout>
-
     );
   }
 
@@ -387,7 +453,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
       navigation={navigation}
       businessId={businessId}
       currentTab="orders"
-      badges={{ orders: orders.filter(o => o.status === 'pending').length }} // optional badge
+      badges={{ orders: orders.filter(o => o.status === 'pending').length }}
     >
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -428,7 +494,7 @@ export default function BusinessOrdersScreen({ navigation, route }) {
           </View>
           <View style={styles.statCard}>
             <Text style={styles.statNumber}>
-              ₪{orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + (o.totalAmount || 0), 0)}
+              ₪{orders.filter(o => o.status === 'completed').reduce((sum, o) => sum + (o.total ?? o.totalAmount ?? 0), 0)}
             </Text>
             <Text style={styles.statLabel}>Revenue</Text>
           </View>
@@ -438,12 +504,10 @@ export default function BusinessOrdersScreen({ navigation, route }) {
         <FlatList
           data={filteredOrders}
           renderItem={renderOrderItem}
-          keyExtractor={(item) => item.id || item.orderId}
+          keyExtractor={(item) => String(item.id || item.orderId)}
           style={styles.ordersList}
           ListEmptyComponent={renderEmptyState}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
           showsVerticalScrollIndicator={false}
         />
 
@@ -455,13 +519,12 @@ export default function BusinessOrdersScreen({ navigation, route }) {
             onClose={() => setShowOrderModal(false)}
             onUpdateStatus={handleUpdateStatus}
             onContactCustomer={handleContactCustomer}
-            onPrintReceipt={() => handlePrintReceipt(selectedOrder)}
             isLoading={isUpdatingStatus}
             businessInfo={{ businessName: 'Your Plant Store', address: 'Store Location' }}
           />
         )}
       </SafeAreaView>
-    </BusinessLayout >
+    </BusinessLayout>
   );
 }
 

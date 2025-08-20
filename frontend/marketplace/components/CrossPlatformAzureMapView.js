@@ -1,763 +1,253 @@
-// FIXED CrossPlatformAzureMapView - Proper Azure Maps Loading + Key Handling
-import React, { useRef, useEffect, useState, forwardRef, useImperativeHandle, useCallback } from 'react';
-import { Platform, View, StyleSheet, Text, ActivityIndicator, Modal, TouchableOpacity } from 'react-native';
+// components/CrossPlatformAzureMapView.js
+import React, { forwardRef, useMemo } from 'react';
+import { View, StyleSheet, Platform } from 'react-native';
+import { WebView } from 'react-native-webview';
 
-const CrossPlatformAzureMapView = forwardRef(({
-  region,
-  onRegionChange,
-  markers = [],
-  onMarkerPress,
-  style,
-  mapType = 'road',
-  showUserLocation = false,
-  onMapReady,
-  onLocationSelect,
-  interactive = true,
-  accessibilityLabel = "Interactive map",
-  azureMapsKey, // Receive key as prop
-  // NEW: Accept products and businesses to generate markers
-  products = [],
-  businesses = [],
-  myLocation = null,
-  showMyLocation = false,
-  mapMode = 'plants',
-  onSelectProduct,
-  onSelectBusiness,
-  initialRegion,
-  onMapPress
-}, ref) => {
-  const iframeRef = useRef(null);
-  const [mapReady, setMapReady] = useState(false);
-  const [mapKey, setMapKey] = useState(azureMapsKey);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [fullscreen, setFullscreen] = useState(false);
-  const [zoom, setZoom] = useState((initialRegion || region || { zoom: 10 }).zoom || 10);
+const buildHtml = ({ key_, center, zoom, markers, radiusKm }) => {
+  const safeMarkers = JSON.stringify(markers || []);
+  const rMeters = Math.max(0, Number(radiusKm) || 0) * 1000;
 
-  // FIXED: Use provided key or load from service
-  useEffect(() => {
-    const loadMapKey = async () => {
-      if (azureMapsKey) {
-        console.log('✅ Using provided Azure Maps key');
-        setMapKey(azureMapsKey);
-        setIsLoading(false);
-        return;
-      }
-
-      try {
-        setIsLoading(true);
-        console.log('🔑 Loading Azure Maps key...');
-        
-        // Import the service dynamically to avoid circular imports
-        const { getAzureMapsKey } = await import('../services/azureMapsService');
-        const key = await getAzureMapsKey();
-        
-        setMapKey(key);
-        setError(null);
-        console.log('✅ Azure Maps key loaded for map component');
-      } catch (error) {
-        console.error('❌ Failed to load Azure Maps key:', error);
-        setError(`Failed to load map: ${error.message}`);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    
-    loadMapKey();
-  }, [azureMapsKey]);
-
-  // Generate markers from products, businesses, and user location
-  const generateMarkers = useCallback(() => {
-    const generatedMarkers = [];
-
-    // Add user location marker if available
-    if (showMyLocation && myLocation?.latitude && myLocation?.longitude) {
-      generatedMarkers.push({
-        id: 'current',
-        latitude: myLocation.latitude,
-        longitude: myLocation.longitude,
-        title: 'Your Location',
-        description: 'You are here',
-        type: 'user'
-      });
-    }
-
-    // Add product markers
-    if (mapMode === 'plants' && products?.length > 0) {
-      products.forEach(product => {
-        if (product.location?.latitude && product.location?.longitude) {
-          generatedMarkers.push({
-            id: `product-${product.id || product._id}`,
-            latitude: product.location.latitude,
-            longitude: product.location.longitude,
-            title: product.title || product.name || 'Product',
-            description: `$${parseFloat(product.price || 0).toFixed(2)}`,
-            type: 'product'
-          });
-        }
-      });
-    }
-
-    // Add business markers
-    if (mapMode === 'businesses' && businesses?.length > 0) {
-      businesses.forEach(business => {
-        const lat = business.location?.latitude || business.address?.latitude;
-        const lng = business.location?.longitude || business.address?.longitude;
-        
-        if (lat && lng) {
-          generatedMarkers.push({
-            id: `business-${business.id || business._id}`,
-            latitude: lat,
-            longitude: lng,
-            title: business.businessName || business.name || 'Business',
-            description: business.description || 'Business location',
-            type: 'business'
-          });
-        }
-      });
-    }
-
-    // Add any additional markers passed as props
-    if (markers?.length > 0) {
-      markers.forEach(marker => {
-        generatedMarkers.push({
-          ...marker,
-          type: marker.type || 'custom'
-        });
-      });
-    }
-
-    return generatedMarkers;
-  }, [products, businesses, myLocation, showMyLocation, mapMode, markers]);
-
-  // Get current markers and region
-  const currentMarkers = generateMarkers();
-  const mapRegion = initialRegion || region || {
-    latitude: 32.0853,
-    longitude: 34.7818,
-    zoom: 10
-  };
-
-  // Zoom handlers
-  const handleZoomIn = () => {
-    const newZoom = Math.min(zoom + 1, 20);
-    setZoom(newZoom);
-    sendMessageToMap({ type: 'SET_REGION', region: { ...mapRegion, zoom: newZoom } });
-  };
-  const handleZoomOut = () => {
-    const newZoom = Math.max(zoom - 1, 1);
-    setZoom(newZoom);
-    sendMessageToMap({ type: 'SET_REGION', region: { ...mapRegion, zoom: newZoom } });
-  };
-
-  useImperativeHandle(ref, () => ({
-    animateToRegion: (region, duration = 1000) => {
-      if (mapReady && iframeRef.current) {
-        sendMessageToMap({
-          type: 'ANIMATE_TO_REGION',
-          region,
-          duration
-        });
-      }
-    },
-    addMarker: (marker) => {
-      if (mapReady && iframeRef.current) {
-        sendMessageToMap({
-          type: 'ADD_MARKER',
-          marker
-        });
-      }
-    },
-    removeMarker: (markerId) => {
-      if (mapReady && iframeRef.current) {
-        sendMessageToMap({
-          type: 'REMOVE_MARKER',
-          markerId
-        });
-      }
-    }
-  }));
-
-  const sendMessageToMap = (message) => {
-    if (iframeRef.current && iframeRef.current.contentWindow) {
-      try {
-        const safeMessage = {
-          ...message,
-          timestamp: Date.now()
-        };
-        iframeRef.current.contentWindow.postMessage(safeMessage, '*');
-      } catch (error) {
-        console.error('Error sending message to map:', error);
-      }
-    }
-  };
-
-  // Handle marker press by finding the original data
-  const handleMarkerPress = (markerData) => {
-    if (markerData.type === 'product' && onSelectProduct) {
-      onSelectProduct(markerData.id.replace('product-', ''));
-    } else if (markerData.type === 'business' && onSelectBusiness) {
-      onSelectBusiness(markerData.id.replace('business-', ''));
-    } else if (onMarkerPress) {
-      onMarkerPress(markerData);
-    }
-  };
-
-  // Enhanced message handling for proper marker routing
-  useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.source !== iframeRef.current?.contentWindow) return;
-      
-      try {
-        const { type, data } = event.data;
-        
-        switch (type) {
-          case 'MAP_READY':
-            console.log('🗺️ Azure Maps ready');
-            setMapReady(true);
-            if (onMapReady) onMapReady();
-            
-            // Initialize map with current markers
-            if (currentMarkers.length > 0) {
-              sendMessageToMap({
-                type: 'SET_MARKERS',
-                markers: currentMarkers
-              });
-            }
-            
-            // Set initial region
-            if (mapRegion) {
-              sendMessageToMap({
-                type: 'SET_REGION',
-                region: mapRegion
-              });
-            }
-            break;
-            
-          case 'REGION_CHANGED':
-            if (onRegionChange && data) {
-              onRegionChange(data);
-            }
-            break;
-            
-          case 'MARKER_PRESSED':
-            if (data) {
-              handleMarkerPress(data);
-            }
-            break;
-            
-          case 'LOCATION_SELECTED':
-            if (onLocationSelect && data) {
-              onLocationSelect(data);
-            } else if (onMapPress && data) {
-              onMapPress(data);
-            }
-            break;
-            
-          case 'MAP_ERROR':
-            console.error('Azure Maps error:', data);
-            setError(`Map error: ${data?.error || 'Unknown error'}`);
-            break;
-            
-          default:
-            console.log('Unknown map message:', type, data);
-        }
-      } catch (error) {
-        console.error('Error handling map message:', error);
-      }
-    };
-
-    if (Platform.OS === 'web') {
-      window.addEventListener('message', handleMessage);
-      return () => window.removeEventListener('message', handleMessage);
-    }
-  }, [currentMarkers, mapRegion, onMapReady, onRegionChange, onMarkerPress, onLocationSelect, onMapPress, onSelectProduct, onSelectBusiness]);
-
-  // Update map when props change
-  useEffect(() => {
-    if (mapReady && (region || mapRegion)) {
-      sendMessageToMap({
-        type: 'SET_REGION',
-        region: region || mapRegion
-      });
-    }
-  }, [region, mapRegion, mapReady]);
-
-  useEffect(() => {
-    if (mapReady && currentMarkers) {
-      sendMessageToMap({
-        type: 'SET_MARKERS',
-        markers: currentMarkers
-      });
-    }
-  }, [currentMarkers, mapReady]);
-
-  const onIframeLoad = () => {
-    console.log('🌐 Azure Maps iframe loaded');
-    // Map will send MAP_READY message when fully initialized
-  };
-
-  // Show loading while getting key
-  if (isLoading) {
-    return (
-      <View style={[styles.container, style]}>
-        <View style={styles.loading}>
-          <ActivityIndicator size="large" color="#4CAF50" />
-          <Text style={styles.loadingText}>Loading Azure Maps...</Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Show error if key loading failed
-  if (error) {
-    return (
-      <View style={[styles.container, style]}>
-        <View style={styles.fallback}>
-          <Text style={styles.errorText}>⚠️ {error}</Text>
-          <Text style={styles.errorSubtext}>Please check your internet connection and try again.</Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Show fallback for non-web platforms
-  if (Platform.OS !== 'web') {
-    return (
-      <View style={[styles.container, style]}>
-        <View style={styles.fallback}>
-          <Text style={styles.fallbackText}>🗺️ Interactive map available on web</Text>
-          <Text style={styles.fallbackSubtext}>
-            Coordinates: {region?.latitude?.toFixed(4)}, {region?.longitude?.toFixed(4)}
-          </Text>
-        </View>
-      </View>
-    );
-  }
-
-  // Don't render iframe without key
-  if (!mapKey) {
-    return (
-      <View style={[styles.container, style]}>
-        <View style={styles.fallback}>
-          <Text style={styles.errorText}>⚠️ Azure Maps key not available</Text>
-        </View>
-      </View>
-    );
-  }
-
-  // FIXED: Enhanced HTML with better Azure Maps initialization
-  const mapHTML = `
-<!DOCTYPE html>
+  return `<!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Azure Maps</title>
-  <script src="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.js"></script>
-  <link rel="stylesheet" href="https://atlas.microsoft.com/sdk/javascript/mapcontrol/2/atlas.min.css" type="text/css">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
   <style>
-    html, body, #mapContainer {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    }
-    .debug-info {
-      position: absolute;
-      top: 10px;
-      left: 10px;
-      background: rgba(255, 255, 255, 0.9);
-      padding: 8px;
-      border-radius: 4px;
-      font-size: 12px;
-      z-index: 1000;
-      display: none;
-    }
-    .map-marker {
-      background: #4CAF50;
-      border: 2px solid #fff;
-      border-radius: 50%;
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-      transition: transform 0.2s ease;
-    }
-    .map-marker:hover {
-      transform: scale(1.2);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
-    }
-    .map-marker.user-location {
-      background: #2196F3;
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0% {
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 0 0 0 rgba(66, 133, 244, 0.7);
-        transform: scale(1);
-      }
-      50% {
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 0 0 8px rgba(66, 133, 244, 0.2);
-        transform: scale(1.05);
-      }
-      100% {
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3), 0 0 0 0 rgba(66, 133, 244, 0);
-        transform: scale(1);
-      }
-    }
-    .loading-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(255, 255, 255, 0.9);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 2000;
-      flex-direction: column;
-    }
-    .loading-text {
-      margin-top: 10px;
-      color: #666;
-      font-size: 14px;
-    }
+    html,body{margin:0;padding:0;height:100vh;width:100vw;background:#fff;overflow:hidden;}
+    #map{position:fixed;inset:0;height:100vh;width:100vw;}
+    #status{position:fixed;top:8px;left:8px;z-index:9999;background:rgba(0,0,0,.65);color:#fff;padding:6px 8px;border-radius:6px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;font-size:12px;}
   </style>
 </head>
 <body>
-  <div id="mapContainer"></div>
-  <div id="debug" class="debug-info"></div>
-  <div id="loading" class="loading-overlay">
-    <div style="border: 4px solid #f3f3f3; border-top: 4px solid #4CAF50; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite;"></div>
-    <div class="loading-text">Loading Azure Maps...</div>
-  </div>
-  
-  <style>
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-  </style>
-  
+  <div id="map"></div>
+  <div id="status">loading map…</div>
   <script>
-    let map;
-    let markers = [];
-    let isReady = false;
-    const loadingEl = document.getElementById('loading');
-    
-    function log(message) {
-      console.log('AZURE MAPS:', message);
-      const debug = document.getElementById('debug');
-      if (debug) {
-        debug.textContent = message;
-      }
-    }
-    
-    function hideLoading() {
-      if (loadingEl) {
-        loadingEl.style.display = 'none';
-      }
-    }
-    
-    function showError(message) {
-      if (loadingEl) {
-        loadingEl.innerHTML = '<div style="color: #f44336; text-align: center;"><div>⚠️ Error</div><div style="margin-top: 8px; font-size: 12px;">' + message + '</div></div>';
-      }
-    }
-    
-    function sendMessage(type, data = null) {
-      try {
-        const message = {
-          type: type,
-          data: data ? JSON.parse(JSON.stringify(data)) : null,
-          timestamp: Date.now()
+    (function(){
+      const post = (p)=>{ try{ window.ReactNativeWebView?.postMessage(JSON.stringify(p)); }catch(_){} };
+      ['log','warn','error'].forEach(k=>{
+        const o=console[k]; console[k]=function(){ try{ post({type:'console',level:k,args:[].slice.call(arguments)});}catch(_){}; o&&o.apply(console,arguments); };
+      });
+      window.addEventListener('unhandledrejection', e => {
+        post({ type:'console', level:'error', args:['unhandledrejection:', String(e?.reason || e)] });
+      });
+    })();
+
+    var subKey = ${JSON.stringify(String(key_ || ''))};
+    if(!subKey){ document.getElementById('status').textContent='missing Azure Maps key'; }
+
+    // Force v3 (MapLibre-based) so we can pass an inline style object (no /styling/ calls).
+    var JS_URL  = 'https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.js';
+    var CSS_URL = 'https://atlas.microsoft.com/sdk/javascript/mapcontrol/3/atlas.min.css';
+
+    (function loadAtlas(){
+      var link = document.createElement('link'); link.rel='stylesheet'; link.href=CSS_URL; document.head.appendChild(link);
+      var s = document.createElement('script'); s.src=JS_URL; s.onload=start; s.onerror=function(){
+        document.getElementById('status').textContent='map SDK failed to load';
+      }; document.head.appendChild(s);
+    })();
+
+    function start(){
+      try{
+        // Inline **blank** style JSON so the SDK does NOT fetch /styling/styles/*
+        var blankStyle = {
+          "version": 8,
+          "name": "blank",
+          "sources": {},
+          "layers": [
+            { "id": "background", "type": "background", "paint": { "background-color": "#ffffff" } }
+          ]
         };
-        window.parent.postMessage(message, '*');
-      } catch (error) {
-        console.error('Error sending message:', error);
-        window.parent.postMessage({
-          type: 'MAP_ERROR',
-          data: { error: error.message },
-          timestamp: Date.now()
-        }, '*');
-      }
-    }
-    
-    function initializeMap() {
-      try {
-        log('Initializing Azure Maps with key...');
-        
-        // Validate Azure Maps SDK
-        if (typeof atlas === 'undefined') {
-          throw new Error('Azure Maps SDK not loaded');
-        }
-        
-        map = new atlas.Map('mapContainer', {
-          center: [34.8516, 31.0461], // Default to Tel Aviv
-          zoom: 10,
-          language: 'en-US',
-          authOptions: {
-            authType: 'subscriptionKey',
-            subscriptionKey: '${mapKey}'
-          },
-          style: '${mapType}',
-          enableAccessibility: true,
-          showLogo: false,
-          showFeedbackLink: false
+
+        // Raster tile templates with key embedded (no worker rewrite needed).
+        var ROAD_TILES = 'https://atlas.microsoft.com/map/tile?api-version=2024-04-01' +
+                         '&tilesetId=microsoft.base.road&zoom={z}&x={x}&y={y}&tileSize=256&view=Auto&language=en-US' +
+                         '&subscription-key=' + encodeURIComponent(subKey);
+
+        var LABEL_TILES = 'https://atlas.microsoft.com/map/tile?api-version=2024-04-01' +
+                          '&tilesetId=microsoft.base.labels.road&zoom={z}&x={x}&y={y}&tileSize=256&view=Auto&language=en-US' +
+                          '&subscription-key=' + encodeURIComponent(subKey);
+
+        var ctr = [${Number(center.longitude)}, ${Number(center.latitude)}];
+        var initialZoom = ${Number(zoom) || 12};
+
+        var map = new atlas.Map('map', {
+          style: blankStyle,                         // <— inline, no /styling/
+          center: ctr,
+          zoom: initialZoom,
+          showFeedbackLink: false,
+          renderWorldCopies: false,
+          disableTelemetry: true,
+          disableWebGL2Support: true,                // safer in RN WebView
+          authOptions: { authType:'subscriptionKey', subscriptionKey: subKey }
         });
 
-        // FIXED: Comprehensive event handlers
-        map.events.add('ready', function () {
-          log('Map is ready and interactive');
-          hideLoading();
-          isReady = true;
-          sendMessage('MAP_READY');
+        map.events.add('error', function(e){
+          try {
+            const msg = e && (e.message || e.error || e.type) || 'unknown';
+            console.error('atlas error:', msg);
+            document.getElementById('status').textContent = 'atlas error';
+          } catch(_) {}
         });
 
-        map.events.add('error', function (error) {
-          console.error('Azure Maps error:', error);
-          showError('Failed to load map');
-          sendMessage('MAP_ERROR', { error: error.message || 'Map loading failed' });
-        });
+        map.events.add('ready', function(){
+          try { document.getElementById('status').style.display='none'; } catch(_){}
+          try { map.resize(); } catch(_){}
+          setTimeout(function(){ try{ map.resize(); }catch(_){} }, 200);
 
-        // FIXED: Simplified event handlers to avoid circular JSON
-        map.events.add('move', function () {
-          if (isReady) {
-            const center = map.getCamera().center;
-            const zoom = map.getCamera().zoom;
-            
-            sendMessage('REGION_CHANGED', {
-              latitude: center[1],
-              longitude: center[0],
-              zoom: zoom
-            });
-          }
-        });
+          // Base raster tiles (roads)
+          var roadLayer = new atlas.layer.TileLayer({ tileUrl: ROAD_TILES, opacity: 1, tileSize: 256 }, 'am-road');
+          map.layers.add(roadLayer);
 
-        map.events.add('click', function (e) {
-          if (isReady && e.position) {
-            log('Map clicked at: ' + e.position[1] + ', ' + e.position[0]);
-            sendMessage('LOCATION_SELECTED', {
-              latitude: e.position[1],
-              longitude: e.position[0]
-            });
-          }
-        });
+          // Raster labels on top
+          var labelLayer = new atlas.layer.TileLayer({ tileUrl: LABEL_TILES, opacity: 1, tileSize: 256 }, 'am-labels');
+          map.layers.add(labelLayer);
 
-        // Set loading timeout
-        setTimeout(() => {
-          if (!isReady) {
-            showError('Map loading timeout');
-            sendMessage('MAP_ERROR', { error: 'Loading timeout' });
-          }
-        }, 15000);
-
-      } catch (error) {
-        log('Error initializing map: ' + error.message);
-        showError(error.message);
-        sendMessage('MAP_ERROR', { error: error.message });
-      }
-    }
-    
-    function setRegion(region) {
-      if (map && region && isReady) {
-        try {
-          map.setCamera({
-            center: [region.longitude, region.latitude],
-            zoom: region.zoom || 10,
-            type: 'ease',
-            duration: 1000
+          // Data & bubble markers (no sprites required)
+          var ds = new atlas.source.DataSource(); map.sources.add(ds);
+          var items = ${safeMarkers};
+          items.forEach(function(m){
+            if(Number.isFinite(m.lat) && Number.isFinite(m.lon)){
+              ds.add(new atlas.Shape(new atlas.data.Point([m.lon, m.lat]), { id: m.id, title: m.title || '' }));
+            }
           });
-          log('Region updated: ' + region.latitude + ', ' + region.longitude);
-        } catch (error) {
-          console.error('Error setting region:', error);
-        }
-      }
-    }
-    
-    function addMarker(markerData) {
-      if (!map || !markerData || !isReady) return;
-      
-      try {
-        const position = [markerData.longitude, markerData.latitude];
-        const marker = new atlas.HtmlMarker({
-          position: position,
-          htmlContent: '<div class="map-marker' + (markerData.id === 'current' ? ' user-location' : '') + '"></div>',
-          pixelOffset: [0, -8]
-        });
-        
-        map.markers.add(marker);
-        markers.push({ id: markerData.id, marker: marker, data: markerData });
-        
-        // Add click handler
-        map.events.add('click', marker, function(e) {
-          sendMessage('MARKER_PRESSED', {
-            id: markerData.id,
-            latitude: markerData.latitude,
-            longitude: markerData.longitude,
-            title: markerData.title,
-            description: markerData.description
+
+          var bubbles = new atlas.layer.BubbleLayer(ds, null, {
+            radius: 6,
+            color: '#1976d2',
+            strokeColor: '#ffffff',
+            strokeWidth: 1.5
           });
+          map.layers.add(bubbles);
+
+          map.events.add('click', bubbles, function(e){
+            try{
+              if(e && e.shapes && e.shapes.length){
+                var sh = e.shapes[0];
+                var props = (typeof sh.getProperties === 'function') ? sh.getProperties() : (sh.properties || {});
+                if (props && props.id) {
+                  window.ReactNativeWebView.postMessage(JSON.stringify({ type:'markerClick', id: props.id }));
+                }
+              }
+            }catch(err){ console.error('marker click error:', String(err)); }
+          });
+
+          // Optional radius circle
+          var meters = ${rMeters};
+          if(meters > 0){
+            var circle = atlas.math.getRegularPolygon(new atlas.data.Position(ctr[0], ctr[1]), meters, 64);
+            var ringSrc = new atlas.source.DataSource(); map.sources.add(ringSrc);
+            ringSrc.add(circle);
+            map.layers.add(new atlas.layer.PolygonLayer(ringSrc, null, { fillColor:'rgba(76,175,80,.12)' }));
+            map.layers.add(new atlas.layer.LineLayer(ringSrc, null, { strokeColor:'rgba(76,175,80,.7)', strokeWidth:2 }));
+          }
+
+          // Map click -> send lat/lon back
+          map.events.add('click', function (e) {
+            try {
+              var px = e.pixel || e.position;
+              var pos = null;
+              if (typeof map.pixelsToPositions === 'function') {
+                var arr = map.pixelsToPositions([px]); if (arr && arr.length) pos = arr[0];
+              } else if (typeof map.pixelToPosition === 'function') {
+                pos = map.pixelToPosition(px);
+              }
+              if (pos) window.ReactNativeWebView.postMessage(JSON.stringify({ type:'mapClick', latitude: pos[1], longitude: pos[0] }));
+            } catch(err) { console.error('click->pos error:', String(err)); }
+          });
+
+          window.addEventListener('resize', function(){ try{ map.resize(); }catch(_){ } });
         });
-        
-        log('Marker added: ' + markerData.id);
-      } catch (error) {
-        console.error('Error adding marker:', error);
+      } catch(err){
+        document.getElementById('status').textContent = 'init failed: ' + String(err && err.message || err);
       }
-    }
-    
-    function setMarkers(markersData) {
-      if (!isReady) return;
-      
-      try {
-        // Clear existing markers
-        if (map && map.markers) {
-          map.markers.clear();
-        }
-        markers = [];
-        
-        // Add new markers
-        if (markersData && Array.isArray(markersData)) {
-          markersData.forEach(addMarker);
-          log('Updated ' + markersData.length + ' markers');
-        }
-      } catch (error) {
-        console.error('Error setting markers:', error);
-      }
-    }
-    
-    // Listen for messages from parent
-    window.addEventListener('message', function(event) {
-      if (!event.data || !event.data.type) return;
-      
-      try {
-        switch (event.data.type) {
-          case 'SET_REGION':
-            setRegion(event.data.region);
-            break;
-          case 'SET_MARKERS':
-            setMarkers(event.data.markers);
-            break;
-          case 'ADD_MARKER':
-            addMarker(event.data.marker);
-            break;
-          case 'ANIMATE_TO_REGION':
-            setRegion(event.data.region);
-            break;
-        }
-      } catch (error) {
-        console.error('Error handling message:', error);
-        sendMessage('MAP_ERROR', { error: error.message });
-      }
-    });
-    
-    // Initialize when page loads
-    document.addEventListener('DOMContentLoaded', initializeMap);
-    if (document.readyState === 'complete') {
-      initializeMap();
     }
   </script>
 </body>
 </html>`;
+};
 
-  // Fullscreen modal content
-  const MapContent = (
-    <View style={[styles.container, fullscreen && { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, backgroundColor: '#fff' }, style]}>
-      <iframe
-        ref={iframeRef}
-        srcDoc={mapHTML}
-        style={styles.iframe}
-        onLoad={onIframeLoad}
-        title={accessibilityLabel}
-        sandbox="allow-scripts allow-same-origin"
-      />
-      {/* Fullscreen toggle button */}
-      <TouchableOpacity
-        style={{ position: 'absolute', top: 12, right: 12, backgroundColor: '#fff', borderRadius: 20, padding: 8, elevation: 3, zIndex: 1001 }}
-        onPress={() => setFullscreen(!fullscreen)}
-        accessibilityLabel={fullscreen ? 'Exit fullscreen map' : 'Enter fullscreen map'}
-      >
-        <Text style={{ fontSize: 18 }}>{fullscreen ? '⤫' : '⛶'}</Text>
-      </TouchableOpacity>
-      {/* Zoom controls */}
-      <View style={{ position: 'absolute', bottom: 20, right: 12, zIndex: 1001 }}>
-        <TouchableOpacity onPress={handleZoomIn} style={{ backgroundColor: '#fff', borderRadius: 20, padding: 8, marginBottom: 8, alignItems: 'center', elevation: 2 }} accessibilityLabel="Zoom in">
-          <Text style={{ fontSize: 22, fontWeight: 'bold' }}>+</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={handleZoomOut} style={{ backgroundColor: '#fff', borderRadius: 20, padding: 8, alignItems: 'center', elevation: 2 }} accessibilityLabel="Zoom out">
-          <Text style={{ fontSize: 22, fontWeight: 'bold' }}>–</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+const CrossPlatformAzureMapView = forwardRef((props, ref) => {
+  const {
+    products = [],
+    businesses = [],
+    mapMode = 'plants',
+    onSelectProduct,
+    onSelectBusiness,
+    initialRegion,
+    azureMapsKey,
+    searchRadius = 10,
+    onMapPress,
+  } = props;
 
-  if (fullscreen) {
-    return (
-      <Modal visible={fullscreen} animationType="fade" onRequestClose={() => setFullscreen(false)}>
-        {MapContent}
-      </Modal>
-    );
+  if (!azureMapsKey) {
+    console.log('[AzureMap] No key – WebView not rendered');
+    return <View style={styles.fill} />;
   }
 
-  return MapContent;
+  const items = mapMode === 'plants' ? products : businesses;
+  const markers = (items || [])
+    .map(x => ({
+      id: x.id || x._id,
+      title: x.title || x.name || x.businessName || 'Item',
+      lat: x?.location?.latitude ?? x?.address?.latitude,
+      lon: x?.location?.longitude ?? x?.address?.longitude,
+    }))
+    .filter(m => Number.isFinite(m.lat) && Number.isFinite(m.lon));
+
+  const center = {
+    latitude: initialRegion?.latitude ?? 32.0853,
+    longitude: initialRegion?.longitude ?? 34.7818,
+    zoom: initialRegion?.zoom ?? 12,
+  };
+
+  const html = useMemo(
+    () =>
+      buildHtml({
+        key_: String(azureMapsKey || ''),
+        center,
+        zoom: center.zoom,
+        markers,
+        radiusKm: Number(searchRadius) || 0,
+      }),
+    [azureMapsKey, center.latitude, center.longitude, center.zoom, markers, searchRadius]
+  );
+
+  const onMessage = (evt) => {
+    try {
+      const msg = JSON.parse(evt?.nativeEvent?.data || '{}');
+      if (msg.type === 'mapClick' && onMapPress) onMapPress({ latitude: msg.latitude, longitude: msg.longitude });
+      if (msg.type === 'markerClick') {
+        if (mapMode === 'plants' && onSelectProduct) onSelectProduct(msg.id);
+        if (mapMode === 'businesses' && onSelectBusiness) onSelectBusiness(msg.id);
+      }
+      if (msg.type === 'console') {
+        const level = msg.level || 'log';
+        console[level]('[WV]', ...(msg.args || []));
+      }
+    } catch {}
+  };
+
+  return (
+    <View style={styles.fill}>
+      <WebView
+        key={`map-${String(azureMapsKey).slice(0, 6)}-${Platform.OS}`}
+        ref={ref}
+        source={{ html }}
+        originWhitelist={['*']}
+        javaScriptEnabled
+        domStorageEnabled
+        geolocationEnabled
+        mixedContentMode="always"
+        setSupportMultipleWindows={false}
+        allowsInlineMediaPlayback
+        androidLayerType={Platform.OS === 'android' ? 'software' : 'none'}
+        onMessage={onMessage}
+        onError={(e) => console.log('[WebView onError]', e.nativeEvent)}
+        onHttpError={(e) => console.log('[WebView onHttpError]', e.nativeEvent)}
+        style={styles.fill}
+      />
+    </View>
+  );
 });
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  iframe: {
-    width: '100%',
-    height: '100%',
-    border: 'none',
-  },
-  fallback: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    padding: 20,
-  },
-  loading: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-  },
-  loadingText: {
-    marginTop: 12,
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#f44336',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  errorSubtext: {
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  fallbackText: {
-    fontSize: 16,
-    color: '#666',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  fallbackSubtext: {
-    fontSize: 14,
-    color: '#999',
-    textAlign: 'center',
-  },
-});
-
-CrossPlatformAzureMapView.displayName = 'CrossPlatformAzureMapView';
-
+const styles = StyleSheet.create({ fill: { flex: 1 } });
 export default CrossPlatformAzureMapView;

@@ -52,7 +52,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
 
   if (loading || !plant) {
     return (
-      <MainLayout currentTab="plants" navigation={navigation}> {/* <- THIS LINE IS ALL YOU NEED! */}
+      <MainLayout currentTab="plants" navigation={navigation}> 
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
           <ActivityIndicator size="large" color="#4caf50" />
           <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
@@ -122,8 +122,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
   }
 
   return (
-    <MainLayout currentTab="plants" navigation={navigation}> {/* <- THIS LINE IS ALL YOU NEED! */}
-      {/* Header */}
+    <MainLayout currentTab="plants" navigation={navigation}>
       <View style={styles.headerRow}>
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={26} color="#2e7d32" />

@@ -21,7 +21,7 @@ import MainLayout from '../components/MainLayout';
 
 const AI_CHAT_API = 'https://usersfunctions.azurewebsites.net/api/ai-plant-care-chat';
 
-export default function AIPlantCareAssistant({ navigation, route }) {
+export default function AIPlantCareAssistant({ navigation, route, embedded = false, onClose }) {
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -31,9 +31,7 @@ export default function AIPlantCareAssistant({ navigation, route }) {
   const [isInitializing, setIsInitializing] = useState(true);
   const [isBusiness, setIsBusiness] = useState(false);
 
-  useEffect(() => {
-    console.log('DEBUG isBusiness:', isBusiness);
-  }, [isBusiness]);
+  const isEmbedded = route?.params?.embedded ?? embedded;
 
   const scrollViewRef = useRef();
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -60,7 +58,6 @@ export default function AIPlantCareAssistant({ navigation, route }) {
         setIsBusiness(true);
         return;
       }
-      // Explicitly set to false if none of the above
       setIsBusiness(false);
     };
     checkUserType();
@@ -284,7 +281,13 @@ export default function AIPlantCareAssistant({ navigation, route }) {
   const renderMessage = (message) => {
     const isUser = message.isUser;
     return (
-      <View key={message.id} style={[styles.messageContainer, isUser ? styles.userMessageContainer : styles.aiMessageContainer]}>
+      <View
+        key={message.id}
+        style={[
+          styles.messageContainer,
+          isUser ? styles.userMessageContainer : styles.aiMessageContainer
+        ]}
+      >
         {!isUser && (
           <View style={styles.aiAvatar}>
             <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" />
@@ -292,9 +295,10 @@ export default function AIPlantCareAssistant({ navigation, route }) {
         )}
 
         <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          <Text style={[styles.messageText, isUser ? styles.userText : styles.aiText]}>
-            {message.text}
-          </Text>
+          <RichText
+            style={[styles.messageText, isUser ? styles.userText : styles.aiText]}
+            text={message.text}
+          />
 
           {message.confidence && (
             <View style={styles.confidenceContainer}>
@@ -328,8 +332,8 @@ export default function AIPlantCareAssistant({ navigation, route }) {
         <View style={[styles.messageBubble, styles.aiBubble, styles.typingBubble]}>
           <View style={styles.typingIndicator}>
             <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
-            <Animated.View style={[styles.typingDot, { opacity: typingAnim, animationDelay: '0.2s' }]} />
-            <Animated.View style={[styles.typingDot, { opacity: typingAnim, animationDelay: '0.4s' }]} />
+            <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
+            <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
           </View>
           <Text style={styles.typingText}>AI is thinking...</Text>
         </View>
@@ -347,25 +351,41 @@ export default function AIPlantCareAssistant({ navigation, route }) {
   }
 
   const screenContent = (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, isEmbedded && { borderTopLeftRadius: 16, borderTopRightRadius: 16 }]}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-        </TouchableOpacity>
-
-        <View style={styles.headerCenter}>
-          <View style={styles.headerTitle}>
-            <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
-            <Text style={styles.headerTitleText}>AI Plant Care Assistant</Text>
+      {isEmbedded ? (
+        <View style={[styles.header, { borderTopLeftRadius: 16, borderTopRightRadius: 16 }]}>
+          <TouchableOpacity onPress={onClose} style={styles.backButton}>
+            <MaterialIcons name="close" size={22} color="#4CAF50" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <View style={styles.headerTitle}>
+              <MaterialCommunityIcons name="robot" size={22} color="#4CAF50" />
+              <Text style={styles.headerTitleText}>AI Assistant</Text>
+            </View>
+            <Text style={styles.headerSubtitle}>Plant care & shop help</Text>
           </View>
-          <Text style={styles.headerSubtitle}>Powered by Gemini AI</Text>
+          <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
+            <MaterialIcons name="delete-outline" size={22} color="#666" />
+          </TouchableOpacity>
         </View>
-
-        <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
-          <MaterialIcons name="delete-outline" size={24} color="#666" />
-        </TouchableOpacity>
-      </View>
+      ) : (
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
+            <View style={styles.headerTitle}>
+              <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
+              <Text style={styles.headerTitleText}>AI Plant Care Assistant</Text>
+            </View>
+            <Text style={styles.headerSubtitle}>Powered by Gemini AI</Text>
+          </View>
+          <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
+            <MaterialIcons name="delete-outline" size={24} color="#666" />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
         {/* Chat Messages */}
@@ -435,7 +455,10 @@ export default function AIPlantCareAssistant({ navigation, route }) {
     </SafeAreaView>
   );
 
-  if (!isBusiness) {
+  if (isEmbedded) {
+    // Render directly inside a modal/sheet
+    return screenContent;
+  } else if (!isBusiness) {
     return (
       <MainLayout
         currentTab="ai"
@@ -452,6 +475,34 @@ export default function AIPlantCareAssistant({ navigation, route }) {
     return screenContent;
   }
 }
+
+/** Lightweight **bold** renderer for RN text */
+const RichText = ({ text = '', style }) => {
+  const lines = String(text).split('\n');
+  return (
+    <Text style={style}>
+      {lines.map((line, li) => {
+        const parts = line.split(/(\*\*.+?\*\*)/g);
+        return (
+          <Text key={`ln-${li}`}>
+            {parts.map((part, pi) => {
+              const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;
+              if (isBold) {
+                return (
+                  <Text key={`pt-${pi}`} style={{ fontWeight: '700' }}>
+                    {part.slice(2, -2)}
+                  </Text>
+                );
+              }
+              return <Text key={`pt-${pi}`}>{part}</Text>;
+            })}
+            {li < lines.length - 1 ? '\n' : null}
+          </Text>
+        );
+      })}
+    </Text>
+  );
+};
 
 const styles = StyleSheet.create({
   container: {
