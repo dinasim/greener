@@ -255,7 +255,7 @@ export async function fetchUserProfile(userId) {
 }
 
 export async function updateUserProfile(userId, userData) {
-  const endpoint = `user-profile/${userId}`;
+  const endpoint = `marketplace/users/${userId}`;
 
   const result = await apiRequest(endpoint, {
     method: 'PUT',
@@ -725,7 +725,7 @@ export const wishProduct = async (productId, userId) => {
 
 export const createProduct = async (productData) => {
   if (!productData) throw new Error('Product data is required');
-  return apiRequest('marketplace/products', {
+  return apiRequest('marketplace/products/create', {
     method: 'POST',
     body: JSON.stringify(productData),
   });
@@ -871,12 +871,12 @@ export const fetchConversations = async (/* userId */) => {
 
 export const fetchMessages = async (chatId /*, userId */) => {
   if (!chatId) throw new Error('Chat ID is required');
-  return apiRequest(`get-messages?chatId=${encodeURIComponent(chatId)}`);
+  return apiRequest(`marketplace/messages/getMessages/${encodeURIComponent(chatId)}`);
 };
 
 export const sendMessage = async (chatId, message, senderId) => {
   if (!chatId || !message) throw new Error('Chat ID and message are required');
-  return apiRequest('send-message', {
+  return apiRequest('marketplace/messages/sendMessage', {
     method: 'POST',
     body: JSON.stringify({ chatId, message, senderId }),
   });

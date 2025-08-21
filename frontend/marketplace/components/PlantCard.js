@@ -68,7 +68,8 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     }
   }, [navigation]);
 
-  const handleContact = useCallback(() => {
+  const handleContact = useCallback((event) => {
+    event?.stopPropagation();
     if (onContactPress) return onContactPress(plant);
     if (!plantData.sellerInfo.id) return Alert.alert('Error', 'Seller information not available');
     openMessages({
@@ -81,7 +82,8 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     });
   }, [plant, onContactPress, openMessages, plantData]);
 
-  const handleOrder = useCallback(() => {
+  const handleOrder = useCallback((event) => {
+    event?.stopPropagation();
     if (onOrderPress) return onOrderPress(plant);
     if (!plantData.sellerInfo.id) return Alert.alert('Error', 'Seller information not available');
     openMessages({
@@ -97,7 +99,8 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     });
   }, [plant, onOrderPress, openMessages, plantData]);
 
-  const handleWishToggle = useCallback(async () => {
+  const handleWishToggle = useCallback(async (event) => {
+    event?.stopPropagation();
     if (isWishing) return;
     try {
       setIsWishing(true);
@@ -118,7 +121,8 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     }
   }, [isWishing, isWished, plantData.plantId]);
 
-  const handleShare = useCallback(async () => {
+  const handleShare = useCallback(async (event) => {
+    event?.stopPropagation();
     try {
       await Share.share({
         title: plantData.title,
@@ -244,9 +248,14 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
 });
 
 function IconPill({ icon, onPress, outlined }) {
+  const handlePress = useCallback((event) => {
+    event?.stopPropagation();
+    onPress?.(event);
+  }, [onPress]);
+
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={handlePress}
       style={[styles.iconBtn, outlined && styles.iconBtnOutline]}
       activeOpacity={0.85}
     >
@@ -256,9 +265,14 @@ function IconPill({ icon, onPress, outlined }) {
 }
 
 function Cta({ label, onPress, primary, outlined }) {
+  const handlePress = useCallback((event) => {
+    event?.stopPropagation();
+    onPress?.(event);
+  }, [onPress]);
+
   return (
     <TouchableOpacity
-      onPress={onPress}
+      onPress={handlePress}
       style={[
         styles.ctaBtnBase,
         primary && styles.ctaPrimary,

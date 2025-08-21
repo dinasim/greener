@@ -41,13 +41,21 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 # Get the other participant
                 other_user_id = next((p for p in conv['participants'] if p != user_id), None)
                 
-                # Get other user details
+                # Initialize default values
                 other_user = {
                     "name": "Unknown User",
-                    "avatar": None
+                    "avatar": None,
+                    "business": False
+                }
+                
+                plant_info = {
+                    "name": "Plant Discussion",
+                    "id": None,
+                    "image": None
                 }
                 
                 if other_user_id:
+                    # Try to get user from regular users container first
                     users_container = get_container("users")
                     user_query = "SELECT c.name, c.avatar FROM c WHERE c.id = @id OR c.email = @email"
                     user_params = [
@@ -64,15 +72,30 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     if users:
                         other_user = {
                             "name": users[0].get('name', 'User'),
-                            "avatar": users[0].get('avatar')
+                            "avatar": users[0].get('avatar'),
+                            "business": False
                         }
+                    else:
+                        # If not found, try business_users container
+                        business_container = get_container("business_users")
+                        business_query = "SELECT c.businessName, c.logo FROM c WHERE c.id = @id OR c.email = @email"
+                        business_params = [
+                            {"name": "@id", "value": other_user_id},
+                            {"name": "@email", "value": other_user_id}
+                        ]
+                        businesses = list(business_container.query_items(
+                            query=business_query,
+                            parameters=business_params,
+                            enable_cross_partition_query=True
+                        ))
+                        if businesses:
+                            other_user = {
+                                "name": businesses[0].get('businessName', 'Business'),
+                                "avatar": businesses[0].get('logo'),
+                                "business": True
+                            }
                 
-                # Get plant details if available
-                plant_info = {
-                    "name": "Plant Discussion",
-                    "id": None
-                }
-                
+                # Get plant information if plantId exists
                 if 'plantId' in conv:
                     plants_container = get_container("marketplace-plants")
                     plant_query = "SELECT c.id, c.title, c.image, c.images FROM c WHERE c.id = @id"
