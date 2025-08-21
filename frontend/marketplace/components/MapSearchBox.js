@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { getMapTilerKey } from '../services/maptilerService';
+import SpeechToTextComponent from './SpeechToTextComponent';
 
 export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation }) {
   const key = maptilerKey || getMapTilerKey();
@@ -24,7 +25,7 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
   const runSearch = async (term) => {
     if (!term || term.trim().length < 2) {
       setResults([]);
-      return;
+      return [];
     }
     try {
       setLoading(true);
@@ -49,8 +50,10 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
         .filter((x) => Number.isFinite(x.latitude) && Number.isFinite(x.longitude));
 
       setResults(items);
+      return items;
     } catch {
       setResults([]);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -89,6 +92,17 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
     else if (q.trim().length >= 2) runSearch(q);
   };
 
+  // 🎤 Voice search handler — replaces the old "useMyLocation" onPress
+  const handleTranscriptionResult = async (spokenText) => {
+    if (!spokenText) return;
+    setQ(spokenText);
+    const items = await runSearch(spokenText);
+    if (items.length > 0) {
+      choose(items[0]);
+    }
+  };
+
+  // (Optional) keep this if you still want "my location" from somewhere else
   const useMyLocation = () => {
     if (!myLocation) return;
     Keyboard.dismiss();
@@ -115,14 +129,21 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
           returnKeyType="search"
           onSubmitEditing={submitFirst}
         />
+
         {q?.length > 0 ? (
-          <TouchableOpacity onPress={clear} style={styles.iconBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+          <TouchableOpacity
+            onPress={clear}
+            style={styles.iconBtn}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
             <MaterialIcons name="close" size={18} color="#9ca3af" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity onPress={useMyLocation} style={styles.iconBtn} disabled={!myLocation}>
-            <MaterialIcons name="my-location" size={18} color={myLocation ? '#22c55e' : '#cbd5e1'} />
-          </TouchableOpacity>
+          // 👇 Replaces the old "my-location" icon with the mic
+          <SpeechToTextComponent
+            onTranscriptionResult={handleTranscriptionResult}
+            style={styles.iconBtn}
+          />
         )}
       </View>
 
@@ -145,6 +166,17 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
                 </View>
               ) : null
             }
+            // (Nice-to-have) quick access to "Use my location" as the very first row:
+            ListHeaderComponent={
+              myLocation ? (
+                <TouchableOpacity style={styles.row} onPress={useMyLocation}>
+                  <MaterialIcons name="my-location" size={18} color="#64748b" style={{ marginRight: 8 }} />
+                  <Text style={[styles.rowText, { color: '#334155' }]}>
+                    Use my current location
+                  </Text>
+                </TouchableOpacity>
+              ) : null
+            }
           />
         </View>
       )}
@@ -152,7 +184,7 @@ export default function MapSearchBox({ onLocationSelect, maptilerKey, myLocation
   );
 }
 
-const TOP = Platform.OS === 'ios' ? 10 : 10; // right under the header
+const TOP = Platform.OS === 'ios' ? 10 : 10;
 
 const styles = StyleSheet.create({
   wrapper: {
@@ -168,7 +200,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderRadius: 12,
     paddingHorizontal: 10,
-    height: 44,                        // compact height
+    height: 44,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     elevation: 6,
@@ -191,7 +223,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
-    maxHeight: 220,
+    maxHeight: 260,
     overflow: 'hidden',
     elevation: 6,
     shadowColor: '#000',

@@ -21,48 +21,16 @@ import { useNavigation } from '@react-navigation/native';
  * @param {boolean} props.showBackButton Whether to show back button (default: false)
  * @param {Function} props.onBackPress Handler for back button press
  * @param {boolean} props.showNotifications Whether to show notifications button (default: true)
- * @param {Function} props.onNotificationsPress Handler for notifications button press
  */
 const MarketplaceHeader = ({
   title,
   showBackButton = false,
   onBackPress,
-  showNotifications = true,
-  onNotificationsPress,
 }) => {
   // Get safe area insets for proper spacing
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   
-  // Ensure notification button has a valid handler
-  const handleNotificationsPress = () => {
-    if (onNotificationsPress) {
-      // Use provided handler
-      onNotificationsPress();
-    } else {
-      // Default behavior - navigate to Messages
-      try {
-        // First try to navigate directly to Messages
-        if (navigation.canNavigate && navigation.canNavigate('Messages')) {
-          navigation.navigate('Messages');
-        } 
-        // If that fails, try with MarketplaceTabs
-        else if (navigation.canNavigate && navigation.canNavigate('MarketplaceTabs')) {
-          navigation.navigate('MarketplaceTabs', { screen: 'Messages' });
-        }
-        // If that fails too, try with MainTabs
-        else if (navigation.canNavigate && navigation.canNavigate('MainTabs')) {
-          navigation.navigate('MainTabs', { screen: 'Messages' });
-        }
-        // Fallback if none of the above work
-        else {
-          console.warn('Could not navigate to Messages screen');
-        }
-      } catch (error) {
-        console.error('Navigation error:', error);
-      }
-    }
-  };
   
   return (
     <View style={[
@@ -93,20 +61,7 @@ const MarketplaceHeader = ({
         <Text style={styles.title} numberOfLines={1}>
           {title}
         </Text>
-        
-        {/* Right side - Notifications */}
-        <View style={styles.rightSection}>
-          {showNotifications && (
-            <TouchableOpacity 
-              style={styles.iconButton}
-              onPress={handleNotificationsPress}
-              accessibilityLabel="Notifications"
-              accessibilityRole="button"
-            >
-              <MaterialIcons name="notifications" size={24} color="#fff" />
-            </TouchableOpacity>
-          )}
-        </View>
+    
       </View>
     </View>
   );

@@ -1,3 +1,4 @@
+// screens/MapScreen.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, StyleSheet, ActivityIndicator, Text, SafeAreaView, TouchableOpacity,
@@ -22,6 +23,33 @@ import { getMapTilerKey, reverseGeocode } from '../services/maptilerService';
 const TLV = { latitude: 32.0853, longitude: 34.7818, city: 'Tel Aviv', formattedAddress: 'Tel Aviv, Israel' };
 const looksLikeEmulatorMock = (lat, lng) =>
   Math.abs(lat - 37.4220936) < 0.02 && Math.abs(lng + 122.083922) < 0.02;
+
+/** ---------- Coordinate normalization helpers ---------- */
+const normalizeCoords = (p = {}) => {
+  const lat =
+    p?.location?.latitude ??
+    p?.location?.lat ??
+    p?.lat;
+  const lon =
+    p?.location?.longitude ??
+    p?.location?.lng ??
+    p?.lng ??
+    p?.lon;
+
+  if (lat != null && lon != null) {
+    p.location = {
+      ...(p.location || {}),
+      latitude: Number(lat),
+      longitude: Number(lon),
+    };
+  }
+  return p;
+};
+
+const hasCoords = (p) =>
+  Number.isFinite(p?.location?.latitude) &&
+  Number.isFinite(p?.location?.longitude);
+/** ----------------------------------------------------- */
 
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -79,9 +107,11 @@ const MapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       if (products.length > 0) {
-        const withCoords = products.filter(p => p?.location?.latitude && p?.location?.longitude);
-        setMapProducts(withCoords);
-        setCounts(prev => ({ ...prev, plants: withCoords.length }));
+        const normalized = products.map(normalizeCoords);
+        const withCoords = normalized.filter(hasCoords);
+        setMapProducts(normalized);
+        setNearbyProducts(normalized);
+        setCounts(prev => ({ ...prev, plants: normalized.length }));
         if (withCoords.length > 0 && !initialLocation && !selectedLocation) {
           const first = withCoords[0];
           setSelectedLocation({
@@ -104,6 +134,16 @@ const MapScreen = () => {
       mapRef.current?.flyTo?.(selectedLocation.latitude, selectedLocation.longitude, 12);
     }
   }, [selectedLocation]);
+
+  // Re-push pins when returning from List -> Map
+  useEffect(() => {
+    if (viewMode === 'map') {
+      const id = setTimeout(() => {
+        mapRef.current?.forceRefresh?.();
+      }, 0);
+      return () => clearTimeout(id);
+    }
+  }, [viewMode]);
 
   // Init location (with emulator guard)
   useEffect(() => {
@@ -248,41 +288,55 @@ const MapScreen = () => {
 
   const loadNearbyProducts = async (loc, radius) => {
     const res = await getNearbyProducts(loc.latitude, loc.longitude, radius);
-    if (res?.products) {
-      const items = res.products
-        .filter(p => p?.location?.latitude && p?.location?.longitude)
-        .map(p => ({ ...p, distance: p.distance || 0 }));
+    if (res?.products && res.products.length > 0) {
+      const normalized = res.products.map(normalizeCoords);
+      const withCoordsCount = normalized.filter(hasCoords).length;
+      console.log(`[MapScreen] normalized products: ${normalized.length} (with coords: ${withCoordsCount})`);
+      const items = normalized.map(p => ({ ...p, distance: p.distance || 0 }));
       const sorted = sortProductsByDistance(items, sortOrder === 'nearest');
       setMapProducts(sorted);
       setNearbyProducts(sorted);
       setCounts(prev => ({ ...prev, plants: sorted.length }));
     } else {
-      setMapProducts([]); setNearbyProducts([]);
-      setCounts(prev => ({ ...prev, plants: 0 }));
+      console.log('[MapScreen] nearby products empty — keeping existing items');
     }
   };
 
   const loadNearbyBusinesses = async (loc, radius) => {
     const res = await getNearbyBusinesses(loc.latitude, loc.longitude, radius);
-    if (res?.businesses) {
-      const items = res.businesses
-        .filter(b => (b?.location?.latitude && b?.location?.longitude) || (b?.address?.latitude && b?.address?.longitude))
-        .map(b => ({
-          ...b,
-          distance: b.distance || 0,
-          location: b.location || {
-            latitude: b.address?.latitude,
-            longitude: b.address?.longitude,
-            city: b.address?.city || 'Unknown location',
-          },
-        }));
+    if (res?.businesses && res.businesses.length > 0) {
+      const normalized = res.businesses.map((b) => {
+        const withPrimary = normalizeCoords(b);
+        if (!hasCoords(withPrimary) && b?.address) {
+          const lat = b.address.latitude ?? b.address.lat;
+          const lon = b.address.longitude ?? b.address.lng ?? b.address.lon;
+          if (lat != null && lon != null) {
+            withPrimary.location = {
+              ...(withPrimary.location || {}),
+              latitude: Number(lat),
+              longitude: Number(lon),
+              city: b.address?.city || withPrimary.location?.city,
+            };
+          }
+        }
+        return withPrimary;
+      });
+
+      const withCoordsCount = normalized.filter(hasCoords).length;
+      console.log(`[MapScreen] normalized businesses: ${normalized.length} (with coords: ${withCoordsCount})`);
+
+      const items = normalized.map(b => ({
+        ...b,
+        distance: b.distance || 0,
+        location: b.location,
+      }));
+
       const sorted = sortBusinessesByDistance(items, sortOrder === 'nearest');
       setMapBusinesses(sorted);
       setNearbyBusinesses(sorted);
       setCounts(prev => ({ ...prev, businesses: sorted.length }));
     } else {
-      setMapBusinesses([]); setNearbyBusinesses([]);
-      setCounts(prev => ({ ...prev, businesses: 0 }));
+      console.log('[MapScreen] nearby businesses empty — keeping existing items');
     }
   };
 
@@ -294,12 +348,6 @@ const MapScreen = () => {
       setSelectedBusiness(null);
       setSelectedBusinessData(null);
       setShowDetailCard(true);
-
-      navigation.navigate('PlantDetail', {
-        plantId: p.id || p._id,
-        businessId: p.businessId || p.ownerEmail,
-        type: p.businessId || p.ownerEmail ? 'business' : 'global',
-      });
     }
   };
 
@@ -316,10 +364,10 @@ const MapScreen = () => {
 
   const handleViewProductDetails = () => {
     if (selectedProductData) {
-      navigation.navigate('PlantDetail', { 
+      navigation.navigate('PlantDetail', {
         plantId: selectedProductData.id || selectedProductData._id,
-        businessId: selectedProductData.businessId || selectedProductData.ownerEmail, // whichever exists
-        type: 'business', // helps the details screen choose the right API
+        businessId: selectedProductData.businessId || selectedProductData.ownerEmail,
+        type: 'business',
       });
     }
   };
@@ -478,7 +526,6 @@ const MapScreen = () => {
           if (viewMode === 'list') setViewMode('map');
           else navigation.goBack();
         }}
-        onNotificationsPress={() => navigation.navigate('Messages')}
       />
 
       <View style={styles.mapContainer}>
@@ -503,24 +550,24 @@ const MapScreen = () => {
 
             <CrossPlatformWebMap
               ref={mapRef}
-               products={mapMode === 'plants' ? mapProducts : []}
-               businesses={mapMode === 'businesses' ? mapBusinesses : []}
-               mapMode={mapMode}
-               onSelectProduct={handleProductSelect}
-               onSelectBusiness={handleBusinessSelect}
-               initialRegion={
-                 selectedLocation
-                   ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
-                   : myLocation
-                     ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
-                     : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
-               }
-               searchRadius={searchRadius}
-               onMapPress={handleMapPress}
-               maptilerKey={maptilerKey}
-               myLocation={myLocation}
-               showMyLocation={showMyLocation}
-             />
+              products={mapMode === 'plants' ? mapProducts : []}
+              businesses={mapMode === 'businesses' ? mapBusinesses : []}
+              mapMode={mapMode}
+              onSelectProduct={handleProductSelect}
+              onSelectBusiness={handleBusinessSelect}
+              initialRegion={
+                selectedLocation
+                  ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
+                  : myLocation
+                    ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
+                    : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
+              }
+              searchRadius={searchRadius}
+              onMapPress={handleMapPress}
+              maptilerKey={maptilerKey}
+              myLocation={myLocation}
+              showMyLocation={Boolean(myLocation)}
+            />
 
             {showDetailCard && selectedProductData && mapMode === 'plants' && (
               <View style={[styles.detailCardContainer, { bottom: CARD_POPUP_BOTTOM }]}>
@@ -557,7 +604,7 @@ const MapScreen = () => {
                   const p = nearbyProducts.find(x => (x.id || x._id) === productId);
                   navigation.navigate('PlantDetail', {
                     plantId: productId,
-                    businessId: p?.businessId || p?.ownerEmail, // whichever your product has
+                    businessId: p?.businessId || p?.ownerEmail,
                     type: p?.businessId || p?.ownerEmail ? 'business' : 'global',
                   });
                 }}
@@ -578,7 +625,7 @@ const MapScreen = () => {
               />
             )}
 
-            <TouchableOpacity style={styles.backToMapButton} onPress={toggleViewMode}>
+            <TouchableOpacity style={styles.backToMapButton} onPress={() => setViewMode('map')}>
               <MaterialIcons name="map" size={24} color="#fff" />
               <Text style={styles.backToMapText}>Map View</Text>
             </TouchableOpacity>
@@ -602,30 +649,18 @@ const MapScreen = () => {
             <MaterialIcons name="my-location" size={24} color={showMyLocation ? '#C8E6C9' : '#fff'} />
           )}
         </TouchableOpacity>
-
-        {viewMode === 'map' && currentMapData.length > 0 && (
-          <TouchableOpacity
-            style={[styles.viewToggleButton, { bottom: FLOATING_BOTTOM }]}
-            onPress={() => setViewMode('list')}
-          >
-            <MaterialIcons name="view-list" size={22} color="#fff" />
-            <Text style={styles.viewToggleText}>List</Text>
-          </TouchableOpacity>
-        )}
-
         {selectedLocation && viewMode === 'map' && radiusVisible && (
           <RadiusControl
             radius={searchRadius}
             onRadiusChange={handleRadiusChange}
             onApply={handleApplyRadius}
-            products={mapMode === 'plants' ? nearbyProducts : nearbyBusinesses}
+            products={mapMode === 'plants' ? mapProducts : mapBusinesses}
             isLoading={isLoading}
             error={error}
             onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
-            onViewModeChange={() => setViewMode('list')}   // ✅ matches the prop here
+            onViewModeChange={() => setViewMode('list')}
             dataType={mapMode}
           />
-
         )}
       </View>
     </SafeAreaView>

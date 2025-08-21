@@ -1,7 +1,7 @@
 // Business/BusinessScreens/BusinessSettingsScreen.js
 // One combined screen: Details by default + Notifications/Inventory/Orders tabs.
-// Fixes: correct component/filename, better layout proportions, robust session handling,
-// and working save payload (no missing privacy fields).
+// Fixes: correct default tab, robust session handling w/ cached fallback,
+// proper save payload, and correct update call signature.
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
@@ -22,7 +22,7 @@ import {
 const DEFAULT_BUSINESS_IMAGE =
   'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
-const CONTENT_MAX_WIDTH = 820; // keeps things proportional on tablets
+const CONTENT_MAX_WIDTH = 820;
 const TABS = [
   { key: 'details', label: 'Details', icon: 'badge' },
   { key: 'notifications', label: 'Notifications', icon: 'notifications' },
@@ -31,7 +31,7 @@ const TABS = [
 ];
 
 export default function BusinessSettingsScreen({ navigation, route }) {
-  const [tab, setTab] = useState(route.params?.initialTab || 'details');
+  const [tab, setTab] = useState(route?.params?.initialTab || 'details');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -50,18 +50,17 @@ export default function BusinessSettingsScreen({ navigation, route }) {
       setIsLoading(true);
       setError(null);
 
-      // Try to resolve identity from multiple places
       const email =
-        route.params?.userEmail ||
+        route?.params?.userEmail ||
         (await AsyncStorage.getItem('userEmail'));
 
       const storedBusinessId =
-        route.params?.businessId ||
+        route?.params?.businessId ||
         (await AsyncStorage.getItem('businessId')) ||
         email;
 
-      // If no email, try cached profile before forcing login
       if (!email) {
+        // fall back to cached profile if any
         const cachedStr = await AsyncStorage.getItem('businessProfile');
         if (cachedStr) {
           const cached = JSON.parse(cachedStr);
@@ -73,7 +72,6 @@ export default function BusinessSettingsScreen({ navigation, route }) {
           setIsLoading(false);
           return;
         }
-        // Show inline sign-in prompt instead of auto-redirect
         setError('No active session. Please sign in.');
         setIsLoading(false);
         return;
@@ -103,33 +101,40 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     } finally {
       setIsLoading(false);
     }
-  }, [navigation, route.params]);
+  }, [navigation, route?.params]);
 
   useEffect(() => { load(); }, [load]);
 
   // ---------- helpers ----------
-      function normalizeProfile(p, email, id) {
-  const addr = p.address || p.location || {};
-  return {
-    id: p.id || id,
-    email: p.email || email,
-    businessName: p.businessName || 'My Business',
-    businessType: p.businessType || 'Plant Business',
-    description: p.description || '',
-    contactPhone: p.contactPhone || p.phone || '',
-    contactEmail: p.contactEmail || email,
-    logo: p.logo || '',
-    socialMedia: {
-      instagram: p.socialMedia?.instagram || '',
-      facebook: p.socialMedia?.facebook || '',
-      website: p.socialMedia?.website || p.website || '',
-    },
-    address: {
-      street: addr.street || addr.street1 || addr.addressLine1 || '',
+  function normalizeProfile(p, email, id) {
+    // accept coords from either p.location or p.address
+    const addr = p.address || {};
+    const loc  = p.location || {};
+    const addressOut = {
+      street: addr.street || '',
       city: addr.city || '',
-      postalCode: addr.postalCode || addr.zip || addr.zipCode || '',
+      postalCode: addr.postalCode || '',
       country: addr.country || 'Israel',
-    },
+      latitude: addr.latitude ?? loc.latitude,
+      longitude: addr.longitude ?? loc.longitude,
+      formattedAddress: addr.formattedAddress || '',
+    };
+
+    return {
+      id: p.id || id,
+      email: p.email || email,
+      businessName: p.businessName || 'My Business',
+      businessType: p.businessType || 'Plant Business',
+      description: p.description || '',
+      contactPhone: p.contactPhone || p.phone || '',
+      contactEmail: p.contactEmail || email,
+      logo: p.logo || '',
+      socialMedia: {
+        instagram: p.socialMedia?.instagram || '',
+        facebook: p.socialMedia?.facebook || '',
+        website: p.socialMedia?.website || p.website || '',
+      },
+      address: addressOut,
       businessHours: p.businessHours || {
         monday: { open: '09:00', close: '17:00' },
         tuesday: { open: '09:00', close: '17:00' },
@@ -205,12 +210,15 @@ export default function BusinessSettingsScreen({ navigation, route }) {
     try {
       setIsSaving(true);
       const payload = buildSavePayload();
+
+      // IMPORTANT: updateBusinessProfile expects ONLY the payload
       let res;
       if (typeof updateBusinessProfile === 'function') {
         res = await updateBusinessProfile(payload);
       } else {
         res = await createBusinessProfile(payload);
       }
+
       if (res && (res.success || res.updated || res.id || res.ok)) {
         setProfile(JSON.parse(JSON.stringify(form)));
         await AsyncStorage.setItem('businessProfile', JSON.stringify(form));
@@ -531,7 +539,7 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         </TouchableOpacity>
       </View>
 
-      {/* If signed out, offer a CTA instead of forcing redirect */}
+      {/* Signed-out banner */}
       {error === 'No active session. Please sign in.' && (
         <View style={styles.banner}>
           <Text style={styles.bannerText}>You’re signed out.</Text>
@@ -582,7 +590,7 @@ export default function BusinessSettingsScreen({ navigation, route }) {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Save footer (only visible when editing) */}
+      {/* Save footer */}
       {edit && (
         <View style={styles.footer}>
           <TouchableOpacity
@@ -632,16 +640,8 @@ const styles = StyleSheet.create({
   tabText: { marginLeft: 6, color: '#666', fontSize: 12, fontWeight: '500' },
   tabTextActive: { color: '#4CAF50', fontWeight: '700' },
 
-  // Center content and limit width for better proportions
-  contentContainer: {
-    padding: 16,
-    paddingBottom: 120,
-    alignItems: 'center',
-  },
-  maxWidth: {
-    width: '100%',
-    maxWidth: CONTENT_MAX_WIDTH,
-  },
+  contentContainer: { padding: 16, paddingBottom: 120, alignItems: 'center' },
+  maxWidth: { width: '100%', maxWidth: CONTENT_MAX_WIDTH },
 
   card: {
     backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,

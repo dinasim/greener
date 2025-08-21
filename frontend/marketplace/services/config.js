@@ -19,6 +19,7 @@ const baseConfig = {
       city: 'Tel Aviv'
     },
   },
+  MAPTILER_KEY: '6LEIELmBStgzi9h3tRj6',
   features: {
     enableMapView: true,
     enableImageUploads: true, 
