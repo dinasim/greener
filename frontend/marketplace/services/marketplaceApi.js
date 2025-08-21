@@ -186,8 +186,14 @@ export async function fetchUserProfile(userId) {
 }
 
 export async function updateUserProfile(userId, userData) {
-  const endpoint = `user-profile/${userId}`;
-  const result = await apiRequest(endpoint, { method: 'PUT', body: JSON.stringify(userData) });
+  const endpoint = `marketplace/users/${userId}`;
+
+  const result = await apiRequest(endpoint, {
+    method: 'PUT',
+    body: JSON.stringify(userData),
+  });
+
+
   if (userData.isBusiness || userData.userType === 'business') {
     await addBusinessProfileSync(userData, 'marketplace');
   }
@@ -496,12 +502,47 @@ export async function getSpecific(productId) {
   throw new Error('Product not found');
 }
 
-export const wishProduct   = async (productId, userId) => apiRequest('marketplace/wishlist/add', { method: 'POST', body: JSON.stringify({ productId, userId }) });
-export const createProduct = async (productData) => apiRequest('marketplace/products', { method: 'POST', body: JSON.stringify(productData) });
-export const createPlant   = async (plantData) => createProduct(plantData);
-export const updateProduct = async (productId, productData) => apiRequest(`marketplace/products/${productId}`, { method: 'PUT', body: JSON.stringify(productData) });
-export const deleteProduct = async (productId) => apiRequest(`marketplace/products/${productId}`, { method: 'DELETE' });
-export const markAsSold    = async (productId) => apiRequest(`marketplace/products/${productId}/sold`, { method: 'PATCH' });
+export const wishProduct = async (productId, userId) => {
+  if (!productId || !userId) throw new Error('Product ID and User ID are required');
+  return apiRequest('marketplace/wishlist/add', {
+    method: 'POST',
+    body: JSON.stringify({ productId, userId }),
+  });
+};
+
+export const createProduct = async (productData) => {
+  if (!productData) throw new Error('Product data is required');
+  return apiRequest('marketplace/products/create', {
+    method: 'POST',
+    body: JSON.stringify(productData),
+  });
+};
+
+export const createPlant = async (plantData) => createProduct(plantData);
+
+export const updateProduct = async (productId, productData) => {
+  if (!productId || !productData) throw new Error('Product ID and data are required');
+  return apiRequest(`marketplace/products/${productId}`, {
+    method: 'PUT',
+    body: JSON.stringify(productData),
+  });
+};
+
+export const deleteProduct = async (productId) => {
+  if (!productId) throw new Error('Product ID is required');
+  return apiRequest(`marketplace/products/${productId}`, { method: 'DELETE' });
+};
+
+export const markAsSold = async (productId) => {
+  if (!productId) throw new Error('Product ID is required');
+  return apiRequest(`marketplace/products/${productId}/sold`, { method: 'PATCH' });
+};
+
+export const clearMarketplaceCache = () => {
+  businessCache.clear();
+  console.log('🧹 Marketplace cache cleared');
+};
+
 
 // ----------------------------
 // Image upload
@@ -712,9 +753,24 @@ export const getNegotiateToken = async () => {
   });
 };
 
-export const fetchConversations = async () => apiRequest('conversations');
-export const fetchMessages      = async (chatId) => { if (!chatId) throw new Error('Chat ID is required'); return apiRequest(`get-messages?chatId=${encodeURIComponent(chatId)}`); };
-export const sendMessage        = async (chatId, message, senderId) => { if (!chatId || !message) throw new Error('Chat ID and message are required'); return apiRequest('send-message', { method: 'POST', body: JSON.stringify({ chatId, message, senderId }) }); };
+export const fetchConversations = async (/* userId */) => {
+  // If your function expects the user from header, no param is needed
+  return apiRequest('conversations');
+};
+
+export const fetchMessages = async (chatId /*, userId */) => {
+  if (!chatId) throw new Error('Chat ID is required');
+  return apiRequest(`marketplace/messages/getMessages/${encodeURIComponent(chatId)}`);
+};
+
+export const sendMessage = async (chatId, message, senderId) => {
+  if (!chatId || !message) throw new Error('Chat ID and message are required');
+  return apiRequest('marketplace/messages/sendMessage', {
+    method: 'POST',
+    body: JSON.stringify({ chatId, message, senderId }),
+  });
+};
+
 
 export const startConversation = async (sellerId, plantId, message, sender) => {
   if (!sellerId || !message || !sender) throw new Error('Seller ID, message, and sender are required');
