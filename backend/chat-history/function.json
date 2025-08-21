@@ -5,13 +5,14 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["post", "options"],
-      "route": "marketplace/messages/createChatRoom"
+      "methods": ["get", "post", "delete", "options"],
+      "route": "chat-history/{sessionId?}"
     },
     {
       "type": "http",
       "direction": "out",
       "name": "$return"
     }
-  ]
+  ],
+  "scriptFile": "__init__.py"
 }

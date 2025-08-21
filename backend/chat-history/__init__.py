@@ -5,13 +5,33 @@ from azure.cosmos import CosmosClient, exceptions
 import os
 from datetime import datetime
 
+DB_ENV = 'COSMOSDB_MARKETPLACE_DATABASE_NAME'
+DEFAULT_DB = 'greener-marketplace-db'
+CONTAINER_NAME = 'plant-care-chat'
+
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,Authorization",
+    "Content-Type": "application/json"
+}
+
+def _resp(payload, status=200, extra_headers=None):
+    headers = dict(CORS_HEADERS)
+    if extra_headers:
+        headers.update(extra_headers)
+    body = payload if isinstance(payload, str) else json.dumps(payload)
+    return func.HttpResponse(body, status_code=status, headers=headers)
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Chat History function processed a request.')
-    
     try:
-        # Get the request method
-        method = req.method
-        
+        method = req.method.upper()
+
+        # CORS preflight
+        if method == 'OPTIONS':
+            return func.HttpResponse(status_code=204, headers=CORS_HEADERS)
+
         if method == 'GET':
             return get_chat_history(req)
         elif method == 'POST':
@@ -19,19 +39,11 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         elif method == 'DELETE':
             return delete_chat_history(req)
         else:
-            return func.HttpResponse(
-                json.dumps({"error": "Method not supported"}),
-                status_code=405,
-                headers={"Content-Type": "application/json"}
-            )
-            
+            return _resp({"error": "Method not supported"}, status=405)
+
     except Exception as e:
         logging.error(f"Unexpected error in chat-history function: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Internal server error", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Internal server error", "details": str(e)}, status=500)
 
 def get_cosmos_client():
     """Get a Cosmos DB client using the marketplace connection string"""
@@ -40,55 +52,52 @@ def get_cosmos_client():
         if not connection_string:
             logging.error("COSMOSDB__MARKETPLACE_CONNECTION_STRING not found in environment variables")
             return None
-        
         return CosmosClient.from_connection_string(connection_string)
     except Exception as e:
         logging.error(f"Error creating Cosmos DB client: {str(e)}")
         return None
 
+def _get_container(client: CosmosClient):
+    db_name = os.environ.get(DB_ENV, DEFAULT_DB)
+    database = client.get_database_client(db_name)
+    return database.get_container_client(CONTAINER_NAME)
+
 def get_chat_history(req: func.HttpRequest) -> func.HttpResponse:
     """Get chat history for a specific session"""
     try:
         # Get session ID from route or query params
-        session_id = req.route_params.get('sessionId') or req.params.get('sessionId')
+        session_id = (req.route_params.get('sessionId') or req.params.get('sessionId') or '').strip()
         if not session_id:
-            return func.HttpResponse(
-                json.dumps({"error": "Session ID is required"}),
-                status_code=400,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        # Get limit parameter from query string
+            return _resp({"error": "Session ID is required"}, status=400)
+
+        # limit
         limit_str = req.params.get('limit', '50')
         try:
-            limit = int(limit_str)
+            limit = max(1, int(limit_str))
         except ValueError:
-            limit = 50  # Default if invalid limit provided
-        
+            limit = 50
+
         # Connect to Cosmos DB
         client = get_cosmos_client()
         if not client:
-            return func.HttpResponse(
-                json.dumps({"error": "Failed to connect to database"}),
-                status_code=500,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        # Get database and container
-        database_name = os.environ.get('COSMOSDB_MARKETPLACE_DATABASE_NAME', 'greener-marketplace-db')
-        container_name = "plant-care-chat"
-        
-        database = client.get_database_client(database_name)
-        container = database.get_container_client(container_name)
-        
-        # Query for messages from this session, ordered by timestamp
-        query = f"SELECT * FROM c WHERE c.sessionId = '{session_id}' ORDER BY c.timestamp"
-        items = list(container.query_items(query=query, max_item_count=limit))
-        
-        # Format the messages for the frontend
+            return _resp({"error": "Failed to connect to database"}, status=500)
+
+        container = _get_container(client)
+
+        # Parameterized, partition-scoped query (ORDER BY supported within a single partition)
+        query = "SELECT * FROM c WHERE c.sessionId = @sid ORDER BY c.timestamp"
+        params = [{"name": "@sid", "value": session_id}]
+
+        items_iter = container.query_items(
+            query=query,
+            parameters=params,
+            partition_key=session_id,       # ← key fix
+            max_item_count=min(limit, 100)  # page size hint
+        )
+
+        # Respect `limit` without fetching entire iterator
         messages = []
-        for item in items:
-            # Format depends on message type
+        for item in items_iter:
             if item.get('messageType') == 'user_message':
                 messages.append({
                     'id': item.get('id'),
@@ -105,99 +114,67 @@ def get_chat_history(req: func.HttpRequest) -> func.HttpResponse:
                     'confidence': item.get('confidence'),
                     'sources': item.get('sources', [])
                 })
-        
-        return func.HttpResponse(
-            json.dumps(messages),
-            status_code=200,
-            headers={"Content-Type": "application/json"}
-        )
-        
+            if len(messages) >= limit:
+                break
+
+        return _resp(messages, status=200)
+
     except exceptions.CosmosHttpResponseError as e:
         logging.error(f"Cosmos DB error retrieving chat history: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Database error", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Database error", "details": str(e)}, status=500)
     except Exception as e:
         logging.error(f"Error retrieving chat history: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to retrieve chat history", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Failed to retrieve chat history", "details": str(e)}, status=500)
 
 def save_chat_messages(req: func.HttpRequest) -> func.HttpResponse:
     """Save chat messages to Cosmos DB"""
     try:
-        # Get request body
-        req_body = req.get_json()
-        if not req_body:
-            return func.HttpResponse(
-                json.dumps({"error": "Request body is required"}),
-                status_code=400,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        session_id = req_body.get('sessionId')
-        messages = req_body.get('messages', [])
-        
+        # Parse JSON safely
+        try:
+            req_body = req.get_json()
+        except Exception as je:
+            return _resp({"error": "Invalid JSON body", "details": str(je)}, status=400)
+
+        session_id = (req_body or {}).get('sessionId', '').strip()
+        messages = (req_body or {}).get('messages', [])
+
         if not session_id:
-            return func.HttpResponse(
-                json.dumps({"error": "Session ID is required"}),
-                status_code=400,
-                headers={"Content-Type": "application/json"}
-            )
-            
+            return _resp({"error": "Session ID is required"}, status=400)
         if not messages or not isinstance(messages, list):
-            return func.HttpResponse(
-                json.dumps({"error": "Messages must be a non-empty array"}),
-                status_code=400,
-                headers={"Content-Type": "application/json"}
-            )
-            
-        # Connect to Cosmos DB
+            return _resp({"error": "Messages must be a non-empty array"}, status=400)
+
         client = get_cosmos_client()
         if not client:
-            return func.HttpResponse(
-                json.dumps({"error": "Failed to connect to database"}),
-                status_code=500,
-                headers={"Content-Type": "application/json"}
+            return _resp({"error": "Failed to connect to database"}, status=500)
+
+        container = _get_container(client)
+
+        # Get existing IDs (partition-scoped)
+        existing_ids = {
+            item['id'] for item in container.query_items(
+                query="SELECT c.id FROM c WHERE c.sessionId = @sid",
+                parameters=[{"name": "@sid", "value": session_id}],
+                partition_key=session_id
             )
-        
-        # Get database and container
-        database_name = os.environ.get('COSMOSDB_MARKETPLACE_DATABASE_NAME', 'greener-marketplace-db')
-        container_name = "plant-care-chat"
-        
-        database = client.get_database_client(database_name)
-        container = database.get_container_client(container_name)
-        
-        # First check for existing messages from this session 
-        # to avoid duplicates
-        query = f"SELECT c.id FROM c WHERE c.sessionId = '{session_id}'"
-        existing_ids = set(item['id'] for item in container.query_items(query=query, enable_cross_partition_query=True))
-        
-        # Store each message
+        }
+
         success_count = 0
         for message in messages:
             try:
-                # Skip messages that already exist in the database
                 if message.get('id') in existing_ids:
                     continue
-                    
+
                 timestamp = message.get('timestamp') or datetime.utcnow().isoformat()
-                
-                # Format for user message
+
                 if message.get('isUser'):
                     doc = {
                         'id': message.get('id'),
-                        'sessionId': session_id, 
+                        'sessionId': session_id,
                         'messageType': 'user_message',
                         'message': message.get('text', ''),
                         'timestamp': timestamp
                     }
                 else:
-                    # Format for AI response
                     doc = {
                         'id': message.get('id'),
                         'sessionId': session_id,
@@ -207,73 +184,47 @@ def save_chat_messages(req: func.HttpRequest) -> func.HttpResponse:
                         'sources': message.get('sources', []),
                         'timestamp': timestamp
                     }
-                
-                # Store in Cosmos DB
-                container.create_item(body=doc)
+
+                container.create_item(body=doc, partition_key=session_id)  # explicit PK
                 success_count += 1
-                
+
             except Exception as e:
                 logging.error(f"Error storing message {message.get('id')}: {str(e)}")
                 continue
-        
-        return func.HttpResponse(
-            json.dumps({
-                "success": True,
-                "savedCount": success_count,
-                "totalMessages": len(messages)
-            }),
-            status_code=200,
-            headers={"Content-Type": "application/json"}
-        )
-        
+
+        return _resp({
+            "success": True,
+            "savedCount": success_count,
+            "totalMessages": len(messages)
+        }, status=200)
+
     except exceptions.CosmosHttpResponseError as e:
         logging.error(f"Cosmos DB error saving chat messages: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Database error", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Database error", "details": str(e)}, status=500)
     except Exception as e:
         logging.error(f"Error saving chat messages: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to save chat messages", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Failed to save chat messages", "details": str(e)}, status=500)
 
 def delete_chat_history(req: func.HttpRequest) -> func.HttpResponse:
     """Delete chat history for a specific session"""
     try:
-        # Get session ID from route params or query params
-        session_id = req.route_params.get('sessionId') or req.params.get('sessionId')
+        session_id = (req.route_params.get('sessionId') or req.params.get('sessionId') or '').strip()
         if not session_id:
-            return func.HttpResponse(
-                json.dumps({"error": "Session ID is required"}),
-                status_code=400,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        # Connect to Cosmos DB
+            return _resp({"error": "Session ID is required"}, status=400)
+
         client = get_cosmos_client()
         if not client:
-            return func.HttpResponse(
-                json.dumps({"error": "Failed to connect to database"}),
-                status_code=500,
-                headers={"Content-Type": "application/json"}
-            )
-        
-        # Get database and container
-        database_name = os.environ.get('COSMOSDB_MARKETPLACE_DATABASE_NAME', 'greener-marketplace-db')
-        container_name = "plant-care-chat"
-        
-        database = client.get_database_client(database_name)
-        container = database.get_container_client(container_name)
-        
-        # Find all messages for this session
-        query = f"SELECT c.id FROM c WHERE c.sessionId = '{session_id}'"
-        items_to_delete = list(container.query_items(query=query, enable_cross_partition_query=True))
-        
-        # Delete each message
+            return _resp({"error": "Failed to connect to database"}, status=500)
+
+        container = _get_container(client)
+
+        # Fetch ids within the partition
+        items_to_delete = list(container.query_items(
+            query="SELECT c.id FROM c WHERE c.sessionId = @sid",
+            parameters=[{"name": "@sid", "value": session_id}],
+            partition_key=session_id
+        ))
+
         deleted_count = 0
         for item in items_to_delete:
             try:
@@ -282,28 +233,16 @@ def delete_chat_history(req: func.HttpRequest) -> func.HttpResponse:
             except Exception as e:
                 logging.error(f"Error deleting message {item['id']}: {str(e)}")
                 continue
-        
-        return func.HttpResponse(
-            json.dumps({
-                "success": True,
-                "deletedCount": deleted_count,
-                "totalMessages": len(items_to_delete)
-            }),
-            status_code=200,
-            headers={"Content-Type": "application/json"}
-        )
-        
+
+        return _resp({
+            "success": True,
+            "deletedCount": deleted_count,
+            "totalMessages": len(items_to_delete)
+        }, status=200)
+
     except exceptions.CosmosHttpResponseError as e:
         logging.error(f"Cosmos DB error deleting chat history: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Database error", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Database error", "details": str(e)}, status=500)
     except Exception as e:
         logging.error(f"Error deleting chat history: {str(e)}")
-        return func.HttpResponse(
-            json.dumps({"error": "Failed to delete chat history", "details": str(e)}),
-            status_code=500,
-            headers={"Content-Type": "application/json"}
-        )
+        return _resp({"error": "Failed to delete chat history", "details": str(e)}, status=500)
