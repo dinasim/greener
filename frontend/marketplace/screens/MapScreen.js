@@ -289,6 +289,12 @@ const MapScreen = () => {
       setSelectedBusiness(null);
       setSelectedBusinessData(null);
       setShowDetailCard(true);
+
+      navigation.navigate('PlantDetail', {
+        plantId: p.id || p._id,
+        businessId: p.businessId || p.ownerEmail,
+        type: p.businessId || p.ownerEmail ? 'business' : 'global',
+      });
     }
   };
 
@@ -305,7 +311,11 @@ const MapScreen = () => {
 
   const handleViewProductDetails = () => {
     if (selectedProductData) {
-      navigation.navigate('PlantDetail', { plantId: selectedProductData.id || selectedProductData._id });
+      navigation.navigate('PlantDetail', { 
+        plantId: selectedProductData.id || selectedProductData._id,
+        businessId: selectedProductData.businessId || selectedProductData.ownerEmail, // whichever exists
+        type: 'business', // helps the details screen choose the right API
+      });
     }
   };
   const handleViewBusinessDetails = () => {
@@ -539,7 +549,14 @@ const MapScreen = () => {
                 isLoading={isLoading}
                 error={error}
                 onRetry={handleRetry}
-                onProductSelect={(productId) => navigation.navigate('PlantDetail', { plantId: productId })}
+                onProductSelect={(productId) => {
+                  const p = nearbyProducts.find(x => (x.id || x._id) === productId);
+                  navigation.navigate('PlantDetail', {
+                    plantId: productId,
+                    businessId: p?.businessId || p?.ownerEmail, // whichever your product has
+                    type: p?.businessId || p?.ownerEmail ? 'business' : 'global',
+                  });
+                }}
                 sortOrder={sortOrder}
                 onSortChange={toggleSortOrder}
               />
