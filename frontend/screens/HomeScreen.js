@@ -119,7 +119,7 @@ export default function HomeScreen({ navigation }) {
   const [personaChecked, setPersonaChecked] = useState(false);
   const fadeAnim = useState(new Animated.Value(0))[0];
   const [fabOpen, setFabOpen] = useState(false);
-
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useUniversalNotifications(userEmail);
 
@@ -222,6 +222,12 @@ export default function HomeScreen({ navigation }) {
   useEffect(() => {
     if (!userTypeLoading) setPersonaChecked(true);
   }, [userTypeLoading]);
+
+  useEffect(() => {
+    // Your login logic here, set isLoggedIn to true after login
+    // For demo, you can set isLoggedIn to true manually or based on your auth state
+    setIsLoggedIn(true);
+  }, []);
 
   if (!personaChecked) {
     return (
@@ -1217,6 +1223,7 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'flex-end',
     gap: 4,
+    marginLeft: 12,
   },
   weatherDetailItem: {
     flexDirection: 'row',
