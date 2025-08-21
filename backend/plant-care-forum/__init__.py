@@ -1,3 +1,4 @@
+
 import azure.functions as func
 import json
 import logging
@@ -11,30 +12,31 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from db_helpers import get_container
 from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response
 
+
 def main(req: func.HttpRequest) -> func.HttpResponse:
     """
     Handle Plant Care Forum operations
     GET: Retrieve forum topics
     POST: Create new forum topic
     DELETE: Delete a forum topic by topicId
+    PATCH/PUT: Edit a forum topic
     """
-    
     logging.info('Plant Care Forum function processed a request.')
-    
+
     # Handle OPTIONS method for CORS preflight
     if req.method == 'OPTIONS':
         return handle_options_request()
-    
+
     try:
         method = req.method
-        
+
         if method == "GET":
             response = handle_get_topics(req)
         elif method == "POST":
             response = handle_create_topic(req)
         elif method == "DELETE":
             response = handle_delete_topic(req)
-        elif method == "PATCH" or method == "PUT":
+        elif method in ("PATCH", "PUT"):
             response = handle_edit_topic(req)
         else:
             response = func.HttpResponse(
@@ -42,10 +44,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=405,
                 mimetype="application/json"
             )
-        
+
         # Add CORS headers to all responses
         return add_cors_headers(response)
-            
+
     except Exception as e:
         logging.error(f"Error in plant care forum function: {str(e)}")
         error_response = func.HttpResponse(
@@ -55,9 +57,9 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         )
         return add_cors_headers(error_response)
 
+
 def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
     """Get forum topics with filtering and search"""
-    
     try:
         # Get query parameters
         category = req.params.get('category', 'all')
@@ -65,14 +67,17 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
         limit = int(req.params.get('limit', '20'))
         offset = int(req.params.get('offset', '0'))
         sort_by = req.params.get('sort', 'lastActivity')
-        
-        logging.info(f"Getting forum topics: category={category}, search='{search}', limit={limit}, offset={offset}")
-        
+
+        logging.info(
+            f"Getting forum topics: category={category}, search='{search}', "
+            f"limit={limit}, offset={offset}"
+        )
+
         # Get forum container
         container = get_container("forum")
-        
+
         # Build query based on category
-        if category != 'all' and category != '':
+        if category not in ('all', ''):
             # Single partition query
             query = "SELECT * FROM c WHERE c.type = 'topic' AND c.category = @category"
             parameters = [{"name": "@category", "value": category}]
@@ -82,12 +87,12 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
             query = "SELECT * FROM c WHERE c.type = 'topic'"
             parameters = []
             enable_cross_partition = True
-        
+
         # Add search filter if provided
         if search:
             query += " AND (CONTAINS(LOWER(c.title), LOWER(@search)) OR CONTAINS(LOWER(c.content), LOWER(@search)))"
             parameters.append({"name": "@search", "value": search})
-        
+
         # Add sorting
         if sort_by == 'lastActivity':
             query += " ORDER BY c.lastActivity DESC"
@@ -95,25 +100,23 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
             query += " ORDER BY c.timestamp DESC"
         elif sort_by == 'votes':
             query += " ORDER BY c.votes DESC"
-        
+
         # Add pagination
         query += f" OFFSET {offset} LIMIT {limit}"
-        
+
         logging.info(f"Executing query: {query}")
-        
+
         # Execute query
         topics = list(container.query_items(
             query=query,
             parameters=parameters,
             enable_cross_partition_query=enable_cross_partition
         ))
-        
-        # FIXED: Get category statistics without GROUP BY - use separate queries
+
+        # Get category statistics without GROUP BY - use separate queries
         category_stats = {}
-        
-        # Get count for each category individually to avoid GROUP BY issues
         categories = ['general', 'disease', 'pests', 'watering', 'lighting', 'fertilizer', 'repotting', 'indoor', 'outdoor']
-        
+
         for cat in categories:
             try:
                 count_query = "SELECT VALUE COUNT(1) FROM c WHERE c.type = 'topic' AND c.category = @category"
@@ -126,7 +129,7 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
             except Exception as e:
                 logging.warning(f"Could not get count for category {cat}: {str(e)}")
                 category_stats[cat] = 0
-        
+
         response_data = {
             "topics": topics,
             "pagination": {
@@ -137,15 +140,15 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
             "categoryStats": category_stats,
             "total": sum(category_stats.values()) if category == 'all' else category_stats.get(category, 0)
         }
-        
+
         logging.info(f"Returning {len(topics)} topics")
-        
+
         return func.HttpResponse(
             json.dumps(response_data, default=str),
             status_code=200,
             mimetype="application/json"
         )
-        
+
     except Exception as e:
         logging.error(f"Error getting forum topics: {str(e)}")
         return func.HttpResponse(
@@ -154,15 +157,15 @@ def handle_get_topics(req: func.HttpRequest) -> func.HttpResponse:
             mimetype="application/json"
         )
 
+
 def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
     """Create a new forum topic"""
-    
     try:
         logging.info("Creating new forum topic")
-        
+
         req_body = req.get_json()
         logging.info(f"Request body: {json.dumps(req_body, indent=2)}")
-        
+
         # Validate required fields
         required_fields = ['title', 'content', 'author', 'category']
         for field in required_fields:
@@ -173,7 +176,7 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
                     status_code=400,
                     mimetype="application/json"
                 )
-        
+
         # Validate category
         valid_categories = ['general', 'disease', 'pests', 'watering', 'lighting', 'fertilizer', 'repotting', 'indoor', 'outdoor']
         if req_body['category'] not in valid_categories:
@@ -183,35 +186,42 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=400,
                 mimetype="application/json"
             )
-        
-        # Query user profile to get user type
+
+        # --- Robust author type resolution (never fail the request here) ---
         import requests
         user_email = req_body.get('author')
         user_profile_url = os.environ.get('USER_PROFILE_URL') or 'https://usersfunctions.azurewebsites.net/api/user-profile'
+
+        # Start with client-provided authorType if present
+        author_type = (req_body.get('authorType') or '').strip().lower()
+        if author_type in ('business', 'business owner'):
+            author_type = 'business owner'
+        elif author_type == 'customer':
+            author_type = 'customer'
+        else:
+            author_type = None
+
+        resolved_type = None
         try:
-            profile_resp = requests.get(f"{user_profile_url}?id={user_email}")
-            if profile_resp.status_code == 200:
-                profile_data = profile_resp.json()
-                user_type = profile_data.get('user', {}).get('type', '').lower()
-                if user_type == 'business':
-                    author_type = 'business owner'
-                else:
-                    author_type = 'customer'
+            # Try ?email= first, then ?id= as a fallback
+            resp = requests.get(f"{user_profile_url}?email={user_email}", timeout=5)
+            if resp.status_code != 200:
+                resp = requests.get(f"{user_profile_url}?id={user_email}", timeout=5)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                resolved_type = (data.get('user', {}) or {}).get('type', '')
             else:
-                logging.error(f"Failed to fetch user profile for {user_email}: {profile_resp.status_code}")
-                return func.HttpResponse(
-                    json.dumps({"error": "Could not determine user type from profile"}),
-                    status_code=400,
-                    mimetype="application/json"
-                )
+                logging.warning(f"User profile lookup non-200 ({resp.status_code}) for {user_email}")
         except Exception as e:
-            logging.error(f"Exception fetching user profile: {str(e)}")
-            return func.HttpResponse(
-                json.dumps({"error": f"Could not determine user type: {str(e)}"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
+            logging.warning(f"Profile lookup failed (non-fatal): {e}")
+
+        if resolved_type:
+            author_type = 'business owner' if resolved_type.lower() == 'business' else 'customer'
+        elif not author_type:
+            author_type = 'customer'  # final fallback
+        # --- end robust block ---
+
         # Get forum container with robust error handling
         try:
             container = get_container("forum")
@@ -222,14 +232,14 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
             try:
                 from db_helpers import get_marketplace_db_client
                 from azure.cosmos import PartitionKey
-                
+
                 database = get_marketplace_db_client()
-                
+
                 # Try to get existing container or create it
                 try:
                     container = database.get_container_client("forum")
                     container.read()  # Test access
-                except:
+                except Exception:
                     # Create the forum container
                     container = database.create_container(
                         id="forum",
@@ -237,7 +247,7 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
                         offer_throughput=400
                     )
                     logging.info("Created new forum container for topic creation")
-                    
+
             except Exception as fallback_error:
                 logging.error(f"Failed to create/access forum container: {str(fallback_error)}")
                 return func.HttpResponse(
@@ -245,11 +255,11 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
                     status_code=500,
                     mimetype="application/json"
                 )
-        
+
         # Create topic document
         topic_id = str(uuid.uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
-        
+
         topic = {
             "id": topic_id,
             "type": "topic",
@@ -267,12 +277,12 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
             "isAnswered": False,
             "isPinned": False,
             "isClosed": False,
-            "authorType": author_type,  # always set from user profile
-            "hasImages": bool(req_body.get('images', []))  # Flag for quick filtering
+            "authorType": author_type,  # set from profile or fallback logic
+            "hasImages": bool(req_body.get('images', []))
         }
-        
+
         logging.info(f"Created topic object: {json.dumps(topic, indent=2)}")
-        
+
         # Save to database with category as partition key
         try:
             created_item = container.create_item(body=topic)
@@ -284,9 +294,12 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
                 status_code=500,
                 mimetype="application/json"
             )
-        
-        logging.info(f"Created forum topic: {topic_id} in category: {req_body['category']} with {len(req_body.get('images', []))} images")
-        
+
+        logging.info(
+            f"Created forum topic: {topic_id} in category: {req_body['category']} "
+            f"with {len(req_body.get('images', []))} images"
+        )
+
         return func.HttpResponse(
             json.dumps({
                 "success": True,
@@ -296,7 +309,7 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
             status_code=201,
             mimetype="application/json"
         )
-        
+
     except Exception as e:
         logging.error(f"Error creating forum topic: {str(e)}")
         return func.HttpResponse(
@@ -304,6 +317,7 @@ def handle_create_topic(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+
 
 def handle_delete_topic(req: func.HttpRequest) -> func.HttpResponse:
     """Delete a forum topic by topicId"""
@@ -317,7 +331,6 @@ def handle_delete_topic(req: func.HttpRequest) -> func.HttpResponse:
             )
         container = get_container("forum")
         # Find the topic (need partition key: category)
-        # Try to find topic by id
         query = "SELECT * FROM c WHERE c.type = 'topic' AND c.id = @id"
         items = list(container.query_items(
             query=query,
@@ -344,6 +357,7 @@ def handle_delete_topic(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+
 
 def handle_edit_topic(req: func.HttpRequest) -> func.HttpResponse:
     """Edit a forum topic by topicId"""
@@ -394,3 +408,4 @@ def handle_edit_topic(req: func.HttpRequest) -> func.HttpResponse:
             status_code=500,
             mimetype="application/json"
         )
+

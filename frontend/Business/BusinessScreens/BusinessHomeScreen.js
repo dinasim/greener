@@ -146,7 +146,7 @@ export default function BusinessHomeScreen({ navigation }) {
   };
 
   const handleSettings = () => {
-    navigation.navigate('BusinessSettingsScreen', { businessId });
+    navigation.navigate('BusinessSettingsScreen', { businessId, initialTab: 'details' });
   };
 
   const handleProfile = () => {

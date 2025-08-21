@@ -43,18 +43,6 @@ const MapToggle = ({ viewMode, onViewModeChange, style, showMapLabel = false }) 
           <Text style={styles.segmentText} numberOfLines={1}>List</Text>
         </TouchableOpacity>
       </View>
-
-      {/* Map chip (icon-only by default) */}
-      <TouchableOpacity
-        style={[styles.mapBtn, { width: HEIGHT, height: HEIGHT }, viewMode === 'map' && styles.mapActive]}
-        onPress={() => handleViewChange('map')}
-        accessibilityLabel="Map View"
-        accessibilityRole="button"
-        accessibilityState={{ selected: viewMode === 'map' }}
-      >
-        <MaterialIcons name="map" size={ICON} color="#2e7d32" />
-        {showMapLabel && <Text style={styles.segmentText}>Map</Text>}
-      </TouchableOpacity>
     </View>
   );
 };

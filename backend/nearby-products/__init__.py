@@ -1,262 +1,286 @@
 # backend/nearby-products/__init__.py
-import logging
-import json
-import azure.functions as func
+import os
 import math
-import traceback
+import json
+import logging
 import datetime
+import traceback
 import requests
-from db_helpers import get_container
-from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
+import azure.functions as func
+from azure.cosmos import CosmosClient, exceptions
 
-# Add the missing calculate_distance function
-def calculate_distance(lat1, lon1, lat2, lon2):
-    """
-    Calculate the great circle distance between two points 
-    on the earth (specified in decimal degrees)
-    using the Haversine formula.
-    """
-    # Convert decimal degrees to radians
-    lat1, lon1, lat2, lon2 = map(math.radians, [float(lat1), float(lon1), float(lat2), float(lon2)])
-    
-    # Haversine formula
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-    c = 2 * math.asin(math.sqrt(a))
-    r = 6371  # Radius of earth in kilometers
-    return c * r
+# ---------- Config (env-overridable) ----------
+COSMOS_CONN_ENV = "COSMOSDB__MARKETPLACE_CONNECTION_STRING"
+COSMOS_DB_ENV   = "COSMOSDB_MARKETPLACE_DATABASE_NAME"
+DEFAULT_DB_NAME = "greener-marketplace-db"
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function for nearby products processed a request.')
-    
-    # Handle OPTIONS method for CORS preflight
-    if req.method == 'OPTIONS':
-        return handle_options_request()
-    
+# Prefer explicit container via env; otherwise try these in order
+PRODUCTS_CONTAINER_ENV = "COSMOSDB_PRODUCTS_CONTAINER_NAME"
+FALLBACK_PRODUCT_CONTAINERS = [
+    "marketplace_products",
+    "marketplace-plants",
+    "plants",
+]
+
+CACHE_CONTAINER_ENV = "COSMOSDB_CACHE_CONTAINER_NAME"
+DEFAULT_CACHE_CONTAINER = "marketplace-cache"
+
+# ---------- Minimal CORS helpers ----------
+CORS_HEADERS = {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers":
+        "Content-Type, Authorization, X-User-Email, X-User-Type, X-Business-ID",
+}
+
+def _cors(resp: func.HttpResponse) -> func.HttpResponse:
+    resp.headers.update(CORS_HEADERS)
+    return resp
+
+def _ok(data: dict, status: int = 200) -> func.HttpResponse:
+    return _cors(func.HttpResponse(
+        json.dumps(data, default=str),
+        status_code=status,
+        headers={"Content-Type": "application/json"},
+    ))
+
+def _err(msg: str, status: int = 500) -> func.HttpResponse:
+    logging.error(msg)
+    return _cors(func.HttpResponse(
+        json.dumps({"error": msg}),
+        status_code=status,
+        headers={"Content-Type": "application/json"},
+    ))
+
+# ---------- Utilities ----------
+def _haversine_km(lat1, lon1, lat2, lon2) -> float:
+    R = 6371.0
+    dlat = math.radians(float(lat2) - float(lat1))
+    dlon = math.radians(float(lon2) - float(lon1))
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(float(lat1))) \
+        * math.cos(math.radians(float(lat2))) * math.sin(dlon/2)**2
+    return 2 * R * math.asin(math.sqrt(a))
+
+def _extract_lat_lon(obj) -> tuple | None:
+    """Be tolerant about shapes: location/address with latitude/longitude or lat/lng/lon."""
+    if not isinstance(obj, dict):
+        return None
+    L = obj.get("location") or obj.get("address") or {}
+    if not isinstance(L, dict):
+        return None
+
+    def _num(v):
+        try:
+            if v is None or v == "":
+                return None
+            n = float(v)
+            if math.isfinite(n):
+                return n
+        except Exception:
+            pass
+        return None
+
+    lat = _num(L.get("latitude") or L.get("lat"))
+    lon = _num(L.get("longitude") or L.get("lng") or L.get("lon"))
+    if lat is None or lon is None:
+        return None
+    return (lat, lon)
+
+def _geocode_city(city: str) -> tuple | None:
+    """Try to geocode via your own endpoints (two possible routes)."""
+    if not city:
+        return None
+    for path in ["/api/geocode", "/api/marketplace/geocode"]:
+        try:
+            url = f"https://usersfunctions.azurewebsites.net{path}?address={city}"
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                j = r.json()
+                lat, lon = j.get("latitude"), j.get("longitude")
+                if lat is not None and lon is not None:
+                    return (float(lat), float(lon))
+        except Exception as e:
+            logging.warning(f"geocode call failed ({path} '{city}'): {e}")
+    return None
+
+def _open_cosmos():
+    conn = os.environ.get(COSMOS_CONN_ENV)
+    if not conn:
+        raise RuntimeError(f"{COSMOS_CONN_ENV} app setting is missing")
+    db_name = os.environ.get(COSMOS_DB_ENV, DEFAULT_DB_NAME)
+
+    client = CosmosClient.from_connection_string(conn)
+    db = client.get_database_client(db_name)
     try:
-        # Get query parameters
-        lat = req.params.get('lat')
-        lon = req.params.get('lon')
-        radius = req.params.get('radius', '10')  # Default radius is 10 km
-        category = req.params.get('category')
-        sort_by = req.params.get('sortBy', 'distance')  # Default sort by distance
-        
-        # Validate coordinates
-        if not lat or not lon:
-            return create_error_response("Latitude and longitude are required", 400)
-        
+        # Fail fast / surface DB-not-found clearly
+        db.read()
+    except exceptions.CosmosResourceNotFoundError:
+        existing = []
         try:
-            lat = float(lat)
-            lon = float(lon)
-            radius = float(radius)
-        except ValueError:
-            return create_error_response("Invalid coordinate or radius format", 400)
-        
-        # Add some debug info
-        logging.info(f"Search parameters: lat={lat}, lon={lon}, radius={radius}, category={category}, sortBy={sort_by}")
-        
-        # Access the marketplace_plants container
-        container_name = "marketplace-plants"
+            existing = [d["id"] for d in client.list_databases()]
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Cosmos database '{db_name}' not found. "
+            f"Available: {existing}"
+        )
+
+    # Pick products container
+    env_cn = os.environ.get(PRODUCTS_CONTAINER_ENV)
+    candidates = [env_cn] if env_cn else []
+    candidates += [c for c in FALLBACK_PRODUCT_CONTAINERS if c and c != env_cn]
+
+    prod_container = None
+    chosen_name = None
+    last_err = None
+    for name in candidates:
         try:
-            container = get_container(container_name)
-            logging.info(f"Successfully connected to container: {container_name}")
+            cc = db.get_container_client(name)
+            cc.read()  # verify
+            prod_container = cc
+            chosen_name = name
+            break
         except Exception as e:
-            logging.error(f"Error connecting to container {container_name}: {str(e)}")
-            return create_error_response(f"Database error: {str(e)}", 500)
-        
-        # Get all products with active status
-        query = "SELECT * FROM c WHERE c.status = 'active' OR NOT IS_DEFINED(c.status)"
-        
-        # Add category filter if provided
-        if category and category.lower() != 'all':
-            query += " AND c.category = @category"
-            parameters = [{"name": "@category", "value": category.lower()}]
-        else:
-            parameters = []
-        
-        # Execute the query with debugging
-        try:
-            products = list(container.query_items(
-                query=query,
-                parameters=parameters,
-                enable_cross_partition_query=True
-            ))
-            logging.info(f"Found {len(products)} products in total")
-        except Exception as e:
-            logging.error(f"Query error: {str(e)}")
-            logging.error(f"Query: {query}")
-            logging.error(f"Parameters: {parameters}")
-            return create_error_response(f"Query error: {str(e)}", 500)
-        
-        # Filter products by distance if they have location data
-        nearby_products = []
-        products_without_location = []
-        products_with_incomplete_location = []
-        
-        for product in products:
-            # Skip products with status=deleted
-            if product.get('status') == 'deleted':
-                continue
-                
-            # Normalize location data structure
-            if 'location' not in product or not product['location']:
-                if 'city' in product and product['city']:
-                    # Create a location object if only city exists
-                    try:
-                        # Try to use a cached geocode result first
-                        geocode_cache_container = None
-                        try:
-                            geocode_cache_container = get_container("marketplace-cache")
-                            
-                            # Check cache for this city
-                            city_cache_query = "SELECT * FROM c WHERE c.type = 'geocache' AND c.address = @address"
-                            city_cache_params = [{"name": "@address", "value": product['city']}]
-                            
-                            cached_results = list(geocode_cache_container.query_items(
-                                query=city_cache_query,
-                                parameters=city_cache_params,
-                                enable_cross_partition_query=True
-                            ))
-                            
-                            if cached_results:
-                                cache_item = cached_results[0]
-                                product['location'] = {
-                                    'latitude': cache_item['latitude'],
-                                    'longitude': cache_item['longitude'],
-                                    'city': product['city']
-                                }
-                                logging.info(f"Using cached geocode for {product['city']}")
-                            else:
-                                # No cache, call geocode service
-                                try:
-                                    geocode_url = f"https://usersfunctions.azurewebsites.net/api/marketplace/geocode?address={product['city']}"
-                                    geocode_response = requests.get(geocode_url, timeout=5)
-                                    
-                                    if geocode_response.status_code == 200:
-                                        location_data = geocode_response.json()
-                                        product['location'] = {
-                                            'latitude': location_data['latitude'],
-                                            'longitude': location_data['longitude'],
-                                            'city': product['city']
-                                        }
-                                        
-                                        # Cache this result for future use if we have the cache container
-                                        if geocode_cache_container:
-                                            try:
-                                                import uuid
-                                                cache_item = {
-                                                    'id': str(uuid.uuid4()),
-                                                    'type': 'geocache',
-                                                    'address': product['city'],
-                                                    'latitude': location_data['latitude'],
-                                                    'longitude': location_data['longitude'],
-                                                    'timestamp': datetime.datetime.utcnow().isoformat()
-                                                }
-                                                geocode_cache_container.create_item(body=cache_item)
-                                                logging.info(f"Cached geocode for {product['city']}")
-                                            except Exception as cache_err:
-                                                logging.warning(f"Failed to cache geocode: {str(cache_err)}")
-                                    else:
-                                        products_without_location.append(product['id'])
-                                        continue
-                                except Exception as req_err:
-                                    logging.warning(f"Geocoding request failed: {str(req_err)}")
-                                    products_without_location.append(product['id'])
-                                    continue
-                        except Exception as cache_container_err:
-                            logging.warning(f"Failed to access cache container: {str(cache_container_err)}")
-                            # Continue without caching - try direct geocoding
-                            try:
-                                geocode_url = f"https://usersfunctions.azurewebsites.net/api/marketplace/geocode?address={product['city']}"
-                                geocode_response = requests.get(geocode_url, timeout=5)
-                                
-                                if geocode_response.status_code == 200:
-                                    location_data = geocode_response.json()
-                                    product['location'] = {
-                                        'latitude': location_data['latitude'],
-                                        'longitude': location_data['longitude'],
-                                        'city': product['city']
-                                    }
-                                else:
-                                    products_without_location.append(product['id'])
-                                    continue
-                            except Exception as req_err:
-                                logging.warning(f"Geocoding request failed: {str(req_err)}")
-                                products_without_location.append(product['id'])
-                                continue
-                    except Exception as geocode_err:
-                        logging.warning(f"Failed to geocode city: {str(geocode_err)}")
-                        products_without_location.append(product['id'])
-                        continue
-                else:
-                    products_without_location.append(product['id'])
-                    continue
-            
-            # Skip if the location is still empty or not properly defined
-            if not product.get('location'):
-                products_without_location.append(product.get('id', 'unknown'))
-                continue
-                
-            # Handle different location formats
-            location = product['location']
-            
-            if isinstance(location, str):
-                # If location is a string (e.g. "New York"), we can't calculate distance
-                products_with_incomplete_location.append(product.get('id', 'unknown'))
-                continue
-                
-            # Expected standard format: location.latitude and location.longitude
-            try:
-                if not isinstance(location, dict):
-                    products_with_incomplete_location.append(product.get('id', 'unknown'))
-                    continue
-                    
-                product_lat = float(location.get('latitude'))
-                product_lon = float(location.get('longitude'))
-                
-                if not product_lat or not product_lon:
-                    products_with_incomplete_location.append(product.get('id', 'unknown'))
-                    continue
-            except (ValueError, TypeError, AttributeError):
-                products_with_incomplete_location.append(product.get('id', 'unknown'))
-                continue
-                
-            # Calculate distance using Haversine formula
-            try:
-                distance = calculate_distance(lat, lon, product_lat, product_lon)
-                
-                # Include product if within radius
-                if distance <= radius:
-                    # Add distance to product
-                    product['distance'] = round(distance, 2)
-                    nearby_products.append(product)
-            except Exception as dist_err:
-                logging.warning(f"Error calculating distance for product {product.get('id', 'unknown')}: {str(dist_err)}")
-                continue
-        
-        logging.info(f"Found {len(nearby_products)} nearby products within {radius}km")
-        logging.info(f"{len(products_without_location)} products had no location data")
-        logging.info(f"{len(products_with_incomplete_location)} products had incomplete location data")
-        
-        # Sort by distance if requested
-        if sort_by == 'distance':
-            nearby_products.sort(key=lambda p: p.get('distance', float('inf')))
-        elif sort_by == 'distance_desc':
-            nearby_products.sort(key=lambda p: p.get('distance', 0), reverse=True)
-        
-        # Return the nearby products
-        return create_success_response({
-            "products": nearby_products,
-            "count": len(nearby_products),
-            "center": {
-                "latitude": lat,
-                "longitude": lon
-            },
-            "radius": radius
-        })
-    
+            last_err = e
+
+    if not prod_container:
+        raise RuntimeError(
+            f"Could not open a products container. Tried: {candidates}. "
+            f"Last error: {last_err}"
+        )
+
+    # Optional cache container
+    cache_name = os.environ.get(CACHE_CONTAINER_ENV, DEFAULT_CACHE_CONTAINER)
+    cache_container = None
+    try:
+        cache_cc = db.get_container_client(cache_name)
+        cache_cc.read()
+        cache_container = cache_cc
+    except Exception:
+        cache_container = None
+
+    logging.info(f"Cosmos connected. DB='{db_name}', products='{chosen_name}', cache='{cache_name if cache_container else 'none'}'")
+    return prod_container, cache_container
+
+# ---------- Azure Function ----------
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("nearby-products invoked")
+
+    if req.method.upper() == "OPTIONS":
+        return _cors(func.HttpResponse("", status_code=200))
+
+    # Parse inputs
+    lat = req.params.get("lat")
+    lon = req.params.get("lon")
+    radius = req.params.get("radius", "10")
+    category = req.params.get("category")
+    sort_by = req.params.get("sortBy", "distance")
+
+    if not lat or not lon:
+        return _err("Latitude and longitude are required", 400)
+
+    try:
+        lat = float(lat); lon = float(lon); radius = float(radius)
+    except ValueError:
+        return _err("Invalid coordinate or radius format", 400)
+
+    try:
+        products_container, cache_container = _open_cosmos()
     except Exception as e:
-        logging.error(f"Error finding nearby products: {str(e)}")
-        logging.error(traceback.format_exc())
-        return create_error_response(f"Error finding nearby products: {str(e)}", 500)
+        return _err(f"Database error: {e}", 500)
+
+    # Build query (status active; optional category/productType match)
+    query = "SELECT * FROM c WHERE (c.status = 'active' OR NOT IS_DEFINED(c.status))"
+    params = []
+    if category and category.lower() != "all":
+        query += " AND (LOWER(c.category) = @cat OR LOWER(c.productType) = @cat)"
+        params.append({"name": "@cat", "value": category.lower()})
+
+    try:
+        products = list(products_container.query_items(
+            query=query,
+            parameters=params,
+            enable_cross_partition_query=True,
+        ))
+        logging.info(f"Fetched {len(products)} products (pre-filter).")
+    except Exception as e:
+        logging.error(f"Query error: {e}")
+        return _err(f"Query error: {e}", 500)
+
+    nearby = []
+    no_loc = 0
+    incomplete = 0
+
+    for p in products:
+        # Skip hard-deleted if present
+        if p.get("status") == "deleted":
+            continue
+
+        coords = _extract_lat_lon(p)
+        # Geocode by city if missing coords
+        if coords is None and p.get("city"):
+            # cache lookup
+            if cache_container:
+                try:
+                    rows = list(cache_container.query_items(
+                        query="SELECT TOP 1 * FROM c WHERE c.type='geocache' AND c.address=@a",
+                        parameters=[{"name": "@a", "value": p["city"]}],
+                        enable_cross_partition_query=True,
+                    ))
+                    if rows:
+                        coords = (float(rows[0]["latitude"]), float(rows[0]["longitude"]))
+                except Exception:
+                    pass
+            if coords is None:
+                g = _geocode_city(p["city"])
+                if g:
+                    coords = g
+                    # write to cache
+                    if cache_container:
+                        try:
+                            import uuid
+                            cache_container.create_item({
+                                "id": str(uuid.uuid4()),
+                                "type": "geocache",
+                                "address": p["city"],
+                                "latitude": coords[0],
+                                "longitude": coords[1],
+                                "timestamp": datetime.datetime.utcnow().isoformat(),
+                            })
+                        except Exception:
+                            pass
+
+        if coords is None:
+            no_loc += 1
+            continue
+
+        plat, plon = coords
+        try:
+            dist = _haversine_km(lat, lon, plat, plon)
+        except Exception:
+            incomplete += 1
+            continue
+
+        if dist <= radius:
+            p["distance"] = round(dist, 2)
+            # Ensure the location object exists for the client map
+            loc = p.get("location") or {}
+            if "latitude" not in loc or "longitude" not in loc:
+                loc = {**loc, "latitude": plat, "longitude": plon}
+            p["location"] = loc
+            nearby.append(p)
+
+    logging.info(f"Nearby: {len(nearby)}; no_loc={no_loc}; incomplete={incomplete}; radius={radius}km")
+
+    # Sort
+    if sort_by == "distance":
+        nearby.sort(key=lambda x: x.get("distance", float("inf")))
+    elif sort_by == "distance_desc":
+        nearby.sort(key=lambda x: x.get("distance", 0), reverse=True)
+
+    return _ok({
+        "products": nearby,
+        "count": len(nearby),
+        "center": {"latitude": lat, "longitude": lon},
+        "radius": radius,
+    })

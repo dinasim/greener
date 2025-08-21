@@ -362,7 +362,12 @@ const MarketplaceScreen = ({ navigation, route }) => {
 
   const handleViewModeChange = (mode) => {
     if (mode === 'map') {
-      navigation.navigate('MapView', { products: filteredPlants, initialLocation: userLocation });
+      navigation.navigate('MapView', {
+        products: filteredPlants,                 
+        initialRegion: userLocation && { latitude: userLocation.latitude, longitude: userLocation.longitude, zoom: 12 },
+        myLocation: userLocation,                
+        showMyLocation: true,
+      });
     } else {
       setViewMode(mode);
     }

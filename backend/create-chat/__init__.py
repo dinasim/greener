@@ -1,270 +1,227 @@
-# create-chat/__init__.py
-import logging
-import json
-import azure.functions as func
-from db_helpers import get_container
-from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
-from firebase_helpers import send_fcm_notification_to_user
-import uuid
+import json, logging, os, uuid, hashlib
 from datetime import datetime
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Python HTTP trigger function for creating chat room processed a request.')
-    
-    # Handle OPTIONS method for CORS preflight
-    if req.method == 'OPTIONS':
-        return handle_options_request()
-    
+import azure.functions as func
+from azure.cosmos import CosmosClient
+from azure.cosmos.exceptions import CosmosHttpResponseError
+
+# ---------------- CORS ----------------
+def _cors_headers():
+    return {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type, Authorization, X-User-Email, X-User-Type, X-Business-ID",
+    }
+
+def _resp(body="", status=200):
+    if isinstance(body, dict):
+        body = json.dumps(body)
+    return func.HttpResponse(body, status_code=status, headers=_cors_headers())
+
+def _err(msg, status=500, details=None):
+    payload = {"error": msg}
+    if details:
+        payload["details"] = details
+    logging.error(f"{msg} :: {details or ''}")
+    return _resp(payload, status)
+
+# ---------------- Cosmos helpers ----------------
+def _cosmos_client():
+    cs = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
+    if not cs:
+        return None, "Missing COSMOSDB__MARKETPLACE_CONNECTION_STRING"
     try:
-        # Get request body
-        request_body = req.get_json()
-        
-        # Validate required fields
-        if not request_body:
-            return create_error_response("Request body is required", 400)
-        
-        sender_id = request_body.get('sender')
-        receiver_id = request_body.get('receiver')
-        plant_id = request_body.get('plantId')
-        initial_message = request_body.get('message')
-        
-        if not sender_id:
-            return create_error_response("Sender ID is required", 400)
-        
-        if not receiver_id:
-            return create_error_response("Receiver ID is required", 400)
-        
-        if not initial_message:
-            return create_error_response("Initial message is required", 400)
-        
-        # Access the marketplace-conversations container
-        conversations_container = get_container("marketplace-conversations")
-        
-        # Create a sorted participants key for querying
-        participants_key = "|".join(sorted([sender_id, receiver_id]))
-        
-        # Check if conversation already exists between these users
-        query = "SELECT * FROM c WHERE c.participantsKey = @participantsKey"
-        parameters = [{"name": "@participantsKey", "value": participants_key}]
-        
-        # If plant_id is provided, check for conversation about this specific plant
-        if plant_id:
-            query += " AND c.plantId = @plantId"
-            parameters.append({"name": "@plantId", "value": plant_id})
-        
-        existing_conversations = list(conversations_container.query_items(
-            query=query,
-            parameters=parameters,
-            enable_cross_partition_query=True
-        ))
-        
-        logging.info(f"Found {len(existing_conversations)} existing conversations")
-        
-        conversation_id = None
-        is_new_conversation = False
-        
-        if existing_conversations:
-            # Use the existing conversation
-            conversation = existing_conversations[0]
-            conversation_id = conversation['id']
-            
-            # Update the conversation with the new message
-            conversation['lastMessage'] = {
-                'text': initial_message,
-                'senderId': sender_id,
-                'timestamp': datetime.utcnow().isoformat()
-            }
-            conversation['lastMessageAt'] = datetime.utcnow().isoformat()
-            
-            # Increment unread count for the receiver
-            if 'unreadCounts' not in conversation:
-                conversation['unreadCounts'] = {}
-            
-            conversation['unreadCounts'][receiver_id] = conversation['unreadCounts'].get(receiver_id, 0) + 1
-            
-            # Update the conversation - use id for both item and partition_key
-            try:
-                conversations_container.replace_item(
-                    item=conversation_id,
-                    body=conversation,
-                    partition_key=conversation_id
-                )
-                logging.info(f"Updated existing conversation {conversation_id}")
-            except Exception as update_error:
-                logging.error(f"Error updating conversation: {str(update_error)}")
-                return create_error_response("Failed to update conversation", 500)
-        else:
-            # Create a new conversation
-            conversation_id = str(uuid.uuid4())
-            current_time = datetime.utcnow().isoformat()
-            is_new_conversation = True
-            
-            new_conversation = {
-                "id": conversation_id,
-                "participants": [sender_id, receiver_id],  # Keep original format for app compatibility
-                "participantsKey": participants_key,  # Add flattened key for querying
-                "createdAt": current_time,
-                "lastMessageAt": current_time,
-                "lastMessage": {
-                    "text": initial_message,
-                    "senderId": sender_id,
-                    "timestamp": current_time
-                },
-                "unreadCounts": {
-                    receiver_id: 1,
-                    sender_id: 0
-                }
-            }
-            
-            if plant_id:
-                new_conversation["plantId"] = plant_id
-            
-            logging.info(f"Creating new conversation {conversation_id}")
-            
-            try:
-                # Create the conversation - using id as the partition key
-                conversations_container.create_item(
-                    body=new_conversation,
-                    partition_key=conversation_id
-                )
-                logging.info(f"Successfully created conversation {conversation_id}")
-            except Exception as create_error:
-                logging.error(f"Error creating conversation: {str(create_error)}")
-                return create_error_response("Failed to create conversation", 500)
-        
-        # Get sender's name for notification
-        sender_name = "Someone"
-        try:
-            users_container = get_container("users")
-            sender_query = "SELECT c.name, c.businessName, c.isBusiness FROM c WHERE c.id = @id OR c.email = @id"
-            sender_params = [{"name": "@id", "value": sender_id}]
-            
-            senders = list(users_container.query_items(
-                query=sender_query,
-                parameters=sender_params,
-                enable_cross_partition_query=True
-            ))
-            
-            if senders:
-                sender = senders[0]
-                if sender.get('isBusiness') and sender.get('businessName'):
-                    sender_name = sender.get('businessName')
-                else:
-                    sender_name = sender.get('name', 'Someone')
-        except Exception as e:
-            logging.warning(f"Error getting sender name: {str(e)}")
-        
-        # Create the initial message
-        try:
-            messages_container = get_container("marketplace-messages")
-            
-            message_id = str(uuid.uuid4())
-            current_time = datetime.utcnow().isoformat()
-            
-            message = {
-                "id": message_id,
-                "conversationId": conversation_id,
-                "senderId": sender_id,
-                "text": initial_message,
-                "timestamp": current_time,
-                "status": {
-                    "delivered": True,
-                    "read": False,
-                    "readAt": None
-                }
-            }
-            
-            messages_container.create_item(body=message)
-            logging.info(f"Created message {message_id} in conversation {conversation_id}")
-        except Exception as msg_error:
-            logging.error(f"Error creating message: {str(msg_error)}")
-            # Continue even if message creation fails
-        
-        # If this is a plant listing, get plant info and update message count
-        plant_name = None
-        if plant_id:
-            try:
-                plants_container = get_container("marketplace-plants")
-                
-                plant_query = "SELECT c.title, c.stats FROM c WHERE c.id = @id"
-                plant_params = [{"name": "@id", "value": plant_id}]
-                
-                plants = list(plants_container.query_items(
-                    query=plant_query,
-                    parameters=plant_params,
-                    enable_cross_partition_query=True
-                ))
-                
-                if plants:
-                    plant = plants[0]
-                    plant_name = plant.get('title')
-                    
-                    # Update message count
-                    if 'stats' not in plant:
-                        plant['stats'] = {}
-                    
-                    plant['stats']['messageCount'] = plant['stats'].get('messageCount', 0) + 1
-                    
-                    plants_container.replace_item(item=plant_id, body=plant)
-            except Exception as e:
-                logging.warning(f"Error updating plant stats: {str(e)}")
-        
-        # Send real-time notification to receiver for new conversations
-        if is_new_conversation:
-            notification_title = f"New message from {sender_name}"
-            if plant_name:
-                notification_body = f"About {plant_name}: {initial_message[:100]}..."
-            else:
-                notification_body = f"{initial_message[:100]}..."
-            
-            notification_data = {
-                'type': 'marketplace_message',
-                'conversationId': conversation_id,
-                'senderId': sender_id,
-                'senderName': sender_name,
-                'plantName': plant_name or 'a plant',
-                'screen': 'MessagesScreen',
-                'params': json.dumps({
-                    'conversationId': conversation_id,
-                    'sellerId': sender_id
-                })
-            }
-            
-            # Send notification to receiver using Firebase Admin SDK
-            users_container = get_container("users")
-            send_fcm_notification_to_user(users_container, receiver_id, notification_title, notification_body, notification_data)
-        
-        # Get seller name for response
-        seller_name = "User"
-        try:
-            if is_new_conversation:
-                users_container = get_container("users")
-                user_query = "SELECT c.name FROM c WHERE c.id = @id OR c.email = @email"
-                user_params = [
-                    {"name": "@id", "value": receiver_id},
-                    {"name": "@email", "value": receiver_id}
-                ]
-                
-                users = list(users_container.query_items(
-                    query=user_query,
-                    parameters=user_params,
-                    enable_cross_partition_query=True
-                ))
-                
-                if users:
-                    seller_name = users[0].get('name', 'User')
-        except Exception as e:
-            logging.warning(f"Error getting seller name: {str(e)}")
-        
-        return create_success_response({
-            "success": True,
-            "conversationId": conversation_id,
-            "messageId": message_id if 'message_id' in locals() else None,
-            "sellerName": seller_name,
-            "plantName": plant_name,
-            "isNewConversation": is_new_conversation
-        }, 201)
-    
+        return CosmosClient.from_connection_string(cs), None
     except Exception as e:
-        logging.error(f"Error in create-chat function: {str(e)}")
-        return create_error_response(str(e), 500)
+        return None, f"Cosmos client error: {e}"
+
+def _db_and_containers(client):
+    db_name = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "greener-marketplace-db")
+    conv_name = os.environ.get("CONVERSATIONS_CONTAINER", "marketplace-conversations")
+    msg_name  = os.environ.get("MESSAGES_CONTAINER", "marketplace-messages")
+    db = client.get_database_client(db_name)
+    return db, db.get_container_client(conv_name), db.get_container_client(msg_name)
+
+def _pk_field_from_path(pk_path: str, default_field: str):
+    return (pk_path or "").lstrip("/") or default_field
+
+def _compute_conv_pk_value(pk_field: str, *, room_id: str, participants_key: str):
+    """Map the conversation PK field to the right value."""
+    fld = (pk_field or "").strip()
+    if fld in ("id", "roomId", "conversationId"):
+        return room_id
+    if fld in ("participantsKey", "participants_key", "pk"):
+        return participants_key
+    # sensible default
+    return room_id
+
+def _ensure_field(doc: dict, field: str, value):
+    if doc.get(field) is None:
+        doc[field] = value
+    return doc[field]
+
+def _latest_ts(doc: dict) -> str:
+    return str(doc.get("lastMessageAt") or doc.get("createdAt") or "")
+
+# ---------------- Function entry ----------------
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("createChatRoom request")
+
+    if req.method == "OPTIONS":
+        return _resp("", 204)
+
+    # Parse body + allow both naming styles
+    try:
+        body = req.get_json()
+    except Exception:
+        return _err("Invalid JSON body", 400, "Body is not valid JSON")
+
+    sender = (body.get("sender") or body.get("senderId") or "").strip().lower()
+    receiver = (body.get("receiver") or body.get("recipientId") or "").strip().lower()
+    plant_id = body.get("plantId")  # optional (e.g., "order:123")
+    message_text = body.get("message") or body.get("text")  # optional now
+
+    if not sender:
+        return _err("Sender ID is required", 400)
+    if not receiver:
+        return _err("Receiver ID is required", 400)
+
+    conv_pk_path = os.environ.get("CONVERSATIONS_PK", "/id")
+    msg_pk_path  = os.environ.get("MESSAGES_PK", "/conversationId")
+    conv_pk_field = _pk_field_from_path(conv_pk_path, "id")
+    msg_pk_field  = _pk_field_from_path(msg_pk_path, "conversationId")
+    logging.info(f"PK fields -> conversations='{conv_pk_field}' | messages='{msg_pk_field}'")
+
+    client, c_err = _cosmos_client()
+    if not client:
+        return _err("Database connection failed", 500, c_err)
+
+    try:
+        _, convs, msgs = _db_and_containers(client)
+
+        # ---- Deterministic room id/idempotency ----
+        participants_key = "|".join(sorted([sender, receiver]))
+        raw_room_key = participants_key if not plant_id else f"{participants_key}|{plant_id}"
+        room_id = hashlib.sha1(raw_room_key.encode("utf-8")).hexdigest()
+
+        now = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+        # ---- Query for existing conversation (prefer partitioned read when possible) ----
+        items = []
+        try:
+            if conv_pk_field in ("participantsKey",):
+                q = "SELECT * FROM c WHERE c.participantsKey = @pk" + (" AND c.plantId = @pid" if plant_id else "")
+                params = [{"name": "@pk", "value": participants_key}]
+                if plant_id:
+                    params.append({"name": "@pid", "value": plant_id})
+                items = list(convs.query_items(
+                    query=q,
+                    parameters=params,
+                    partition_key=participants_key,
+                    enable_cross_partition_query=False
+                ))
+            elif conv_pk_field in ("id", "roomId", "conversationId"):
+                q = "SELECT * FROM c WHERE c.roomId = @rid OR c.id = @rid"
+                items = list(convs.query_items(
+                    query=q,
+                    parameters=[{"name":"@rid","value": room_id}],
+                    partition_key=room_id,
+                    enable_cross_partition_query=False
+                ))
+            else:
+                # Fallback cross-partition
+                q = "SELECT * FROM c WHERE c.participantsKey = @pk"
+                params = [{"name":"@pk","value": participants_key}]
+                if plant_id:
+                    q += " AND c.plantId = @pid"
+                    params.append({"name":"@pid","value": plant_id})
+                items = list(convs.query_items(
+                    query=q, parameters=params, enable_cross_partition_query=True
+                ))
+        except Exception as e:
+            logging.warning(f"Partitioned query fell back to cross-partition: {e}")
+            q = "SELECT * FROM c WHERE c.participantsKey = @pk"
+            params = [{"name":"@pk","value": participants_key}]
+            if plant_id:
+                q += " AND c.plantId = @pid"
+                params.append({"name":"@pid","value": plant_id})
+            items = list(convs.query_items(query=q, parameters=params, enable_cross_partition_query=True))
+
+        is_new = False
+        conversation_id = room_id  # deterministic
+        conv = None
+
+        if items:
+            conv = max(items, key=_latest_ts)
+            # update timestamps/last message if we have one to add
+            if message_text:
+                conv["lastMessageAt"] = now
+                conv["lastMessage"] = {"text": message_text, "senderId": sender, "timestamp": now}
+                unread = conv.get("unreadCounts", {})
+                unread[receiver] = unread.get(receiver, 0) + 1
+                conv["unreadCounts"] = unread
+        else:
+            is_new = True
+            conv = {
+                "id": conversation_id,
+                "roomId": conversation_id,            # keep both for flexibility
+                "participants": [sender, receiver],
+                "participantsKey": participants_key,
+                "createdAt": now,
+                "lastMessageAt": now if message_text else None,
+                "lastMessage": {"text": message_text, "senderId": sender, "timestamp": now} if message_text else None,
+                "unreadCounts": {receiver: 1, sender: 0} if message_text else {receiver: 0, sender: 0},
+            }
+            if plant_id:
+                conv["plantId"] = plant_id
+
+        # Ensure PK field value is correct and present
+        conv_pk_value = _compute_conv_pk_value(conv_pk_field, room_id=conversation_id, participants_key=participants_key)
+        _ensure_field(conv, conv_pk_field, conv_pk_value)
+
+        # Upsert with explicit partition key (safer)
+        conv = convs.upsert_item(body=conv, partition_key=conv_pk_value)
+
+        # ---- Create initial message (best effort) ----
+        message_id = None
+        if message_text:
+            try:
+                msg_pk_value = conversation_id if msg_pk_field == "conversationId" else conv.get(msg_pk_field) or conversation_id
+                message_id = str(uuid.uuid4())
+                msg = {
+                    "id": message_id,
+                    "conversationId": conversation_id,
+                    "senderId": sender,
+                    "text": message_text,
+                    "timestamp": now,
+                    "status": {"delivered": True, "read": False, "readAt": None},
+                }
+                msg[msg_pk_field] = msg_pk_value
+                msgs.create_item(body=msg, partition_key=msg_pk_value)
+            except Exception as e:
+                logging.warning(f"Create message failed: {e}")
+
+        return _resp(
+            {
+                "success": True,
+                "conversationId": conversation_id,
+                "isNewConversation": is_new,
+                "messageId": message_id,
+            },
+            201 if is_new else 200,
+        )
+
+    except CosmosHttpResponseError as ce:
+        sc = getattr(ce, "status_code", None)
+        headers = getattr(ce, "headers", {}) or {}
+        details = {
+            "status_code": sc,
+            "sub_status": headers.get("x-ms-substatus") or headers.get("x-ms-sub-status"),
+            "activity_id": headers.get("x-ms-activity-id"),
+            "request_charge": headers.get("x-ms-request-charge"),
+            "message": getattr(ce, "message", None) or str(ce),
+        }
+        return _err("Cosmos DB error", 500, json.dumps(details))
+    except Exception as e:
+        return _err("Unexpected server error", 500, str(e))

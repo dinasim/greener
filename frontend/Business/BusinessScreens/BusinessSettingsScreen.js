@@ -1,1514 +1,695 @@
-// Business/BusinessScreens/BusinessSettingsScreen.js - ENHANCED ANDROID OPTIMIZED & REAL BACKEND
+// Business/BusinessScreens/BusinessSettingsScreen.js
+// One combined screen: Details by default + Notifications/Inventory/Orders tabs.
+// Fixes: correct default tab, robust session handling w/ cached fallback,
+// proper save payload, and correct update call signature.
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  SafeAreaView,
-  Switch,
-  TextInput,
-  Alert,
-  ActivityIndicator,
-  Animated,
-  Platform,
-  StatusBar,
-  Dimensions,
-  BackHandler,
-  KeyboardAvoidingView,
-  Keyboard,
-  Image
+  View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView,
+  StatusBar, Image, Alert, Platform, ActivityIndicator, TextInput,
+  Switch, KeyboardAvoidingView, Dimensions, Animated
 } from 'react-native';
-import { 
-  MaterialCommunityIcons, 
-  MaterialIcons 
-} from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
 
-// FIXED: Import proper business services instead of manual API calls
-import { 
+import {
   getBusinessProfile,
+  updateBusinessProfile,
   createBusinessProfile
 } from '../services/businessApi';
 
-const { width, height } = Dimensions.get('window');
+const DEFAULT_BUSINESS_IMAGE =
+  'https://images.unsplash.com/photo-1441986300917-64674bd600d8?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
+
+const CONTENT_MAX_WIDTH = 820;
+const TABS = [
+  { key: 'details', label: 'Details', icon: 'badge' },
+  { key: 'notifications', label: 'Notifications', icon: 'notifications' },
+  { key: 'inventory', label: 'Inventory', icon: 'inventory' },
+  { key: 'orders', label: 'Orders', icon: 'receipt' },
+];
 
 export default function BusinessSettingsScreen({ navigation, route }) {
-  // ===== STATE MANAGEMENT - ANDROID OPTIMIZED =====
-  const [settings, setSettings] = useState({
-    notifications: {
-      newOrders: true,
-      lowStock: true,
-      customerMessages: true,
-      pushNotifications: true,
-    },
-    business: {
-      businessName: '',
-      businessType: 'nursery',
-      description: '',
-      contactEmail: '',
-      contactPhone: '',
-      website: '',
-      address: {
-        street: '',
-        city: '',
-        postalCode: '',
-        country: 'United States',
-      },
-      businessHours: {
-        monday: { open: '09:00', close: '17:00', isClosed: false },
-        tuesday: { open: '09:00', close: '17:00', isClosed: false },
-        wednesday: { open: '09:00', close: '17:00', isClosed: false },
-        thursday: { open: '09:00', close: '17:00', isClosed: false },
-        friday: { open: '09:00', close: '17:00', isClosed: false },
-        saturday: { open: '10:00', close: '16:00', isClosed: false },
-        sunday: { open: '10:00', close: '16:00', isClosed: false }, // FIXED: Remove default closed for Sunday
-      },
-      socialMedia: {
-        website: '',
-        instagram: '',
-        facebook: '',
-      },
-    },
-    inventory: {
-      lowStockThreshold: 5,
-    },
-    orders: {
-      autoConfirm: false,
-      requireDeposit: false,
-      maxOrderQuantity: 100,
-      orderTimeout: 24, // hours
-      allowCancellation: true,
-      sendConfirmationEmail: true,
-    },
-  });
-  
+  const [tab, setTab] = useState(route?.params?.initialTab || 'details');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [activeSection, setActiveSection] = useState('notifications');
+  const [profile, setProfile] = useState(null);
+  const [edit, setEdit] = useState(false);
+  const [form, setForm] = useState(null);
   const [businessId, setBusinessId] = useState(null);
   const [userEmail, setUserEmail] = useState(null);
+  const [lastSaved, setLastSaved] = useState(null);
   const [error, setError] = useState(null);
-  const [networkConnected, setNetworkConnected] = useState(true);
-  const [lastSavedTime, setLastSavedTime] = useState(null);
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [originalSettings, setOriginalSettings] = useState(null);
-  
-  // ===== ANIMATION REFS - ANDROID OPTIMIZED =====
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
+
   const saveAnim = useRef(new Animated.Value(0)).current;
-  
-  // ===== AUTO-REFRESH TIMER =====
-  const refreshTimer = useRef(null);
-  const autoRefreshInterval = 60000; // 60 seconds for settings
 
-  // ===== ANDROID BACK HANDLER =====
-  useFocusEffect(
-    useCallback(() => {
-      const onBackPress = () => {
-        if (hasUnsavedChanges) {
-          Alert.alert(
-            'Unsaved Changes',
-            'You have unsaved changes. Save before leaving?',
-            [
-              { text: 'Discard', style: 'destructive', onPress: () => navigation.goBack() },
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Save', onPress: () => saveSettings().then(() => navigation.goBack()) }
-            ]
-          );
-          return true;
-        }
-        navigation.goBack();
-        return true;
-      };
-
-    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-    return () => subscription.remove();
-    }, [hasUnsavedChanges, navigation])
-  );
-
-  // ===== FOCUS EFFECT FOR INITIALIZATION =====
-  useFocusEffect(
-    useCallback(() => {
-      console.log('⚙️ BusinessSettingsScreen focused - loading settings...');
-      initializeSettings();
-      setupAutoRefresh();
-      startEntranceAnimation();
-      
-      return () => {
-        console.log('⚙️ BusinessSettingsScreen unfocused - cleanup...');
-        if (refreshTimer.current) {
-          clearInterval(refreshTimer.current);
-        }
-      };
-    }, [])
-  );
-
-  // ===== ENTRANCE ANIMATION - ANDROID OPTIMIZED =====
-  const startEntranceAnimation = useCallback(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 500,
-        useNativeDriver: Platform.OS !== 'web',
-      }),
-    ]).start();
-  }, []);
-
-  // ===== INITIALIZE SETTINGS =====
-  const initializeSettings = useCallback(async () => {
+  // ---------- load ----------
+  const load = useCallback(async () => {
     try {
-      console.log('📱 Initializing business settings...');
       setIsLoading(true);
       setError(null);
-      
-      // Get business info
-      const [email, storedBusinessId] = await Promise.all([
-        AsyncStorage.getItem('userEmail'),
-        AsyncStorage.getItem('businessId')
-      ]);
-      
-      console.log('📊 Business data loaded:', { email, storedBusinessId });
-      
+
+      const email =
+        route?.params?.userEmail ||
+        (await AsyncStorage.getItem('userEmail'));
+
+      const storedBusinessId =
+        route?.params?.businessId ||
+        (await AsyncStorage.getItem('businessId')) ||
+        email;
+
       if (!email) {
-        console.warn('⚠️ No user email found');
-        navigation.replace('Login');
+        // fall back to cached profile if any
+        const cachedStr = await AsyncStorage.getItem('businessProfile');
+        if (cachedStr) {
+          const cached = JSON.parse(cachedStr);
+          setUserEmail(cached.email || null);
+          setBusinessId(cached.id || null);
+          setProfile(cached);
+          setForm(JSON.parse(JSON.stringify(cached)));
+          setError('You are offline or signed out. Using cached profile.');
+          setIsLoading(false);
+          return;
+        }
+        setError('No active session. Please sign in.');
+        setIsLoading(false);
         return;
       }
-      
+
       setUserEmail(email);
-      const currentBusinessId = route.params?.businessId || storedBusinessId || email;
-      setBusinessId(currentBusinessId);
-      
-      // Load settings from backend
-      await loadSettings(currentBusinessId);
-      
-    } catch (error) {
-      console.error('❌ Error initializing settings:', error);
-      setError('Failed to initialize settings');
+      setBusinessId(storedBusinessId);
+
+      const data = await getBusinessProfile(storedBusinessId);
+      const p = data?.business || data?.profile || data || {};
+      const normalized = normalizeProfile(p, email, storedBusinessId);
+
+      setProfile(normalized);
+      setForm(JSON.parse(JSON.stringify(normalized)));
+      await AsyncStorage.setItem('businessProfile', JSON.stringify(normalized));
+    } catch (e) {
+      console.warn('Load failed, trying cache:', e?.message);
+      const cached = await AsyncStorage.getItem('businessProfile');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        setProfile(parsed);
+        setForm(JSON.parse(JSON.stringify(parsed)));
+        setError('Using cached profile (offline).');
+      } else {
+        setError('Failed to load profile.');
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [route.params]);
+  }, [navigation, route?.params]);
 
-  // ===== AUTO-REFRESH SETUP =====
-  const setupAutoRefresh = useCallback(() => {
-    if (refreshTimer.current) {
-      clearInterval(refreshTimer.current);
-    }
-    
-    refreshTimer.current = setInterval(() => {
-      if (!isSaving && networkConnected && businessId) {
-        console.log('🔄 Auto-refreshing settings...');
-        loadSettings(businessId, true); // Silent refresh
-      }
-    }, autoRefreshInterval);
-    
-    console.log(`⏰ Settings auto-refresh set up for every ${autoRefreshInterval/1000} seconds`);
-  }, [isSaving, networkConnected, businessId]);
+  useEffect(() => { load(); }, [load]);
 
-  // ===== LOAD SETTINGS - REAL BACKEND ONLY =====
-  const loadSettings = useCallback(async (currentBusinessId, silentRefresh = false) => {
-    if (!currentBusinessId) {
-      console.log('⏳ Business ID not ready yet...');
-      return;
-    }
-    
-    try {
-      console.log('📡 Loading REAL settings for business:', currentBusinessId);
-      // Directly load from backend, no health check
-      try {
-        const profileData = await getBusinessProfile(currentBusinessId);
-        console.log('✅ REAL Business profile loaded:', Object.keys(profileData));
-        // Map backend data to settings structure
-        const mappedSettings = {
-          notifications: {
-            newOrders: profileData.settings?.notifications ?? true,
-            lowStock: profileData.settings?.lowStockThreshold !== undefined,
-            customerMessages: profileData.settings?.Messages ?? true,
-            pushNotifications: profileData.settings?.notifications ?? true,
-          },
-          business: {
-            businessName: profileData.businessName || '',
-            businessType: profileData.businessType || 'nursery',
-            description: profileData.description || '',
-            contactEmail: profileData.contactEmail || profileData.email || '',
-            contactPhone: profileData.contactPhone || '',
-            website: profileData.socialMedia?.website || '',
-            address: {
-              street: profileData.address?.street || '',
-              city: profileData.address?.city || '',
-              postalCode: profileData.address?.postalCode || '',
-              country: profileData.address?.country || 'United States',
-            },
-            businessHours: profileData.businessHours || settings.business.businessHours,
-            socialMedia: {
-              website: profileData.socialMedia?.website || '',
-              instagram: profileData.socialMedia?.instagram || '',
-              facebook: profileData.socialMedia?.facebook || '',
-            },
-            logo: profileData.logo || null,
-          },
-          inventory: {
-            lowStockThreshold: profileData.settings?.lowStockThreshold || 5,
-          },
-          orders: {
-            autoConfirm: false,
-            requireDeposit: false,
-            maxOrderQuantity: 100,
-            orderTimeout: 24,
-            allowCancellation: true,
-            sendConfirmationEmail: true,
-          },
-        };
-        setSettings(mappedSettings);
-        setOriginalSettings(JSON.parse(JSON.stringify(mappedSettings)));
-        setHasUnsavedChanges(false);
-        // Cache the settings
-        await AsyncStorage.setItem('businessSettings', JSON.stringify(mappedSettings));
-        if (!silentRefresh) {
-          Animated.sequence([
-            Animated.timing(saveAnim, {
-              toValue: 1,
-              duration: 200,
-              useNativeDriver: Platform.OS !== 'web',
-            }),
-            Animated.timing(saveAnim, {
-              toValue: 0,
-              duration: 200,
-              useNativeDriver: Platform.OS !== 'web',
-            }),
-          ]).start();
-        }
-      } catch (err) {
-        console.error('❌ Error loading REAL settings:', err);
-        setNetworkConnected(false);
-        // Error categorization and user messaging
-        let errorMessage = 'Unable to load settings';
-        let useCache = false;
-        if (err.message.includes('network') || err.message.includes('fetch') || err.message.includes('timeout')) {
-          errorMessage = 'Network connection failed. Please check your internet connection.';
-          useCache = true;
-        } else if (err.message.includes('401') || err.message.includes('403')) {
-          errorMessage = 'Authentication failed. Please log in again.';
-        } else {
-          errorMessage = err.message || 'An unexpected error occurred';
-          useCache = true;
-        }
-        // Try to load cached settings as fallback
-        if (useCache) {
-          try {
-            const cachedSettings = await AsyncStorage.getItem('businessSettings');
-            if (cachedSettings && !silentRefresh) {
-              console.log('📱 Loading settings from cache as fallback...');
-              const parsed = JSON.parse(cachedSettings);
-              setSettings(parsed);
-              setOriginalSettings(JSON.parse(JSON.stringify(parsed)));
-              setHasUnsavedChanges(false);
-              
-              Alert.alert(
-                'Offline Mode', 
-                'Using cached settings. Some features may be limited until reconnected.',
-                [{ text: 'OK', style: 'default' }]
-              );
-              return;
-            }
-          } catch (cacheError) {
-            console.warn('Failed to load cached settings:', cacheError);
-          }
-        }
-        if (!silentRefresh) {
-          setError(errorMessage);
-        }
-      }
-    } catch (error) {
-      setError('Unable to load settings');
-    }
-  }, [settings.business.businessHours, saveAnim]);
+  // ---------- helpers ----------
+  function normalizeProfile(p, email, id) {
+    // accept coords from either p.location or p.address
+    const addr = p.address || {};
+    const loc  = p.location || {};
+    const addressOut = {
+      street: addr.street || '',
+      city: addr.city || '',
+      postalCode: addr.postalCode || '',
+      country: addr.country || 'Israel',
+      latitude: addr.latitude ?? loc.latitude,
+      longitude: addr.longitude ?? loc.longitude,
+      formattedAddress: addr.formattedAddress || '',
+    };
 
-  // ===== SAVE SETTINGS - REAL BACKEND ONLY =====
-  const saveSettings = useCallback(async () => {
-    if (!businessId) {
-      Alert.alert('Error', 'Business ID not found');
-      return;
-    }
-    
+    return {
+      id: p.id || id,
+      email: p.email || email,
+      businessName: p.businessName || 'My Business',
+      businessType: p.businessType || 'Plant Business',
+      description: p.description || '',
+      contactPhone: p.contactPhone || p.phone || '',
+      contactEmail: p.contactEmail || email,
+      logo: p.logo || '',
+      socialMedia: {
+        instagram: p.socialMedia?.instagram || '',
+        facebook: p.socialMedia?.facebook || '',
+        website: p.socialMedia?.website || p.website || '',
+      },
+      address: addressOut,
+      businessHours: p.businessHours || {
+        monday: { open: '09:00', close: '17:00' },
+        tuesday: { open: '09:00', close: '17:00' },
+        wednesday: { open: '09:00', close: '17:00' },
+        thursday: { open: '09:00', close: '17:00' },
+        friday: { open: '09:00', close: '17:00' },
+        saturday: { open: '10:00', close: '16:00' },
+        sunday: { open: '10:00', close: '16:00' },
+      },
+      settings: {
+        notifications: {
+          newOrders: !!(p.settings?.notifications ?? true),
+          lowStock: p.settings?.lowStockThreshold !== undefined,
+          customerMessages: !!(p.settings?.Messages ?? true),
+          pushNotifications: !!(p.settings?.notifications ?? true),
+        },
+        inventory: {
+          lowStockThreshold: p.settings?.lowStockThreshold ?? 5,
+        },
+        orders: {
+          autoConfirm: p.settings?.autoConfirm ?? false,
+          requireDeposit: p.settings?.requireDeposit ?? false,
+          maxOrderQuantity: p.settings?.maxOrderQuantity ?? 100,
+          orderTimeout: p.settings?.orderTimeout ?? 24,
+          allowCancellation: p.settings?.allowCancellation ?? true,
+          sendConfirmationEmail: p.settings?.sendConfirmationEmail ?? true,
+        },
+      },
+      joinDate: p.joinDate || new Date().toISOString(),
+      isVerified: !!p.isVerified,
+    };
+  }
+
+  const setField = (path, value) => {
+    setForm(prev => {
+      const next = JSON.parse(JSON.stringify(prev));
+      const parts = path.split('.');
+      let cur = next;
+      for (let i = 0; i < parts.length - 1; i++) cur = cur[parts[i]];
+      cur[parts[parts.length - 1]] = value;
+      return next;
+    });
+  };
+
+  // ---------- save ----------
+  const buildSavePayload = () => ({
+    id: form.id,
+    email: userEmail,
+    businessName: form.businessName,
+    businessType: form.businessType,
+    description: form.description,
+    contactEmail: form.contactEmail,
+    contactPhone: form.contactPhone,
+    address: form.address,
+    businessHours: form.businessHours,
+    socialMedia: form.socialMedia,
+    logo: form.logo,
+    settings: {
+      notifications: form.settings.notifications.pushNotifications,
+      Messages: form.settings.notifications.customerMessages,
+      lowStockThreshold: Number(form.settings.inventory.lowStockThreshold) || 5,
+      autoConfirm: !!form.settings.orders.autoConfirm,
+      requireDeposit: !!form.settings.orders.requireDeposit,
+      maxOrderQuantity: Number(form.settings.orders.maxOrderQuantity) || 100,
+      orderTimeout: Number(form.settings.orders.orderTimeout) || 24,
+      allowCancellation: !!form.settings.orders.allowCancellation,
+      sendConfirmationEmail: !!form.settings.orders.sendConfirmationEmail,
+    },
+    isVerified: !!form.isVerified,
+  });
+
+  const onSave = async () => {
     try {
       setIsSaving(true);
-      setError(null);
-      
-      console.log('💾 Saving REAL settings to backend...');
-      // No health check, just try to save
-      const businessProfileData = {
-        id: businessId,
-        email: userEmail,
-        businessName: settings.business.businessName,
-        businessType: settings.business.businessType,
-        description: settings.business.description,
-        contactEmail: settings.business.contactEmail,
-        contactPhone: settings.business.contactPhone,
-        address: settings.business.address,
-        businessHours: settings.business.businessHours,
-        socialMedia: settings.business.socialMedia,
-        settings: {
-          notifications: settings.notifications.pushNotifications,
-          Messages: settings.privacy.allowDirectMessages,
-          lowStockThreshold: settings.inventory.lowStockThreshold,
-        },
-        isVerified: settings.privacy.allowReviews,
-      };
-      
-      // Save to REAL backend
-      const result = await createBusinessProfile(businessProfileData);
-      console.log('✅ Settings saved to backend successfully:', result);
-      
-      // Save to local storage as cache
-      await AsyncStorage.setItem('businessSettings', JSON.stringify(settings));
-      await AsyncStorage.setItem('businessProfile', JSON.stringify(businessProfileData));
-      
-      setOriginalSettings(JSON.parse(JSON.stringify(settings)));
-      setHasUnsavedChanges(false);
-      setLastSavedTime(new Date());
-      
-      // Success animation
-      Animated.sequence([
-        Animated.timing(saveAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
-        Animated.timing(saveAnim, {
-          toValue: 0,
-          duration: 300,
-          useNativeDriver: Platform.OS !== 'web',
-        }),
-      ]).start();
-      
-      Alert.alert('✅ Success', 'Settings saved successfully!');
-      
-    } catch (error) {
-      console.error('❌ Error saving REAL settings:', error);
-      setNetworkConnected(false);
-      
-      const errorMessage = error.message.includes('network') || error.message.includes('fetch') 
-        ? 'Network connection failed. Please check your internet connection.'
-        : error.message.includes('401') || error.message.includes('403')
-        ? 'Authentication failed. Please log in again.'
-        : error.message || 'Failed to save settings';
-      
-      Alert.alert('❌ Error', errorMessage);
+      const payload = buildSavePayload();
+
+      // IMPORTANT: updateBusinessProfile expects ONLY the payload
+      let res;
+      if (typeof updateBusinessProfile === 'function') {
+        res = await updateBusinessProfile(payload);
+      } else {
+        res = await createBusinessProfile(payload);
+      }
+
+      if (res && (res.success || res.updated || res.id || res.ok)) {
+        setProfile(JSON.parse(JSON.stringify(form)));
+        await AsyncStorage.setItem('businessProfile', JSON.stringify(form));
+        setEdit(false);
+        setLastSaved(new Date());
+        Animated.sequence([
+          Animated.timing(saveAnim, { toValue: 1, duration: 250, useNativeDriver: true }),
+          Animated.timing(saveAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+        ]).start();
+        Alert.alert('Saved', 'Settings updated successfully.');
+      } else {
+        throw new Error('Backend rejected update');
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'Failed to save.');
     } finally {
       setIsSaving(false);
     }
-  }, [businessId, userEmail, settings]);
-
-  // ===== HANDLE SETTING CHANGE =====
-  const handleSettingChange = useCallback((section, key, value, subKey = null) => {
-    setSettings(prev => {
-      let newSettings;
-      if (subKey) {
-        newSettings = {
-          ...prev,
-          [section]: {
-            ...prev[section],
-            [key]: {
-              ...prev[section][key],
-              [subKey]: value
-            }
-          }
-        };
-      } else {
-        newSettings = {
-          ...prev,
-          [section]: {
-            ...prev[section],
-            [key]: value
-          }
-        };
-      }
-      
-      // Check if settings have changed
-      const hasChanges = JSON.stringify(newSettings) !== JSON.stringify(originalSettings);
-      setHasUnsavedChanges(hasChanges);
-      
-      return newSettings;
-    });
-  }, [originalSettings]);
-
-  // ===== HANDLE BUSINESS HOURS CHANGE =====
-  const handleBusinessHoursChange = useCallback((day, field, value) => {
-    setSettings(prev => {
-      const newSettings = {
-        ...prev,
-        business: {
-          ...prev.business,
-          businessHours: {
-            ...prev.business.businessHours,
-            [day]: {
-              ...prev.business.businessHours[day],
-              [field]: value
-            }
-          }
-        }
-      };
-      
-      const hasChanges = JSON.stringify(newSettings) !== JSON.stringify(originalSettings);
-      setHasUnsavedChanges(hasChanges);
-      
-      return newSettings;
-    });
-  }, [originalSettings]);
-
-  // ===== HANDLE RESET SETTINGS =====
-  const handleResetSettings = useCallback(() => {
-    Alert.alert(
-      'Reset Settings',
-      'Are you sure you want to reset all settings to their last saved values? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: () => {
-            if (originalSettings) {
-              setSettings(JSON.parse(JSON.stringify(originalSettings)));
-              setHasUnsavedChanges(false);
-              Alert.alert('Settings Reset', 'All settings have been reset to their saved values');
-            }
-          }
-        }
-      ]
-    );
-  }, [originalSettings]);
-
-  // ===== REAL LOGOUT FUNCTIONALITY =====
-  const handleLogout = useCallback(async () => {
-    Alert.alert(
-      'Sign Out',
-      'Are you sure you want to sign out of your business account?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign Out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              console.log('🚪 Signing out business user...');
-              
-              // Clear all stored business data
-              await Promise.all([
-                AsyncStorage.removeItem('userEmail'),
-                AsyncStorage.removeItem('businessId'),
-                AsyncStorage.removeItem('userType'),
-                AsyncStorage.removeItem('isBusinessUser'),
-                AsyncStorage.removeItem('businessProfile'),
-                AsyncStorage.removeItem('businessSettings'),
-                AsyncStorage.removeItem('googleAuthToken'),
-                AsyncStorage.removeItem('userName')
-              ]);
-              
-              console.log('✅ Business user signed out successfully');
-              
-              // Navigate to welcome screen
-              navigation.reset({
-                index: 0,
-                routes: [{ name: 'PersonaSelection' }]
-              });
-              
-            } catch (error) {
-              console.error('❌ Error during logout:', error);
-              Alert.alert('Error', 'Failed to sign out. Please try again.');
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        }
-      ]
-    );
-  }, [navigation]);
-
-  // ===== REAL NAVIGATION HANDLERS =====
-  const handleBusinessProfileEdit = useCallback(() => {
-    navigation.navigate('BusinessProfileScreen', { businessId });
-  }, [businessId, navigation]);
-
-  const handleNotificationSettings = useCallback(() => {
-    navigation.navigate('NotificationSettingsScreen', { businessId });
-  }, [businessId, navigation]);
-
-  const handleCustomerManagement = useCallback(() => {
-    navigation.navigate('CustomerListScreen', { businessId });
-  }, [businessId, navigation]);
-
-  const handleInventoryManagement = useCallback(() => {
-    navigation.navigate('AddInventoryScreen', { 
-      businessId,
-      showInventory: true 
-    });
-  }, [businessId, navigation]);
-
-  const handleOrderManagement = useCallback(() => {
-    navigation.navigate('BusinessOrdersScreen', { businessId });
-  }, [businessId, navigation]);
-
-  // ===== RENDER SECTION TABS =====
-  const renderSectionTabs = () => {
-    const sections = [
-      { key: 'notifications', label: 'Notifications', icon: 'notifications' },
-      { key: 'business', label: 'Business', icon: 'business' },
-      { key: 'inventory', label: 'Inventory', icon: 'inventory' },
-      { key: 'orders', label: 'Orders', icon: 'receipt' },
-    ];
-
-    return (
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tabsContainer}>
-        <View style={styles.tabs}>
-          {sections.map((section) => (
-            <TouchableOpacity
-              key={section.key}
-              style={[
-                styles.tab,
-                activeSection === section.key && styles.activeTab
-              ]}
-              onPress={() => setActiveSection(section.key)}
-              activeOpacity={0.7}
-            >
-              <MaterialIcons 
-                name={section.icon} 
-                size={20} 
-                color={activeSection === section.key ? '#4CAF50' : '#666'} 
-              />
-              <Text style={[
-                styles.tabText,
-                activeSection === section.key && styles.activeTabText
-              ]}>
-                {section.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </ScrollView>
-    );
   };
 
-  // ===== RENDER NOTIFICATIONS SETTINGS =====
-  const renderNotificationsSettings = () => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>
-        <MaterialIcons name="notifications" size={20} color="#4CAF50" />
-        {' '}Push Notifications
-      </Text>
-      
-      {Object.entries(settings.notifications).map(([key, value]) => (
-        <View key={key} style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>
-              {key === 'newOrders' && 'New Orders'}
-              {key === 'lowStock' && 'Low Stock Alerts'}
-              {key === 'customerMessages' && 'Customer Messages'}
-            </Text>
-            <Text style={styles.settingDescription}>
-              {key === 'newOrders' && 'Get notified when new orders arrive'}
-              {key === 'lowStock' && 'Alert when inventory runs low'}
-              {key === 'customerMessages' && 'Notify when customers send messages'}
-            </Text>
-          </View>
-          <Switch
-            value={value}
-            onValueChange={(newValue) => handleSettingChange('notifications', key, newValue)}
-            trackColor={{ false: '#ddd', true: '#4CAF50' }}
-            thumbColor={value ? '#fff' : '#f4f3f4'}
-            ios_backgroundColor="#ddd"
-          />
-        </View>
-      ))}
-    </View>
-  );
-
-  // ===== RENDER BUSINESS SETTINGS =====
-  const renderBusinessSettings = () => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>
-        <MaterialIcons name="business" size={20} color="#4CAF50" />
-        {' '}Business Information
-      </Text>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Business Name *</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.businessName}
-          onChangeText={(value) => handleSettingChange('business', 'businessName', value)}
-          placeholder="Your business name"
-          placeholderTextColor="#999"
-        />
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Business Type</Text>
-        <View style={styles.businessTypeContainer}>
-          {['nursery', 'garden center', 'tool supplier', 'landscape service', 'other'].map((type) => (
-            <TouchableOpacity
-              key={type}
-              style={[
-                styles.businessTypeOption,
-                settings.business.businessType === type && styles.businessTypeSelected
-              ]}
-              onPress={() => handleSettingChange('business', 'businessType', type)}
-            >
-              <Text style={[
-                styles.businessTypeText,
-                settings.business.businessType === type && styles.businessTypeSelectedText
-              ]}>
-                {type.charAt(0).toUpperCase() + type.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Description</Text>
-        <TextInput
-          style={[styles.textInput, styles.textArea]}
-          value={settings.business.description}
-          onChangeText={(value) => handleSettingChange('business', 'description', value)}
-          placeholder="Describe your business..."
-          placeholderTextColor="#999"
-          multiline
-          numberOfLines={3}
-        />
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Contact Email *</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.contactEmail}
-          onChangeText={(value) => handleSettingChange('business', 'contactEmail', value)}
-          placeholder="business@example.com"
-          placeholderTextColor="#999"
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Contact Phone</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.contactPhone}
-          onChangeText={(value) => handleSettingChange('business', 'contactPhone', value)}
-          placeholder="+1 (555) 123-4567"
-          placeholderTextColor="#999"
-          keyboardType="phone-pad"
-        />
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Website</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.website}
-          onChangeText={(value) => handleSettingChange('business', 'website', value)}
-          placeholder="https://your-website.com"
-          placeholderTextColor="#999"
-          keyboardType="url"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      {/* Address fields */}
-      <Text style={styles.sectionSubtitle}>Address</Text>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Street Address</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.address.street}
-          onChangeText={(value) => handleSettingChange('business', 'address', value, 'street')}
-          placeholder="123 Main Street"
-          placeholderTextColor="#999"
-        />
-      </View>
-      <View style={styles.addressRow}>
-        <View style={styles.addressInput}>
-          <Text style={styles.inputLabel}>City</Text>
-          <TextInput
-            style={styles.textInput}
-            value={settings.business.address.city}
-            onChangeText={(value) => handleSettingChange('business', 'address', value, 'city')}
-            placeholder="City"
-            placeholderTextColor="#999"
-          />
-        </View>
-        <View style={styles.addressInput}>
-          <Text style={styles.inputLabel}>Postal Code</Text>
-          <TextInput
-            style={styles.textInput}
-            value={settings.business.address.postalCode}
-            onChangeText={(value) => handleSettingChange('business', 'address', value, 'postalCode')}
-            placeholder="12345"
-            placeholderTextColor="#999"
-          />
-        </View>
-      </View>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Country</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.address.country}
-          onChangeText={(value) => handleSettingChange('business', 'address', value, 'country')}
-          placeholder="Country"
-          placeholderTextColor="#999"
-        />
-      </View>
-      
-      {/* Social Media */}
-      <Text style={styles.sectionSubtitle}>Social Media</Text>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Instagram</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.socialMedia.instagram}
-          onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'instagram')}
-          placeholder="@username"
-          placeholderTextColor="#999"
-          autoCapitalize="none"
-        />
-      </View>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Facebook</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.socialMedia.facebook}
-          onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'facebook')}
-          placeholder="Page name"
-          placeholderTextColor="#999"
-        />
-      </View>
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Website</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.business.socialMedia.website}
-          onChangeText={(value) => handleSettingChange('business', 'socialMedia', value, 'website')}
-          placeholder="https://your-website.com"
-          placeholderTextColor="#999"
-          keyboardType="url"
-          autoCapitalize="none"
-        />
-      </View>
-      
-      {/* Business Hours */}
-      <Text style={styles.sectionSubtitle}>Business Hours</Text>
-      {Object.entries(settings.business.businessHours).map(([day, hours]) => (
-        <View key={day} style={styles.businessHourItem}>
-          <View style={styles.dayInfo}>
-            <Text style={styles.dayLabel}>{day.charAt(0).toUpperCase() + day.slice(1)}</Text>
-          </View>
-          <View style={styles.hoursRow}>
-            <View style={styles.timeInput}>
-              <Text style={styles.timeLabel}>Open</Text>
-              <TextInput
-                style={styles.timeTextInput}
-                value={hours.open}
-                onChangeText={(value) => handleBusinessHoursChange(day, 'open', value)}
-                placeholder="09:00"
-                placeholderTextColor="#999"
-              />
-            </View>
-            <View style={styles.timeInput}>
-              <Text style={styles.timeLabel}>Close</Text>
-              <TextInput
-                style={styles.timeTextInput}
-                value={hours.close}
-                onChangeText={(value) => handleBusinessHoursChange(day, 'close', value)}
-                placeholder="17:00"
-                placeholderTextColor="#999"
-              />
-            </View>
-          </View>
-        </View>
-      ))}
-    </View>
-  );
-
-  // ===== RENDER INVENTORY SETTINGS =====
-  const renderInventorySettings = () => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>
-        <MaterialIcons name="inventory" size={20} color="#4CAF50" />
-        {' '}Inventory Management
-      </Text>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Low Stock Threshold</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.inventory.lowStockThreshold.toString()}
-          onChangeText={(value) => handleSettingChange('inventory', 'lowStockThreshold', parseInt(value) || 5)}
-          placeholder="5"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-        />
-        <Text style={styles.inputHint}>Alert when stock falls below this number</Text>
-      </View>
-    </View>
-  );
-
-  // ===== RENDER ORDERS SETTINGS =====
-  const renderOrdersSettings = () => (
-    <View style={styles.settingsSection}>
-      <Text style={styles.sectionTitle}>
-        <MaterialIcons name="receipt" size={20} color="#4CAF50" />
-        {' '}Order Management
-      </Text>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Max Order Quantity</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.orders.maxOrderQuantity.toString()}
-          onChangeText={(value) => handleSettingChange('orders', 'maxOrderQuantity', parseInt(value) || 100)}
-          placeholder="100"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-        />
-        <Text style={styles.inputHint}>Maximum items per order</Text>
-      </View>
-      
-      <View style={styles.inputGroup}>
-        <Text style={styles.inputLabel}>Order Timeout (hours)</Text>
-        <TextInput
-          style={styles.textInput}
-          value={settings.orders.orderTimeout.toString()}
-          onChangeText={(value) => handleSettingChange('orders', 'orderTimeout', parseInt(value) || 24)}
-          placeholder="24"
-          placeholderTextColor="#999"
-          keyboardType="numeric"
-        />
-        <Text style={styles.inputHint}>Cancel unpaid orders after this time</Text>
-      </View>
-      
-      {Object.entries(settings.orders).filter(([key]) => !['maxOrderQuantity', 'orderTimeout'].includes(key)).map(([key, value]) => (
-        <View key={key} style={styles.settingItem}>
-          <View style={styles.settingInfo}>
-            <Text style={styles.settingLabel}>
-              {key === 'autoConfirm' && 'Auto Confirm Orders'}
-              {key === 'requireDeposit' && 'Require Deposit'}
-              {key === 'allowCancellation' && 'Allow Order Cancellation'}
-              {key === 'sendConfirmationEmail' && 'Send Confirmation Emails'}
-            </Text>
-            <Text style={styles.settingDescription}>
-              {key === 'autoConfirm' && 'Automatically confirm new orders'}
-              {key === 'requireDeposit' && 'Require deposit for large orders'}
-              {key === 'allowCancellation' && 'Allow customers to cancel orders'}
-              {key === 'sendConfirmationEmail' && 'Email order confirmations to customers'}
-            </Text>
-          </View>
-          <Switch
-            value={value}
-            onValueChange={(newValue) => handleSettingChange('orders', key, newValue)}
-            trackColor={{ false: '#ddd', true: '#4CAF50' }}
-            thumbColor={value ? '#fff' : '#f4f3f4'}
-            ios_backgroundColor="#ddd"
-          />
-        </View>
-      ))}
-    </View>
-  );
-
-  // ===== RENDER ACTIVE SECTION =====
-  const renderActiveSection = () => {
-    switch (activeSection) {
-      case 'notifications':
-        return renderNotificationsSettings();
-      case 'business':
-        return renderBusinessSettings();
-      case 'inventory':
-        return renderInventorySettings();
-      case 'orders':
-        return renderOrdersSettings();
-      default:
-        return renderNotificationsSettings();
+  // ---------- UI bits ----------
+  const pickLogo = async () => {
+    try {
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!res.canceled && res.assets?.[0]?.uri) {
+        setField('logo', res.assets[0].uri);
+      }
+    } catch {
+      Alert.alert('Image Picker', 'Could not open gallery.');
     }
   };
 
-  // ===== LOADING STATE - ANDROID OPTIMIZED =====
-  if (isLoading) {
+  const SectionHeader = ({ icon, title }) => (
+    <View style={styles.sectionHeader}>
+      <MaterialIcons name={icon} size={20} color="#4CAF50" />
+      <Text style={styles.sectionTitle}>{title}</Text>
+    </View>
+  );
+
+  const DetailsTab = () => (
+    <View style={styles.card}>
+      <View style={styles.logoWrap}>
+        <TouchableOpacity onPress={edit ? pickLogo : undefined} activeOpacity={edit ? 0.8 : 1}>
+          <Image source={{ uri: form.logo || DEFAULT_BUSINESS_IMAGE }} style={styles.logo} />
+          {edit && (
+            <View style={styles.logoBadge}>
+              <MaterialIcons name="camera-alt" size={18} color="#fff" />
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <View style={styles.fieldBlock}>
+        <Text style={styles.label}>Business Name *</Text>
+        {edit ? (
+          <TextInput
+            style={styles.input}
+            value={form.businessName}
+            onChangeText={(v) => setField('businessName', v)}
+            placeholder="Business name"
+          />
+        ) : (
+          <Text style={styles.value}>{profile.businessName}</Text>
+        )}
+      </View>
+
+      <View style={styles.fieldBlock}>
+        <Text style={styles.label}>Business Type</Text>
+        {edit ? (
+          <TextInput
+            style={styles.input}
+            value={form.businessType}
+            onChangeText={(v) => setField('businessType', v)}
+            placeholder="Plant Business"
+          />
+        ) : (
+          <Text style={styles.value}>{profile.businessType}</Text>
+        )}
+      </View>
+
+      <View style={styles.fieldBlock}>
+        <Text style={styles.label}>About</Text>
+        {edit ? (
+          <TextInput
+            style={[styles.input, styles.textarea]}
+            value={form.description}
+            onChangeText={(v) => setField('description', v)}
+            placeholder="Tell customers about your business…"
+            multiline
+            numberOfLines={4}
+          />
+        ) : (
+          <Text style={styles.value}>{profile.description || 'No description provided'}</Text>
+        )}
+      </View>
+
+      <SectionHeader icon="contact-phone" title="Contact Information" />
+      <View style={styles.fieldRow}>
+        <MaterialIcons name="email" size={18} color="#666" />
+        {edit ? (
+          <TextInput
+            style={styles.inputRow}
+            value={form.contactEmail}
+            onChangeText={(v) => setField('contactEmail', v)}
+            keyboardType="email-address"
+            placeholder="business@example.com"
+          />
+        ) : (
+          <Text style={styles.valueRow}>{profile.contactEmail || profile.email}</Text>
+        )}
+      </View>
+      <View style={styles.fieldRow}>
+        <MaterialIcons name="phone" size={18} color="#666" />
+        {edit ? (
+          <TextInput
+            style={styles.inputRow}
+            value={form.contactPhone}
+            onChangeText={(v) => setField('contactPhone', v)}
+            placeholder="+972-XX-XXXXXXX"
+            keyboardType="phone-pad"
+          />
+        ) : (
+          <Text style={styles.valueRow}>{profile.contactPhone || 'No phone provided'}</Text>
+        )}
+      </View>
+      <View style={styles.fieldRow}>
+        <MaterialIcons name="language" size={18} color="#666" />
+        {edit ? (
+          <TextInput
+            style={styles.inputRow}
+            value={form.socialMedia.website}
+            onChangeText={(v) => setField('socialMedia.website', v)}
+            placeholder="https://yourwebsite.com"
+            keyboardType="url"
+            autoCapitalize="none"
+          />
+        ) : (
+          <Text style={styles.valueRow}>{profile.socialMedia?.website || 'No website provided'}</Text>
+        )}
+      </View>
+
+      <SectionHeader icon="location-on" title="Business Address" />
+      {edit ? (
+        <>
+          <TextInput
+            style={styles.input}
+            value={form.address.street}
+            onChangeText={(v) => setField('address.street', v)}
+            placeholder="Street"
+          />
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TextInput
+              style={[styles.input, { flex: 1 }]}
+              value={form.address.city}
+              onChangeText={(v) => setField('address.city', v)}
+              placeholder="City"
+            />
+            <TextInput
+              style={[styles.input, { width: 120 }]}
+              value={form.address.postalCode}
+              onChangeText={(v) => setField('address.postalCode', v)}
+              placeholder="Postal"
+              keyboardType="number-pad"
+            />
+          </View>
+        </>
+      ) : (
+        <Text style={styles.value}>
+          {profile.address?.street || ''}{profile.address?.street ? ', ' : ''}
+          {profile.address?.city || ''} {profile.address?.postalCode || ''}
+        </Text>
+      )}
+
+      <SectionHeader icon="share" title="Social Media" />
+      {['instagram', 'facebook'].map((k) => (
+        <View key={k} style={styles.fieldRow}>
+          <MaterialIcons name={k === 'instagram' ? 'photo-camera' : 'thumb-up'} size={18} color="#666" />
+          {edit ? (
+            <TextInput
+              style={styles.inputRow}
+              value={form.socialMedia[k]}
+              onChangeText={(v) => setField(`socialMedia.${k}`, v)}
+              placeholder={k === 'instagram' ? '@yourbusiness' : 'YourBusinessPage'}
+              autoCapitalize="none"
+            />
+          ) : (
+            <Text style={styles.valueRow}>{profile.socialMedia?.[k] || 'Not connected'}</Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+
+  const NotificationsTab = () => (
+    <View style={styles.card}>
+      <SectionHeader icon="notifications" title="Push Notifications" />
+      {[
+        ['newOrders', 'New Orders', 'Get notified when new orders arrive'],
+        ['lowStock', 'Low Stock Alerts', 'Alert when inventory runs low'],
+        ['customerMessages', 'Customer Messages', 'Notify when customers message you'],
+        ['pushNotifications', 'Enable Push', 'Master switch for push'],
+      ].map(([key, title, desc]) => (
+        <View key={key} style={styles.toggleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleTitle}>{title}</Text>
+            <Text style={styles.toggleDesc}>{desc}</Text>
+          </View>
+          <Switch
+            value={form.settings.notifications[key]}
+            onValueChange={(v) => setField(`settings.notifications.${key}`, v)}
+            trackColor={{ false: '#ddd', true: '#4CAF50' }}
+            thumbColor="#fff"
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  const InventoryTab = () => (
+    <View style={styles.card}>
+      <SectionHeader icon="inventory" title="Inventory Settings" />
+      <Text style={styles.label}>Low Stock Threshold</Text>
+      <TextInput
+        style={styles.input}
+        value={String(form.settings.inventory.lowStockThreshold)}
+        onChangeText={(v) =>
+          setField('settings.inventory.lowStockThreshold', parseInt(v || '0', 10) || 0)
+        }
+        keyboardType="numeric"
+        placeholder="5"
+      />
+      <Text style={styles.hint}>Alert when stock falls below this number.</Text>
+    </View>
+  );
+
+  const OrdersTab = () => (
+    <View style={styles.card}>
+      <SectionHeader icon="receipt" title="Order Settings" />
+      <Text style={styles.label}>Max Order Quantity</Text>
+      <TextInput
+        style={styles.input}
+        value={String(form.settings.orders.maxOrderQuantity)}
+        onChangeText={(v) =>
+          setField('settings.orders.maxOrderQuantity', parseInt(v || '0', 10) || 0)
+        }
+        keyboardType="numeric"
+      />
+      <Text style={styles.label}>Order Timeout (hours)</Text>
+      <TextInput
+        style={styles.input}
+        value={String(form.settings.orders.orderTimeout)}
+        onChangeText={(v) =>
+          setField('settings.orders.orderTimeout', parseInt(v || '0', 10) || 0)
+        }
+        keyboardType="numeric"
+      />
+      {[
+        ['autoConfirm', 'Auto Confirm Orders', 'Automatically confirm new orders'],
+        ['requireDeposit', 'Require Deposit', 'Require deposit for large orders'],
+        ['allowCancellation', 'Allow Cancellation', 'Customers may cancel orders'],
+        ['sendConfirmationEmail', 'Email Confirmations', 'Send confirmation emails'],
+      ].map(([key, title, desc]) => (
+        <View key={key} style={styles.toggleRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.toggleTitle}>{title}</Text>
+            <Text style={styles.toggleDesc}>{desc}</Text>
+          </View>
+          <Switch
+            value={!!form.settings.orders[key]}
+            onValueChange={(v) => setField(`settings.orders.${key}`, v)}
+            trackColor={{ false: '#ddd', true: '#4CAF50' }}
+            thumbColor="#fff"
+          />
+        </View>
+      ))}
+    </View>
+  );
+
+  // ---------- RENDER ----------
+  if (isLoading || !form) {
     return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar backgroundColor="#f8f9fa" barStyle="dark-content" />
-        <View style={styles.loadingContainer}>
-          <Animated.View style={{ transform: [{ rotate: saveAnim.interpolate({
-            inputRange: [0, 1],
-            outputRange: ['0deg', '360deg'],
-          }) }] }}>
-            <MaterialIcons name="settings" size={60} color="#4CAF50" />
-          </Animated.View>
-          <Text style={styles.loadingText}>Loading business settings...</Text>
-          <Text style={styles.loadingSubtext}>Getting your preferences from backend</Text>
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#4CAF50" />
+          <Text style={{ marginTop: 10, color: '#666' }}>Loading…</Text>
+          {error ? <Text style={{ marginTop: 6, color: '#999' }}>{error}</Text> : null}
         </View>
       </SafeAreaView>
     );
   }
 
-  // ===== ERROR STATE - ANDROID OPTIMIZED =====
-  if (error) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar backgroundColor="#f8f9fa" barStyle="dark-content" />
-        <View style={styles.errorContainer}>
-          <MaterialIcons name="cloud-off" size={48} color="#f44336" />
-          <Text style={styles.errorTitle}>Connection Failed</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={() => loadSettings(businessId)}>
-            <MaterialIcons name="refresh" size={20} color="#fff" />
-            <Text style={styles.retryButtonText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ===== MAIN RENDER =====
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar backgroundColor="#fff" barStyle="dark-content" />
-      
-      {/* ===== HEADER ===== */}
-      <Animated.View 
-        style={[
-          styles.header,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }
-        ]}
-      >
-        {/* Header with Back Button */}
-        <View style={styles.header}>
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back" size={24} color="#216a94" />
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Business Settings</Text>
-          <View style={styles.headerRight} />
-        </View>
-      </Animated.View>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      {/* ===== NETWORK STATUS ===== */}
-      {!networkConnected && (
-        <View style={styles.networkBanner}>
-          <MaterialIcons name="cloud-off" size={16} color="#fff" />
-          <Text style={styles.networkBannerText}>Offline - Changes will be saved when reconnected</Text>
+      {/* Header */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.iconBtn} onPress={() => navigation.goBack()}>
+          <MaterialIcons name="arrow-back" size={22} color="#216a94" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Business Settings</Text>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => (edit ? onSave() : setEdit(true))}
+          disabled={isSaving}
+        >
+          {isSaving ? (
+            <ActivityIndicator size="small" color="#216a94" />
+          ) : (
+            <MaterialIcons name={edit ? 'save' : 'edit'} size={22} color="#216a94" />
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Signed-out banner */}
+      {error === 'No active session. Please sign in.' && (
+        <View style={styles.banner}>
+          <Text style={styles.bannerText}>You’re signed out.</Text>
+          <TouchableOpacity onPress={() => navigation.replace('Login')}>
+            <Text style={styles.bannerLink}>Sign in</Text>
+          </TouchableOpacity>
         </View>
       )}
 
-      {/* ===== SECTION TABS ===== */}
-      {renderSectionTabs()}
-
-      {/* ===== CONTENT ===== */}
-      <KeyboardAvoidingView 
-        style={styles.keyboardAvoid}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      {/* Tabs */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsWrap}
+        contentContainerStyle={{ paddingHorizontal: 12 }}
       >
-        <Animated.ScrollView
-          style={[styles.content, { opacity: fadeAnim }]}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+        {TABS.map(t => (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.tab, tab === t.key && styles.tabActive]}
+            onPress={() => setTab(t.key)}
+          >
+            <MaterialIcons
+              name={t.icon}
+              size={18}
+              color={tab === t.key ? '#4CAF50' : '#666'}
+            />
+            <Text style={[styles.tabText, tab === t.key && styles.tabTextActive]}>
+              {t.label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Content */}
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView
+          style={{ flex: 1, backgroundColor: '#f8f9fa' }}
+          contentContainerStyle={styles.contentContainer}
           keyboardShouldPersistTaps="handled"
         >
-          {renderActiveSection()}
-        </Animated.ScrollView>
+          <View style={styles.maxWidth}>
+            {tab === 'details' && <DetailsTab />}
+            {tab === 'notifications' && <NotificationsTab />}
+            {tab === 'inventory' && <InventoryTab />}
+            {tab === 'orders' && <OrdersTab />}
+          </View>
+        </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* ===== SAVE BUTTON ===== */}
-      <Animated.View 
-        style={[
-          styles.footer,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          }
-        ]}
-      >
-        <TouchableOpacity 
-          style={[
-            styles.saveButton, 
-            isSaving && styles.saveButtonDisabled,
-            hasUnsavedChanges && styles.saveButtonActive
-          ]}
-          onPress={saveSettings}
-          disabled={isSaving}
-          activeOpacity={0.8}
-        >
-          <Animated.View style={{ transform: [{ scale: saveAnim }] }}>
-            {isSaving ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <MaterialIcons name="save" size={20} color="#fff" />
-            )}
-          </Animated.View>
-          <Text style={styles.saveButtonText}>
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </Text>
-        </TouchableOpacity>
-        
-        {lastSavedTime && (
-          <Text style={styles.lastSavedText}>
-            Last saved: {lastSavedTime.toLocaleTimeString()}
-          </Text>
-        )}
-      </Animated.View>
+      {/* Save footer */}
+      {edit && (
+        <View style={styles.footer}>
+          <TouchableOpacity
+            style={[styles.saveBtn, isSaving && { backgroundColor: '#9e9e9e' }]}
+            onPress={onSave}
+            disabled={isSaving}
+          >
+            <MaterialIcons name="save" size={18} color="#fff" />
+            <Text style={styles.saveText}>{isSaving ? 'Saving…' : 'Save Changes'}</Text>
+          </TouchableOpacity>
+          {lastSaved && (
+            <Text style={styles.savedAt}>Last saved: {lastSaved.toLocaleTimeString()}</Text>
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-// ===== ANDROID OPTIMIZED STYLES =====
+// ---------- styles ----------
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
-  },
-  loadingText: {
-    marginTop: 20,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    textAlign: 'center',
-  },
-  loadingSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#666',
-    textAlign: 'center',
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#f44336',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  errorText: {
-    color: '#666',
-    textAlign: 'center',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 24,
-  },
-  retryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f44336',
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-  },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    marginLeft: 8,
-  },
+  container: { flex: 1, backgroundColor: '#fff' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+
   header: {
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 16, paddingVertical: 12, backgroundColor: '#fff',
+    borderBottomWidth: 1, borderBottomColor: '#e9ecef',
+    ...Platform.select({ android: { elevation: 2 } }),
   },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f9f3',
+  iconBtn: { padding: 8, backgroundColor: '#f0f9f3', borderRadius: 10 },
+  headerTitle: { fontSize: 18, fontWeight: '700', color: '#333' },
+
+  banner: {
+    flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+    paddingVertical: 8, backgroundColor: '#FFF3CD',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    flex: 1,
-    textAlign: 'center',
-  },
-  headerRight: {
-    width: 48,
-  },
-  unsavedIndicator: {
-    fontSize: 12,
-    color: '#FF9800',
-    marginTop: 2,
-  },
-  networkBanner: {
-    backgroundColor: '#f44336',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  networkBannerText: {
-    color: '#fff',
-    fontSize: 12,
-    marginLeft: 6,
-  },
-  tabsContainer: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-  },
-  tabs: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
+  bannerText: { color: '#8a6d3b', marginRight: 6, fontSize: 13 },
+  bannerLink: { color: '#0b5ed7', fontWeight: '600' },
+
+  tabsWrap: { backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e9ecef' },
   tab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 20,
-    marginRight: 8,
-    backgroundColor: '#f5f5f5',
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 10,
+    marginRight: 8, borderRadius: 16, backgroundColor: '#f5f5f5',
   },
-  activeTab: {
-    backgroundColor: '#f0f9f3',
-    borderWidth: 1,
-    borderColor: '#4CAF50',
+  tabActive: { backgroundColor: '#f0f9f3', borderWidth: 1, borderColor: '#4CAF50' },
+  tabText: { marginLeft: 6, color: '#666', fontSize: 12, fontWeight: '500' },
+  tabTextActive: { color: '#4CAF50', fontWeight: '700' },
+
+  contentContainer: { padding: 16, paddingBottom: 120, alignItems: 'center' },
+  maxWidth: { width: '100%', maxWidth: CONTENT_MAX_WIDTH },
+
+  card: {
+    backgroundColor: '#fff', borderRadius: 12, padding: 16, marginBottom: 16,
+    ...Platform.select({ android: { elevation: 1 } }),
   },
-  tabText: {
-    fontSize: 12,
-    color: '#666',
-    marginLeft: 6,
-    fontWeight: '500',
+
+  logoWrap: { alignItems: 'center', marginBottom: 12 },
+  logo: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#e0e0e0' },
+  logoBadge: {
+    position: 'absolute', right: 0, bottom: 0, width: 32, height: 32, borderRadius: 16,
+    backgroundColor: '#4CAF50', alignItems: 'center', justifyContent: 'center',
   },
-  activeTabText: {
-    color: '#4CAF50',
-    fontWeight: '600',
+
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', marginTop: 8, marginBottom: 8 },
+  sectionTitle: { marginLeft: 8, fontSize: 16, fontWeight: '700', color: '#333' },
+
+  fieldBlock: { marginTop: 8, marginBottom: 10 },
+  label: { fontSize: 13, color: '#444', marginBottom: 6, fontWeight: '600' },
+  input: {
+    borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10,
+    backgroundColor: '#fafafa', color: '#333', fontSize: 15,
   },
-  keyboardAvoid: {
-    flex: 1,
+  textarea: { minHeight: 90, textAlignVertical: 'top' },
+  value: { fontSize: 15, color: '#333' },
+  hint: { fontSize: 12, color: '#666', marginTop: 6, fontStyle: 'italic' },
+
+  fieldRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  inputRow: {
+    flex: 1, marginLeft: 10, borderBottomWidth: 1, borderBottomColor: '#e0e0e0', paddingVertical: 6,
+    color: '#333', fontSize: 14,
   },
-  content: {
-    flex: 1,
+  valueRow: { flex: 1, marginLeft: 10, color: '#333', fontSize: 14 },
+
+  toggleRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#f1f1f1',
   },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 120,
-  },
-  settingsSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#333',
-    marginBottom: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  sectionSubtitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginTop: 20,
-    marginBottom: 12,
-  },
-  settingItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  settingInfo: {
-    flex: 1,
-    marginRight: 16,
-  },
-  settingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  settingDescription: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-    lineHeight: 18,
-  },
-  inputGroup: {
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 8,
-  },
-  textInput: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#fafafa',
-    color: '#333',
-  },
-  textArea: {
-    height: 80,
-    textAlignVertical: 'top',
-  },
-  inputHint: {
-    fontSize: 12,
-    color: '#666',
-    marginTop: 4,
-    fontStyle: 'italic',
-  },
-  businessTypeContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  businessTypeOption: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    backgroundColor: '#f5f5f5',
-  },
-  businessTypeSelected: {
-    backgroundColor: '#4CAF50',
-    borderColor: '#4CAF50',
-  },
-  businessTypeText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  businessTypeSelectedText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  addressRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  addressInput: {
-    flex: 1,
-  },
-  socialRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  socialInput: {
-    flex: 1,
-  },
-  businessHourItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
-  },
-  dayInfo: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  dayLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  hoursRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  timeInput: {
-    flex: 1,
-  },
-  timeLabel: {
-    fontSize: 12,
-    color: '#666',
-    marginBottom: 4,
-  },
-  timeTextInput: {
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    fontSize: 14,
-    textAlign: 'center',
-    backgroundColor: '#fafafa',
-  },
+  toggleTitle: { fontSize: 15, fontWeight: '600', color: '#333' },
+  toggleDesc: { fontSize: 12, color: '#666', marginTop: 2 },
+
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: '#fff',
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    position: 'absolute', left: 0, right: 0, bottom: 0, backgroundColor: '#fff',
+    borderTopWidth: 1, borderTopColor: '#e0e0e0', padding: 14,
   },
-  saveButton: {
-    backgroundColor: '#9E9E9E',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 16,
-    borderRadius: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+  saveBtn: {
+    backgroundColor: '#4CAF50', flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 14, borderRadius: 12,
   },
-  saveButtonActive: {
-    backgroundColor: '#4CAF50',
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#bdbdbd',
-  },
-  saveButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    marginLeft: 8,
-  },
-  lastSavedText: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    marginBottom: 12,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
-    flex: 1,
-    marginLeft: 12,
-  },
-  dangerButton: {
-    backgroundColor: '#FFEBEE',
-    borderColor: '#F44336',
-  },
-  dangerText: {
-    color: '#D32F2F',
-    fontWeight: '600',
-  },
-  logoutButton: {
-    backgroundColor: '#FFEBEE',
-    borderColor: '#F44336',
-  },
-  logoutText: {
-    color: '#D32F2F',
-    fontWeight: '600',
-  },
-  logoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  logoImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-  },
-  logoPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f0f9f3',
-  },
-  logoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: '#4CAF50',
-  },
-  logoButtonText: {
-    color: '#fff',
-    fontWeight: '500',
-    marginLeft: 4,
-  },
-  profileSection: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    marginBottom: 16,
-  },
+  saveText: { color: '#fff', fontWeight: '700', marginLeft: 8 },
+  savedAt: { textAlign: 'center', marginTop: 6, fontSize: 12, color: '#666' },
 });

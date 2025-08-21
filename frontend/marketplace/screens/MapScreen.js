@@ -16,15 +16,40 @@ import ProductListView from '../components/ProductListView';
 import BusinessListView from '../components/BusinessListView';
 import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
 import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
-import MapModeToggle from '../components/MapModeToggle';
 import { getNearbyProducts } from '../services/marketplaceApi';
 import { getNearbyBusinesses } from '../../Business/services/businessApi';
 import { getMapTilerKey, reverseGeocode } from '../services/maptilerService';
 
 const TLV = { latitude: 32.0853, longitude: 34.7818, city: 'Tel Aviv', formattedAddress: 'Tel Aviv, Israel' };
-// Emulator default mock location (Googleplex)
 const looksLikeEmulatorMock = (lat, lng) =>
   Math.abs(lat - 37.4220936) < 0.02 && Math.abs(lng + 122.083922) < 0.02;
+
+/** ---------- Coordinate normalization helpers ---------- */
+const normalizeCoords = (p = {}) => {
+  const lat =
+    p?.location?.latitude ??
+    p?.location?.lat ??
+    p?.lat;
+  const lon =
+    p?.location?.longitude ??
+    p?.location?.lng ??
+    p?.lng ??
+    p?.lon;
+
+  if (lat != null && lon != null) {
+    p.location = {
+      ...(p.location || {}),
+      latitude: Number(lat),
+      longitude: Number(lon),
+    };
+  }
+  return p;
+};
+
+const hasCoords = (p) =>
+  Number.isFinite(p?.location?.latitude) &&
+  Number.isFinite(p?.location?.longitude);
+/** ----------------------------------------------------- */
 
 const MapScreen = () => {
   const navigation = useNavigation();
@@ -41,7 +66,7 @@ const MapScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ start on TLV to avoid the emulator's Mountain View flash
+  // start on TLV to avoid emulator flash
   const [selectedLocation, setSelectedLocation] = useState(initialLocation || TLV);
 
   const [searchRadius, setSearchRadius] = useState(10);
@@ -82,9 +107,11 @@ const MapScreen = () => {
   useFocusEffect(
     useCallback(() => {
       if (products.length > 0) {
-        const withCoords = products.filter(p => p?.location?.latitude && p?.location?.longitude);
-        setMapProducts(withCoords);
-        setCounts(prev => ({ ...prev, plants: withCoords.length }));
+        const normalized = products.map(normalizeCoords);
+        const withCoords = normalized.filter(hasCoords);
+        setMapProducts(normalized);
+        setNearbyProducts(normalized);
+        setCounts(prev => ({ ...prev, plants: normalized.length }));
         if (withCoords.length > 0 && !initialLocation && !selectedLocation) {
           const first = withCoords[0];
           setSelectedLocation({
@@ -108,23 +135,30 @@ const MapScreen = () => {
     }
   }, [selectedLocation]);
 
-  // Location initialization with emulator guard
+  // Re-push pins when returning from List -> Map
+  useEffect(() => {
+    if (viewMode === 'map') {
+      const id = setTimeout(() => {
+        mapRef.current?.forceRefresh?.();
+      }, 0);
+      return () => clearTimeout(id);
+    }
+  }, [viewMode]);
+
+  // Init location (with emulator guard)
   useEffect(() => {
     const initLocation = async () => {
-      // 1) If screen was called with a location → use it.
       if (initialLocation?.latitude && initialLocation?.longitude) {
         setSelectedLocation(initialLocation);
         if (products.length === 0) loadNearbyData(initialLocation, Number(searchRadius) || 10);
         return;
       }
-
       try {
         let { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') {
           const req = await Location.requestForegroundPermissionsAsync();
           status = req.status;
         }
-
         if (status === 'granted') {
           setLocationPermissionGranted(true);
           try {
@@ -133,36 +167,32 @@ const MapScreen = () => {
               maximumAge: 30000,
               timeout: 15000,
             });
-
             let { latitude, longitude } = location.coords;
-
-            // Emulator default → fall back to TLV
             if (looksLikeEmulatorMock(latitude, longitude)) {
               latitude = TLV.latitude;
               longitude = TLV.longitude;
             }
-
             setMyLocation({ latitude, longitude });
             setShowMyLocation(true);
 
             if (!selectedLocation) {
               try {
                 const addr = await reverseGeocode(latitude, longitude);
-                const locationData = {
+                const locData = {
                   latitude, longitude,
                   formattedAddress: addr.formattedAddress,
                   city: addr.city || 'Current Location',
                 };
-                setSelectedLocation(locationData);
-                loadNearbyData(locationData, Number(searchRadius) || 10);
+                setSelectedLocation(locData);
+                loadNearbyData(locData, Number(searchRadius) || 10);
               } catch {
-                const fallbackData = {
+                const locData = {
                   latitude, longitude,
                   formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
                   city: 'Current Location',
                 };
-                setSelectedLocation(fallbackData);
-                loadNearbyData(fallbackData, Number(searchRadius) || 10);
+                setSelectedLocation(locData);
+                loadNearbyData(locData, Number(searchRadius) || 10);
               }
             }
           } catch {
@@ -183,9 +213,25 @@ const MapScreen = () => {
         setLocationPermissionGranted(false);
       }
     };
-
     initLocation();
   }, []); // once
+
+  // Ensure we fetch nearby once the center exists (even if TLV) and items are empty
+  useEffect(() => {
+    if (!selectedLocation?.latitude || !selectedLocation?.longitude) return;
+    const r = Number(searchRadius) || 10;
+    if (mapMode === 'plants' && mapProducts.length === 0) loadNearbyData(selectedLocation, r);
+    if (mapMode === 'businesses' && mapBusinesses.length === 0) loadNearbyData(selectedLocation, r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLocation]);
+
+  // When mode changes, reload around current center
+  useEffect(() => {
+    if (selectedLocation?.latitude && selectedLocation?.longitude) {
+      loadNearbyData(selectedLocation, Number(searchRadius) || 10);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapMode]);
 
   const handleLocationSelect = (loc) => {
     setSelectedLocation(loc);
@@ -218,8 +264,7 @@ const MapScreen = () => {
 
   const loadNearbyData = async (loc, radius) => {
     if (!loc?.latitude || !loc?.longitude) return;
-    const radNum = Number(radius);
-    const radiusKm = Number.isFinite(radNum) ? radNum : 10;
+    const r = Number.isFinite(Number(radius)) ? Number(radius) : 10;
 
     try {
       setIsLoading(true);
@@ -229,9 +274,9 @@ const MapScreen = () => {
       setRadiusVisible(true);
 
       if (mapMode === 'plants') {
-        await loadNearbyProducts(loc, radiusKm);
+        await loadNearbyProducts(loc, r);
       } else {
-        await loadNearbyBusinesses(loc, radiusKm);
+        await loadNearbyBusinesses(loc, r);
       }
     } catch {
       setError('Failed to load nearby data. Please try again.');
@@ -243,41 +288,55 @@ const MapScreen = () => {
 
   const loadNearbyProducts = async (loc, radius) => {
     const res = await getNearbyProducts(loc.latitude, loc.longitude, radius);
-    if (res?.products) {
-      const items = res.products
-        .filter(p => p?.location?.latitude && p?.location?.longitude)
-        .map(p => ({ ...p, distance: p.distance || 0 }));
+    if (res?.products && res.products.length > 0) {
+      const normalized = res.products.map(normalizeCoords);
+      const withCoordsCount = normalized.filter(hasCoords).length;
+      console.log(`[MapScreen] normalized products: ${normalized.length} (with coords: ${withCoordsCount})`);
+      const items = normalized.map(p => ({ ...p, distance: p.distance || 0 }));
       const sorted = sortProductsByDistance(items, sortOrder === 'nearest');
       setMapProducts(sorted);
       setNearbyProducts(sorted);
       setCounts(prev => ({ ...prev, plants: sorted.length }));
     } else {
-      setMapProducts([]); setNearbyProducts([]);
-      setCounts(prev => ({ ...prev, plants: 0 }));
+      console.log('[MapScreen] nearby products empty — keeping existing items');
     }
   };
 
   const loadNearbyBusinesses = async (loc, radius) => {
     const res = await getNearbyBusinesses(loc.latitude, loc.longitude, radius);
-    if (res?.businesses) {
-      const items = res.businesses
-        .filter(b => (b?.location?.latitude && b?.location?.longitude) || (b?.address?.latitude && b?.address?.longitude))
-        .map(b => ({
-          ...b,
-          distance: b.distance || 0,
-          location: b.location || {
-            latitude: b.address?.latitude,
-            longitude: b.address?.longitude,
-            city: b.address?.city || 'Unknown location',
-          },
-        }));
+    if (res?.businesses && res.businesses.length > 0) {
+      const normalized = res.businesses.map((b) => {
+        const withPrimary = normalizeCoords(b);
+        if (!hasCoords(withPrimary) && b?.address) {
+          const lat = b.address.latitude ?? b.address.lat;
+          const lon = b.address.longitude ?? b.address.lng ?? b.address.lon;
+          if (lat != null && lon != null) {
+            withPrimary.location = {
+              ...(withPrimary.location || {}),
+              latitude: Number(lat),
+              longitude: Number(lon),
+              city: b.address?.city || withPrimary.location?.city,
+            };
+          }
+        }
+        return withPrimary;
+      });
+
+      const withCoordsCount = normalized.filter(hasCoords).length;
+      console.log(`[MapScreen] normalized businesses: ${normalized.length} (with coords: ${withCoordsCount})`);
+
+      const items = normalized.map(b => ({
+        ...b,
+        distance: b.distance || 0,
+        location: b.location,
+      }));
+
       const sorted = sortBusinessesByDistance(items, sortOrder === 'nearest');
       setMapBusinesses(sorted);
       setNearbyBusinesses(sorted);
       setCounts(prev => ({ ...prev, businesses: sorted.length }));
     } else {
-      setMapBusinesses([]); setNearbyBusinesses([]);
-      setCounts(prev => ({ ...prev, businesses: 0 }));
+      console.log('[MapScreen] nearby businesses empty — keeping existing items');
     }
   };
 
@@ -289,12 +348,6 @@ const MapScreen = () => {
       setSelectedBusiness(null);
       setSelectedBusinessData(null);
       setShowDetailCard(true);
-
-      navigation.navigate('PlantDetail', {
-        plantId: p.id || p._id,
-        businessId: p.businessId || p.ownerEmail,
-        type: p.businessId || p.ownerEmail ? 'business' : 'global',
-      });
     }
   };
 
@@ -311,10 +364,10 @@ const MapScreen = () => {
 
   const handleViewProductDetails = () => {
     if (selectedProductData) {
-      navigation.navigate('PlantDetail', { 
+      navigation.navigate('PlantDetail', {
         plantId: selectedProductData.id || selectedProductData._id,
-        businessId: selectedProductData.businessId || selectedProductData.ownerEmail, // whichever exists
-        type: 'business', // helps the details screen choose the right API
+        businessId: selectedProductData.businessId || selectedProductData.ownerEmail,
+        type: 'business',
       });
     }
   };
@@ -473,12 +526,9 @@ const MapScreen = () => {
           if (viewMode === 'list') setViewMode('map');
           else navigation.goBack();
         }}
-        onNotificationsPress={() => navigation.navigate('Messages')}
       />
 
       <View style={styles.mapContainer}>
-        <MapModeToggle mapMode={mapMode} onMapModeChange={setMapMode} counts={counts} />
-
         {viewMode === 'map' && (
           <>
             {isLoading && searchingLocation ? (
@@ -499,7 +549,6 @@ const MapScreen = () => {
             ) : null}
 
             <CrossPlatformWebMap
-              key={`${mapMode}:${selectedLocation?.latitude || myLocation?.latitude}:${selectedLocation?.longitude || myLocation?.longitude}:${searchRadius}`}
               ref={mapRef}
               products={mapMode === 'plants' ? mapProducts : []}
               businesses={mapMode === 'businesses' ? mapBusinesses : []}
@@ -516,6 +565,8 @@ const MapScreen = () => {
               searchRadius={searchRadius}
               onMapPress={handleMapPress}
               maptilerKey={maptilerKey}
+              myLocation={myLocation}
+              showMyLocation={Boolean(myLocation)}
             />
 
             {showDetailCard && selectedProductData && mapMode === 'plants' && (
@@ -553,7 +604,7 @@ const MapScreen = () => {
                   const p = nearbyProducts.find(x => (x.id || x._id) === productId);
                   navigation.navigate('PlantDetail', {
                     plantId: productId,
-                    businessId: p?.businessId || p?.ownerEmail, // whichever your product has
+                    businessId: p?.businessId || p?.ownerEmail,
                     type: p?.businessId || p?.ownerEmail ? 'business' : 'global',
                   });
                 }}
@@ -574,7 +625,7 @@ const MapScreen = () => {
               />
             )}
 
-            <TouchableOpacity style={styles.backToMapButton} onPress={toggleViewMode}>
+            <TouchableOpacity style={styles.backToMapButton} onPress={() => setViewMode('map')}>
               <MaterialIcons name="map" size={24} color="#fff" />
               <Text style={styles.backToMapText}>Map View</Text>
             </TouchableOpacity>
@@ -598,23 +649,12 @@ const MapScreen = () => {
             <MaterialIcons name="my-location" size={24} color={showMyLocation ? '#C8E6C9' : '#fff'} />
           )}
         </TouchableOpacity>
-
-        {viewMode === 'map' && currentMapData.length > 0 && (
-          <TouchableOpacity
-            style={[styles.viewToggleButton, { bottom: FLOATING_BOTTOM }]}
-            onPress={() => setViewMode('list')}
-          >
-            <MaterialIcons name="view-list" size={22} color="#fff" />
-            <Text style={styles.viewToggleText}>List</Text>
-          </TouchableOpacity>
-        )}
-
         {selectedLocation && viewMode === 'map' && radiusVisible && (
           <RadiusControl
             radius={searchRadius}
             onRadiusChange={handleRadiusChange}
             onApply={handleApplyRadius}
-            products={mapMode === 'plants' ? nearbyProducts : nearbyBusinesses}
+            products={mapMode === 'plants' ? mapProducts : mapBusinesses}
             isLoading={isLoading}
             error={error}
             onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
