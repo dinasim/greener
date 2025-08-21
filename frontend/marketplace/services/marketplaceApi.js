@@ -858,11 +858,24 @@ export const reverseGeocode = async (latitude, longitude) => {
 export const getNegotiateToken = async () => {
   const userEmail = await AsyncStorage.getItem('userEmail');
   if (!userEmail) throw new Error('User email is required for messaging');
-  return apiRequest('signalr-negotiate', {
-    method: 'POST',
-    body: JSON.stringify({ userId: userEmail }),
-  });
+
+  const body = JSON.stringify({ userId: userEmail });
+
+  try {
+    // primary (matches your function.json)
+    return await apiRequest('marketplace/signalr-negotiate', {
+      method: 'POST',
+      body,
+    });
+  } catch (e) {
+    // fallback to legacy route if you deploy a different name later
+    return await apiRequest('signalr-negotiate', {
+      method: 'POST',
+      body,
+    });
+  }
 };
+
 
 export const fetchConversations = async (/* userId */) => {
   // If your function expects the user from header, no param is needed

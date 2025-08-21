@@ -1,4 +1,3 @@
-// screens/MapScreen.js
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, StyleSheet, ActivityIndicator, Text, SafeAreaView, TouchableOpacity,
@@ -16,13 +15,11 @@ import ProductListView from '../components/ProductListView';
 import BusinessListView from '../components/BusinessListView';
 import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
 import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
-import MapModeToggle from '../components/MapModeToggle';
 import { getNearbyProducts } from '../services/marketplaceApi';
 import { getNearbyBusinesses } from '../../Business/services/businessApi';
 import { getMapTilerKey, reverseGeocode } from '../services/maptilerService';
 
 const TLV = { latitude: 32.0853, longitude: 34.7818, city: 'Tel Aviv', formattedAddress: 'Tel Aviv, Israel' };
-// Emulator default mock location (Googleplex)
 const looksLikeEmulatorMock = (lat, lng) =>
   Math.abs(lat - 37.4220936) < 0.02 && Math.abs(lng + 122.083922) < 0.02;
 
@@ -41,7 +38,7 @@ const MapScreen = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // ✅ start on TLV to avoid the emulator's Mountain View flash
+  // start on TLV to avoid emulator flash
   const [selectedLocation, setSelectedLocation] = useState(initialLocation || TLV);
 
   const [searchRadius, setSearchRadius] = useState(10);
@@ -108,23 +105,20 @@ const MapScreen = () => {
     }
   }, [selectedLocation]);
 
-  // Location initialization with emulator guard
+  // Init location (with emulator guard)
   useEffect(() => {
     const initLocation = async () => {
-      // 1) If screen was called with a location → use it.
       if (initialLocation?.latitude && initialLocation?.longitude) {
         setSelectedLocation(initialLocation);
         if (products.length === 0) loadNearbyData(initialLocation, Number(searchRadius) || 10);
         return;
       }
-
       try {
         let { status } = await Location.getForegroundPermissionsAsync();
         if (status !== 'granted') {
           const req = await Location.requestForegroundPermissionsAsync();
           status = req.status;
         }
-
         if (status === 'granted') {
           setLocationPermissionGranted(true);
           try {
@@ -133,36 +127,32 @@ const MapScreen = () => {
               maximumAge: 30000,
               timeout: 15000,
             });
-
             let { latitude, longitude } = location.coords;
-
-            // Emulator default → fall back to TLV
             if (looksLikeEmulatorMock(latitude, longitude)) {
               latitude = TLV.latitude;
               longitude = TLV.longitude;
             }
-
             setMyLocation({ latitude, longitude });
             setShowMyLocation(true);
 
             if (!selectedLocation) {
               try {
                 const addr = await reverseGeocode(latitude, longitude);
-                const locationData = {
+                const locData = {
                   latitude, longitude,
                   formattedAddress: addr.formattedAddress,
                   city: addr.city || 'Current Location',
                 };
-                setSelectedLocation(locationData);
-                loadNearbyData(locationData, Number(searchRadius) || 10);
+                setSelectedLocation(locData);
+                loadNearbyData(locData, Number(searchRadius) || 10);
               } catch {
-                const fallbackData = {
+                const locData = {
                   latitude, longitude,
                   formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
                   city: 'Current Location',
                 };
-                setSelectedLocation(fallbackData);
-                loadNearbyData(fallbackData, Number(searchRadius) || 10);
+                setSelectedLocation(locData);
+                loadNearbyData(locData, Number(searchRadius) || 10);
               }
             }
           } catch {
@@ -183,9 +173,25 @@ const MapScreen = () => {
         setLocationPermissionGranted(false);
       }
     };
-
     initLocation();
   }, []); // once
+
+  // Ensure we fetch nearby once the center exists (even if TLV) and items are empty
+  useEffect(() => {
+    if (!selectedLocation?.latitude || !selectedLocation?.longitude) return;
+    const r = Number(searchRadius) || 10;
+    if (mapMode === 'plants' && mapProducts.length === 0) loadNearbyData(selectedLocation, r);
+    if (mapMode === 'businesses' && mapBusinesses.length === 0) loadNearbyData(selectedLocation, r);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLocation]);
+
+  // When mode changes, reload around current center
+  useEffect(() => {
+    if (selectedLocation?.latitude && selectedLocation?.longitude) {
+      loadNearbyData(selectedLocation, Number(searchRadius) || 10);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapMode]);
 
   const handleLocationSelect = (loc) => {
     setSelectedLocation(loc);
@@ -218,8 +224,7 @@ const MapScreen = () => {
 
   const loadNearbyData = async (loc, radius) => {
     if (!loc?.latitude || !loc?.longitude) return;
-    const radNum = Number(radius);
-    const radiusKm = Number.isFinite(radNum) ? radNum : 10;
+    const r = Number.isFinite(Number(radius)) ? Number(radius) : 10;
 
     try {
       setIsLoading(true);
@@ -229,9 +234,9 @@ const MapScreen = () => {
       setRadiusVisible(true);
 
       if (mapMode === 'plants') {
-        await loadNearbyProducts(loc, radiusKm);
+        await loadNearbyProducts(loc, r);
       } else {
-        await loadNearbyBusinesses(loc, radiusKm);
+        await loadNearbyBusinesses(loc, r);
       }
     } catch {
       setError('Failed to load nearby data. Please try again.');
@@ -467,8 +472,6 @@ const MapScreen = () => {
       />
 
       <View style={styles.mapContainer}>
-        <MapModeToggle mapMode={mapMode} onMapModeChange={setMapMode} counts={counts} />
-
         {viewMode === 'map' && (
           <>
             {isLoading && searchingLocation ? (
@@ -489,24 +492,25 @@ const MapScreen = () => {
             ) : null}
 
             <CrossPlatformWebMap
-              key={`${mapMode}:${selectedLocation?.latitude || myLocation?.latitude}:${selectedLocation?.longitude || myLocation?.longitude}:${searchRadius}`}
               ref={mapRef}
-              products={mapMode === 'plants' ? mapProducts : []}
-              businesses={mapMode === 'businesses' ? mapBusinesses : []}
-              mapMode={mapMode}
-              onSelectProduct={handleProductSelect}
-              onSelectBusiness={handleBusinessSelect}
-              initialRegion={
-                selectedLocation
-                  ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
-                  : myLocation
-                    ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
-                    : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
-              }
-              searchRadius={searchRadius}
-              onMapPress={handleMapPress}
-              maptilerKey={maptilerKey}
-            />
+               products={mapMode === 'plants' ? mapProducts : []}
+               businesses={mapMode === 'businesses' ? mapBusinesses : []}
+               mapMode={mapMode}
+               onSelectProduct={handleProductSelect}
+               onSelectBusiness={handleBusinessSelect}
+               initialRegion={
+                 selectedLocation
+                   ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
+                   : myLocation
+                     ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
+                     : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
+               }
+               searchRadius={searchRadius}
+               onMapPress={handleMapPress}
+               maptilerKey={maptilerKey}
+               myLocation={myLocation}
+               showMyLocation={showMyLocation}
+             />
 
             {showDetailCard && selectedProductData && mapMode === 'plants' && (
               <View style={[styles.detailCardContainer, { bottom: CARD_POPUP_BOTTOM }]}>
@@ -601,9 +605,10 @@ const MapScreen = () => {
             isLoading={isLoading}
             error={error}
             onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
-            onViewModeChange={() => setViewMode('list')}
+            onViewModeChange={() => setViewMode('list')}   // ✅ matches the prop here
             dataType={mapMode}
           />
+
         )}
       </View>
     </SafeAreaView>
