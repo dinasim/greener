@@ -327,37 +327,39 @@ const SpeechToTextComponent = ({ onTranscriptionResult, style }) => {
     }
 
     // Upload + transcribe
-    setIsTranscribing(true);
-    setTranscribingStatus('Uploading audio...');
+setIsTranscribing(true);
+setTranscribingStatus('Uploading audio...');
 
-    try {
-      let uploadResult;
+try {
+  let uploadResult;
 
-      if (isWeb && audioBlob) {
-        // Upload blob as WAV
-        const form = new FormData();
-        form.append('file', new File([audioBlob], `speech_${Date.now()}.wav`, { type: 'audio/wav' }));
-        form.append('type', 'speech');
-        form.append('contentType', 'audio/wav');
+  if (isWeb && audioBlob) {
+    // Upload blob as WAV
+    const form = new FormData();
+    form.append('file', new File([audioBlob], `speech_${Date.now()}.wav`, { type: 'audio/wav' }));
+    form.append('type', 'speech');
+    form.append('contentType', 'audio/wav');
 
-        const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
-        const resp = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, { method: 'POST', body: form });
-        if (!resp.ok) throw new Error(`Upload failed (${resp.status})`);
-        uploadResult = await resp.json();
-      } else {
-        uploadResult = await uploadImage(audioUri, 'speech', 'audio/m4a');
-      }
+    const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+    const resp = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, { method: 'POST', body: form });
+    if (!resp.ok) throw new Error(`Upload failed (${resp.status})`);
+    uploadResult = await resp.json();
+  } else {
+    uploadResult = await uploadImage(audioUri, 'speech', 'audio/m4a');
+  }
 
-      if (!uploadResult?.url) throw new Error('Audio upload failed (no URL).');
+  if (!uploadResult?.url) throw new Error('Audio upload failed (no URL).');
 
-      setTranscribingStatus('Transcribing...');
-      const transcription = await speechToText(uploadResult.url);
+  setTranscribingStatus('Transcribing...');
+  let transcription = await speechToText(uploadResult.url, 'en-US');
+if (!transcription) transcription = await speechToText(uploadResult.url, 'he-IL');
+// If still empty → ask user to try again (don’t auto-search).
+if (transcription && transcription.trim()) {
+  onTranscriptionResult?.(transcription);
+} else {
+    throw new Error('No text recognized');
+  }
 
-      if (transcription && transcription.trim()) {
-        onTranscriptionResult?.(transcription);
-      } else {
-        throw new Error('No text recognized');
-      }
     } catch (err) {
       console.error('Transcription error:', err);
       if (isWeb) {
@@ -372,47 +374,46 @@ const SpeechToTextComponent = ({ onTranscriptionResult, style }) => {
   };
 
   /** ---------- Platform-specific recorders ---------- */
-  const startNativeRecording = async () => {
-    // Drop any old instance (even if previously unloaded)
-    if (recordingRef.current) {
-      await safeStopAndUnload(recordingRef.current);
-      recordingRef.current = null;
-    }
+  // replace your startNativeRecording with this:
+const startNativeRecording = async () => {
+  // Drop any old instance
+  if (recordingRef.current) {
+    await safeStopAndUnload(recordingRef.current);
+    recordingRef.current = null;
+  }
 
-    // Fresh instance – avoids "already prepared" edge cases
-    const rec = new Audio.Recording();
-    recordingRef.current = rec;
+  const rec = new Audio.Recording();
+  recordingRef.current = rec;
 
-    const options = {
-      android: {
-        extension: '.m4a',
-        outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
-        audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
-        sampleRate: 44100,
-        numberOfChannels: 1,
-        bitRate: 128000,
-      },
-      ios: {
-        extension: '.m4a',
-        audioQuality: Audio.RECORDING_OPTION_IOS_AUDIO_QUALITY_HIGH,
-        sampleRate: 44100,
-        numberOfChannels: 1,
-        bitRate: 128000,
-        linearPCMBitDepth: 16,
-        linearPCMIsBigEndian: false,
-        linearPCMIsFloat: false,
-      },
-      web: { mimeType: 'audio/webm', bitsPerSecond: 128000 },
-    };
-
-    // Tiny debounce for some OEMs that get cranky
-    await new Promise(r => setTimeout(r, 50));
-
-    await rec.prepareToRecordAsync(options);
-    await rec.startAsync();
-
-    return rec;
+  const options = {
+    android: {
+      // Android: keep AAC (m4a). We'll tell backend it's audio/mp4.
+      extension: '.m4a',
+      outputFormat: Audio.RECORDING_OPTION_ANDROID_OUTPUT_FORMAT_MPEG_4,
+      audioEncoder: Audio.RECORDING_OPTION_ANDROID_AUDIO_ENCODER_AAC,
+      sampleRate: 16000,        // 16 kHz to match STT expectations
+      numberOfChannels: 1,
+      bitRate: 128000,
+    },
+    ios: {
+      // iOS: record true PCM WAV 16k mono for REST API
+      extension: '.wav',
+      outputFormat: Audio.RECORDING_OPTION_IOS_OUTPUT_FORMAT_LINEARPCM,
+      sampleRate: 16000,
+      numberOfChannels: 1,
+      linearPCMBitDepth: 16,
+      linearPCMIsBigEndian: false,
+      linearPCMIsFloat: false,
+    },
+    web: { mimeType: 'audio/webm', bitsPerSecond: 128000 },
   };
+
+  await new Promise(r => setTimeout(r, 50)); // tiny debounce
+  await rec.prepareToRecordAsync(options);
+  await rec.startAsync();
+  return rec;
+};
+
 
   const startWebRecording = async () => {
     // Prefer MediaRecorder

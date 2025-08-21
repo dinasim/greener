@@ -507,46 +507,55 @@ export const markAsSold    = async (productId) => apiRequest(`marketplace/produc
 // Image upload
 // services/marketplaceApi.js
 
-export async function uploadImage(imageData, type = 'plant') {
-  if (!imageData) throw new Error('Image data is required');
+export async function uploadImage(file, type = 'plant', contentType) {
+  if (!file) throw new Error('Image/audio data is required');
 
-  // Data URL path (unchanged)
-  if (typeof imageData === 'string' && imageData.startsWith('data:')) {
+  // Data URL path
+  if (typeof file === 'string' && file.startsWith('data:')) {
     return apiRequest('marketplace/uploadImage', {
       method: 'POST',
-      body: JSON.stringify({ image: imageData, type })
+      body: JSON.stringify({ image: file, type, contentType }),
     });
   }
 
-  // RN file path / uri -> must wrap as { uri, name, type }
-  const formData = new FormData();
+  const form = new FormData();
 
-  let uri = imageData;
-  let name = `upload_${Date.now()}`;
-  let mime = 'application/octet-stream';
+  // React-Native file URI (e.g. file:///...)
+  if (typeof file === 'string') {
+    // pick extension that matches contentType
+    let ext = 'bin';
+    if (contentType === 'audio/wav') ext = 'wav';
+    else if (contentType === 'audio/webm') ext = 'webm';
+    else if (contentType === 'audio/mp4') ext = 'm4a';
+    else if (contentType?.startsWith('image/')) ext = contentType.split('/')[1];
 
-  if (typeof imageData === 'object' && imageData.uri) {
-    uri = imageData.uri;
-    name = imageData.name || name;
-    mime = imageData.type || mime;
-  } else if (typeof imageData === 'string') {
-    // guess from extension
-    const lower = imageData.toLowerCase();
-    if (lower.endsWith('.m4a') || lower.endsWith('.mp4')) mime = 'audio/mp4';
-    else if (lower.endsWith('.mp3')) mime = 'audio/mpeg';
-    else if (lower.endsWith('.webm')) mime = 'audio/webm';
-    else if (lower.endsWith('.wav')) mime = 'audio/wav';
-    const ext = lower.split('.').pop() || 'bin';
-    name = `${type}_${Date.now()}.${ext}`;
+    form.append('file', {
+      uri: file,
+      name: `${type}_${Date.now()}.${ext}`,
+      type: contentType || 'application/octet-stream',
+    });
+  }
+  // Blob/File (web)
+  else if (typeof File !== 'undefined' && (file instanceof File || file instanceof Blob)) {
+    form.append('file', file);
+  }
+  // Fallback for objects
+  else if (file?.uri) {
+    form.append('file', {
+      uri: file.uri,
+      name: file.name || `${type}_${Date.now()}`,
+      type: file.type || contentType || 'application/octet-stream',
+    });
+  } else {
+    throw new Error('Unsupported file type for uploadImage');
   }
 
-  formData.append('file', { uri, name, type: mime });
-  formData.append('type', type);
-  // Let the server know the real content-type for speech
-  if (type === 'speech') formData.append('contentType', mime);
+  form.append('type', type);
+  if (contentType) form.append('contentType', contentType);
 
-  return apiRequest('marketplace/uploadImage', { method: 'POST', body: formData, headers: {} });
+  return apiRequest('marketplace/uploadImage', { method: 'POST', body: form, headers: {} });
 }
+
 
 // Also: don't default STT to Hebrew unless you need it.
 // Change default to English:
