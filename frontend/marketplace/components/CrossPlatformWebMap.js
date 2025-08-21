@@ -31,14 +31,12 @@ const buildHtml = ({
   radiusKm,
   myLocation,
   showMyLocation,
+  version = 0,
 }) => {
   const safeMarkers = JSON.stringify(markers || []);
   const rMeters = Math.max(0, Number(radiusKm) || 0) * 1000;
 
-  // Force English labels
-  const styleUrl = `https://api.maptiler.com/maps/streets/style.json?key=${encodeURIComponent(
-    maptilerKey || ''
-  )}&language=en`;
+  const styleUrl = `https://api.maptiler.com/maps/basic-v2/style.json?key=${encodeURIComponent(maptilerKey)}`;
 
   const circleJs = `
     function circlePolygon(lon, lat, meters, steps){
@@ -55,47 +53,65 @@ const buildHtml = ({
     }
   `;
 
+  const rtlPluginUrl = 'https://unpkg.com/@mapbox/mapbox-gl-rtl-text@0.2.3/mapbox-gl-rtl-text.min.js';
+
   return `<!doctype html>
-<html lang="en">
+<html lang="en" dir="ltr">
 <head>
+<build  version="${version}" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"/>
 <link href="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.css" rel="stylesheet" />
 <style>
-  html, body { margin:0; padding:0; height:100vh; width:100vw; background:#f5f5f5; overflow:hidden; direction:ltr; }
-  #map { position:fixed; inset:0; }
-  #status { position:fixed; top:8px; left:8px; z-index:9999; background:rgba(0,0,0,.75); color:#fff; padding:6px 10px; border-radius:8px; font-family:sans-serif; font-size:12px; display:block; max-width:280px; }
+  * { direction: ltr !important; }
+  html, body { margin:0; padding:0; height:100vh; width:100vw; background:#f5f5f5; overflow:hidden; direction:ltr !important; }
+  #map { position:fixed; inset:0; direction: ltr !important; }
+  #map * { direction: ltr !important; text-align: left !important; }
+  .maplibregl-ctrl, 
+  .maplibregl-popup,
+  .mapboxgl-ctrl,
+  .mapboxgl-popup { 
+    direction: ltr !important; 
+    text-align: left !important; 
+  }
+  #status { position:fixed; top:8px; left:8px; z-index:9999; background:rgba(0,0,0,.75); color:#fff; padding:6px 10px; border-radius:8px; font-family:sans-serif; font-size:12px; display:block; max-width:280px; direction: ltr !important; }
 
-  /* --- Pins (HTML markers) --- */
+  /* ---------- Stable marker structure ---------- */
+  /* OUTER: fixed size, MapLibre anchors to this box (bottom center). */
   .pin {
-    position:relative; cursor:pointer; transition:transform .15s ease;
-    box-shadow:0 6px 16px rgba(0,0,0,.25); border-radius:12px; overflow:hidden; border:2px solid #fff;
+    position: relative;
+    width: 40px;              /* fixed — stable anchor */
+    height: 40px;             /* fixed — stable anchor */
+    pointer-events: auto;
+  }
+  /* INNER: we do NOT scale with CSS transforms. We resize with width/height in JS. */
+  .pin .inner {
+    position: absolute;
+    left: 50%;
+    bottom: 0;                /* sit on the bottom of the outer container */
+    transform: translateX(-50%);    /* center horizontally; no scale here */
     transform-origin: bottom center;
-    --s: 1; /* scale set from JS */
-    transform: translateY(0) scale(var(--s));
+    box-shadow:0 6px 16px rgba(0,0,0,.25);
+    border-radius:12px;
+    overflow:hidden;
+    border:2px solid #fff;
+    background:#e9efe9;
   }
-  .pin:hover { transform: translateY(-2px) scale(calc(var(--s) * 1.04)); }
-  .pin.thumb { width:36px; height:36px; }
-  .pin.thumb img { width:100%; height:100%; object-fit:cover; display:block; background:#e9efe9; }
-  .pin.fallback { width:28px; height:28px; border-radius:14px; background:#4CAF50; border:2px solid #fff; display:grid; place-items:center; color:#fff; font-size:14px; }
-  .pin .badge { position:absolute; bottom:-8px; left:50%; transform:translateX(-50%); background:#111; color:#fff; font-weight:700; font-size:9px; padding:2px 6px; border-radius:999px; white-space:nowrap; box-shadow:0 4px 10px rgba(0,0,0,.25); }
+  .pin:hover .inner { transform: translateX(-50%) translateY(-2px); } /* tiny lift only */
 
-  /* --- My location (pretty + pulse) --- */
-  .me {
-    position:relative;
-    width:16px; height:16px; border-radius:50%;
-    background:#2E7D32; border:3px solid #fff;
-    box-shadow: 0 0 0 2px rgba(46,125,50,0.35), 0 6px 16px rgba(0,0,0,.25);
+  /* Base sizes (JS will override via width/height to avoid transform jitter) */
+  .pin .inner.thumb    { width:36px; height:36px; }
+  .pin .inner.fallback { width:28px; height:28px; display:grid; place-items:center; color:#fff; font-size:14px; }
+  .pin .inner.thumb img { width:100%; height:100%; object-fit:cover; display:block; }
+
+  .pin .inner .badge {
+    position:absolute; bottom:-8px; left:50%; transform:translateX(-50%);
+    background:#111; color:#fff; font-weight:700; font-size:9px; padding:2px 6px; border-radius:999px; white-space:nowrap; box-shadow:0 4px 10px rgba(0,0,0,.25);
   }
-  .me::after {
-    content:''; position:absolute; inset:-10px; border-radius:50%;
-    border:2px solid rgba(46,125,50,0.35);
-    animation: pulse 1.8s ease-out infinite;
-  }
-  @keyframes pulse {
-    0%   { transform: scale(0.7); opacity: .7; }
-    70%  { transform: scale(1.5); opacity: 0; }
-    100% { transform: scale(1.5); opacity: 0; }
-  }
+
+  /* Color-code by type */
+  .pin .inner.bizProduct .badge { background:#2E7D32; }  /* green */
+  .pin .inner.indProduct .badge { background:#1976D2; }  /* blue */
+  .pin .inner.business       { background:#FF9800; }     /* orange if no image for a business node */
 </style>
 </head>
 <body>
@@ -103,7 +119,15 @@ const buildHtml = ({
   <div id="status">Loading map…</div>
 
   <script src="https://unpkg.com/maplibre-gl@3.6.1/dist/maplibre-gl.js"></script>
+  <script src="${rtlPluginUrl}"></script>
   <script>
+    if (window.mapboxgl && window.mapboxgl.setRTLTextPlugin) {
+      window.mapboxgl.setRTLTextPlugin('${rtlPluginUrl}', null, true);
+    }
+    if (window.maplibregl && window.maplibregl.setRTLTextPlugin) {
+      window.maplibregl.setRTLTextPlugin('${rtlPluginUrl}', null, true);
+    }
+
     function send(type, payload){
       try {
         window.ReactNativeWebView && window.ReactNativeWebView.postMessage(
@@ -114,6 +138,7 @@ const buildHtml = ({
     function setStatus(msg){
       const el = document.getElementById('status'); if (el) el.textContent = msg;
     }
+
     ${circleJs}
 
     const cfg = {
@@ -128,7 +153,6 @@ const buildHtml = ({
     let map, radiusAdded = false, meMarker = null;
     let lastRadiusMeters = cfg.radiusMeters || 0;
 
-    // keep the latest "me" position for radius centering
     let myLoc = (cfg.myLocation && Number.isFinite(cfg.myLocation.latitude) && Number.isFinite(cfg.myLocation.longitude))
       ? { lon: Number(cfg.myLocation.longitude), lat: Number(cfg.myLocation.latitude) }
       : null;
@@ -136,50 +160,101 @@ const buildHtml = ({
     function currentRadiusCenter(){
       if (myLoc) return [myLoc.lon, myLoc.lat];
       if (map) { const c = map.getCenter(); return [c.lng, c.lat]; }
-      return cfg.center; // fallback
+      return cfg.center;
     }
 
-    // Track DOM elements for zoom scaling
+    // Track INNER nodes (we'll resize width/height instead of scaling)
     window.__pins = [];
-    window.__pinEls = [];
+    window.__pinInnerEls = [];
 
     function applyZoomScale(){
       if (!map) return;
-      const z = map.getZoom(); // ~3..20
-      // Base: ~0.9 at z=12; clamp 0.7..1.4 (smaller pins overall)
-      const s = Math.max(0.7, Math.min(1.4, 0.9 + 0.10 * (z - 12)));
-      (window.__pinEls || []).forEach(el => el && el.style && el.style.setProperty('--s', s));
+
+      // You can tweak the size curve here (locked sizes also OK):
+      const z = 1;
+      const scale = Math.max(0.9, Math.min(1.2, 0.98 + 0.05 * (z - 12))); // gentle
+
+      (window.__pinInnerEls || []).forEach(el => {
+        if (!el) return;
+        const baseW = Number(el.dataset.basew) || 32; // fallback
+        const baseH = Number(el.dataset.baseh) || 32;
+        const w = Math.round(baseW * scale);
+        const h = Math.round(baseH * scale);
+        el.style.width  = w + 'px';
+        el.style.height = h + 'px';
+      });
+    }
+
+    function spreadOverlaps(list, step = 0.0008) {
+      const buckets = new Map();
+      (list || []).forEach(m => {
+        if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) return;
+        const key = m.lat.toFixed(5) + ',' + m.lon.toFixed(5);
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(m);
+      });
+      const out = [];
+      for (const arr of buckets.values()) {
+        if (arr.length === 1) { out.push(arr[0]); continue; }
+        const angleStep = (2 * Math.PI) / arr.length;
+        arr.forEach((m, i) => {
+          out.push({
+            ...m,
+            lat: m.lat + step * Math.sin(i * angleStep),
+            lon: m.lon + step * Math.cos(i * angleStep),
+          });
+        });
+      }
+      return out;
     }
 
     function addMarkers(list){
       (window.__pins || []).forEach(m => m.remove && m.remove());
       window.__pins = [];
-      window.__pinEls = [];
+      window.__pinInnerEls = [];
 
-      (list || []).forEach(m => {
+      const rendered = spreadOverlaps(list || []);
+      rendered.forEach(m => {
         if (!Number.isFinite(m.lat) || !Number.isFinite(m.lon)) return;
 
+        // OUTER (fixed size)
         const el = document.createElement('div');
-        if (m.imageUrl) {
-          el.className = 'pin thumb';
-          el.innerHTML = \`<img src="\${m.imageUrl}" alt="">\`;
-        } else {
-          el.className = 'pin fallback';
-          el.textContent = '🌱';
-        }
-        window.__pinEls.push(el);
+        el.className = 'pin';
 
-        if (m.priceText) {
+        // INNER (resized via width/height by JS; no transforms)
+        const inner = document.createElement('div');
+        const isBizProduct = m.type === 'bizProduct';
+        const isIndProduct = m.type === 'indProduct';
+        const isBusiness   = m.type === 'business';
+
+        const baseW = m.imageUrl ? 36 : 28;
+        const baseH = m.imageUrl ? 36 : 28;
+
+        inner.className = 'inner ' + (m.imageUrl ? 'thumb ' : 'fallback ') + (isBizProduct ? 'bizProduct' : isIndProduct ? 'indProduct' : isBusiness ? 'business' : '');
+        inner.dataset.basew = String(baseW);
+        inner.dataset.baseh = String(baseH);
+        inner.style.width  = baseW + 'px';
+        inner.style.height = baseH + 'px';
+
+        if (m.imageUrl) {
+          inner.innerHTML = \`<img src="\${m.imageUrl}" alt="">\`;
+        } else {
+          inner.textContent = isBusiness ? '🏪' : '🌱';
+        }
+
+        if (m.priceText && !isBusiness) {
           const badge = document.createElement('div');
           badge.className = 'badge';
           badge.textContent = m.priceText;
-          el.appendChild(badge);
+          inner.appendChild(badge);
         }
 
-        el.title = (m.title || '') + (m.distanceKm!=null ? (' • ' + m.distanceKm.toFixed(1) + ' km') : '');
+        el.appendChild(inner);
+        window.__pinInnerEls.push(inner);
+
         el.addEventListener('click', (e) => {
           e.stopPropagation();
-          send(m.type === 'business' ? 'select-business' : 'select-product', { id: m.id });
+          send(isBusiness ? 'select-business' : 'select-product', { id: m.id });
         });
 
         const mk = new maplibregl.Marker({ element: el, anchor:'bottom' })
@@ -188,7 +263,7 @@ const buildHtml = ({
         window.__pins.push(mk);
       });
 
-      applyZoomScale();
+      applyZoomScale(); // set initial pixel sizes for current zoom
     }
 
     function ensureRadius(meters){
@@ -218,7 +293,12 @@ const buildHtml = ({
       }
       myLoc = { lon: Number(point.longitude), lat: Number(point.latitude) };
 
-      const el = document.createElement('div'); el.className = 'me';
+      const el = document.createElement('div'); 
+      el.style.width='16px'; el.style.height='16px';
+      el.style.borderRadius='50%'; el.style.background='#2E7D32';
+      el.style.border='3px solid #fff';
+      el.style.boxShadow='0 0 0 2px rgba(46,125,50,0.35), 0 6px 16px rgba(0,0,0,.25)';
+
       meMarker = new maplibregl.Marker({ element: el, anchor:'center' })
         .setLngLat([myLoc.lon, myLoc.lat])
         .addTo(map);
@@ -237,17 +317,25 @@ const buildHtml = ({
           zoom: cfg.zoom,
           attributionControl: false,
           cooperativeGestures: false,
-          failIfMajorPerformanceCaveat: false
+          failIfMajorPerformanceCaveat: false,
+          transformRequest: (url) => {
+            if (url.includes('maptiler.com')) {
+              const urlObj = new URL(url);
+              urlObj.searchParams.set('language', 'en');
+              urlObj.searchParams.set('lang', 'en');
+              return { url: urlObj.toString() };
+            }
+            return { url };
+          }
         });
 
         map.addControl(new maplibregl.NavigationControl({ showCompass:false, visualizePitch:false }), 'bottom-right');
 
-        // Smooth pin scaling on zoom
         let zoomRaf = 0;
         map.on('zoom', () => {
           if (!zoomRaf) {
             zoomRaf = requestAnimationFrame(() => {
-              applyZoomScale();
+              applyZoomScale();   // resize via width/height (no transform)
               zoomRaf = 0;
             });
           }
@@ -256,9 +344,12 @@ const buildHtml = ({
         map.on('load', () => {
           setStatus('Rendering…');
           addMarkers(cfg.markers);
-          setMyLocationPoint(cfg.myLocation); // establish myLoc before circle
+          setMyLocationPoint(cfg.myLocation);
           ensureRadius(cfg.radiusMeters);
-          setTimeout(()=>{ const el=document.getElementById('status'); if(el) el.style.display='none'; }, 600);
+          setTimeout(()=>{ 
+            const el=document.getElementById('status'); 
+            if(el) el.style.display='none';
+          }, 600);
           send('ready', { markersCount: (cfg.markers||[]).length, hasRadius: cfg.radiusMeters>0 });
         });
 
@@ -305,6 +396,7 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
     searchRadius = 10,
     myLocation,
     showMyLocation,
+     refreshToken, 
   } = props;
 
   const webRef = useRef(null);
@@ -408,27 +500,38 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
 
           const price = x.price ?? x.priceNIS ?? x.priceILS ?? x.cost;
 
-          const m = {
+          const bizHeuristic =
+            x.isBusinessListing ||
+            x.isBusiness ||
+            x.seller?.isBusiness ||
+            x.businessId ||
+            x.ownerEmail ||
+            x.source === 'business_inventory' ||
+            (typeof x.type === 'string' && x.type.toLowerCase().includes('business'));
+
+          const pinType =
+            mapMode === 'businesses'
+              ? 'business'
+              : (x.pinType || (bizHeuristic ? 'bizProduct' : 'indProduct'));
+
+          const marker = {
             id: String(x.id || x._id || ''),
             title: x.title || x.name || x.businessName || 'Item',
             lat, lon,
-            type: mapMode === 'plants' ? 'plant' : 'business',
+            type: pinType,
             imageUrl: img ? String(img) : null,
-            priceText: (price != null && price !== '') ? `${price}₪` : null,
+            priceText: (price != null && price !== '' && pinType !== 'business') ? `${price}₪` : null,
           };
+
           if (showMyLocation && Number.isFinite(myLocation?.latitude) && Number.isFinite(myLocation?.longitude)) {
-            m.distanceKm = haversineKm(myLocation.latitude, myLocation.longitude, lat, lon);
+            marker.distanceKm = haversineKm(myLocation.latitude, myLocation.longitude, lat, lon);
           }
-          out.push(m);
+
+          out.push(marker);
         }
       }
       if (!cancelled) {
         setResolvedMarkers(out);
-        if (out.length) {
-          console.log('[Map] markers built:', out.length, out.slice(0, 2));
-        } else {
-          console.log('[Map] no valid markers for mode', mapMode);
-        }
         if (readyRef.current) {
           webRef.current?.postMessage(JSON.stringify({ type: 'refreshMarkers', markers: out }));
         }
@@ -444,6 +547,7 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
     zoom: Number(initialRegion?.zoom) || 12,
   };
 
+
   const html = useMemo(
     () =>
       buildHtml({
@@ -454,11 +558,16 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
         radiusKm: Number(searchRadius) || 0,
         myLocation,
         showMyLocation,
+        version: refreshToken,  
       }),
-    // Keep stable to avoid remount; live updates go via postMessage
+    // Keep stable to avoid remount; updates go via postMessage
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [maptilerKey, center.latitude, center.longitude, center.zoom]
   );
+const webKey = useMemo(
+  () => `map-${center.latitude}-${center.longitude}-${center.zoom}-${refreshToken}`,
+  [center.latitude, center.longitude, center.zoom, refreshToken]
+);
 
   // Live updates after map is ready
   useEffect(() => {
@@ -539,6 +648,7 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
   return (
     <View style={styles.fill}>
       <WebView
+       key={webKey}     
         ref={webRef}
         source={{ html }}
         originWhitelist={['*']}

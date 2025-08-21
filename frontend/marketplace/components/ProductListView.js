@@ -257,7 +257,7 @@ const ProductListView = ({
               {item.title || item.name}
             </Text>
             <Text style={styles.itemPrice}>
-              ${parseFloat(item.price || 0).toFixed(2)}
+              ₪{parseFloat(item.price || 0).toFixed(2)}
             </Text>
           </View>
           

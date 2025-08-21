@@ -166,11 +166,6 @@ const RadiusControl = ({
     outputRange: ['0deg', '180deg'],
   });
 
-  const headerSubtitle =
-    products.length > 0
-      ? `${products.length} ${prettyType} within ${radius} km`
-      : `No ${prettyType} within ${radius} km`;
-
   const EmptyList = () => {
     if (isLoading) {
       return (
@@ -210,7 +205,6 @@ const RadiusControl = ({
         </View>
 
         <View style={styles.headerRight}>
-          <Text style={styles.subtitle} numberOfLines={1}>{headerSubtitle}</Text>
           <Animated.View style={{ transform: [{ rotate: arrowRotate }] }}>
             <MaterialIcons name="keyboard-arrow-up" size={24} color="#667085" />
           </Animated.View>
@@ -325,7 +319,7 @@ const RadiusControl = ({
                   </View>
                   <View style={styles.cardRight}>
                     <Text style={styles.priceText}>
-                      {item.price != null ? `$${Number(item.price).toFixed(2)}` : ''}
+                      {item.price != null ? `₪${Number(item.price).toFixed(2)}` : ''}
                     </Text>
                     <MaterialIcons name="chevron-right" size={22} color="#BDBDBD" />
                   </View>

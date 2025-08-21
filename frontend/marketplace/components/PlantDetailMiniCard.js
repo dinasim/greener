@@ -105,7 +105,7 @@ const PlantDetailMiniCard = React.memo(({ plant, onClose, onViewDetails }) => {
             {plantData.title}
           </Text>
           
-          <Text style={styles.price}>${plantData.formattedPrice}</Text>
+          <Text style={styles.price}>₪{plantData.formattedPrice}</Text>
           
           {renderRating()}
           

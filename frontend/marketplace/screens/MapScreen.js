@@ -1,5 +1,5 @@
 // screens/MapScreen.js
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, StyleSheet, ActivityIndicator, Text, SafeAreaView, TouchableOpacity,
   Alert, Platform, BackHandler, Linking, useWindowDimensions,
@@ -16,7 +16,9 @@ import ProductListView from '../components/ProductListView';
 import BusinessListView from '../components/BusinessListView';
 import PlantDetailMiniCard from '../components/PlantDetailMiniCard';
 import BusinessDetailMiniCard from '../components/BusinessDetailMiniCard';
-import { getNearbyProducts } from '../services/marketplaceApi';
+
+// ⬇️ add getAll
+import { getNearbyProducts, geocodeAddress, getAll } from '../services/marketplaceApi';
 import { getNearbyBusinesses } from '../../Business/services/businessApi';
 import { getMapTilerKey, reverseGeocode } from '../services/maptilerService';
 
@@ -24,33 +26,96 @@ const TLV = { latitude: 32.0853, longitude: 34.7818, city: 'Tel Aviv', formatted
 const looksLikeEmulatorMock = (lat, lng) =>
   Math.abs(lat - 37.4220936) < 0.02 && Math.abs(lng + 122.083922) < 0.02;
 
-/** ---------- Coordinate normalization helpers ---------- */
-const normalizeCoords = (p = {}) => {
-  const lat =
-    p?.location?.latitude ??
-    p?.location?.lat ??
-    p?.lat;
-  const lon =
-    p?.location?.longitude ??
-    p?.location?.lng ??
-    p?.lng ??
-    p?.lon;
+/* ---------- helpers ---------- */
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : undefined; };
+const fromArr = (arr) => Array.isArray(arr) && arr.length >= 2 ? { lon: num(arr[0]), lat: num(arr[1]) } : {};
 
-  if (lat != null && lon != null) {
-    p.location = {
-      ...(p.location || {}),
-      latitude: Number(lat),
-      longitude: Number(lon),
-    };
+const normalizeCoords = (p = {}) => {
+  const L = p.location || p.loc || p.address || p.geo || (p.business && (p.business.location || p.business.address)) || {};
+  const candidates = [
+    { lat: num(L.latitude), lon: num(L.longitude) },
+    { lat: num(L.lat),      lon: num(L.lng ?? L.lon) },
+    { lat: num(p.latitude), lon: num(p.longitude) },
+    { lat: num(p.lat),      lon: num(p.lng ?? p.lon) },
+    fromArr(L.coordinates),
+    fromArr(p.coordinates),
+    fromArr(p.geo?.coordinates),
+  ];
+  for (const c of candidates) {
+    if (Number.isFinite(c.lat) && Number.isFinite(c.lon)) {
+      p.location = { ...(p.location || {}), latitude: c.lat, longitude: c.lon };
+      p.loc = { ...(p.loc || {}), latitude: c.lat, longitude: c.lon };
+      break;
+    }
   }
   return p;
 };
 
-const hasCoords = (p) =>
-  Number.isFinite(p?.location?.latitude) &&
-  Number.isFinite(p?.location?.longitude);
-/** ----------------------------------------------------- */
+const readCoords = (p = {}) => {
+  const pick = (...vals) => { for (const v of vals) { const n = Number(v); if (Number.isFinite(n)) return n; } };
+  const lat = pick(
+    p?.location?.latitude, p?.loc?.latitude, p?.latitude, p?.lat,
+    Array.isArray(p?.coordinates) ? p.coordinates[1] : undefined,
+    Array.isArray(p?.geo?.coordinates) ? p.geo.coordinates[1] : undefined
+  );
+  const lon = pick(
+    p?.location?.longitude, p?.loc?.longitude, p?.longitude, p?.lng, p?.lon,
+    Array.isArray(p?.coordinates) ? p.coordinates[0] : undefined,
+    Array.isArray(p?.geo?.coordinates) ? p.geo.coordinates[0] : undefined
+  );
+  return { lat, lon };
+};
 
+const hasCoords = (p) => {
+  const { lat, lon } = readCoords(p);
+  return Number.isFinite(lat) && Number.isFinite(lon);
+};
+
+const addressToString = (addr) => {
+  if (!addr) return '';
+  if (typeof addr === 'string') return addr;
+  const parts = [
+    addr.fullAddress, addr.formattedAddress, addr.street || addr.street1, addr.number,
+    addr.neighborhood, addr.city || addr.town, addr.state || addr.region,
+    addr.postalCode || addr.zipcode, addr.country,
+  ].filter(Boolean);
+  return parts.join(', ').replace(/\s+/g, ' ').trim();
+};
+
+const pickAnyAddressString = (obj = {}) =>
+  obj.formattedAddress ||
+  addressToString(obj.address) ||
+  addressToString(obj.location) ||
+  addressToString(obj.business?.address) ||
+  [obj.title || obj.name, obj.city, obj.country].filter(Boolean).join(', ');
+
+const haversineKm = (lat1, lon1, lat2, lon2) => {
+  const R = 6371, toRad = (d) => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+};
+
+// 🔖 normalize seller flags once so the map/list can rely on them
+const normalizeSellerFlags = (p = {}) => {
+  const seller = p.seller || {};
+  const isBiz =
+    Boolean(p.isBusinessListing) ||
+    Boolean(p.businessId) ||
+    Boolean(seller.isBusiness) ||
+    (typeof p.sellerType === 'string' && p.sellerType.toLowerCase() === 'business') ||
+    (typeof p.source === 'string' && p.source.toLowerCase().includes('business'));
+  return {
+    ...p,
+    isBusinessListing: !!isBiz,
+    sellerType: isBiz ? 'business' : 'individual',
+    pinType: isBiz ? 'bizProduct' : 'indProduct', // for CrossPlatformWebMap marker styling
+  };
+};
+
+const isBusinessProduct = (p) => !!normalizeSellerFlags(p).isBusinessListing;
+
+/* ---------- component ---------- */
 const MapScreen = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -59,43 +124,97 @@ const MapScreen = () => {
 
   const FLOATING_BOTTOM = Math.max(24, Math.round(height * 0.16));
   const CARD_POPUP_BOTTOM = Math.max(200, Math.round(height * 0.22));
-
-  const [mapMode, setMapMode] = useState('plants');
+const [refreshToken, setRefreshToken] = useState(0);
+const bumpRefresh = () => setRefreshToken((n) => n + 1);
+  const [mapMode, setMapMode] = useState('plants'); // 'plants' | 'businesses'
   const [mapProducts, setMapProducts] = useState(products);
   const [mapBusinesses, setMapBusinesses] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // start on TLV to avoid emulator flash
-  const [selectedLocation, setSelectedLocation] = useState(initialLocation || TLV);
-
-  const [searchRadius, setSearchRadius] = useState(10);
   const [nearbyProducts, setNearbyProducts] = useState([]);
   const [nearbyBusinesses, setNearbyBusinesses] = useState([]);
   const [sortOrder, setSortOrder] = useState('nearest');
   const [viewMode, setViewMode] = useState('map');
-  const [searchingLocation, setSearchingLocation] = useState(false);
-  const [selectedProduct, setSelectedProduct] = useState(null);
-  const [selectedBusiness, setSelectedBusiness] = useState(null);
-  const [radiusVisible, setRadiusVisible] = useState(true);
+  const [searchRadius, setSearchRadius] = useState(10);
+  const [selectedLocation, setSelectedLocation] = useState(initialLocation || TLV);
   const [myLocation, setMyLocation] = useState(null);
   const [showMyLocation, setShowMyLocation] = useState(false);
   const [showDetailCard, setShowDetailCard] = useState(false);
   const [selectedProductData, setSelectedProductData] = useState(null);
   const [selectedBusinessData, setSelectedBusinessData] = useState(null);
-  const [counts, setCounts] = useState({ plants: 0, businesses: 0 });
+  const [radiusVisible, setRadiusVisible] = useState(true);
   const [locationPermissionGranted, setLocationPermissionGranted] = useState(false);
   const [isGettingLocation, setIsGettingLocation] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchingLocation, setSearchingLocation] = useState(false);
+  const [error, setError] = useState(null);
 
   const mapRef = useRef(null);
+  const geoCache = useRef(new Map()).current;
 
+  // robust geocoder
+  const geocodeOnce = async (addrStr) => {
+    const key = (addrStr || '').toLowerCase().trim();
+    if (!key) return null;
+    if (geoCache.has(key)) return geoCache.get(key);
+    try {
+      const g = await geocodeAddress(addrStr);
+      let lat, lon;
+      if (g && typeof g === 'object') {
+        if (Number.isFinite(g.lat) && Number.isFinite(g.lng)) { lat = +g.lat; lon = +g.lng; }
+        else if (Number.isFinite(g.lat) && Number.isFinite(g.lon)) { lat = +g.lat; lon = +g.lon; }
+        else if (Number.isFinite(g.latitude) && Number.isFinite(g.longitude)) { lat = +g.latitude; lon = +g.longitude; }
+        else if (Array.isArray(g.center) && g.center.length >= 2) { lon = +g.center[0]; lat = +g.center[1]; }
+        else if (Array.isArray(g.geometry?.coordinates) && g.geometry.coordinates.length >= 2) { lon = +g.geometry.coordinates[0]; lat = +g.geometry.coordinates[1]; }
+        else if (Number.isFinite(g.x) && Number.isFinite(g.y)) { lon = +g.x; lat = +g.y; }
+      }
+      if ((!Number.isFinite(lat) || !Number.isFinite(lon)) && Array.isArray(g) && g.length >= 2) {
+        lon = +g[0]; lat = +g[1];
+      }
+      const result = (Number.isFinite(lat) && Number.isFinite(lon)) ? { lat, lon } : null;
+      if (result) geoCache.set(key, result);
+      return result;
+    } catch {
+      return null;
+    }
+  };
+
+  const ensureProductCoords = async (p) => {
+    const prod = normalizeCoords({ ...p });
+    if (hasCoords(prod)) return prod;
+    const addr = pickAnyAddressString(prod);
+    if (!addr) return prod;
+    const geo = await geocodeOnce(addr);
+    if (geo) {
+      prod.location = { ...(prod.location || {}), latitude: geo.lat, longitude: geo.lon };
+      prod.loc = { ...(prod.loc || {}), latitude: geo.lat, longitude: geo.lon };
+    }
+    return prod;
+  };
+
+  const ensureBusinessCoords = async (b) => {
+    const biz = normalizeCoords({ ...b });
+    if (hasCoords(biz)) return biz;
+    const dLat = b?.address?.latitude ?? b?.address?.lat;
+    const dLon = b?.address?.longitude ?? b?.address?.lng ?? b?.address?.lon;
+    if (Number.isFinite(+dLat) && Number.isFinite(+dLon)) {
+      biz.location = { ...(biz.location || {}), latitude: +dLat, longitude: +dLon, city: b?.address?.city || biz.location?.city };
+      biz.loc = { ...(biz.loc || {}), latitude: +dLat, longitude: +dLon };
+      return biz;
+    }
+    const addr = pickAnyAddressString(biz);
+    if (!addr) return biz;
+    const geo = await geocodeOnce(addr);
+    if (geo) {
+      biz.location = { ...(biz.location || {}), latitude: geo.lat, longitude: geo.lon };
+      biz.loc = { ...(biz.loc || {}), latitude: geo.lat, longitude: geo.lon };
+    }
+    return biz;
+  };
+
+  /* back button: list -> map */
   useFocusEffect(
     useCallback(() => {
       const onBackPress = () => {
-        if (viewMode === 'list') {
-          setViewMode('map');
-          return true;
-        }
+        if (viewMode === 'list') { setViewMode('map'); return true; }
         return false;
       };
       const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
@@ -103,23 +222,13 @@ const MapScreen = () => {
     }, [viewMode])
   );
 
-  // Use products / initialLocation on focus
+  /* seed from route products / initialLocation */
   useFocusEffect(
     useCallback(() => {
       if (products.length > 0) {
-        const normalized = products.map(normalizeCoords);
-        const withCoords = normalized.filter(hasCoords);
+        const normalized = products.map(normalizeCoords).map(normalizeSellerFlags);
         setMapProducts(normalized);
         setNearbyProducts(normalized);
-        setCounts(prev => ({ ...prev, plants: normalized.length }));
-        if (withCoords.length > 0 && !initialLocation && !selectedLocation) {
-          const first = withCoords[0];
-          setSelectedLocation({
-            latitude: first.location.latitude,
-            longitude: first.location.longitude,
-            city: first.location?.city || first.city || 'Location',
-          });
-        }
       }
       if (initialLocation?.latitude && initialLocation?.longitude) {
         setSelectedLocation(initialLocation);
@@ -128,24 +237,22 @@ const MapScreen = () => {
     }, [products, initialLocation])
   );
 
-  // Smoothly recenter when selection changes
+  /* recenter when selection changes */
   useEffect(() => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
       mapRef.current?.flyTo?.(selectedLocation.latitude, selectedLocation.longitude, 12);
     }
   }, [selectedLocation]);
 
-  // Re-push pins when returning from List -> Map
+  /* refresh pins when returning from list */
   useEffect(() => {
     if (viewMode === 'map') {
-      const id = setTimeout(() => {
-        mapRef.current?.forceRefresh?.();
-      }, 0);
+      const id = setTimeout(() => mapRef.current?.forceRefresh?.(), 0);
       return () => clearTimeout(id);
     }
   }, [viewMode]);
 
-  // Init location (with emulator guard)
+  /* init location */
   useEffect(() => {
     const initLocation = async () => {
       if (initialLocation?.latitude && initialLocation?.longitude) {
@@ -155,68 +262,40 @@ const MapScreen = () => {
       }
       try {
         let { status } = await Location.getForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          const req = await Location.requestForegroundPermissionsAsync();
-          status = req.status;
-        }
+        if (status !== 'granted') status = (await Location.requestForegroundPermissionsAsync()).status;
         if (status === 'granted') {
-          setLocationPermissionGranted(true);
           try {
-            const location = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-              maximumAge: 30000,
-              timeout: 15000,
-            });
+            const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced, maximumAge: 30000, timeout: 15000 });
             let { latitude, longitude } = location.coords;
-            if (looksLikeEmulatorMock(latitude, longitude)) {
-              latitude = TLV.latitude;
-              longitude = TLV.longitude;
-            }
+            if (looksLikeEmulatorMock(latitude, longitude)) { latitude = TLV.latitude; longitude = TLV.longitude; }
             setMyLocation({ latitude, longitude });
             setShowMyLocation(true);
 
             if (!selectedLocation) {
               try {
                 const addr = await reverseGeocode(latitude, longitude);
-                const locData = {
-                  latitude, longitude,
-                  formattedAddress: addr.formattedAddress,
-                  city: addr.city || 'Current Location',
-                };
+                const locData = { latitude, longitude, formattedAddress: addr.formattedAddress, city: addr.city || 'Current Location' };
                 setSelectedLocation(locData);
                 loadNearbyData(locData, Number(searchRadius) || 10);
               } catch {
-                const locData = {
-                  latitude, longitude,
-                  formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`,
-                  city: 'Current Location',
-                };
+                const locData = { latitude, longitude, formattedAddress: `${latitude.toFixed(4)}, ${longitude.toFixed(4)}`, city: 'Current Location' };
                 setSelectedLocation(locData);
                 loadNearbyData(locData, Number(searchRadius) || 10);
               }
             }
           } catch {
-            setLocationPermissionGranted(false);
-            if (!selectedLocation && !initialLocation) {
-              setSelectedLocation(TLV);
-              loadNearbyData(TLV, Number(searchRadius) || 10);
-            }
+            if (!selectedLocation && !initialLocation) { setSelectedLocation(TLV); loadNearbyData(TLV, Number(searchRadius) || 10); }
           }
         } else {
-          setLocationPermissionGranted(false);
-          if (!selectedLocation && !initialLocation) {
-            setSelectedLocation(TLV);
-            loadNearbyData(TLV, Number(searchRadius) || 10);
-          }
+          if (!selectedLocation && !initialLocation) { setSelectedLocation(TLV); loadNearbyData(TLV, Number(searchRadius) || 10); }
         }
-      } catch {
-        setLocationPermissionGranted(false);
-      }
+      } catch {}
     };
     initLocation();
-  }, []); // once
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Ensure we fetch nearby once the center exists (even if TLV) and items are empty
+  /* ensure we fetch once center exists */
   useEffect(() => {
     if (!selectedLocation?.latitude || !selectedLocation?.longitude) return;
     const r = Number(searchRadius) || 10;
@@ -225,13 +304,28 @@ const MapScreen = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocation]);
 
-  // When mode changes, reload around current center
+  /* reload when mode changes */
   useEffect(() => {
     if (selectedLocation?.latitude && selectedLocation?.longitude) {
       loadNearbyData(selectedLocation, Number(searchRadius) || 10);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapMode]);
+
+  // 🔁 Refetch nearby data when the radius changes (debounced)
+useEffect(() => {
+  if (!selectedLocation?.latitude || !selectedLocation?.longitude) return;
+  const r = Number(searchRadius) || 10;
+  const id = setTimeout(() => {
+    loadNearbyData(selectedLocation, r);
+  }, 350); // debounce to avoid spamming while dragging
+  return () => clearTimeout(id);
+}, [
+  searchRadius,
+  mapMode,
+  selectedLocation?.latitude,
+  selectedLocation?.longitude,
+]);
 
   const handleLocationSelect = (loc) => {
     setSelectedLocation(loc);
@@ -241,125 +335,128 @@ const MapScreen = () => {
     }
   };
 
-  const handleRadiusChange = (r) => {
-    const n = Number(r);
-    setSearchRadius(Number.isFinite(n) ? n : 10);
-  };
   const handleApplyRadius = (r) => {
-    const n = Number(r);
-    const safe = Number.isFinite(n) ? n : 10;
-    if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyData(selectedLocation, safe);
-    }
-  };
+  const safe = Number.isFinite(Number(r)) ? Number(r) : 10;
+  setSearchRadius(safe); // the debounced effect will call loadNearbyData
+};
 
-  const handleMapModeChange = (mode) => {
-    setMapMode(mode);
-    setShowDetailCard(false);
-    setSelectedProduct(null);
-    setSelectedBusiness(null);
-    setSelectedProductData(null);
-    setSelectedBusinessData(null);
-  };
+
+  const sortProductsByDistance = (list, asc = true) =>
+    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
+  const sortBusinessesByDistance = (list, asc = true) =>
+    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
 
   const loadNearbyData = async (loc, radius) => {
     if (!loc?.latitude || !loc?.longitude) return;
     const r = Number.isFinite(Number(radius)) ? Number(radius) : 10;
-
     try {
-      setIsLoading(true);
-      setError(null);
-      setSearchingLocation(true);
-      setShowDetailCard(false);
-      setRadiusVisible(true);
-
-      if (mapMode === 'plants') {
-        await loadNearbyProducts(loc, r);
-      } else {
-        await loadNearbyBusinesses(loc, r);
-      }
+      setIsLoading(true); setError(null); setSearchingLocation(true); setShowDetailCard(false); setRadiusVisible(true);
+      if (mapMode === 'plants') await loadNearbyProducts(loc, r);
+      else await loadNearbyBusinesses(loc, r);
     } catch {
       setError('Failed to load nearby data. Please try again.');
     } finally {
-      setIsLoading(false);
-      setSearchingLocation(false);
+      setIsLoading(false); setSearchingLocation(false);
     }
   };
 
-  const loadNearbyProducts = async (loc, radius) => {
-    const res = await getNearbyProducts(loc.latitude, loc.longitude, radius);
-    if (res?.products && res.products.length > 0) {
-      const normalized = res.products.map(normalizeCoords);
-      const withCoordsCount = normalized.filter(hasCoords).length;
-      console.log(`[MapScreen] normalized products: ${normalized.length} (with coords: ${withCoordsCount})`);
-      const items = normalized.map(p => ({ ...p, distance: p.distance || 0 }));
-      const sorted = sortProductsByDistance(items, sortOrder === 'nearest');
-      setMapProducts(sorted);
-      setNearbyProducts(sorted);
-      setCounts(prev => ({ ...prev, plants: sorted.length }));
-    } else {
-      console.log('[MapScreen] nearby products empty — keeping existing items');
+  // ⬇️ pull ALL business inventory via the aggregator; merge with nearby individuals
+  const fetchAllBusinessProducts = async () => {
+    const first = await getAll(1, null, null, { sellerType: 'business' });
+    let all = first?.products || [];
+    const pages = Math.max(1, Number(first?.pages || 1));
+
+    // fetch remaining pages (cap to avoid absurd loads)
+    const MAX_PAGES = 20;
+    for (let p = 2; p <= pages && p <= MAX_PAGES; p++) {
+      const pg = await getAll(p, null, null, { sellerType: 'business' });
+      all = all.concat(pg?.products || []);
     }
+    return all;
+  };
+
+  // *** BUSINESS PRODUCTS ALWAYS IN LIST + MAP ***
+  const loadNearbyProducts = async (loc, radius) => {
+    const [nearbyRes, allBizRaw] = await Promise.all([
+      getNearbyProducts(loc.latitude, loc.longitude, radius),
+      fetchAllBusinessProducts(),
+    ]);
+
+    // nearby (mixed) -> normalize + coords + distance
+    const nearbyRaw = Array.isArray(nearbyRes?.products) ? nearbyRes.products : [];
+    let nearbyEnriched = nearbyRaw.map(normalizeCoords).map(normalizeSellerFlags);
+    nearbyEnriched = await Promise.all(nearbyEnriched.map(ensureProductCoords));
+
+    const withDistNearby = nearbyEnriched.map((p) => {
+      const { lat, lon } = readCoords(p);
+      const d = (Number.isFinite(lat) && Number.isFinite(lon))
+        ? haversineKm(loc.latitude, loc.longitude, lat, lon)
+        : num(p.distance);
+      return { ...p, distance: Number.isFinite(d) ? d : Infinity };
+    });
+
+    // all business inventory (from aggregator) -> normalize + coords + distance + flags
+    let allBiz = (allBizRaw || []).map(normalizeCoords).map(normalizeSellerFlags);
+    allBiz = await Promise.all(allBiz.map(ensureProductCoords));
+    const withDistBiz = allBiz.map((p) => {
+      const { lat, lon } = readCoords(p);
+      const d = (Number.isFinite(lat) && Number.isFinite(lon))
+        ? haversineKm(loc.latitude, loc.longitude, lat, lon)
+        : Infinity;
+      return { ...p, distance: d, isBusinessListing: true, sellerType: 'business', pinType: 'bizProduct' };
+    });
+
+    // de-dup (prefer biz version if duplicate id)
+    const byId = new Map();
+    [...withDistNearby, ...withDistBiz].forEach((p) => {
+      const key = String(p.id || p._id);
+      const existing = byId.get(key);
+      if (!existing) byId.set(key, p);
+      else if (p.isBusinessListing && !existing.isBusinessListing) byId.set(key, p);
+    });
+    const union = Array.from(byId.values());
+
+    // LIST RULE: include ALL business + any individual within radius
+    const listItems = union.filter((p) => p.isBusinessListing || p.distance <= Number(radius));
+
+    // MAP RULE: show ALL (business + individuals)
+    const sortedList = sortProductsByDistance(listItems, sortOrder === 'nearest');
+
+    setNearbyProducts(sortedList);
+    setMapProducts(listItems);
+    setRefreshToken(t => t + 1);
   };
 
   const loadNearbyBusinesses = async (loc, radius) => {
     const res = await getNearbyBusinesses(loc.latitude, loc.longitude, radius);
-    if (res?.businesses && res.businesses.length > 0) {
-      const normalized = res.businesses.map((b) => {
-        const withPrimary = normalizeCoords(b);
-        if (!hasCoords(withPrimary) && b?.address) {
-          const lat = b.address.latitude ?? b.address.lat;
-          const lon = b.address.longitude ?? b.address.lng ?? b.address.lon;
-          if (lat != null && lon != null) {
-            withPrimary.location = {
-              ...(withPrimary.location || {}),
-              latitude: Number(lat),
-              longitude: Number(lon),
-              city: b.address?.city || withPrimary.location?.city,
-            };
-          }
-        }
-        return withPrimary;
+    if (res?.businesses?.length) {
+      let enriched = await Promise.all(res.businesses.map(ensureBusinessCoords));
+      enriched = enriched.filter(hasCoords);
+      const withDist = enriched.map((b) => {
+        const { lat, lon } = readCoords(b);
+        const d = (Number.isFinite(lat) && Number.isFinite(lon))
+          ? haversineKm(loc.latitude, loc.longitude, lat, lon)
+          : Infinity;
+        return { ...b, distance: d };
       });
+      const within = withDist.filter((b) => b.distance <= Number(radius));
+      const sorted = sortBusinessesByDistance(within, sortOrder === 'nearest');
 
-      const withCoordsCount = normalized.filter(hasCoords).length;
-      console.log(`[MapScreen] normalized businesses: ${normalized.length} (with coords: ${withCoordsCount})`);
-
-      const items = normalized.map(b => ({
-        ...b,
-        distance: b.distance || 0,
-        location: b.location,
-      }));
-
-      const sorted = sortBusinessesByDistance(items, sortOrder === 'nearest');
-      setMapBusinesses(sorted);
+      setMapBusinesses(withDist);
       setNearbyBusinesses(sorted);
-      setCounts(prev => ({ ...prev, businesses: sorted.length }));
     } else {
-      console.log('[MapScreen] nearby businesses empty — keeping existing items');
+      setMapBusinesses([]); setNearbyBusinesses([]);
     }
   };
 
   const handleProductSelect = (id) => {
-    const p = mapProducts.find(x => x.id === id || x._id === id);
-    if (p) {
-      setSelectedProduct(p);
-      setSelectedProductData(p);
-      setSelectedBusiness(null);
-      setSelectedBusinessData(null);
-      setShowDetailCard(true);
-    }
+    const p = nearbyProducts.find((x) => (x.id || x._id) === id) || mapProducts.find((x) => (x.id || x._id) === id);
+    if (p) { setSelectedProductData(p); setSelectedBusinessData(null); setShowDetailCard(true); }
   };
 
   const handleBusinessSelect = (id) => {
-    const b = mapBusinesses.find(x => x.id === id);
-    if (b) {
-      setSelectedBusiness(b);
-      setSelectedBusinessData(b);
-      setSelectedProduct(null);
-      setSelectedProductData(null);
-      setShowDetailCard(true);
-    }
+    const b = nearbyBusinesses.find((x) => x.id === id) || mapBusinesses.find((x) => x.id === id);
+    if (b) { setSelectedBusinessData(b); setSelectedProductData(null); setShowDetailCard(true); }
   };
 
   const handleViewProductDetails = () => {
@@ -367,10 +464,11 @@ const MapScreen = () => {
       navigation.navigate('PlantDetail', {
         plantId: selectedProductData.id || selectedProductData._id,
         businessId: selectedProductData.businessId || selectedProductData.ownerEmail,
-        type: 'business',
+        type: (selectedProductData.businessId || selectedProductData.ownerEmail) ? 'business' : 'global',
       });
     }
   };
+
   const handleViewBusinessDetails = () => {
     if (selectedBusinessData) {
       navigation.navigate('BusinessSellerProfile', { sellerId: selectedBusinessData.id, businessId: selectedBusinessData.id });
@@ -380,83 +478,51 @@ const MapScreen = () => {
   const handleGetDirections = () => {
     let lat, lng, label;
     if (mapMode === 'plants' && selectedProductData) {
-      lat = selectedProductData.location?.latitude;
-      lng = selectedProductData.location?.longitude;
+      const c = readCoords(selectedProductData); lat = c.lat; lng = c.lon;
       label = selectedProductData.title || selectedProductData.name;
     } else if (mapMode === 'businesses' && selectedBusinessData) {
-      lat = selectedBusinessData.location?.latitude || selectedBusinessData.address?.latitude;
-      lng = selectedBusinessData.location?.longitude || selectedBusinessData.address?.longitude;
+      const c = readCoords(selectedBusinessData); lat = c.lat; lng = c.lon;
       label = selectedBusinessData.businessName || selectedBusinessData.name;
     }
-    if (!lat || !lng) {
-      Alert.alert('Error', 'Location coordinates not available');
-      return;
-    }
-    const encodedLabel = encodeURIComponent(label);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) { Alert.alert('Error', 'Location coordinates not available'); return; }
+    const encodedLabel = encodeURIComponent(label || 'Destination');
     const url =
       Platform.OS === 'ios'
         ? `maps://app?daddr=${lat},${lng}&ll=${lat},${lng}&q=${encodedLabel}`
         : `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}&destination_place_id=${encodedLabel}`;
-    Linking.openURL(url).catch(() => {
-      Alert.alert('Error', 'Could not open maps application');
-    });
+    Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open maps application'));
   };
 
   const handleGetCurrentLocation = async () => {
     if (isGettingLocation) return;
     try {
-      setIsGettingLocation(true);
-      setIsLoading(true);
-      setSearchingLocation(true);
-      setShowDetailCard(false);
-      setRadiusVisible(true);
+      setIsGettingLocation(true); setIsLoading(true); setSearchingLocation(true);
+      setShowDetailCard(false); setRadiusVisible(true);
 
       if (!locationPermissionGranted) {
         let { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') {
-          Alert.alert('Permission Required', 'Location permission is required to show your position.');
-          return;
-        }
-        setLocationPermissionGranted(true);
+        if (status !== 'granted') { Alert.alert('Permission Required', 'Location permission is required to show your position.'); return; }
       }
 
-      const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        maximumAge: 10000,
-        timeout: 15000,
-      });
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High, maximumAge: 10000, timeout: 15000 });
       let { latitude, longitude } = loc.coords;
-      if (looksLikeEmulatorMock(latitude, longitude)) {
-        latitude = TLV.latitude; longitude = TLV.longitude;
-      }
+      if (looksLikeEmulatorMock(latitude, longitude)) { latitude = TLV.latitude; longitude = TLV.longitude; }
 
       setMyLocation({ latitude, longitude });
       setShowMyLocation(true);
 
       try {
         const addr = await reverseGeocode(latitude, longitude);
-        const data = {
-          latitude, longitude,
-          formattedAddress: addr.formattedAddress,
-          city: addr.city || 'Current Location',
-        };
-        setSelectedLocation(data);
-        loadNearbyData(data, Number(searchRadius) || 10);
+        const data = { latitude, longitude, formattedAddress: addr.formattedAddress, city: addr.city || 'Current Location' };
+        setSelectedLocation(data); loadNearbyData(data, Number(searchRadius) || 10);
       } catch {
-        const data = {
-          latitude, longitude,
-          formattedAddress: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          city: 'Current Location',
-        };
-        setSelectedLocation(data);
-        loadNearbyData(data, Number(searchRadius) || 10);
+        const data = { latitude, longitude, formattedAddress: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`, city: 'Current Location' };
+        setSelectedLocation(data); loadNearbyData(data, Number(searchRadius) || 10);
       }
     } catch {
       Alert.alert('Location Error', 'Could not get your current location. Please try again.');
     } finally {
-      setIsGettingLocation(false);
-      setIsLoading(false);
-      setSearchingLocation(false);
+      setIsGettingLocation(false); setIsLoading(false); setSearchingLocation(false);
     }
   };
 
@@ -474,17 +540,6 @@ const MapScreen = () => {
     }
   };
 
-  const toggleViewMode = () => {
-    if (showDetailCard) setShowDetailCard(false);
-    setViewMode(viewMode === 'map' ? 'list' : 'map');
-  };
-
-  const sortProductsByDistance = (list, asc = true) =>
-    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
-
-  const sortBusinessesByDistance = (list, asc = true) =>
-    [...list].sort((a, b) => (asc ? 1 : -1) * ((a.distance || 0) - (b.distance || 0)));
-
   const handleMapPress = (coords) => {
     if (showDetailCard) { setShowDetailCard(false); return; }
     if (coords?.latitude && coords?.longitude) {
@@ -500,21 +555,25 @@ const MapScreen = () => {
   };
 
   const handleRetry = () => {
-    if (selectedLocation?.latitude && selectedLocation?.longitude) {
-      loadNearbyData(selectedLocation, Number(searchRadius) || 10);
-    } else {
-      handleGetCurrentLocation();
-    }
+    if (selectedLocation?.latitude && selectedLocation?.longitude) loadNearbyData(selectedLocation, Number(searchRadius) || 10);
+    else handleGetCurrentLocation();
   };
 
   const headerTitle =
     viewMode === 'list'
       ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation?.city || 'you'}`
       : selectedLocation?.city
-        ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation.city}`
-        : 'Map View';
+      ? `${mapMode === 'plants' ? 'Plants' : 'Businesses'} near ${selectedLocation.city}`
+      : 'Map View';
 
-  const currentMapData = mapMode === 'plants' ? mapProducts : mapBusinesses;
+  const displayProducts = useMemo(() => {
+    // dedup for the map prop
+    const byId = new Map();
+    (mapProducts || []).forEach((p) => byId.set(String(p.id || p._id), p));
+    (nearbyProducts || []).forEach((p) => byId.set(String(p.id || p._id), p));
+    return Array.from(byId.values());
+  }, [mapProducts, nearbyProducts]);
+
   const maptilerKey = getMapTilerKey();
 
   return (
@@ -533,7 +592,7 @@ const MapScreen = () => {
           <>
             {isLoading && searchingLocation ? (
               <View style={styles.searchingOverlay}>
-                <ActivityIndicator size="large" color="#4CAF50" />
+                <ActivityIndicator size="large" />
                 <Text style={styles.searchingText}>
                   Finding {mapMode === 'plants' ? 'plants' : 'businesses'} nearby...
                 </Text>
@@ -559,14 +618,15 @@ const MapScreen = () => {
                 selectedLocation
                   ? { latitude: selectedLocation.latitude, longitude: selectedLocation.longitude, zoom: 12 }
                   : myLocation
-                    ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
-                    : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
+                  ? { latitude: myLocation.latitude, longitude: myLocation.longitude, zoom: 12 }
+                  : { latitude: TLV.latitude, longitude: TLV.longitude, zoom: 10 }
               }
               searchRadius={searchRadius}
               onMapPress={handleMapPress}
               maptilerKey={maptilerKey}
               myLocation={myLocation}
               showMyLocation={Boolean(myLocation)}
+              refreshToken={refreshToken}   
             />
 
             {showDetailCard && selectedProductData && mapMode === 'plants' && (
@@ -601,11 +661,11 @@ const MapScreen = () => {
                 error={error}
                 onRetry={handleRetry}
                 onProductSelect={(productId) => {
-                  const p = nearbyProducts.find(x => (x.id || x._id) === productId);
+                  const p = nearbyProducts.find((x) => (x.id || x._id) === productId);
                   navigation.navigate('PlantDetail', {
                     plantId: productId,
                     businessId: p?.businessId || p?.ownerEmail,
-                    type: p?.businessId || p?.ownerEmail ? 'business' : 'global',
+                    type: p?.isBusinessListing ? 'business' : 'global',
                   });
                 }}
                 sortOrder={sortOrder}
@@ -635,11 +695,7 @@ const MapScreen = () => {
         <MapSearchBox onLocationSelect={handleLocationSelect} maptilerKey={maptilerKey} />
 
         <TouchableOpacity
-          style={[
-            styles.currentLocationButton,
-            isGettingLocation && styles.disabledButton,
-            { bottom: FLOATING_BOTTOM },
-          ]}
+          style={[styles.currentLocationButton, isGettingLocation && styles.disabledButton, { bottom: FLOATING_BOTTOM }]}
           onPress={handleGetCurrentLocation}
           disabled={isGettingLocation}
         >
@@ -649,12 +705,13 @@ const MapScreen = () => {
             <MaterialIcons name="my-location" size={24} color={showMyLocation ? '#C8E6C9' : '#fff'} />
           )}
         </TouchableOpacity>
+
         {selectedLocation && viewMode === 'map' && radiusVisible && (
           <RadiusControl
             radius={searchRadius}
-            onRadiusChange={handleRadiusChange}
+            onRadiusChange={setSearchRadius}
             onApply={handleApplyRadius}
-            products={mapMode === 'plants' ? mapProducts : mapBusinesses}
+            products={mapMode === 'plants' ? nearbyProducts : nearbyBusinesses}
             isLoading={isLoading}
             error={error}
             onProductSelect={mapMode === 'plants' ? handleProductSelect : handleBusinessSelect}
@@ -695,13 +752,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.25, shadowRadius: 6, zIndex: 50,
   },
   disabledButton: { opacity: 0.7 },
-
-  viewToggleButton: {
-    position: 'absolute', right: 84, backgroundColor: '#1976D2', paddingHorizontal: 16, paddingVertical: 12,
-    borderRadius: 26, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    elevation: 6, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 6, zIndex: 50,
-  },
-  viewToggleText: { color: '#fff', fontWeight: '700', marginLeft: 6, fontSize: 14 },
 
   backToMapButton: {
     position: 'absolute', right: 16, bottom: 16, backgroundColor: '#2E7D32', flexDirection: 'row',
