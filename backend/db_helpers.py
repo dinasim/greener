@@ -1,4 +1,4 @@
-# db_helpers.py - COMPLETELY FIXED VERSION with proper container mapping and error handling
+# db_helpers.py - YOUR VERSION WITH CRITICAL FIXES APPLIED
 
 import os
 import logging
@@ -12,12 +12,12 @@ _container_cache = {}
 CONTAINER_NAME_MAPPING = {
     # Marketplace containers (handle both dash and underscore variants)
     "marketplace-plants": "marketplace_plants",
-    "marketplace-conversations": "marketplace_conversations", 
+    "marketplace-conversations": "marketplace_conversations_new",  # CRITICAL FIX: was "marketplace_conversations"
     "marketplace-messages": "marketplace_messages",
     "marketplace-reviews": "marketplace_reviews",
     "marketplace-wishlists": "marketplace_wishlists",
     "marketplace_plants": "marketplace_plants",
-    "marketplace_conversations": "marketplace_conversations",
+    "marketplace_conversations": "marketplace_conversations_new",  # CRITICAL FIX: was "marketplace_conversations"
     "marketplace_messages": "marketplace_messages", 
     "marketplace_reviews": "marketplace_reviews",
     "marketplace_wishlists": "marketplace_wishlists",
@@ -61,7 +61,7 @@ CONTAINER_NAME_MAPPING = {
 PARTITION_KEY_MAPPING = {
     # Marketplace containers
     "marketplace_plants": "/category",
-    "marketplace_conversations": "/id", 
+    "marketplace_conversations_new": "/id",  # CRITICAL FIX: use actual container name
     "marketplace_messages": "/conversationId",
     "marketplace_reviews": "/sellerId",
     "marketplace_wishlists": "/userId",
