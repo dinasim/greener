@@ -1,12 +1,12 @@
 // components/PlantCard.js
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Image, Alert, Platform, Dimensions, Share
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import PropTypes from 'prop-types';
-import { wishProduct } from '../services/marketplaceApi';
+import * as WishlistService from '../services/WishlistService'; // ⬅️ use the centralized service
 import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 
 const { width: screenWidth } = Dimensions.get('window');
@@ -14,10 +14,9 @@ const isWeb = Platform.OS === 'web';
 
 const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', style, onContactPress, onOrderPress }) => {
   const navigation = useNavigation();
-  const [isWished, setIsWished] = useState(plant.isFavorite || plant.isWished || false);
-  const [isWishing, setIsWishing] = useState(false);
   const isGrid = layout === 'grid';
 
+  // --- Product core data (memoized)
   const plantData = useMemo(() => {
     const formatPrice = (price) => {
       const num = parseFloat(price);
@@ -48,9 +47,30 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
       title: plant.title || plant.name || plant.common_name || 'Unnamed Plant',
       description: plant.description,
       sellerInfo,
-      plantId: plant.id || plant._id
+      // Be robust about IDs
+      plantId: plant.id || plant._id || plant.inventoryId
     };
   }, [plant]);
+
+  // --- Wishlist state
+  // seed from props if present; will be reconciled with persisted state below
+  const [isWished, setIsWished] = useState(!!(plant.isFavorite || plant.isWished));
+  const [isWishing, setIsWishing] = useState(false);
+
+  // ensure heart reflects persisted state (e.g., after app restart or list refresh)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      if (!plantData.plantId) return;
+      try {
+        const has = await WishlistService.has(plantData.plantId);
+        if (mounted) setIsWished(has);
+      } catch {
+        // ignore – render falls back to initial state
+      }
+    })();
+    return () => { mounted = false; };
+  }, [plantData.plantId]);
 
   const navigateToDetails = useCallback(() => {
     try {
@@ -99,27 +119,47 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     });
   }, [plant, onOrderPress, openMessages, plantData]);
 
+  // --- Wishlist toggle (optimistic UI + persisted sync)
   const handleWishToggle = useCallback(async (event) => {
     event?.stopPropagation();
-    if (isWishing) return;
+    if (isWishing || !plantData.plantId) return;
+
     try {
       setIsWishing(true);
-      const ok = await wishProduct(plantData.plantId);
-      if (ok) {
-        const next = !isWished;
-        setIsWished(next);
-        triggerUpdate(UPDATE_TYPES.WISHLIST, {
-          plantId: plantData.plantId,
-          isFavorite: next,
-          timestamp: Date.now()
-        });
-      }
-    } catch {
+
+      // optimistic flip
+      setIsWished((prev) => !prev);
+
+      // call centralized service (handles server + cache)
+      const snapshot = {
+        id: plantData.plantId,
+        name: plantData.title,
+        title: plantData.title,
+        image: plant.image || plant.mainImage || (plant.images && plant.images[0]) || plant.imageUrl || null,
+        price: plant.price ?? plant.finalPrice ?? plant.pricing?.finalPrice ?? 0,
+        seller: plant.seller || null,
+        isBusinessListing: !!(plant.seller?.isBusiness || plant.sellerType === 'business'),
+      };
+      const { wished } = await WishlistService.toggle(plantData.plantId, { snapshot });
+
+
+      // reconcile with truth
+      setIsWished(!!wished);
+
+      // notify other screens that depend on wishlist
+      triggerUpdate(UPDATE_TYPES.WISHLIST, {
+        plantId: plantData.plantId,
+        isFavorite: !!wished,
+        timestamp: Date.now()
+      });
+    } catch (e) {
+      // rollback if it failed
+      setIsWished((prev) => !prev);
       Alert.alert('Error', 'Failed to update wishlist. Please try again.');
     } finally {
       setIsWishing(false);
     }
-  }, [isWishing, isWished, plantData.plantId]);
+  }, [isWishing, plantData.plantId]);
 
   const handleShare = useCallback(async (event) => {
     event?.stopPropagation();
@@ -315,9 +355,7 @@ const styles = StyleSheet.create({
   cardGrid: {
     minHeight: 300, // keeps both columns aligned
   },
-  listCard: {
-    // no min height; list items can grow
-  },
+  listCard: {},
   webCard: isWeb ? { cursor: 'pointer' } : null,
 
   imageContainer: { position: 'relative' },

@@ -1,9 +1,9 @@
 // screens/ProfileScreen.js - PERFORMANCE OPTIMIZED VERSION
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
-  View, Text, StyleSheet, Image, TouchableOpacity, FlatList, 
-  ActivityIndicator, SafeAreaView, Alert, ScrollView, Linking
+  View, Text, StyleSheet, Image, TouchableOpacity, FlatList,
+  ActivityIndicator, SafeAreaView, ScrollView, Linking
 } from 'react-native';
 import { MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -12,7 +12,9 @@ import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import RatingStars from '../components/RatingStars';
-import { fetchUserProfile } from '../services/marketplaceApi';
+// import { fetchUserProfile } from '../services/marketplaceApi'; // (unused)
+import * as WishlistService from '../services/WishlistService';
+// If you actually use these elsewhere on this screen, keep them. Otherwise safe to remove:
 import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener } from '../services/MarketplaceUpdates';
 
 const ProfileScreen = () => {
@@ -24,54 +26,69 @@ const ProfileScreen = () => {
   const [activeTab, setActiveTab] = useState('myPlants');
   const [ratingData, setRatingData] = useState({ average: 0, count: 0 });
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
+  const [wishlistProducts, setWishlistProducts] = useState([]);
 
-  // FIXED: Memoize expensive computations to prevent re-renders
+  // Avatar helper (memoized)
   const getAvatarUrl = useCallback(() => {
     if (!user) return `https://ui-avatars.com/api/?name=User&background=4CAF50&color=fff&size=80`;
-    return user?.avatar?.url || user?.avatar || 
-           `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=4CAF50&color=fff&size=80`;
+    return (
+      user?.avatar?.url ||
+      user?.avatar ||
+      `https://ui-avatars.com/api/?name=${encodeURIComponent(user?.name || 'User')}&background=4CAF50&color=fff&size=80`
+    );
   }, [user?.avatar, user?.name]);
 
-  // FIXED: Memoize tab data to prevent unnecessary re-renders
+  // Tabs metadata (memoized)
   const tabData = useMemo(() => [
-    { id: 'myPlants', label: 'My Plants', icon: 'eco', count: user?.plants?.length || 0 },
-    { id: 'favorites', label: 'Favorites', icon: 'favorite', count: user?.favorites?.length || 0 },
-    { id: 'sold', label: 'Sold', icon: 'local-offer', count: user?.soldPlants?.length || 0 },
-    { id: 'reviews', label: 'Reviews', icon: 'star', count: ratingData?.count || 0 }
-  ], [user?.plants?.length, user?.favorites?.length, user?.soldPlants?.length, ratingData?.count]);
+    { id: 'myPlants', label: 'My Plants', icon: 'eco',        count: user?.plants?.length || 0 },
+    { id: 'favorites', label: 'Favorites', icon: 'favorite',  count: wishlistProducts.length || 0 },
+    { id: 'sold',      label: 'Sold',      icon: 'local-offer', count: user?.soldPlants?.length || 0 },
+    { id: 'reviews',   label: 'Reviews',   icon: 'star',        count: ratingData?.count || 0 },
+  ], [user?.plants?.length, wishlistProducts.length, user?.soldPlants?.length, ratingData?.count]);
 
-  // FIXED: Optimized profile loading with proper cleanup
+  // Load + resolve wishlist to full product objects
+  const refreshWishlist = useCallback(async (force = false) => {
+    try {
+      const ids   = await WishlistService.load({ force });
+      const prods = await WishlistService.fetchProducts(ids);
+      setWishlistProducts(prods);
+    } catch (e) {
+      console.warn('[ProfileScreen] refreshWishlist failed:', e?.message);
+      setWishlistProducts([]);
+    }
+  }, []);
+
+  // Profile loader — includes 2(d): refresh wishlist after setting user in any branch
   const loadUserProfile = useCallback(async () => {
-    let isMounted = true; // Prevent state updates if component unmounts
-    
+    let isMounted = true;
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      const userEmail = await AsyncStorage.getItem('userEmail');
+      const userEmail    = await AsyncStorage.getItem('userEmail');
       const currentUserId = await AsyncStorage.getItem('currentUserId');
-      
       const userId = currentUserId || userEmail;
-      
-      if (!userId) {
-        throw new Error('No user ID found - please sign in again');
-      }
-      
+
+      if (!userId) throw new Error('No user ID found - please sign in again');
+
       console.log('[ProfileScreen] Fetching user profile for:', userId);
-      
-      // Step 1: Try to fetch existing marketplace profile
+
+      // STEP 1: Try marketplace profile
       try {
-        // FIXED: Use correct deployed endpoint route
-        const marketplaceResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/marketplace/users/${encodeURIComponent(userId)}`, {
-          signal: AbortSignal.timeout(10000) // 10 second timeout
-        });
-        
+        const ctl1 = new AbortController();
+        const to1 = setTimeout(() => ctl1.abort(), 10000);
+        const marketplaceResponse = await fetch(
+          `https://usersfunctions.azurewebsites.net/api/marketplace/users/${encodeURIComponent(userId)}`,
+          { signal: ctl1.signal }
+        );
+        clearTimeout(to1)
+
         if (marketplaceResponse.ok && isMounted) {
           const marketplaceData = await marketplaceResponse.json();
-          
+
           if (marketplaceData && marketplaceData.id) {
-            console.log('[ProfileScreen] Found existing marketplace profile:', marketplaceData);
-            setUser({
+            const profile = {
               id: marketplaceData.id || userId,
               name: marketplaceData.name || marketplaceData.email?.split('@')[0] || 'User',
               email: marketplaceData.email || userEmail,
@@ -82,29 +99,34 @@ const ProfileScreen = () => {
               soldPlants: marketplaceData.soldPlants || [],
               stats: marketplaceData.stats || { salesCount: 0 },
               socialMedia: marketplaceData.socialMedia || {},
-              avatar: marketplaceData.avatar || null
-            });
-            return; // Profile found, we're done
+              avatar: marketplaceData.avatar || null,
+            };
+            setUser(profile);
+            await refreshWishlist(false);
+            return;
           }
         }
-      } catch (marketplaceError) {
-        console.log('[ProfileScreen] Marketplace profile not found or error:', marketplaceError.message);
+      } catch (e) {
+        console.log('[ProfileScreen] Marketplace profile not found or error:', e.message);
       }
-      
-      // Step 2: Marketplace profile doesn't exist, try to get app signup data
-      console.log('[ProfileScreen] No marketplace profile found, checking app signup data');
-      
+
+      // STEP 2: Fallback — app signup data
       try {
-        // Try to fetch from the app's user registration data
-        const appUserResponse = await fetch(`https://usersfunctions.azurewebsites.net/api/registerUser?email=${encodeURIComponent(userId)}`);
-        
+         const ctl2 = new AbortController();
+         const to2 = setTimeout(() => ctl2.abort(), 10000);
+         const appUserResponse = await fetch(
+           `https://usersfunctions.azurewebsites.net/api/registerUser?email=${encodeURIComponent(userId)}`,
+           { signal: ctl2.signal }
+         );
+         clearTimeout(to2);
+
+
         if (appUserResponse.ok) {
           const appUserData = await appUserResponse.json();
-          
+
           if (appUserData && appUserData.name) {
             console.log('[ProfileScreen] Found app signup data, creating marketplace profile:', appUserData);
-            
-            // Step 3: Create marketplace profile from app data
+
             const newMarketplaceProfile = {
               id: userId,
               name: appUserData.name,
@@ -117,48 +139,37 @@ const ProfileScreen = () => {
               stats: { salesCount: 0 },
               socialMedia: {},
               avatar: null,
-              // Additional fields from app signup
+              // Extras from app
               plantLocations: appUserData.plantLocations || [],
               interests: appUserData.intersted || [],
               hasAnimals: appUserData.animals || false,
-              hasKids: appUserData.kids || false
+              hasKids: appUserData.kids || false,
             };
-            
-            // Step 4: Save the new marketplace profile
+
             try {
-              const createProfileResponse = await fetch('https://usersfunctions.azurewebsites.net/api/user-profile', {
+              await fetch('https://usersfunctions.azurewebsites.net/api/user-profile', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(newMarketplaceProfile),
               });
-              
-              if (createProfileResponse.ok) {
-                console.log('[ProfileScreen] Successfully created marketplace profile from app data');
-              } else {
-                console.warn('[ProfileScreen] Failed to save marketplace profile, but continuing with local data');
-              }
-            } catch (saveError) {
-              console.warn('[ProfileScreen] Error saving marketplace profile:', saveError);
+            } catch (e) {
+              console.warn('[ProfileScreen] Error saving new profile:', e.message);
             }
-            
-            // Set the user data regardless of save success
+
             setUser(newMarketplaceProfile);
+            await refreshWishlist(false);
             return;
           }
         }
-      } catch (appDataError) {
-        console.log('[ProfileScreen] App signup data not found or error:', appDataError.message);
+      } catch (e) {
+        console.log('[ProfileScreen] App signup data not found or error:', e.message);
       }
-      
-      // Step 5: If both failed, check local storage as last resort
-      console.log('[ProfileScreen] No database data found, checking local storage');
-      const userData = await AsyncStorage.getItem('userData');
-      
-      if (userData) {
-        try {
+
+      // STEP 3: Local storage fallback
+      try {
+        const userData = await AsyncStorage.getItem('userData');
+        if (userData) {
           const storedUser = JSON.parse(userData);
-          console.log('[ProfileScreen] Using stored user data:', storedUser);
-          
           const fallbackProfile = {
             id: userId,
             name: storedUser.name || userEmail?.split('@')[0] || 'User',
@@ -170,19 +181,18 @@ const ProfileScreen = () => {
             soldPlants: [],
             stats: { salesCount: 0 },
             socialMedia: {},
-            avatar: null
+            avatar: null,
           };
-          
           setUser(fallbackProfile);
+          await refreshWishlist(false);
           return;
-        } catch (parseError) {
-          console.error('[ProfileScreen] Error parsing stored user data:', parseError);
         }
+      } catch (e) {
+        console.warn('[ProfileScreen] Failed to parse local user data:', e.message);
       }
-      
-      // Step 6: If everything fails, create a minimal profile
-      console.log('[ProfileScreen] Creating minimal profile as fallback');
-      setUser({
+
+      // STEP 4: Minimal fallback profile
+      const minimalProfile = {
         id: userId,
         name: userEmail?.split('@')[0] || 'User',
         email: userEmail || '',
@@ -193,68 +203,75 @@ const ProfileScreen = () => {
         soldPlants: [],
         stats: { salesCount: 0 },
         socialMedia: {},
-        avatar: null
-      });
-      
+        avatar: null,
+      };
+      setUser(minimalProfile);
+      await refreshWishlist(false);
+
     } catch (error) {
-      console.error('[ProfileScreen] Critical error loading user profile:', error);
+      console.error('[ProfileScreen] Critical error loading profile:', error);
       if (isMounted) {
         setError(`Failed to load profile: ${error.message}`);
         setUser(null);
       }
     } finally {
-      if (isMounted) {
-        setIsLoading(false);
-      }
+      if (isMounted) setIsLoading(false);
     }
-    
-    // Cleanup function
+
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshWishlist]);
 
-  // FIXED: Optimized focus effect with cleanup
+  // Retry handler for error state button
+  const handleRetry = useCallback(async () => {
+    await loadUserProfile();
+    await refreshWishlist(true);
+    setLastUpdateTime(Date.now());
+  }, [loadUserProfile, refreshWishlist]);
+
+  // On-focus: refresh user profile and react to update flags
   useFocusEffect(
     useCallback(() => {
       const controller = new AbortController();
-      
+
       loadUserProfile();
-      console.log("[ProfileScreen] Screen focused, checking for updates");
-      
+      console.log('[ProfileScreen] Screen focused, checking for updates');
+
       const checkUpdates = async () => {
         try {
           if (controller.signal.aborted) return;
-          
-          // Check various update flags directly
+
           const [wishlistUpdated, favoritesUpdated, profileUpdated, reviewUpdated, productUpdated] = await Promise.all([
             AsyncStorage.getItem('WISHLIST_UPDATED'),
             AsyncStorage.getItem('FAVORITES_UPDATED'),
             AsyncStorage.getItem('PROFILE_UPDATED'),
             AsyncStorage.getItem('REVIEW_UPDATED'),
-            AsyncStorage.getItem('PRODUCT_UPDATED')
+            AsyncStorage.getItem('PRODUCT_UPDATED'),
           ]);
-          
-          const needsRefresh = wishlistUpdated || favoritesUpdated || 
-                              profileUpdated || reviewUpdated || 
-                              productUpdated || route.params?.refresh;
-          
+
+          const needsRefresh =
+            wishlistUpdated ||
+            favoritesUpdated ||
+            profileUpdated ||
+            reviewUpdated ||
+            productUpdated ||
+            route.params?.refresh;
+
           if (needsRefresh && !controller.signal.aborted) {
-            console.log("[ProfileScreen] Updates detected, refreshing profile");
-            // Clear all update flags
+            console.log('[ProfileScreen] Updates detected, refreshing profile');
             await Promise.all([
               AsyncStorage.removeItem('WISHLIST_UPDATED'),
               AsyncStorage.removeItem('FAVORITES_UPDATED'),
               AsyncStorage.removeItem('PROFILE_UPDATED'),
               AsyncStorage.removeItem('REVIEW_UPDATED'),
-              AsyncStorage.removeItem('PRODUCT_UPDATED')
+              AsyncStorage.removeItem('PRODUCT_UPDATED'),
             ]);
-            
-            // Reload user profile
+
             await loadUserProfile();
             setLastUpdateTime(Date.now());
-            
-            // Clear refresh param if present
+            await refreshWishlist(true);
+
             if (route.params?.refresh) {
               navigation.setParams({ refresh: undefined });
             }
@@ -263,17 +280,16 @@ const ProfileScreen = () => {
           console.error('[ProfileScreen] Error checking for updates:', error);
         }
       };
-      
+
       checkUpdates();
-      
-      // Cleanup function
+
       return () => {
         controller.abort();
       };
-    }, [loadUserProfile, navigation, route.params?.refresh])
+    }, [loadUserProfile, refreshWishlist, navigation, route.params?.refresh])
   );
 
-  // FIXED: Memoized tab content renderer to prevent re-renders
+  // Tab content (memoized)
   const renderTabContent = useCallback(() => {
     const renderEmptyState = (icon, title, subtitle, actionText, onAction) => (
       <View style={styles.emptyStateContainer}>
@@ -291,10 +307,8 @@ const ProfileScreen = () => {
 
     const renderPlantList = (data, emptyIcon, emptyTitle, emptySubtitle, actionText, onAction) => (
       <View style={styles.plantGrid}>
-        {data?.length === 0 && !isLoading && 
-          renderEmptyState(emptyIcon, emptyTitle, emptySubtitle, actionText, onAction)
-        }
-        
+        {data?.length === 0 && !isLoading &&
+          renderEmptyState(emptyIcon, emptyTitle, emptySubtitle, actionText, onAction)}
         <FlatList
           data={data}
           renderItem={({ item }) => <PlantCard plant={item} />}
@@ -302,9 +316,9 @@ const ProfileScreen = () => {
           numColumns={2}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingBottom: 80 }}
-          removeClippedSubviews={true} // Performance optimization
-          maxToRenderPerBatch={6} // Render optimization
-          windowSize={10} // Memory optimization
+          removeClippedSubviews={true}
+          maxToRenderPerBatch={6}
+          windowSize={10}
           ListEmptyComponent={() => isLoading ? (
             <View style={styles.centerContainer}>
               <ActivityIndicator size="large" color="#4CAF50" />
@@ -318,33 +332,33 @@ const ProfileScreen = () => {
     switch (activeTab) {
       case 'myPlants':
         return renderPlantList(
-          user?.plants, 
-          'eco', 
-          'No plants listed yet', 
+          user?.plants,
+          'eco',
+          'No plants listed yet',
           null,
-          'Add Your First Plant', 
+          'Add Your First Plant',
           () => navigation.navigate('AddPlant')
         );
-      
-      case 'favorites':
+
+    case 'favorites':
         return renderPlantList(
-          user?.favorites, 
-          'favorite-border', 
-          'No favorites yet', 
+          wishlistProducts,
+          'favorite-border',
+          'No favorites yet',
           'Heart some plants to add them to your favorites!'
         );
-      
+
       case 'sold':
         return renderPlantList(
-          user?.soldPlants, 
-          'local-offer', 
-          'No plants sold yet', 
-          'Once you sell some plants, they\'ll appear here'
+          user?.soldPlants,
+          'local-offer',
+          'No plants sold yet',
+          "Once you sell some plants, they'll appear here"
         );
-      
+
       case 'reviews':
         return (
-          <ReviewsList 
+          <ReviewsList
             targetType="seller"
             targetId={user?.id}
             onAddReview={null}
@@ -353,21 +367,21 @@ const ProfileScreen = () => {
             hideAddButton={true}
           />
         );
-      
+
       default:
         return null;
     }
-  }, [activeTab, user, isLoading, navigation]);
+  }, [activeTab, user, isLoading, wishlistProducts, navigation]);
 
   // Loading state
   if (isLoading) {
     return (
       <SafeAreaView style={styles.container}>
-        <MarketplaceHeader 
-          title="My Profile" 
-          showBackButton 
-          onBackPress={() => navigation.goBack()} 
-          onNotificationsPress={() => navigation.navigate('Messages')} 
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton
+          onBackPress={() => navigation.goBack()}
+          onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#4CAF50" />
@@ -381,11 +395,11 @@ const ProfileScreen = () => {
   if (error && !user) {
     return (
       <SafeAreaView style={styles.container}>
-        <MarketplaceHeader 
-          title="My Profile" 
-          showBackButton 
-          onBackPress={() => navigation.goBack()} 
-          onNotificationsPress={() => navigation.navigate('Messages')} 
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton
+          onBackPress={() => navigation.goBack()}
+          onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
           <MaterialIcons name="error-outline" size={64} color="#f44336" />
@@ -402,11 +416,11 @@ const ProfileScreen = () => {
   if (!user) {
     return (
       <SafeAreaView style={styles.container}>
-        <MarketplaceHeader 
-          title="My Profile" 
-          showBackButton 
-          onBackPress={() => navigation.goBack()} 
-          onNotificationsPress={() => navigation.navigate('Messages')} 
+        <MarketplaceHeader
+          title="My Profile"
+          showBackButton
+          onBackPress={() => navigation.goBack()}
+          onNotificationsPress={() => navigation.navigate('Messages')}
         />
         <View style={styles.centerContainer}>
           <Text style={styles.errorText}>Profile not available</Text>
@@ -415,19 +429,19 @@ const ProfileScreen = () => {
     );
   }
 
-  // FIXED: Optimized main render with memoization
+  // Main UI
   return (
     <SafeAreaView style={styles.container}>
-      <MarketplaceHeader 
-        title="My Profile" 
-        showBackButton 
-        onBackPress={() => navigation.goBack()} 
-        onNotificationsPress={() => navigation.navigate('Messages')} 
+      <MarketplaceHeader
+        title="My Profile"
+        showBackButton
+        onBackPress={() => navigation.goBack()}
+        onNotificationsPress={() => navigation.navigate('Messages')}
       />
-      <ScrollView removeClippedSubviews={true}>
+      <View removeClippedSubviews={true}>
         <View style={styles.profileCard}>
-          <Image 
-            source={{ uri: getAvatarUrl() }} 
+          <Image
+            source={{ uri: getAvatarUrl() }}
             style={styles.avatar}
             accessible={true}
             accessibilityLabel={`${user?.name || 'User'} profile picture`}
@@ -438,14 +452,14 @@ const ProfileScreen = () => {
             Joined {user?.joinDate ? new Date(user.joinDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }) : 'N/A'}
           </Text>
           {user?.bio && <Text style={styles.bio}>{user.bio}</Text>}
-          
+
           {/* Social Media Section - with null safety */}
           {user?.socialMedia && (user.socialMedia.instagram || user.socialMedia.facebook) && (
             <View style={styles.socialMediaSection}>
               <Text style={styles.socialMediaTitle}>Connect with me</Text>
               <View style={styles.socialMediaButtons}>
                 {user.socialMedia.instagram && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.socialMediaButton}
                     onPress={() => {
                       const username = user.socialMedia.instagram.replace('@', '');
@@ -459,13 +473,13 @@ const ProfileScreen = () => {
                     <Text style={styles.socialMediaText}>Instagram</Text>
                   </TouchableOpacity>
                 )}
-                
+
                 {user.socialMedia.facebook && (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     style={styles.socialMediaButton}
                     onPress={() => {
-                      const profileUrl = user.socialMedia.facebook.startsWith('http') 
-                        ? user.socialMedia.facebook 
+                      const profileUrl = user.socialMedia.facebook.startsWith('http')
+                        ? user.socialMedia.facebook
                         : `https://facebook.com/${user.socialMedia.facebook}`;
                       Linking.openURL(profileUrl);
                     }}
@@ -480,9 +494,9 @@ const ProfileScreen = () => {
               </View>
             </View>
           )}
-          
-          <TouchableOpacity 
-            style={styles.editProfileButton} 
+
+          <TouchableOpacity
+            style={styles.editProfileButton}
             onPress={() => navigation.navigate('EditProfile')}
             accessible={true}
             accessibilityLabel="Edit profile"
@@ -492,7 +506,7 @@ const ProfileScreen = () => {
             <Text style={styles.editProfileText}>Edit Profile</Text>
           </TouchableOpacity>
         </View>
-        
+
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statValue}>{user?.plants?.length || 0}</Text>
@@ -503,14 +517,14 @@ const ProfileScreen = () => {
             <Text style={styles.statLabel}>Sold</Text>
           </View>
           <View style={styles.statBox}>
-            <View style={{flexDirection:'row',alignItems:'center'}}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Text style={styles.statValue}>{(ratingData?.average ?? 0).toFixed(1)}</Text>
               <RatingStars rating={ratingData?.average ?? 0} size={16} />
             </View>
             <Text style={styles.statLabel}>Rating ({ratingData?.count ?? 0})</Text>
           </View>
         </View>
-        
+
         <View style={styles.tabsContainer}>
           {tabData.map(tab => (
             <TouchableOpacity
@@ -533,225 +547,70 @@ const ProfileScreen = () => {
             </TouchableOpacity>
           ))}
         </View>
-        
+
         <View style={styles.tabContent}>
           {renderTabContent()}
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  container: { 
-    flex: 1, 
-    backgroundColor: '#f5f5f5' 
-  },
-  centerContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center' 
-  },
-  loadingText: { 
-    marginTop: 10, 
-    color: '#666', 
-    fontSize: 16 
-  },
-  errorText: { 
-    color: '#f44336', 
-    fontSize: 16, 
-    textAlign: 'center', 
-    marginTop: 10 
-  },
+  container: { flex: 1, backgroundColor: '#f5f5f5' },
+  centerContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  loadingText: { marginTop: 10, color: '#666', fontSize: 16 },
+  errorText: { color: '#f44336', fontSize: 16, textAlign: 'center', marginTop: 10 },
   retryButton: {
-    marginTop: 16,
-    backgroundColor: '#4CAF50',
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
+    marginTop: 16, backgroundColor: '#4CAF50', paddingVertical: 10, paddingHorizontal: 20, borderRadius: 8,
   },
-  retryButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-  },
+  retryButtonText: { color: '#fff', fontWeight: '600' },
   profileCard: {
-    backgroundColor: '#f0f9f3', 
-    margin: 16, 
-    padding: 20, 
-    borderRadius: 16, 
-    alignItems: 'center',
-    shadowColor: '#000', 
-    shadowOpacity: 0.1, 
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowRadius: 6, 
-    elevation: 4,
+    backgroundColor: '#f0f9f3', margin: 16, padding: 20, borderRadius: 16, alignItems: 'center',
+    shadowColor: '#000', shadowOpacity: 0.1, shadowOffset: { width: 0, height: 2 }, shadowRadius: 6, elevation: 4,
   },
-  avatar: { 
-    width: 90, 
-    height: 90,
-    borderRadius: 45, 
-    marginBottom: 12,
-    backgroundColor: '#e0e0e0',
-  },
-  userName: { 
-    fontSize: 20, 
-    fontWeight: 'bold', 
-    color: '#333' 
-  },
-  userEmail: { 
-    fontSize: 14, 
-    color: '#666', 
-    marginTop: 2 
-  },
-  joinDate: { 
-    fontSize: 12, 
-    color: '#999', 
-    marginTop: 2 
-  },
-  bio: { 
-    marginTop: 10, 
-    fontSize: 14, 
-    color: '#555', 
-    textAlign: 'center' 
-  },
-  socialMediaSection: {
-    marginTop: 16,
-    alignItems: 'center',
-  },
-  socialMediaTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-  },
-  socialMediaButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
+  avatar: { width: 90, height: 90, borderRadius: 45, marginBottom: 12, backgroundColor: '#e0e0e0' },
+  userName: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  userEmail: { fontSize: 14, color: '#666', marginTop: 2 },
+  joinDate: { fontSize: 12, color: '#999', marginTop: 2 },
+  bio: { marginTop: 10, fontSize: 14, color: '#555', textAlign: 'center' },
+  socialMediaSection: { marginTop: 16, alignItems: 'center' },
+  socialMediaTitle: { fontSize: 14, fontWeight: '600', color: '#333', marginBottom: 12 },
+  socialMediaButtons: { flexDirection: 'row', gap: 12 },
   socialMediaButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowOffset: { width: 0, height: 1 },
-    shadowRadius: 2,
-    elevation: 1,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
+    paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, borderWidth: 1, borderColor: '#e0e0e0',
+    shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 1 }, shadowRadius: 2, elevation: 1,
   },
-  socialMediaText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#333',
-    marginLeft: 6,
-  },
+  socialMediaText: { fontSize: 13, fontWeight: '500', color: '#333', marginLeft: 6 },
   editProfileButton: {
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginTop: 12,
-    paddingHorizontal: 12, 
-    paddingVertical: 6, 
-    borderRadius: 20, 
-    borderColor: '#4CAF50', 
-    borderWidth: 1,
+    flexDirection: 'row', alignItems: 'center', marginTop: 12,
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderColor: '#4CAF50', borderWidth: 1,
   },
-  editProfileText: { 
-    color: '#4CAF50', 
-    marginLeft: 6, 
-    fontWeight: '500' 
-  },
+  editProfileText: { color: '#4CAF50', marginLeft: 6, fontWeight: '500' },
   statsRow: {
-    flexDirection: 'row', 
-    justifyContent: 'space-around', 
-    marginHorizontal: 16, 
-    marginTop: 8, 
-    marginBottom: 12, 
-    backgroundColor: '#fff', 
-    paddingVertical: 12, 
-    borderRadius: 12, 
-    shadowColor: '#000', 
-    shadowOpacity: 0.05, 
-    shadowOffset: { width: 0, height: 1 }, 
-    shadowRadius: 3, 
-    elevation: 2,
+    flexDirection: 'row', justifyContent: 'space-around', marginHorizontal: 16, marginTop: 8, marginBottom: 12,
+    backgroundColor: '#fff', paddingVertical: 12, borderRadius: 12,
+    shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 1 }, shadowRadius: 3, elevation: 2,
   },
-  statBox: { 
-    alignItems: 'center', 
-    flex: 1 
-  },
-  statValue: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
-    color: '#333' 
-  },
-  statLabel: { 
-    fontSize: 12, 
-    color: '#888', 
-    marginTop: 2 
-  },
+  statBox: { alignItems: 'center', flex: 1 },
+  statValue: { fontSize: 18, fontWeight: 'bold', color: '#333' },
+  statLabel: { fontSize: 12, color: '#888', marginTop: 2 },
   tabsContainer: {
-    flexDirection: 'row', 
-    backgroundColor: '#fff', 
-    elevation: 2,
-    shadowColor: '#000', 
-    shadowOffset: { width: 0, height: 1 }, 
-    shadowOpacity: 0.05, 
-    shadowRadius: 2,
+    flexDirection: 'row', backgroundColor: '#fff', elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
-  tabButton: { 
-    flex: 1, 
-    alignItems: 'center', 
-    paddingVertical: 12 
-  },
-  activeTabButton: { 
-    borderBottomWidth: 2, 
-    borderBottomColor: '#4CAF50' 
-  },
-  tabText: { 
-    fontSize: 14, 
-    color: '#666', 
-    marginTop: 4 
-  },
-  activeTabText: { 
-    color: '#4CAF50', 
-    fontWeight: 'bold' 
-  },
-  tabContent: { 
-    flex: 1, 
-    padding: 8,
-    minHeight: 300,
-  },
-  plantGrid: { 
-    paddingBottom: 80 
-  },
-  emptyStateContainer: { 
-    flex: 1, 
-    justifyContent: 'center', 
-    alignItems: 'center', 
-    marginTop: 40,
-    minHeight: 200,
-  },
-  emptyStateText: { 
-    fontSize: 16, 
-    color: '#888', 
-    textAlign: 'center', 
-    marginTop: 12 
-  },
-  actionButton: {
-    marginTop: 16, 
-    backgroundColor: '#4CAF50', 
-    paddingHorizontal: 16, 
-    paddingVertical: 10, 
-    borderRadius: 6,
-  },
-  actionButtonText: { 
-    color: '#fff', 
-    fontWeight: '600' 
-  },
+  tabButton: { flex: 1, alignItems: 'center', paddingVertical: 12 },
+  activeTabButton: { borderBottomWidth: 2, borderBottomColor: '#4CAF50' },
+  tabText: { fontSize: 14, color: '#666', marginTop: 4 },
+  activeTabText: { color: '#4CAF50', fontWeight: 'bold' },
+  tabContent: { flex: 1, padding: 8, minHeight: 300 },
+  plantGrid: { paddingBottom: 80 },
+  emptyStateContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', marginTop: 40, minHeight: 200 },
+  emptyStateText: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 12 },
+  emptyStateTextSecondary: { fontSize: 13, color: '#aaa', textAlign: 'center', marginTop: 4 },
+  actionButton: { marginTop: 16, backgroundColor: '#4CAF50', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 6 },
+  actionButtonText: { color: '#fff', fontWeight: '600' },
 });
 
 export default ProfileScreen;

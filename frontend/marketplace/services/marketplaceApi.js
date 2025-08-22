@@ -516,12 +516,18 @@ export async function getAll(page = 1, category = null, search = null, options =
 // Product CRUD / misc
 export async function getSpecific(productId) {
   if (!productId) throw new Error('Product ID is required');
-  const response = await apiRequest(`marketplace/products/specific/${encodeURIComponent(productId)}`);
-  if (response.product) {
-    const processed = processIndividualProducts([response.product]);
-    return processed[0];
+  try {
+    const response = await apiRequest(`marketplace/products/specific/${encodeURIComponent(productId)}`);
+    if (response?.product) {
+      const processed = processIndividualProducts([response.product]);
+      return processed[0];
+    }
+    // Graceful miss – business inventory or deleted item
+    return null;
+  } catch (e) {
+    // Treat 404/“not found” as a soft miss
+    return null;
   }
-  throw new Error('Product not found');
 }
 
 export const wishProduct = async (productId) => {
