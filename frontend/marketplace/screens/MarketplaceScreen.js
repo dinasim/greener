@@ -404,7 +404,9 @@ const MarketplaceScreen = ({ navigation, route }) => {
       plantName: plant.title || plant.name,
       sellerName,
       isBusiness,
-      ...(isBusiness ? { autoMessage: `Hello, I would like to buy ${plant.title || plant.name}. Is it still available?` } : {}),
+  // Always provide an autoMessage so the chat input is pre-filled regardless of seller type
+  autoMessage: `Hi, I'm interested in your ${plant.title || plant.name}. Is it still available?`,
+  forceChat: true,
     };
     navigateToMessages(messageParams);
   };
@@ -419,7 +421,8 @@ const MarketplaceScreen = ({ navigation, route }) => {
       plantName: plant.title || plant.name,
       sellerName,
       isBusiness: true,
-      autoMessage: `Hello, I would like to order ${plant.title || plant.name}. What is the pickup process?`,
+  autoMessage: `Hi, I'd like to order ${plant.title || plant.name}. What is the pickup process?`,
+  forceChat: true,
     };
     navigateToMessages(messageParams);
   };

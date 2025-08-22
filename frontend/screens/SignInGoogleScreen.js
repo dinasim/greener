@@ -274,6 +274,18 @@ export default function SignInGoogleScreen({ navigation }) {
       }
 
       console.log('✅ Consumer registration successful via Google sign-in');
+      // Append token to multi-token list endpoint (idempotent) if we have one
+      if (registrationData.fcmToken) {
+        try {
+          await fetch('https://usersfunctions.azurewebsites.net/api/update_device_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: registrationData.email, token: registrationData.fcmToken, platform: Platform.OS })
+          });
+        } catch (e) {
+          console.warn('⚠️ Failed updating device token list:', e.message);
+        }
+      }
       setIsLoading(false);
       navigation.navigate('Home');
     } catch (error) {
