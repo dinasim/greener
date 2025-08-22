@@ -35,7 +35,11 @@ const MessagesScreen = () => {
   const route = useRoute();
 
   // -------- Normalize route params (works for plant or order chat) --------
-  const params = route.params || {};
+  // Support possible nested param shape when navigating via tab navigator: { params: { ... } }
+  const rawParams = route.params || {};
+  const params = rawParams?.params && !rawParams.sellerId && !rawParams.plantId
+    ? { ...rawParams.params } // unwrap nested
+    : rawParams;
   const isOrderChat =
     !!params.isOrderChat || !!params.orderId || !!params.orderNumber;
 
@@ -64,9 +68,10 @@ const MessagesScreen = () => {
     params.sellerName || params.recipientName || params.customerName || null;
 
   const autoMessage = params.autoMessage || '';
+  const forceChat = !!params.forceChat;
 
   // -------------------- State --------------------
-  const [activeTab, setActiveTab] = useState(sellerId ? 'chat' : 'conversations');
+  const [activeTab, setActiveTab] = useState((sellerId || forceChat) ? 'chat' : 'conversations');
   const [conversations, setConversations] = useState([]);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -109,11 +114,14 @@ const MessagesScreen = () => {
     } else if (sellerId && plantId) {
       // from deep link / button -> create/find conversation shell
       findOrCreateConversation();
+    } else if (forceChat && sellerId) {
+      // Chat without plant context (fallback)
+      findOrCreateConversation();
     } else {
       setIsMessagesLoading(false);
     }
     // Do NOT depend on `conversations` to avoid extra refetch loops
-  }, [sellerId, plantId, selectedConversation?.id]);
+  }, [sellerId, plantId, selectedConversation?.id, forceChat]);
 
   // -------------------- Data loaders --------------------
   const loadConversations = async () => {
@@ -334,6 +342,41 @@ const MessagesScreen = () => {
 
     const messageText = newMessage;
     const tempId = `temp-${Date.now()}`;
+    const sendTimestamp = new Date().toISOString();
+
+    const optimisticConversationUpdate = (convId) => {
+      setConversations((prev) => {
+        // If conversation already exists, update it
+        const existingIdx = prev.findIndex(c => c.id === convId);
+        if (existingIdx !== -1) {
+          const updated = [...prev];
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            lastMessage: messageText,
+            lastMessageTimestamp: sendTimestamp,
+            lastMessageAt: sendTimestamp,
+            unreadCount: 0,
+          };
+          // Move to top
+          const [item] = updated.splice(existingIdx, 1);
+          return [item, ...updated];
+        }
+        // Otherwise create new conversation shell
+        const newConv = {
+          id: convId,
+            otherUserEmail: sellerId,
+            otherUserName: selectedConversation?.otherUserName || sellerName || (sellerId ? sellerId.split('@')[0] : 'User'),
+            otherUserAvatar: selectedConversation?.otherUserAvatar || null,
+            isBusiness: !!selectedConversation?.isBusiness,
+            plantName: plantName || selectedConversation?.plantName || 'Plant discussion',
+            lastMessage: messageText,
+            lastMessageTimestamp: sendTimestamp,
+            lastMessageAt: sendTimestamp,
+            unreadCount: 0,
+        };
+        return [newConv, ...prev];
+      });
+    };
 
     try {
       setIsSending(true);
@@ -350,13 +393,14 @@ const MessagesScreen = () => {
         pending: true,
         isFromCurrentUser: true,
       };
-      setMessages((prev) => [...prev, temp]);
+  setMessages((prev) => [...prev, temp]);
       setNewMessage('');
       setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
 
       if (selectedConversation?.id) {
         // Existing conversation (plant or order thread that already has an id)
         await sendMessage(selectedConversation.id, messageText, userEmail);
+        optimisticConversationUpdate(selectedConversation.id);
       } else if (isOrderChat && sellerId) {
         // Order chat – send directly with order metadata
         await sendOrderMessage(sellerId, messageText, userEmail, {
@@ -371,8 +415,10 @@ const MessagesScreen = () => {
           id: prev?.id || `order-${params.orderId || Date.now()}`,
         }));
 
+        optimisticConversationUpdate(`order-${params.orderId || Date.now()}`);
+
         // Refresh conversations quietly
-        setTimeout(loadConversations, 400);
+        setTimeout(loadConversations, 200);
       } else if (sellerId && plantId) {
         // Plant chat – create conversation in backend
         const result = await startConversation(
@@ -385,7 +431,8 @@ const MessagesScreen = () => {
         if (!newId) throw new Error('Failed to create conversation');
 
         setSelectedConversation((prev) => ({ ...prev, id: newId }));
-        setTimeout(loadConversations, 400);
+        optimisticConversationUpdate(newId);
+        setTimeout(loadConversations, 200);
       } else {
         throw new Error('Missing information to send message');
       }

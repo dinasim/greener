@@ -93,7 +93,8 @@ export default function ForumTopicDetail({ route, navigation }) {
       setTopic(topicData);
       // Fetch replies (ensure both topicId and category are sent)
       const replyCategory = topicData?.category || category;
-      const repliesRes = await fetch(`${API_BASE_URL}/forum-replies?topicId=${encodeURIComponent(topicId)}&category=${encodeURIComponent(replyCategory)}`);
+  const userForReplies = await AsyncStorage.getItem('userEmail');
+  const repliesRes = await fetch(`${API_BASE_URL}/forum-replies?topicId=${encodeURIComponent(topicId)}&category=${encodeURIComponent(replyCategory)}${userForReplies ? `&user=${encodeURIComponent(userForReplies)}` : ''}`);
       if (repliesRes.ok) {
         const data = await repliesRes.json();
         setReplies(data.replies || data);
@@ -176,22 +177,43 @@ export default function ForumTopicDetail({ route, navigation }) {
   const hideToast = () => setToast(prev => ({ ...prev, visible: false }));
 
   // Add this handler inside the ForumTopicDetail component
+  const [votingReplies, setVotingReplies] = useState(new Set());
   const handleVoteReply = async (replyId, delta) => {
+    const reply = replies.find(r => r.id === replyId);
+    if (!reply || votingReplies.has(replyId)) return;
+    const categoryForReply = reply.category || topic?.category || category;
+    const currentUserVote = reply.userVote || 0;
+    // Determine intended vote type and resulting userVote after toggle
+    const intended = delta; // 1 for up attempt, -1 for down attempt
+    let newUserVote;
+    if (currentUserVote === intended) {
+      // Toggle off
+      newUserVote = 0;
+    } else {
+      newUserVote = intended;
+    }
+    const voteType = newUserVote === 0 ? (intended === 1 ? 'up' : 'down') : (newUserVote === 1 ? 'up' : 'down');
+    // Optimistic aggregate change = (new - old)
+    const diff = newUserVote - currentUserVote;
+    setReplies(prev => prev.map(r => r.id === replyId ? { ...r, votes: (r.votes || 0) + diff, userVote: newUserVote } : r));
+    setVotingReplies(prev => new Set(prev).add(replyId));
     try {
-      // Call backend to update vote (implement endpoint as needed)
-      const res = await fetch(`${API_BASE_URL}/forum-replies/vote`, {
-        method: 'POST',
+      const userEmailLocal = userEmail || await AsyncStorage.getItem('userEmail');
+      const res = await fetch(`${API_BASE_URL}/forum-replies`, {
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ replyId, delta })
+        body: JSON.stringify({ replyId, category: categoryForReply, action: 'vote', voteType, user: userEmailLocal })
       });
-      if (res.ok) {
-        // Optimistically update UI
-        setReplies(prev => prev.map(r => r.id === replyId ? { ...r, votes: (r.votes || 0) + delta } : r));
-      } else {
+      if (!res.ok) {
+        // Rollback
+        setReplies(prev => prev.map(r => r.id === replyId ? { ...r, votes: (r.votes || 0) - diff, userVote: currentUserVote } : r));
         showToast('Failed to vote on reply.', 'error');
       }
     } catch (err) {
+      setReplies(prev => prev.map(r => r.id === replyId ? { ...r, votes: (r.votes || 0) - diff, userVote: currentUserVote } : r));
       showToast('Failed to vote on reply.', 'error');
+    } finally {
+      setVotingReplies(prev => { const next = new Set(prev); next.delete(replyId); return next; });
     }
   };
 
@@ -269,12 +291,12 @@ export default function ForumTopicDetail({ route, navigation }) {
                     </View>
                     {/* Voting buttons */}
                     <View style={{ alignItems: 'center', marginRight: 8 }}>
-                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, 1)} style={{ padding: 2 }}>
-                        <MaterialIcons name="thumb-up" size={20} color="#4CAF50" />
+                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, 1)} style={{ padding: 2 }} disabled={votingReplies.has(reply.id)}>
+                        <MaterialIcons name="thumb-up" size={20} color={reply.userVote === 1 ? '#2e7d32' : '#4CAF50'} />
                       </TouchableOpacity>
                       <Text style={{ fontSize: 13, color: '#333', fontWeight: '600', textAlign: 'center' }}>{reply.votes || 0}</Text>
-                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, -1)} style={{ padding: 2 }}>
-                        <MaterialIcons name="thumb-down" size={20} color="#e53935" />
+                      <TouchableOpacity onPress={() => handleVoteReply(reply.id, -1)} style={{ padding: 2 }} disabled={votingReplies.has(reply.id)}>
+                        <MaterialIcons name="thumb-down" size={20} color={reply.userVote === -1 ? '#b71c1c' : '#e53935'} />
                       </TouchableOpacity>
                     </View>
                     {/* Delete button for reply author or topic author */}

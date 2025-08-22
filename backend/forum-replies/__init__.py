@@ -53,6 +53,7 @@ def handle_get_replies(req: func.HttpRequest) -> func.HttpResponse:
     try:
         topic_id = req.params.get('topicId')
         category = req.params.get('category')  # Need category for partition key
+        user = req.params.get('user')  # optional, to annotate userVote
         
         if not topic_id or not category:
             return func.HttpResponse(
@@ -95,6 +96,13 @@ def handle_get_replies(req: func.HttpRequest) -> func.HttpResponse:
         except Exception as e:
             logging.warning(f"Failed to update view count: {str(e)}")
         
+        # Annotate each reply with userVote if user provided
+        if user:
+            for r in replies:
+                voters = r.get('voters') or {}
+                if isinstance(voters, dict):
+                    r['userVote'] = voters.get(user, 0)
+
         return func.HttpResponse(
             json.dumps({"replies": replies}, default=str),
             status_code=200,
@@ -244,10 +252,32 @@ def handle_update_reply(req: func.HttpRequest) -> func.HttpResponse:
         # Handle different actions
         if action == 'vote':
             vote_type = req_body.get('voteType', 'up')  # 'up' or 'down'
-            if vote_type == 'up':
-                reply['votes'] = reply.get('votes', 0) + 1
+            user = req_body.get('user') or req_body.get('author') or req_body.get('email')
+            if not user:
+                return func.HttpResponse(
+                    json.dumps({"error": "Missing user for vote"}),
+                    status_code=400,
+                    mimetype="application/json"
+                )
+            # Initialize voters map
+            voters = reply.get('voters')
+            if voters is None or not isinstance(voters, dict):
+                voters = {}
+            prev_vote = voters.get(user, 0)
+            new_vote_val = 1 if vote_type == 'up' else -1
+            # Toggle off if same vote clicked again
+            if prev_vote == new_vote_val:
+                new_vote_val = 0
+            # Adjust aggregate votes
+            current_total = reply.get('votes', 0)
+            reply['votes'] = current_total - prev_vote + new_vote_val
+            if new_vote_val == 0:
+                if user in voters:
+                    del voters[user]
             else:
-                reply['votes'] = reply.get('votes', 0) - 1
+                voters[user] = new_vote_val
+            reply['voters'] = voters
+            reply['userVote'] = new_vote_val
                 
         elif action == 'mark_answer':
             reply['isAnswer'] = True

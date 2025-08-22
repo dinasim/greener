@@ -79,6 +79,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "location": location if location else {},
             "plantLocations": plantLocations if plantLocations else [],
             "fcmToken": fcmToken,
+            # Initialize multi-token array if token provided
+            "fcmTokens": [fcmToken] if fcmToken else [],
             "webPushSubscription": webPushSubscription,
             "expoPushToken": expoPushToken,
             "notificationSettings": {
