@@ -1,4 +1,4 @@
-# send-message/__init__.py - Improved version
+# send-message/__init__.py - FIXED VERSION - Removes all partition_key usage
 import logging
 import json
 import uuid
@@ -60,9 +60,25 @@ class MessageService:
         return True, None
 
     def get_conversation(self, chat_id: str) -> Optional[Dict[str, Any]]:
-        """Get conversation by ID"""
+        """Get conversation by ID using query to avoid partition_key issues"""
         try:
-            return self.conversations_container.read_item(item=chat_id, partition_key=chat_id)
+            # FIXED: Use query instead of read_item to avoid partition_key parameter
+            query = "SELECT * FROM c WHERE c.id = @chatId"
+            parameters = [{"name": "@chatId", "value": chat_id}]
+            
+            conversations = list(self.conversations_container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True
+            ))
+            
+            if conversations:
+                logger.debug(f"Retrieved conversation {chat_id} using query")
+                return conversations[0]
+            else:
+                logger.warning(f"Conversation {chat_id} not found")
+                return None
+                
         except Exception as e:
             logger.error(f"Error retrieving conversation {chat_id}: {str(e)}")
             return None
@@ -121,11 +137,8 @@ class MessageService:
             current_unread = conversation['unreadCounts'].get(receiver_id, 0)
             conversation['unreadCounts'][receiver_id] = current_unread + 1
 
-            # Update the conversation in database
-            self.conversations_container.replace_item(
-                item=conversation['id'], 
-                body=conversation
-            )
+            # FIXED: Update the conversation using upsert to avoid partition_key issues
+            self.conversations_container.upsert_item(body=conversation)
             
             return True
             

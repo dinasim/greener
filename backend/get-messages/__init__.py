@@ -1,4 +1,4 @@
-# get-messages/__init__.py - FIXED VERSION with correct container names
+# get-messages/__init__.py - FIXED VERSION - Removes all partition_key usage
 import logging
 import json
 import azure.functions as func
@@ -26,9 +26,8 @@ class MessageRetrievalService:
     """Service class to handle message retrieval and read status updates"""
     
     def __init__(self):
-        # FIXED: Use correct container names with underscores
-        self.messages_container = get_container("marketplace_messages")  # FIXED: was "marketplace-messages"
-        self.conversations_container = get_container("marketplace_conversations_new")  # FIXED: was "marketplace-conversations_new"
+        self.messages_container = get_container("marketplace_messages")
+        self.conversations_container = get_container("marketplace_conversations_new")
 
     def validate_request(self, chat_id: str, user_id: str) -> Tuple[bool, Optional[str]]:
         """
@@ -47,44 +46,32 @@ class MessageRetrievalService:
 
     def get_conversation(self, chat_id: str) -> Optional[Dict[str, Any]]:
         """
-        Retrieve conversation with fallback strategies
+        Retrieve conversation using query to avoid partition_key issues
         
         Returns:
             Optional[Dict]: Conversation data or None if not found
         """
         try:
-            # Primary strategy: Direct read with chat_id as partition key
-            conversation = self.conversations_container.read_item(
-                item=chat_id, 
-                partition_key=chat_id
-            )
-            logger.debug(f"Retrieved conversation {chat_id} using direct read")
-            return conversation
+            # FIXED: Use query instead of read_item to avoid partition_key parameter
+            query = "SELECT * FROM c WHERE c.id = @id"
+            parameters = [{"name": "@id", "value": chat_id}]
             
-        except Exception as direct_error:
-            logger.debug(f"Direct read failed for conversation {chat_id}: {str(direct_error)}")
+            conversations = list(self.conversations_container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True
+            ))
             
-            # Fallback strategy: Query by ID
-            try:
-                query = "SELECT * FROM c WHERE c.id = @id"
-                parameters = [{"name": "@id", "value": chat_id}]
-                
-                conversations = list(self.conversations_container.query_items(
-                    query=query,
-                    parameters=parameters,
-                    enable_cross_partition_query=True
-                ))
-                
-                if conversations:
-                    logger.debug(f"Retrieved conversation {chat_id} using query")
-                    return conversations[0]
-                else:
-                    logger.warning(f"Conversation {chat_id} not found")
-                    return None
-                    
-            except Exception as query_error:
-                logger.error(f"Failed to retrieve conversation {chat_id}: {str(query_error)}")
+            if conversations:
+                logger.debug(f"Retrieved conversation {chat_id} using query")
+                return conversations[0]
+            else:
+                logger.warning(f"Conversation {chat_id} not found")
                 return None
+                
+        except Exception as e:
+            logger.error(f"Failed to retrieve conversation {chat_id}: {str(e)}")
+            return None
 
     def validate_user_access(self, conversation: Dict[str, Any], user_id: str) -> bool:
         """
@@ -122,8 +109,6 @@ class MessageRetrievalService:
 
             # Build query with optional pagination
             if offset and offset > 0:
-                # For pagination, we'd need to implement proper cursor-based pagination
-                # This is a simplified approach using OFFSET which may not be optimal for large datasets
                 query = f"""
                     SELECT * FROM c 
                     WHERE c.conversationId = @chatId 
@@ -175,26 +160,15 @@ class MessageRetrievalService:
             # Reset unread count
             conversation['unreadCounts'][user_id] = 0
 
-            # Try to update with explicit partition key first
+            # FIXED: Use upsert to avoid partition_key issues
             try:
-                self.conversations_container.replace_item(
-                    item=chat_id,
-                    partition_key=chat_id,
-                    body=conversation
-                )
-                logger.debug(f"Updated unread count for user {user_id} with partition key")
+                self.conversations_container.upsert_item(body=conversation)
+                logger.debug(f"Updated unread count for user {user_id}")
                 return True
                 
-            except Exception as explicit_error:
-                logger.debug(f"Update with partition key failed: {str(explicit_error)}")
-                
-                # Fallback: Update without explicit partition key
-                self.conversations_container.replace_item(
-                    item=chat_id,
-                    body=conversation
-                )
-                logger.debug(f"Updated unread count for user {user_id} without partition key")
-                return True
+            except Exception as update_error:
+                logger.warning(f"Failed to update unread count for user {user_id}: {str(update_error)}")
+                return False
                 
         except Exception as e:
             logger.warning(f"Failed to update unread count for user {user_id}: {str(e)}")
@@ -229,11 +203,8 @@ class MessageRetrievalService:
                 msg['status']['read'] = True
                 msg['status']['readAt'] = read_timestamp
                 
-                # Update in database
-                self.messages_container.replace_item(
-                    item=msg['id'], 
-                    body=msg
-                )
+                # FIXED: Use upsert instead of replace_item to avoid partition_key issues
+                self.messages_container.upsert_item(body=msg)
                 
                 marked_count += 1
                 logger.debug(f"Marked message {msg['id']} as read")
