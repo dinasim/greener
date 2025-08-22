@@ -35,6 +35,7 @@ const MarketplaceNavigation = () => {
       <Stack.Screen name="AddPlant" component={AddPlantScreen} />
       <Stack.Screen name="EditProfile" component={EditProfileScreen} />
       <Stack.Screen name="SellerProfile" component={SellerProfileScreen} />
+      <Stack.Screen name="BusinessSellerProfile" component={SellerProfileScreen} />
       <Stack.Screen name="MapView" component={MapScreen} />
     </Stack.Navigator>
   );

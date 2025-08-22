@@ -343,16 +343,20 @@ const PlantDetailScreen = () => {
   }, [navigation]);
 
   const handleSellerPress = useCallback(() => {
-    const sellerId = plant?.sellerId || plant?.seller?._id;
-    if (!sellerId) return showToast('Seller information is not available', 'error');
-
-    const isBiz = plant?.isBusinessListing || plant?.sellerType === 'business' || plant?.seller?.isBusiness || isBusinessParam;
-    if (isBiz) {
-      navigation.navigate('BusinessSellerProfile', { sellerId, businessId: plant?.businessId || sellerId });
-    } else {
-      navigation.navigate('SellerProfile', { sellerId });
+    if (!plant || (!plant.sellerId && !plant.seller?._id)) {
+      return showToast('Seller information is not available', 'error');
     }
-  }, [plant, navigation, showToast, isBusinessParam]);
+    const sellerId = plant.sellerId || plant.seller?._id;
+    const isBiz = plant.isBusinessListing || plant.sellerType === 'business' || plant.seller?.isBusiness;
+
+    navigation.navigate('SellerProfile', {
+      sellerId,
+      businessId: plant.businessId || sellerId,
+      sellerName: plant.seller?.businessName || plant.seller?.name || plant.sellerName,
+      isBusiness: true,
+    });
+  }, [plant, navigation, showToast]);
+
 
   // Images
   const images = useMemo(() => {
