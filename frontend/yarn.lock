@@ -948,13 +948,6 @@
     deepmerge "^3.2.0"
     hoist-non-react-statics "^3.3.0"
 
-"@config-plugins/ffmpeg-kit-react-native@^11.0.0":
-  version "11.0.0"
-  resolved "https://registry.yarnpkg.com/@config-plugins/ffmpeg-kit-react-native/-/ffmpeg-kit-react-native-11.0.0.tgz#ba0de47c1e68404c1c88329c0510ac3d7a03fdfa"
-  integrity sha512-51tu7pTHlzHuvMK4a9Nsq0GMJQ6YTcwmm+vrTf8JafQxG2f/2uF9KNiQ3FfUzDQ7SHQgExXawUpDvofCTgKqhg==
-  dependencies:
-    semver "^7.3.5"
-
 "@eslint-community/eslint-utils@^4.2.0":
   version "4.7.0"
   resolved "https://registry.npmjs.org/@eslint-community/eslint-utils/-/eslint-utils-4.7.0.tgz"
@@ -4499,10 +4492,10 @@ expo-auth-session@~6.2.0:
     expo-web-browser "~14.1.6"
     invariant "^2.2.4"
 
-expo-av@~15.1.6:
-  version "15.1.6"
-  resolved "https://registry.npmjs.org/expo-av/-/expo-av-15.1.6.tgz"
-  integrity sha512-5ZbeXdCmdckZHwtEV+8tRZqLlUWR96gkkUIxpyZAEvK0L+aI/BnyhDCpjnSKWwZo4ZA6lx8/su9kyFNV/mQ/sQ==
+expo-av@^15.1.7:
+  version "15.1.7"
+  resolved "https://registry.yarnpkg.com/expo-av/-/expo-av-15.1.7.tgz#a8422646eca9250c842e8a44fccccb1a4b070a05"
+  integrity sha512-NC+JR+65sxXfQN1mOHp3QBaXTL2J+BzNwVO27XgUEc5s9NaoBTdHWElYXrfxvik6xwytZ+a7abrqfNNgsbQzsA==
 
 expo-camera@~16.1.8:
   version "16.1.8"
@@ -4795,11 +4788,6 @@ fetch-cookie@^2.0.3:
   dependencies:
     set-cookie-parser "^2.4.8"
     tough-cookie "^4.0.0"
-
-ffmpeg-kit-react-native@^6.0.2:
-  version "6.0.2"
-  resolved "https://registry.yarnpkg.com/ffmpeg-kit-react-native/-/ffmpeg-kit-react-native-6.0.2.tgz#9eeac96ad89367c99480bd90431391405d4eb73e"
-  integrity sha512-r9uSmahq8TeyIb7fXf3ft+uUXyoeWRFa99+khjo0TAzWO9y0z9wU7eGnab9JLw1MmCB9v64o4yojNluJhVm9nQ==
 
 file-entry-cache@^8.0.0:
   version "8.0.0"
@@ -7144,6 +7132,11 @@ react-native-animatable@1.4.0, react-native-animatable@^1.4.0:
   dependencies:
     prop-types "^15.8.1"
 
+react-native-audio-recorder-player@^4.3.0:
+  version "4.3.0"
+  resolved "https://registry.yarnpkg.com/react-native-audio-recorder-player/-/react-native-audio-recorder-player-4.3.0.tgz#abe2a20c41da80ec2ddfc870fd8149d0aa75c8aa"
+  integrity sha512-dpt+15BJxT2nXCMCny0tVYxE/n5Z6IyQmBTb4U6hGZColzdQFNF4lZrXXpSlRn/+/cRr6EMKdr9gwx8LldH25g==
+
 react-native-chart-kit@^6.12.0:
   version "6.12.0"
   resolved "https://registry.npmjs.org/react-native-chart-kit/-/react-native-chart-kit-6.12.0.tgz"
@@ -7176,6 +7169,11 @@ react-native-modal@^13.0.2:
   integrity sha512-jCUR2DAskuZtVIbnt2ZssX70DCbTLydkL1Glv1Fc/fqVIhq1LpwBK2hKgSf9VIINXFnDjjGIMIC9HhDXnW7Enw==
   dependencies:
     react-native-animatable "1.4.0"
+
+react-native-nitro-modules@^0.28.1:
+  version "0.28.1"
+  resolved "https://registry.yarnpkg.com/react-native-nitro-modules/-/react-native-nitro-modules-0.28.1.tgz#888d777c761f2627b943833ab347b912d12f3b21"
+  integrity sha512-+H9ORJ2WIF17ytQS3MmXJnZnGjp/cSFNFgVkX+6f+uGGrCebFzPyyoks3mPIQ0C4rYuI4sv4ltuR0jQCnPjlqw==
 
 react-native-paper@^5.12.0:
   version "5.14.5"

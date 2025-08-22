@@ -1,5 +1,5 @@
-// components/SearchBar.js - Enhanced with Business Integration
-import React, { useState } from 'react';
+// components/SearchBar.js - Enhanced with Business Integration and Recording State Management
+import React, { useState, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -22,6 +22,7 @@ import SpeechToTextComponent from './SpeechToTextComponent';
  * @param {string} props.sellerType Current seller type filter ('all', 'individual', 'business')
  * @param {Object} props.style Additional styles for the container
  * @param {string} props.placeholder Custom placeholder text
+ * @param {Function} props.onRecordingStateChange Callback when recording state changes
  */
 const SearchBar = ({ 
   value, 
@@ -29,8 +30,12 @@ const SearchBar = ({
   onSubmit, 
   sellerType = 'all',
   style,
-  placeholder
+  placeholder,
+  onRecordingStateChange
 }) => {
+  const [isRecording, setIsRecording] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  
   // Generate context-aware placeholder text
   const getPlaceholder = () => {
     if (placeholder) return placeholder;
@@ -96,6 +101,12 @@ const SearchBar = ({
     }
   };
 
+  // Handle recording state changes
+  const handleRecordingStateChange = (recordingState) => {
+    setIsRecording(recordingState);
+    onRecordingStateChange?.(recordingState);
+  };
+
   // Get icon for current search context
   const getContextIcon = () => {
     switch (sellerType) {
@@ -108,8 +119,6 @@ const SearchBar = ({
     }
   };
 
-  // Show quick suggestions only when search is empty and there's focus
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const suggestions = getSearchSuggestions().slice(0, 4); // Show top 4
 
   return (
@@ -128,14 +137,15 @@ const SearchBar = ({
           value={value}
           onChangeText={onChangeText}
           onSubmitEditing={handleSubmit}
-          onFocus={() => setShowSuggestions(!value)}
+          onFocus={() => setShowSuggestions(!value && !isRecording)}
           onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
           returnKeyType="search"
           clearButtonMode="while-editing"
+          editable={!isRecording} // Disable input while recording
         />
 
         {/* Clear button (visible when there's text) */}
-        {value ? (
+        {value && !isRecording ? (
           <TouchableOpacity onPress={handleClear} style={styles.clearButton}>
             <MaterialIcons name="clear" size={20} color="#999" />
           </TouchableOpacity>
@@ -144,6 +154,7 @@ const SearchBar = ({
         {/* Voice search button */}
         <SpeechToTextComponent 
           onTranscriptionResult={handleTranscriptionResult}
+          onRecordingStateChange={handleRecordingStateChange}
           style={styles.micButton}
         />
       </View>
@@ -158,7 +169,7 @@ const SearchBar = ({
       )}
 
       {/* Quick search suggestions */}
-      {showSuggestions && !value && (
+      {showSuggestions && !value && !isRecording && (
         <View style={styles.suggestionsContainer}>
           <Text style={styles.suggestionsTitle}>Popular searches:</Text>
           <View style={styles.suggestionsList}>
