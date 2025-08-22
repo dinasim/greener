@@ -6,7 +6,20 @@ from db_helpers import get_container
 from http_helpers import add_cors_headers, handle_options_request, create_error_response, create_success_response, extract_user_id
 from datetime import datetime
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
+# SignalR integration
+def send_signalr_update(signalRMessages, user_id, conversations):
+    message = {
+        "target": "conversationsUpdated",
+        "arguments": [
+            {
+                "userId": user_id,
+                "conversations": conversations
+            }
+        ]
+    }
+    signalRMessages.set(json.dumps(message))
+
+def main(req: func.HttpRequest, signalRMessages: func.Out[str] = None) -> func.HttpResponse:
     logging.info('Python HTTP trigger function for getting user conversations processed a request.')
     
     # Handle OPTIONS method for CORS preflight
@@ -16,44 +29,42 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
     try:
         # Get user ID from query parameters or request body
         user_id = extract_user_id(req)
-        
         if not user_id:
             return create_error_response("User ID is required", 400)
-        
-        # Access the marketplace-conversations container
-        container = get_container("marketplace-conversations")
-        
+
+        # Access the marketplace_conversations_new container
+        container = get_container("marketplace_conversations_new")
+
         # Query for conversations where the user is a participant
         query = "SELECT * FROM c WHERE ARRAY_CONTAINS(c.participants, @userId)"
         parameters = [{"name": "@userId", "value": user_id}]
-        
+
         conversations = list(container.query_items(
             query=query,
             parameters=parameters,
             enable_cross_partition_query=True
         ))
-        
+
         # Enhance conversations with additional information
         enhanced_conversations = []
-        
         for conv in conversations:
             try:
                 # Get the other participant
                 other_user_id = next((p for p in conv['participants'] if p != user_id), None)
-                
+
                 # Initialize default values
                 other_user = {
                     "name": "Unknown User",
                     "avatar": None,
                     "business": False
                 }
-                
+
                 plant_info = {
                     "name": "Plant Discussion",
                     "id": None,
                     "image": None
                 }
-                
+
                 if other_user_id:
                     # Try to get user from regular users container first
                     users_container = get_container("users")
@@ -62,13 +73,13 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                         {"name": "@id", "value": other_user_id},
                         {"name": "@email", "value": other_user_id}
                     ]
-                    
+
                     users = list(users_container.query_items(
                         query=user_query,
                         parameters=user_params,
                         enable_cross_partition_query=True
                     ))
-                    
+
                     if users:
                         other_user = {
                             "name": users[0].get('name', 'User'),
@@ -94,33 +105,33 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                                 "avatar": businesses[0].get('logo'),
                                 "business": True
                             }
-                
+
                 # Get plant information if plantId exists
                 if 'plantId' in conv:
                     plants_container = get_container("marketplace-plants")
                     plant_query = "SELECT c.id, c.title, c.image, c.images FROM c WHERE c.id = @id"
                     plant_params = [{"name": "@id", "value": conv['plantId']}]
-                    
+
                     plants = list(plants_container.query_items(
                         query=plant_query,
                         parameters=plant_params,
                         enable_cross_partition_query=True
                     ))
-                    
+
                     if plants:
                         plant = plants[0]
                         plant_image = plant.get('image')
-                        
+
                         # If image is not directly available, try to get from images array
                         if not plant_image and 'images' in plant and plant['images'] and len(plant['images']) > 0:
                             plant_image = plant['images'][0]
-                            
+
                         plant_info = {
                             "name": plant.get('title', 'Plant Discussion'),
                             "id": plant.get('id'),
                             "image": plant_image
                         }
-                
+
                 # Format the conversation
                 enhanced_conv = {
                     "id": conv['id'],
@@ -134,7 +145,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "lastMessageTimestamp": conv.get('lastMessageAt'),
                     "unreadCount": conv.get('unreadCounts', {}).get(user_id, 0)
                 }
-                
+
                 enhanced_conversations.append(enhanced_conv)
             except Exception as e:
                 logging.error(f"Error enhancing conversation {conv.get('id')}: {str(e)}")
@@ -147,15 +158,17 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "lastMessageTimestamp": conv.get('lastMessageAt'),
                     "unreadCount": 0
                 })
-        
+
         # Sort by last message timestamp, most recent first
         enhanced_conversations.sort(
             key=lambda c: c.get('lastMessageTimestamp', ''),
             reverse=True
         )
-        
+
+        # If SignalR binding is present, broadcast update
+        if signalRMessages is not None:
+            send_signalr_update(signalRMessages, user_id, enhanced_conversations)
         return create_success_response(enhanced_conversations)
-    
     except Exception as e:
         logging.error(f"Error getting user conversations: {str(e)}")
         return create_error_response(str(e), 500)

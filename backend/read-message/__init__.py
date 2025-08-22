@@ -1,6 +1,4 @@
-# Backend: /backend/read-message/__init__.py
-#   marketplace file
-
+# read-message/__init__.py - FIXED VERSION with correct container names
 import logging
 import json
 import azure.functions as func
@@ -35,8 +33,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         if not user_id:
             return create_error_response("User ID is required", 400)
         
-        # Access the messages container
-        messages_container = get_container("marketplace-messages")
+        # FIXED: Access the messages container with correct name
+        messages_container = get_container("marketplace_messages")  # FIXED: was "marketplace-messages"
         
         # Query for messages that need to be marked as read
         if message_ids and len(message_ids) > 0:
@@ -107,7 +105,8 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         
         # Reset unread count in the conversation
         try:
-            conversations_container = get_container("marketplace-conversations")
+            # FIXED: Use correct container name
+            conversations_container = get_container("marketplace_conversations_new")  # Already correct
             
             # First try to read the conversation directly
             try:
