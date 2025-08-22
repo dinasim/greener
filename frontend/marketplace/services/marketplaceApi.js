@@ -6,6 +6,7 @@ import {
   addBusinessProfileSync,
   invalidateMarketplaceCache,
 } from './BusinessMarketplaceSyncBridge';
+import * as FileSystem from 'expo-file-system';
 
 // ----------------------------
 const API_BASE_URL = config.API_BASE_URL || 'https://usersfunctions.azurewebsites.net/api';
@@ -192,7 +193,6 @@ export async function updateUserProfile(userId, userData) {
     method: 'PUT',
     body: JSON.stringify(userData),
   });
-
 
   if (userData.isBusiness || userData.userType === 'business') {
     await addBusinessProfileSync(userData, 'marketplace');
@@ -543,73 +543,167 @@ export const clearMarketplaceCache = () => {
   console.log('🧹 Marketplace cache cleared');
 };
 
-
 // ----------------------------
-// Image upload
-// services/marketplaceApi.js
+// Image/audio upload
 
-export async function uploadImage(file, type = 'plant', contentType) {
-  if (!file) throw new Error('Image/audio data is required');
+// Enhanced file format detection
+const detectFileFormat = async (fileUri) => {
+  try {
+    const fileInfo = await FileSystem.getInfoAsync(fileUri);
+    if (!fileInfo.exists) return null;
 
-  // Data URL path
-  if (typeof file === 'string' && file.startsWith('data:')) {
-    return apiRequest('marketplace/uploadImage', {
-      method: 'POST',
-      body: JSON.stringify({ image: file, type, contentType }),
+    // Read file header for magic number detection
+    const headerBase64 = await FileSystem.readAsStringAsync(fileUri, {
+      encoding: FileSystem.EncodingType.Base64,
+      length: 64,
+      position: 0,
     });
+    
+    const headerBytes = atob(headerBase64);
+    
+    // Detect various audio formats
+    if (headerBytes.includes('#!AMR') || headerBytes.includes('#!AMR-WB')) {
+      return { format: 'audio/3gpp', extension: '.3gp', supported: false };
+    }
+    
+    if (headerBytes.includes('ftyp')) {
+      if (headerBytes.includes('3gp')) {
+        return { format: 'audio/3gpp', extension: '.3gp', supported: false };
+      }
+      if (headerBytes.includes('M4A') || headerBytes.includes('isom') || headerBytes.includes('mp42')) {
+        return { format: 'audio/mp4', extension: '.m4a', supported: true };
+      }
+    }
+    
+    if (headerBytes.startsWith('RIFF') && headerBytes.includes('WAVE')) {
+      return { format: 'audio/wav', extension: '.wav', supported: true };
+    }
+    
+    if (headerBytes.startsWith('ID3') || headerBytes.startsWith('\xff\xfb')) {
+      return { format: 'audio/mpeg', extension: '.mp3', supported: true };
+    }
+    
+    // Default to M4A if no clear detection
+    return { format: 'audio/mp4', extension: '.m4a', supported: true };
+  } catch (error) {
+    console.warn('File format detection failed:', error);
+    return { format: 'audio/mp4', extension: '.m4a', supported: true };
   }
-
-  const form = new FormData();
-
-  // React-Native file URI (e.g. file:///...)
-  if (typeof file === 'string') {
-    // pick extension that matches contentType
-    let ext = 'bin';
-    if (contentType === 'audio/wav') ext = 'wav';
-    else if (contentType === 'audio/webm') ext = 'webm';
-    else if (contentType === 'audio/mp4') ext = 'm4a';
-    else if (contentType?.startsWith('image/')) ext = contentType.split('/')[1];
-
-    form.append('file', {
-      uri: file,
-      name: `${type}_${Date.now()}.${ext}`,
-      type: contentType || 'application/octet-stream',
-    });
-  }
-  // Blob/File (web)
-  else if (typeof File !== 'undefined' && (file instanceof File || file instanceof Blob)) {
-    form.append('file', file);
-  }
-  // Fallback for objects
-  else if (file?.uri) {
-    form.append('file', {
-      uri: file.uri,
-      name: file.name || `${type}_${Date.now()}`,
-      type: file.type || contentType || 'application/octet-stream',
-    });
-  } else {
-    throw new Error('Unsupported file type for uploadImage');
-  }
-
-  form.append('type', type);
-  if (contentType) form.append('contentType', contentType);
-
-  return apiRequest('marketplace/uploadImage', { method: 'POST', body: form, headers: {} });
-}
-
-
-// Also: don't default STT to Hebrew unless you need it.
-// Change default to English:
-export const speechToText = async (audioUrl, language = 'en-US') => {
-  if (!audioUrl) throw new Error('Audio URL is required');
-  const response = await apiRequest('marketplace/speechtotext', {
-    method: 'POST',
-    body: JSON.stringify({ audioUrl, language })
-  });
-  const text = response.text || '';
-  return text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim();
 };
 
+export async function uploadImage(fileUri, fileType = 'speech') {
+  try {
+    console.log(`[uploadImage] Starting upload: ${fileUri}, type: ${fileType}`);
+    
+    let filename, contentType;
+    
+    if (fileType === 'speech') {
+      // Detect the actual file format
+      const formatInfo = await detectFileFormat(fileUri);
+      
+      if (!formatInfo.supported) {
+        console.warn(`[uploadImage] Unsupported format detected: ${formatInfo.format}`);
+        // The server will handle transcoding, but warn the user
+      }
+      
+      filename = `speech_${Date.now()}${formatInfo.extension}`;
+      contentType = formatInfo.format;
+      
+      console.log(`[uploadImage] Detected format: ${contentType}, filename: ${filename}`);
+    } else {
+      // For non-speech files, use original logic
+      filename = fileUri.split('/').pop() || `file_${Date.now()}`;
+      contentType = 'application/octet-stream';
+    }
+
+    // Read the file and send JSON (base64)
+    const base64 = await FileSystem.readAsStringAsync(fileUri, {
+      encoding: FileSystem.EncodingType.Base64,
+    });
+
+    const payload = {
+      file: base64,
+      type: fileType,
+      filename,
+      contentType,
+    };
+
+    // Try upload endpoints
+    const candidates = [
+      `${API_BASE_URL}/marketplace/uploadImage`,
+    ];
+
+    let lastErrText = '';
+    for (const url of candidates) {
+      try {
+        console.log(`[uploadImage] Trying endpoint: ${url}`);
+        const resp = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const text = await resp.text();
+        if (!resp.ok) {
+          lastErrText = `HTTP ${resp.status} ${text || ''}`;
+          console.warn(`[uploadImage] ${url} failed -> ${lastErrText}`);
+          continue;
+        }
+        
+        const result = text ? JSON.parse(text) : {};
+        console.log(`[uploadImage] Success:`, result);
+        return result;
+      } catch (e) {
+        lastErrText = String(e?.message || e);
+        console.warn(`[uploadImage] ${url} network error -> ${lastErrText}`);
+      }
+    }
+    throw new Error(`Upload failed: ${lastErrText || 'no endpoint succeeded'}`);
+  } catch (err) {
+    console.error('❌ uploadImage error:', err);
+    throw err;
+  }
+}
+
+// Convenience wrapper for audio uploads
+export async function uploadAudio(file, contentType = (Platform.OS === 'web' ? 'audio/wav' : 'audio/mp4')) {
+  return uploadImage(file, 'speech', contentType);
+}
+
+// ----------------------------
+// STT
+
+// Full response (text, status, confidence, debug if server returns it)
+export const speechToTextRaw = async (audioUrl, language = 'en-US') => {
+  if (!audioUrl) throw new Error('Audio URL is required');
+  console.log(`[speechToTextRaw] Transcribing: ${audioUrl} (${language})`);
+  
+  try {
+    const result = await apiRequest('marketplace/speechtotext', {
+      method: 'POST',
+      body: JSON.stringify({ audioUrl, language })
+    });
+    
+    console.log(`[speechToTextRaw] Result:`, result);
+    return result;
+  } catch (error) {
+    console.error(`[speechToTextRaw] Error:`, error);
+    throw error;
+  }
+};
+
+// Backward-compatible helper: returns cleaned text string only
+export const speechToText = async (audioUrl, language = 'en-US') => {
+  try {
+    const res = await speechToTextRaw(audioUrl, language);
+    const text = res?.text || '';
+    const cleaned = text.replace(/[.,!?;:'"()\[\]{}]/g, '').replace(/\s+/g, ' ').trim();
+    console.log(`[speechToText] Cleaned result: "${cleaned}"`);
+    return cleaned;
+  } catch (error) {
+    console.error(`[speechToText] Error:`, error);
+    return '';
+  }
+};
 
 // ----------------------------
 // Business purchase
@@ -708,7 +802,7 @@ export async function reverseGeocode(latitude, longitude) {
   }
 }
 
-// Safe fallback: don’t throw if backend is down; return empty result instead
+// Safe fallback: don't throw if backend is down; return empty result instead
 export async function getNearbyProducts(latitude, longitude, radius = 10, category = null) {
   const latNum = Number(latitude);
   const lonNum = Number(longitude);
@@ -771,7 +865,6 @@ export const sendMessage = async (chatId, message, senderId) => {
   });
 };
 
-
 export const startConversation = async (sellerId, plantId, message, sender) => {
   if (!sellerId || !message || !sender) throw new Error('Seller ID, message, and sender are required');
   return apiRequest('marketplace/messages/createChatRoom', {
@@ -824,7 +917,6 @@ export const getAzureMapsKey = async () => {
   if (!response.azureMapsKey && !response.subscriptionKey) throw new Error('No Azure Maps key returned from server');
   return response.azureMapsKey || response.subscriptionKey;
 };
-
 
 const normalizeBusiness = (b = {}) => {
   const addr = b.address || {};
@@ -926,11 +1018,13 @@ export default {
   submitReview,
   deleteReview,
 
-  // Images
+  // Images / Audio
   uploadImage,
+  uploadAudio,
 
   // Utils
   getAzureMapsKey,
+  speechToTextRaw,
   speechToText,
   // cache helpers
   clearMarketplaceCache: () => { businessCache.clear(); console.log('🧹 Marketplace cache cleared'); },

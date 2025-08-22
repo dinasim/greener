@@ -85,7 +85,7 @@
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
-      ]
+      ], ["@config-plugins/ffmpeg-kit-react-native", { "package": "audio" }]
     ]
   }
 }

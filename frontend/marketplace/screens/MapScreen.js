@@ -125,7 +125,6 @@ const MapScreen = () => {
   const FLOATING_BOTTOM = Math.max(24, Math.round(height * 0.16));
   const CARD_POPUP_BOTTOM = Math.max(200, Math.round(height * 0.22));
 const [refreshToken, setRefreshToken] = useState(0);
-const bumpRefresh = () => setRefreshToken((n) => n + 1);
   const [mapMode, setMapMode] = useState('plants'); // 'plants' | 'businesses'
   const [mapProducts, setMapProducts] = useState(products);
   const [mapBusinesses, setMapBusinesses] = useState([]);
@@ -405,11 +404,25 @@ useEffect(() => {
         : Infinity;
       return { ...p, distance: d, isBusinessListing: true, sellerType: 'business', pinType: 'bizProduct' };
     });
+const makeKey = (p) => {
+  // Prefer stable explicit ids
+  const id = p.id || p._id;
+  if (id) return `id:${id}`;
+
+  // Otherwise build a composite fallback
+  const { lat, lon } = readCoords(p);
+  const owner = p.businessId || p.ownerEmail || p.seller?.email || '';
+  const name = p.title || p.name || '';
+  // Keep precision modest so tiny jitter doesn't create new keys
+  const latF = Number.isFinite(lat) ? lat.toFixed(5) : 'na';
+  const lonF = Number.isFinite(lon) ? lon.toFixed(5) : 'na';
+  return `v2:${owner}|${name}|${latF},${lonF}`;
+};
 
     // de-dup (prefer biz version if duplicate id)
     const byId = new Map();
     [...withDistNearby, ...withDistBiz].forEach((p) => {
-      const key = String(p.id || p._id);
+       const key = makeKey(p);
       const existing = byId.get(key);
       if (!existing) byId.set(key, p);
       else if (p.isBusinessListing && !existing.isBusinessListing) byId.set(key, p);
@@ -417,14 +430,16 @@ useEffect(() => {
     const union = Array.from(byId.values());
 
     // LIST RULE: include ALL business + any individual within radius
-    const listItems = union.filter((p) => p.isBusinessListing || p.distance <= Number(radius));
+    const listItems =  myLocation
+     ? union.filter((p) => p.isBusinessListing || p.distance <= Number(radius))
+     : union; // if no user location, don't filter the list either
 
     // MAP RULE: show ALL (business + individuals)
     const sortedList = sortProductsByDistance(listItems, sortOrder === 'nearest');
 
     setNearbyProducts(sortedList);
-    setMapProducts(listItems);
-    setRefreshToken(t => t + 1);
+    setMapProducts(union);
+    setTimeout(() => mapRef.current?.forceRefresh?.(), 0);
   };
 
   const loadNearbyBusinesses = async (loc, radius) => {

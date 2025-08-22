@@ -420,15 +420,21 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
         ? { lon: num(coords[0]), lat: num(coords[1]) }
         : {};
 
-    const L = obj.location || obj.address || obj.geo || {};
-    const candidates = [
+ const B = obj.business || {};
+ const L = obj.location || obj.address || obj.geo || {};
+ const BL = B.location || B.address || B.geo || {};
+     const candidates = [
       { lat: pick(L, 'latitude'), lon: pick(L, 'longitude') },
       { lat: pick(L, 'lat'), lon: pick(L, 'lng') ?? pick(L, 'lon') },
       { lat: pick(obj, 'latitude'), lon: pick(obj, 'longitude') },
       { lat: pick(obj, 'lat'), lon: pick(obj, 'lng') ?? pick(obj, 'lon') },
+      
       fromCoords(L.coordinates),
       fromCoords(obj.coordinates),
       fromCoords(obj.geo?.coordinates),
+      { lat: pick(BL, 'latitude'), lon: pick(BL, 'longitude') },
+      { lat: pick(BL, 'lat'), lon: pick(BL, 'lng') ?? pick(BL, 'lon') },
+      fromCoords(BL.coordinates),
     ];
 
     for (const c of candidates) {
@@ -440,11 +446,16 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
 
   const toAddressString = (x = {}) => {
     const L = x.location || x.address || {};
+    const BL = x.business?.location || x.business?.address || {};
     const parts = [
       L.formattedAddress || L.address || '',
       L.city || x.city || '',
       L.state || '',
       L.country || '',
+       BL.formattedAddress || BL.address || '',
+        BL.city || '',
+        BL.state || '',
+        BL.country || '',
     ].filter(Boolean);
     return parts.length ? parts.join(', ') : null;
   };
@@ -463,80 +474,63 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const out = [];
-      for (const x of (items || [])) {
-        const parsed = extractLatLon(x);
-        let lat = parsed.lat, lon = parsed.lon;
+   const list = Array.isArray(items) ? items : [];
+   const results = await Promise.all(list.map(async (x) => {
+     let { lat, lon } = extractLatLon(x);
+     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+       const addr = toAddressString(x);
+       if (addr) {
+         const key = addr.trim().toLowerCase();
+         let cached = geoCacheRef.current.get(key);
+         if (cached === undefined) {
+           try {
+             const g = await geocodeAddress(addr);
+             const glat = Number(g?.latitude ?? g?.lat);
+             const glon = Number(g?.longitude ?? g?.lng ?? g?.lon);
+             cached = (Number.isFinite(glat) && Number.isFinite(glon)) ? { lat: glat, lon: glon } : 'x';
+           } catch { cached = 'x'; }
+           geoCacheRef.current.set(key, cached);
+         }
+         if (cached && cached !== 'x') { lat = cached.lat; lon = cached.lon; }
+       }
+     }
+     if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
 
-        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-          const addr = toAddressString(x);
-          if (addr) {
-            const key = addr.trim().toLowerCase();
-            let cached = geoCacheRef.current.get(key);
-            if (cached === undefined) {
-              const g = await geocodeAddress(addr);
-              const glat = Number(g?.latitude ?? g?.lat);
-              const glon = Number(g?.longitude ?? g?.lng ?? g?.lon);
-              if (Number.isFinite(glat) && Number.isFinite(glon)) {
-                cached = { lat: glat, lon: glon };
-              } else {
-                cached = 'x';
-                console.log('[Map] geocode had no numeric coords for:', addr, g);
-              }
-              geoCacheRef.current.set(key, cached);
-            }
-            if (cached && cached !== 'x') {
-              lat = cached.lat; lon = cached.lon;
-            }
-          }
-        }
+     const img =
+       x.imageUrl || x.image || x.thumbnail || x.photoUrl ||
+       (Array.isArray(x.images) && x.images[0]) ||
+       (Array.isArray(x.photos) && (x.photos[0]?.url || x.photos[0])) ||
+       (x.media && x.media[0]?.url);
 
-        if (Number.isFinite(lat) && Number.isFinite(lon)) {
-          const img =
-            x.imageUrl || x.image || x.thumbnail || x.photoUrl ||
-            (Array.isArray(x.images) && x.images[0]) ||
-            (Array.isArray(x.photos) && (x.photos[0]?.url || x.photos[0])) ||
-            (x.media && x.media[0]?.url);
+     const price = x.price ?? x.priceNIS ?? x.priceILS ?? x.cost;
+     const bizHeuristic =
+       x.isBusinessListing || x.isBusiness || x.seller?.isBusiness || x.businessId || x.ownerEmail ||
+       x.source === 'business_inventory' || (typeof x.type === 'string' && x.type.toLowerCase().includes('business'));
 
-          const price = x.price ?? x.priceNIS ?? x.priceILS ?? x.cost;
+     const pinType = (mapMode === 'businesses') ? 'business' : (x.pinType || (bizHeuristic ? 'bizProduct' : 'indProduct'));
 
-          const bizHeuristic =
-            x.isBusinessListing ||
-            x.isBusiness ||
-            x.seller?.isBusiness ||
-            x.businessId ||
-            x.ownerEmail ||
-            x.source === 'business_inventory' ||
-            (typeof x.type === 'string' && x.type.toLowerCase().includes('business'));
+     const m = {
+       id: String(x.id || x._id || `${(x.ownerEmail||'na')}-${(x.title||x.name||'item')}`),
+       title: x.title || x.name || x.businessName || 'Item',
+       lat, lon,
+       type: pinType,
+       imageUrl: img ? String(img) : null,
+       priceText: (price != null && price !== '' && pinType !== 'business') ? `${price}₪` : null,
+     };
+     if (showMyLocation && Number.isFinite(myLocation?.latitude) && Number.isFinite(myLocation?.longitude)) {
+       m.distanceKm = haversineKm(myLocation.latitude, myLocation.longitude, lat, lon);
+     }
+     return m;
+   }));
 
-          const pinType =
-            mapMode === 'businesses'
-              ? 'business'
-              : (x.pinType || (bizHeuristic ? 'bizProduct' : 'indProduct'));
-
-          const marker = {
-            id: String(x.id || x._id || ''),
-            title: x.title || x.name || x.businessName || 'Item',
-            lat, lon,
-            type: pinType,
-            imageUrl: img ? String(img) : null,
-            priceText: (price != null && price !== '' && pinType !== 'business') ? `${price}₪` : null,
-          };
-
-          if (showMyLocation && Number.isFinite(myLocation?.latitude) && Number.isFinite(myLocation?.longitude)) {
-            marker.distanceKm = haversineKm(myLocation.latitude, myLocation.longitude, lat, lon);
-          }
-
-          out.push(marker);
-        }
-      }
-      if (!cancelled) {
-        setResolvedMarkers(out);
-        if (readyRef.current) {
-          webRef.current?.postMessage(JSON.stringify({ type: 'refreshMarkers', markers: out }));
-        }
-      }
-    })();
+   const out = results.filter(Boolean);
+   if (!cancelled) {
+     setResolvedMarkers(out);
+     if (readyRef.current) {
+       webRef.current?.postMessage(JSON.stringify({ type: 'refreshMarkers', markers: out }));
+     }
+   }
+ })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapMode, products, businesses, showMyLocation, myLocation?.latitude, myLocation?.longitude]);
@@ -558,14 +552,14 @@ const CrossPlatformWebMap = forwardRef((props, ref) => {
         radiusKm: Number(searchRadius) || 0,
         myLocation,
         showMyLocation,
-        version: refreshToken,  
+        version: 0,  
       }),
     // Keep stable to avoid remount; updates go via postMessage
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [maptilerKey, center.latitude, center.longitude, center.zoom]
   );
 const webKey = useMemo(
-  () => `map-${center.latitude}-${center.longitude}-${center.zoom}-${refreshToken}`,
+  () => `map-${center.latitude}-${center.longitude}-${center.zoom}`,
   [center.latitude, center.longitude, center.zoom, refreshToken]
 );
 
