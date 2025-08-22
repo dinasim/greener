@@ -72,6 +72,8 @@ async function apiRequest(endpoint, options = {}, retries = 3) {
           lastError = new Error(
             errorData?.error || errorData?.message || errorData?.ExceptionMessage || `Request failed with status ${response.status}`
           );
+          lastError.status = response.status; 
+
           if (response.status >= 400 && response.status < 500) throw lastError; // don't retry 4xx
         } else {
           const text = await response.text();
@@ -202,7 +204,27 @@ export async function updateUserProfile(userId, userData) {
 }
 
 export const getUserListings  = async (userId, status = 'all') => apiRequest(`marketplace/users/${userId}/listings?status=${status}`);
-export const getUserWishlist  = async (userId) => apiRequest(`marketplace/users/${userId}/wishlist`);
+export const getUserWishlist = async (userId) => {
+  const id = userId || (await AsyncStorage.getItem('userEmail'));
+  if (!id) throw new Error('User ID (email) is required');
+
+  // Preferred: pretty route (likely if function.json sets "route": "marketplace/users/{id}/wishlist")
+  try {
+    return await apiRequest(`marketplace/users/${encodeURIComponent(id)}/wishlist`);
+  } catch (e) {
+    // Fallback: default function-name route (no custom route)
+    if ((e.message || '').includes('404')) {
+      // Some implementations read X-User-Email header and ignore path params; send both.
+      return await apiRequest('user-wishlist', {
+        method: 'POST', // or GET in some implementations; try POST first
+        body: JSON.stringify({ userId: id }),
+      });
+    }
+    throw e;
+  }
+};
+
+
 
 // ----------------------------
 // Images
@@ -502,13 +524,21 @@ export async function getSpecific(productId) {
   throw new Error('Product not found');
 }
 
-export const wishProduct = async (productId, userId) => {
-  if (!productId || !userId) throw new Error('Product ID and User ID are required');
-  return apiRequest('marketplace/wishlist/add', {
+export const wishProduct = async (productId) => {
+  if (!productId) throw new Error('Product ID is required');
+
+  // Optional: include user for backends that read from body as well
+  const userEmail = await AsyncStorage.getItem('userEmail');
+
+  // Matches function.json: "route": "marketplace/products/wish/{id}"
+  return apiRequest(`marketplace/products/wish/${encodeURIComponent(productId)}`, {
     method: 'POST',
-    body: JSON.stringify({ productId, userId }),
+    body: JSON.stringify(userEmail ? { userId: userEmail } : {}),
   });
 };
+
+
+
 
 export const createProduct = async (productData) => {
   if (!productData) throw new Error('Product data is required');
