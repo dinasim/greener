@@ -1,4 +1,4 @@
-// screens/MarketplaceScreen.js - FIXED GRID LAYOUT
+// screens/MarketplaceScreen.js - FIXED GRID LAYOUT + WISHLIST ANNOTATION
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, FlatList, ActivityIndicator, StyleSheet, Text, TouchableOpacity,
@@ -7,12 +7,15 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+
 import MarketplaceHeader from '../components/MarketplaceHeader';
 import PlantCard from '../components/PlantCard';
 import SearchBar from '../components/SearchBar';
 import CategoryFilter from '../components/CategoryFilter';
 import FilterSection from '../components/FilterSection';
+
 import { getAll, getNearbyProducts, geocodeAddress } from '../services/marketplaceApi';
+import * as WishlistService from '../services/WishlistService'; // ⬅️ NEW: annotate lists with wishlist state
 import syncService from '../services/SyncService';
 import { checkForUpdate, clearUpdate, UPDATE_TYPES, addUpdateListener, removeUpdateListener, triggerUpdate } from '../services/MarketplaceUpdates';
 
@@ -121,12 +124,14 @@ const MarketplaceScreen = ({ navigation, route }) => {
       setError(null);
       if (pageNum === 1) setIsLoading(true);
 
+      // ----- OFFLINE: load cached + annotate wishlist
       if (!isOnline) {
         const cachedData = await syncService.getCachedData('marketplace_plants');
         if (cachedData) {
           const normalizedData = normalizePlantSellerInfo(cachedData);
-          resetData ? setPlants(normalizedData) : setPlants((prev) => [...prev, ...normalizedData]);
-          calculateSellerTypeCounts(normalizedData);
+          const annotated = await WishlistService.annotate(normalizedData); // ⬅️ add hearts
+          resetData ? setPlants(annotated) : setPlants((prev) => [...prev, ...annotated]);
+          calculateSellerTypeCounts(annotated);
           setIsLoading(false);
           setIsRefreshing(false);
           return;
@@ -137,6 +142,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
         return;
       }
 
+      // ----- ONLINE
       const currentSellerType = overrideSellerType !== null ? overrideSellerType : sellerType;
 
       const data = await getAll(
@@ -153,12 +159,13 @@ const MarketplaceScreen = ({ navigation, route }) => {
 
       if (data?.products) {
         const normalizedProducts = normalizePlantSellerInfo(data.products);
-        resetData ? setPlants(normalizedProducts) : setPlants((prev) => [...prev, ...normalizedProducts]);
+        const annotated = await WishlistService.annotate(normalizedProducts); // ⬅️ add hearts
+        resetData ? setPlants(annotated) : setPlants((prev) => [...prev, ...annotated]);
         setPage(pageNum);
         setHasMorePages(data.pages > pageNum);
         if (data.sellerTypeCounts) setSellerTypeCounts(data.sellerTypeCounts);
-        else calculateSellerTypeCounts(normalizedProducts);
-        await syncService.cacheData('marketplace_plants', normalizedProducts);
+        else calculateSellerTypeCounts(annotated);
+        await syncService.cacheData('marketplace_plants', annotated);
       }
       setIsLoading(false);
       setIsRefreshing(false);
@@ -363,9 +370,9 @@ const MarketplaceScreen = ({ navigation, route }) => {
   const handleViewModeChange = (mode) => {
     if (mode === 'map') {
       navigation.navigate('MapView', {
-        products: filteredPlants,                 
+        products: filteredPlants,
         initialRegion: userLocation && { latitude: userLocation.latitude, longitude: userLocation.longitude, zoom: 12 },
-        myLocation: userLocation,                
+        myLocation: userLocation,
         showMyLocation: true,
       });
     } else {
