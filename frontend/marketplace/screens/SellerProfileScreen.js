@@ -101,18 +101,30 @@ const SellerProfileScreen = () => {
       _id: id,
       status,
       images,
-      // hard-set private seller meta here (prevents business visual bleed)
       seller:
         raw.seller && (raw.seller.name || raw.seller.email)
-          ? { ...raw.seller, isBusiness: false }
+          ? {
+              ...raw.seller,
+              isBusiness: false,
+              businessName: undefined,
+              businessId: undefined,
+              isIndividual: true,
+              sellerType: 'individual',
+            }
           : {
               name: sellerMeta.name,
               _id: sellerMeta.id,
               email: sellerMeta.email,
               isBusiness: false,
+              isIndividual: true,
+              sellerType: 'individual',
             },
-      sellerType: 'individual',
+      isBusiness: false,
       isBusinessListing: false,
+      sellerType: 'individual',
+      isIndividual: true,
+      listingType: 'individual',
+      displayCategory: 'consumer', // explicit flag for UI badges
     };
   };
 
@@ -175,6 +187,9 @@ const SellerProfileScreen = () => {
         listings: Array.isArray(profile.listings) ? profile.listings.slice() : [],
         // 🔒 force individual
         isBusiness: false,
+        isIndividual: true,
+        sellerType: 'individual',
+        displayCategory: 'consumer',
       };
 
       if (!unified.listings || unified.listings.length === 0) {

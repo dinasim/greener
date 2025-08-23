@@ -426,6 +426,32 @@ const AddPlantScreen = () => {
         throw new Error('User is not authenticated');
       }
       
+      // FIXED: Get user's name from storage to include with the listing
+      const userName = await AsyncStorage.getItem('userName') || 
+                       await AsyncStorage.getItem('name') || 
+                       await AsyncStorage.getItem('userDisplayName');
+      
+      // Try to get name from user profile if not found in individual keys
+      let sellerName = userName;
+      if (!sellerName) {
+        try {
+          const userProfile = await AsyncStorage.getItem('userProfile');
+          if (userProfile) {
+            const profile = JSON.parse(userProfile);
+            sellerName = profile.name || profile.displayName || profile.userName;
+          }
+        } catch (e) {
+          console.log('Could not parse user profile:', e);
+        }
+      }
+      
+      // If still no name, extract from email as fallback
+      if (!sellerName) {
+        sellerName = userEmail.split('@')[0];
+      }
+      
+      console.log('[AddPlant] Using seller info:', { email: userEmail, name: sellerName });
+      
       const imageData = await prepareImageData();
       
       // Prepare location data structure for backend
@@ -451,9 +477,26 @@ const AddPlantScreen = () => {
         image: imageData[0],
         images: imageData.slice(1),
         sellerId: userEmail,
+        sellerName: sellerName,  // FIXED: Include seller's name
+        // FIXED: Include seller object with complete information
+        seller: {
+          _id: userEmail,
+          email: userEmail,
+          name: sellerName,
+          isBusiness: false,
+          isIndividual: true
+        },
         productType: listingType,
         location: locationData,
+        sellerType: 'individual',  // FIXED: Explicitly mark as individual listing
+        isBusinessListing: false,  // FIXED: Explicitly mark as not business
       };
+      
+      console.log('[AddPlant] Submitting plant data with seller info:', {
+        ...plantData,
+        seller: plantData.seller,
+        sellerName: plantData.sellerName
+      });
       
       const result = await createPlant(plantData);
       

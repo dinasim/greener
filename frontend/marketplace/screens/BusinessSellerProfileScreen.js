@@ -98,9 +98,7 @@ const BusinessSellerProfileScreen = () => {
           if (businessResponse.status === 500) {
             errorMsg = 'Server error (500). Please try again later.';
           }
-          setError(errorMsg);
-          setIsLoading(false);
-          return;
+          throw new Error(errorMsg); // FIXED: Throw error to be caught below
         }
         const data = await businessResponse.json();
         if (data && data.business) {
@@ -154,19 +152,21 @@ const BusinessSellerProfileScreen = () => {
             setOpenHours(todayOpen);
           }
           
+          setIsLoading(false); // FIXED: Set loading to false on success
         } else {
-          setError('Business profile not found or invalid data.');
-          setIsLoading(false);
+          throw new Error('Business profile not found or invalid data.');
         }
       } catch (err) {
+        console.error('Business profile fetch error:', err);
         setError('Failed to load business profile. Please try again later.');
         setIsLoading(false);
       }
     } catch (err) {
+      console.error('Unexpected error loading business profile:', err);
       setError('Unexpected error loading business profile.');
       setIsLoading(false);
     }
-  }, [businessId, route.params]);
+  }, [businessId]); // FIXED: Add businessId as dependency to prevent infinite calls
 
   // Process address data
   const processAddress = (addressData) => {

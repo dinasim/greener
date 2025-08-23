@@ -1,4 +1,4 @@
-// screens/PlantDetailScreen.js - FIXED: Business-aware fetch + safe fallbacks
+// screens/PlantDetailScreen.js - FIXED: Proper seller name preservation for individual products
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View, StyleSheet, ScrollView, SafeAreaView, Modal, Alert, Text, Platform, Linking
@@ -28,11 +28,14 @@ import marketplaceApi, {
   getSpecific,               // individual product endpoint
   fetchBusinessInventory,    // business inventory
   fetchBusinessProfile,      // business profile (for location/name)
-  convertInventoryToProducts // normalize business inventory to products
+  convertInventoryToProducts, // normalize business inventory to products
+  fetchSellerProfile,        // individual seller profile
+  fetchUserProfile,          // Add this import for user profiles
 } from '../services/marketplaceApi';
 
 import * as WishlistService from '../services/WishlistService';
 import PlaceholderService from '../services/placeholderService';
+import { deriveListingFlags } from '../utils/listingFlags';
 
 const PlantDetailScreen = () => {
   const route = useRoute();
@@ -57,7 +60,7 @@ const PlantDetailScreen = () => {
     route?.params?.productType ||
     route?.params?.plant?.sellerType;
 
-  const isBusinessParam = typeParam === 'business' || !!businessId;
+  const isBusinessParam = typeParam === 'business' || (!!businessId && typeParam !== 'individual');
 
   console.log('[PlantDetail params]', { businessId, plantId, typeParam });
 
@@ -70,6 +73,11 @@ const PlantDetailScreen = () => {
   const [mapModalVisible, setMapModalVisible] = useState(false);
   const [isProcessingOrder, setIsProcessingOrder] = useState(false);
   const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
+
+  const { isBusiness, isIndividual } = useMemo(
+    () => deriveListingFlags(plant, isBusinessParam),
+    [plant, isBusinessParam]
+  );
 
   // ----------- Loader (business-aware) -----------
   const loadPlantDetail = useCallback(async () => {
@@ -117,12 +125,59 @@ const PlantDetailScreen = () => {
         }
       }
 
-      // INDIVIDUAL PATH (or fallback if business path didn’t find it)
+      // INDIVIDUAL PATH (or fallback if business path didn't find it)
       if (!data) {
         try {
-          const res = await getSpecific(plantId); // your getSpecific already softened to return null if 404
+          const res = await getSpecific(plantId);
           data = res?.data ?? res ?? null;
-          if (data) console.log('[PlantDetail] global fetch OK (/products/specific)');
+          if (data) {
+            console.log('[PlantDetail] global fetch OK (/products/specific)');
+            
+            // For individual products, ALWAYS fetch seller info to get the correct name
+            if (data.sellerId || data.seller?.email || data.ownerEmail) {
+              try {
+                const sellerId = data.sellerId || data.seller?.email || data.ownerEmail;
+                console.log('[PlantDetail] fetching seller profile for:', sellerId);
+                
+                // Try to fetch user profile first (this is what SellerProfile screen uses)
+                let sellerProfile = null;
+                try {
+                  const profileResp = await fetchUserProfile(sellerId);
+                  sellerProfile = profileResp?.user || profileResp?.data || profileResp;
+                } catch (e) {
+                  console.log('[PlantDetail] fetchUserProfile failed, trying fetchSellerProfile:', e.message);
+                  try {
+                    sellerProfile = await fetchSellerProfile(sellerId, 'user');
+                  } catch (e2) {
+                    console.log('[PlantDetail] fetchSellerProfile also failed:', e2.message);
+                  }
+                }
+                
+                if (sellerProfile && sellerProfile.name) {
+                  // Replace seller information with fresh data from profile
+                  data.seller = {
+                    _id: sellerProfile.id || sellerProfile._id || sellerId,
+                    email: sellerProfile.email || sellerId,
+                    name: sellerProfile.name,
+                    avatar: sellerProfile.avatar || sellerProfile.profileImage,
+                    rating: sellerProfile.stats?.rating || sellerProfile.rating || 0,
+                    totalReviews: sellerProfile.stats?.reviewCount || sellerProfile.reviewCount || 0,
+                    joinDate: sellerProfile.joinDate || sellerProfile.createdAt,
+                    bio: sellerProfile.bio,
+                    isBusiness: false,
+                    isIndividual: true,
+                  };
+                  data.sellerName = sellerProfile.name;
+                  
+                  console.log('[PlantDetail] seller profile loaded successfully:', sellerProfile.name);
+                } else {
+                  console.log('[PlantDetail] no valid seller profile found');
+                }
+              } catch (sellerErr) {
+                console.log('[PlantDetail] failed to fetch seller info:', sellerErr.message);
+              }
+            }
+          }
         } catch (e2) {
           console.log('[PlantDetail] global fetch failed:', e2?.message);
         }
@@ -130,7 +185,64 @@ const PlantDetailScreen = () => {
 
       if (!data) throw new Error('Product not found');
 
-      setPlant(data);
+      // FIXED: Simplified seller data preservation that prioritizes fetched seller info
+      const initialPlantData = route.params?.plant || {};
+      
+      // Start with fetched data and only add from initial data if missing
+      const finalPlantData = {
+        ...data,
+        // Preserve some initial data fields that might not come from API
+        ...initialPlantData,
+        // But override with fresh API data
+        ...data,
+      };
+
+      // FIXED: Ensure seller object is properly constructed with name priority
+      if (finalPlantData.seller) {
+        finalPlantData.seller = {
+          ...finalPlantData.seller,
+          // Ensure name is set with proper priority
+          name: finalPlantData.seller.name || 
+                finalPlantData.sellerName || 
+                initialPlantData.seller?.name || 
+                initialPlantData.sellerName ||
+                'Plant Enthusiast',
+        };
+        
+        // Set consistent seller name fields
+        finalPlantData.sellerName = finalPlantData.seller.name;
+        finalPlantData.sellerDisplayName = finalPlantData.seller.name;
+      } else {
+        // Fallback seller object creation
+        finalPlantData.seller = {
+          _id: finalPlantData.sellerId || 'unknown',
+          email: finalPlantData.sellerId || 'unknown',
+          name: finalPlantData.sellerName || 
+                initialPlantData.seller?.name || 
+                initialPlantData.sellerName ||
+                'Plant Enthusiast',
+          avatar: null,
+          rating: 0,
+          totalReviews: 0,
+          isBusiness: false,
+          isIndividual: true,
+        };
+        finalPlantData.sellerName = finalPlantData.seller.name;
+      }
+
+      // Normalize images
+      finalPlantData.images = Array.isArray(finalPlantData.images) && finalPlantData.images.length > 0
+        ? finalPlantData.images
+        : finalPlantData.image
+        ? [finalPlantData.image]
+        : finalPlantData.photoUrl
+        ? [finalPlantData.photoUrl]
+        : [];
+
+      console.log('[PlantDetail] Final seller name:', finalPlantData.seller?.name);
+      setPlant(finalPlantData);
+
+      // Update wishlist status
       try {
         const has = await WishlistService.has(
           data.id || data._id || data.inventoryId || plantId
@@ -154,8 +266,7 @@ const PlantDetailScreen = () => {
       setError('Plant ID is missing');
       setIsLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plantId]);
+  }, [plantId, loadPlantDetail]);
 
   // ----------- Toast helpers -----------
   const showToast = useCallback((message, type = 'info') => setToast({ visible: true, message, type }), []);
@@ -210,6 +321,7 @@ const PlantDetailScreen = () => {
     const sellerId =
       plant?.sellerId ||
       plant?.seller?._id ||
+      plant?.seller?.email ||
       (isBusinessParam ? (plant?.businessId || businessId) : null);
 
     if (!id || !sellerId) {
@@ -225,11 +337,28 @@ const PlantDetailScreen = () => {
     };
 
     try {
-      navigation.navigate('Messages', params);
+      // Try multiple navigation paths to reach Messages
+      navigation.navigate('MarketplaceTabs', { 
+        screen: 'Messages', 
+        params 
+      });
       showToast('Starting conversation with seller', 'info');
-    } catch (e) {
-      console.error('Error navigating to messages:', e);
-      showToast('Could not open messages. Please try again.', 'error');
+    } catch (e1) {
+      try {
+        navigation.navigate('MainTabs', { 
+          screen: 'Messages', 
+          params 
+        });
+        showToast('Starting conversation with seller', 'info');
+      } catch (e2) {
+        try {
+          navigation.navigate('Messages', params);
+          showToast('Starting conversation with seller', 'info');
+        } catch (e3) {
+          console.error('Error navigating to messages:', e3);
+          showToast('Could not open messages. Please try again.', 'error');
+        }
+      }
     }
   }, [plant, plantId, isBusinessParam, businessId, navigation, showToast]);
 
@@ -343,33 +472,81 @@ const PlantDetailScreen = () => {
   }, [navigation]);
 
   const handleSellerPress = useCallback(() => {
-    if (!plant || (!plant.sellerId && !plant.seller?._id)) {
+    if (!plant || (!plant.sellerId && !plant.seller?._id && !businessId)) {
       return showToast('Seller information is not available', 'error');
     }
-    const sellerId = plant.sellerId || plant.seller?._id;
-    const isBiz = plant.isBusinessListing || plant.sellerType === 'business' || plant.seller?.isBusiness;
+    
+    const sellerId = plant.sellerId || plant.seller?._id || businessId;
+    const isBiz = plant.isBusinessListing || plant.sellerType === 'business' || plant.seller?.isBusiness || isBusinessParam;
 
-    navigation.navigate('SellerProfile', {
+    console.log('[PlantDetail] handleSellerPress:', {
       sellerId,
-      businessId: plant.businessId || sellerId,
-      sellerName: plant.seller?.businessName || plant.seller?.name || plant.sellerName,
-      isBusiness: true,
+      isBiz,
+      sellerType: plant.sellerType,
+      isBusinessListing: plant.isBusinessListing,
+      sellerIsBusiness: plant.seller?.isBusiness,
+      isBusinessParam,
+      businessId
     });
-  }, [plant, navigation, showToast]);
 
+    if (isBiz) {
+      // FIXED: Ensure we pass the correct businessId parameter
+      const finalBusinessId = plant.businessId || businessId || sellerId;
+      
+      console.log('[PlantDetail] Navigating to BusinessSellerProfileScreen with businessId:', finalBusinessId);
+      
+      navigation.navigate('BusinessSellerProfileScreen', {
+        sellerId: finalBusinessId, // Use the business ID as seller ID for businesses
+        businessId: finalBusinessId, // Pass the same ID as businessId
+        sellerName: plant.seller?.businessName || plant.seller?.name || plant.sellerName,
+        isBusiness: true,
+      });
+    } else {
+      // Navigate to individual seller profile
+      console.log('[PlantDetail] Navigating to SellerProfile for individual:', sellerId);
+      navigation.navigate('SellerProfile', {
+        sellerId: sellerId,
+      });
+    }
+  }, [plant, navigation, showToast, businessId, isBusinessParam]);
 
   // Images
   const images = useMemo(() => {
     if (!plant) return [];
+    const imageSource = Array.isArray(plant.images) && plant.images.length > 0
+        ? plant.images
+        : plant.image
+        ? [plant.image]
+        : plant.photoUrl
+        ? [plant.photoUrl]
+        : [];
     return PlaceholderService.processImageArray(
-      plant.images || (plant.image ? [plant.image] : []),
+      imageSource,
       plant.category
     );
-  }, [plant?.images, plant?.image, plant?.category]);
+  }, [plant]);
 
+  // FIXED: Make sure business detection is comprehensive
   const isBusinessProduct = useMemo(
-    () => plant?.isBusinessListing || plant?.sellerType === 'business' || plant?.seller?.isBusiness || isBusinessParam,
-    [plant?.isBusinessListing, plant?.sellerType, plant?.seller?.isBusiness, isBusinessParam]
+    () => {
+      const isBiz = plant?.isBusinessListing || 
+                   plant?.sellerType === 'business' || 
+                   plant?.seller?.isBusiness || 
+                   isBusinessParam ||
+                   !!businessId;
+      
+      console.log('[PlantDetail] isBusinessProduct calculation:', {
+        isBusinessListing: plant?.isBusinessListing,
+        sellerType: plant?.sellerType,
+        sellerIsBusiness: plant?.seller?.isBusiness,
+        isBusinessParam,
+        businessId: !!businessId,
+        result: isBiz
+      });
+      
+      return isBiz;
+    },
+    [plant?.isBusinessListing, plant?.sellerType, plant?.seller?.isBusiness, isBusinessParam, businessId]
   );
 
   // ----------- Loading / Error states -----------
@@ -421,6 +598,7 @@ const PlantDetailScreen = () => {
           location={plant.location || plant.city}
         />
 
+        {/* FIXED: Restore the business badge structure from working code */}
         {isBusinessProduct && (
           <View style={styles.businessBadgeContainer}>
             <View style={styles.businessBadge}>
@@ -452,6 +630,7 @@ const PlantDetailScreen = () => {
 
         <SellerCard
           seller={{
+            // FIXED: Simplified seller data passing like the old code
             name: plant.seller?.name || plant.sellerName || 'Plant Enthusiast',
             avatar: plant.seller?.avatar || plant.seller?.profileImage,
             _id: plant.seller?._id || plant.sellerId,
@@ -470,7 +649,7 @@ const PlantDetailScreen = () => {
           onOrderPress={handleOrderProduct}
           onReviewPress={handleReviewButtonPress}
           isSending={isProcessingOrder}
-          isBusinessProduct={isBusinessProduct}
+          isBusinessProduct={isBusiness}
           plant={plant}
         />
       </ScrollView>
