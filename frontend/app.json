@@ -32,11 +32,12 @@
       }
     },
     "android": {
+      "package": "com.yourname.greener",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.yourname.greener",
       "intentFilters": [
         {
           "action": "VIEW",
@@ -55,7 +56,8 @@
       "permissions": [
         "RECORD_AUDIO",
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {
@@ -76,6 +78,7 @@
     },
     "plugins": [
       "expo-asset",
+      "expo-notifications",
       [
         "expo-location",
         {

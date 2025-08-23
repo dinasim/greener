@@ -1,0 +1,19 @@
+{
+  "name": "greener-marketplace-functions",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Azure Functions for Greener marketplace (notifications, chat)",
+  "main": "index.js",
+  "scripts": {
+    "start": "func start",
+    "test": "echo \"No tests\"",
+    "lint": "echo \"Add linter\""
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^3.18.0"
+  }
+}
+

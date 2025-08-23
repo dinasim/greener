@@ -4,23 +4,7 @@ import {
 } from 'react-native';
 import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Firebase imports - using your existing setup
-import { initializeApp } from "firebase/app";
-import { getMessaging, getToken } from "firebase/messaging";
-import messaging from '@react-native-firebase/messaging';
-
-// Your Firebase configuration
-const firebaseConfig = {
-  apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
-  authDomain: "greenerapp2025.firebaseapp.com",
-  projectId: "greenerapp2025",
-  storageBucket: "greenerapp2025.appspot.com",
-  messagingSenderId: "241318918547",
-  appId: "1:241318918547:web:9fc472ce576da839f11066",
-  measurementId: "G-8K9XS4GPRM"
-};
-const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+import { registerAfterLogin } from '../pushRegistrationSnippet';
 
 const REGISTER_API = 'https://usersfunctions.azurewebsites.net/api/registerUser';
 
@@ -35,46 +19,6 @@ export default function RegistrationScreen({ navigation }) {
 
   const canRegister = username.trim() && password.trim() && email.trim();
 
-  // --------- Web Push Helper Function (from your SignInGoogleScreen) ------------
-  async function getAndSaveWebPushToken(email) {
-    if (Platform.OS !== "web" || !email) return null;
-    try {
-      await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-      const app = initializeApp(firebaseConfig);
-      const messaging = getMessaging(app);
-      const token = await getToken(messaging, { vapidKey });
-
-      console.log('✅ Web push token obtained during registration:', token?.substring(0, 20) + '...');
-      return token;
-    } catch (err) {
-      console.error('❌ Error getting web push token:', err);
-      return null;
-    }
-  }
-
-  // --------- FCM (Mobile) Push Helper Function (from your SignInGoogleScreen) ------------
-  async function getAndSaveFcmToken(email) {
-    if ((Platform.OS !== "android" && Platform.OS !== "ios") || !email) return null;
-    try {
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      
-      if (enabled) {
-        const token = await messaging().getToken();
-        console.log('✅ FCM token obtained during registration:', token?.substring(0, 20) + '...');
-        return token;
-      } else {
-        console.log('❌ FCM permission not granted during registration');
-        return null;
-      }
-    } catch (err) {
-      console.error('❌ Error getting FCM token:', err);
-      return null;
-    }
-  }
-
   const handleRegister = async () => {
     setErrorMsg('');
     setSuccessMsg('');
@@ -82,18 +26,6 @@ export default function RegistrationScreen({ navigation }) {
 
     try {
       console.log('📝 Starting registration process...');
-
-      // --------- Get notification tokens based on platform ---------
-      let webPushToken = null;
-      let fcmToken = null;
-      
-      if (Platform.OS === "web") {
-        webPushToken = await getAndSaveWebPushToken(email);
-        updateFormData('webPushSubscription', webPushToken);
-      } else if (Platform.OS === "android" || Platform.OS === "ios") {
-        fcmToken = await getAndSaveFcmToken(email);
-        updateFormData('fcmToken', fcmToken);
-      }
 
       // Combine registration fields and context fields
       const registrationData = {
@@ -116,8 +48,7 @@ export default function RegistrationScreen({ navigation }) {
         } : null,
         plantLocations: formData.plantLocations || [],
         expoPushToken: null, // deprecated
-        webPushSubscription: webPushToken || formData.webPushSubscription || null,
-        fcmToken: fcmToken || formData.fcmToken || null,
+        webPushSubscription: null,
         notificationSettings: {
           enabled: true,
           wateringReminders: true,
@@ -134,7 +65,6 @@ export default function RegistrationScreen({ navigation }) {
         ...registrationData,
         password: '[HIDDEN]',
         webPushSubscription: registrationData.webPushSubscription?.substring(0, 20) + '...' || null,
-        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null,
         location: registrationData.location ? {
           city: registrationData.location.city,
           hasCoordinates: !!(registrationData.location.latitude && registrationData.location.longitude),
@@ -158,6 +88,17 @@ export default function RegistrationScreen({ navigation }) {
       setSuccessMsg('Registration successful! You can now log in.');
       setLoading(false);
       
+      // Register for push notifications (Expo)
+      try {
+        await registerAfterLogin(data.id || data.email, pushData => {
+          if (pushData?.conversationId) {
+            // navigation.navigate('Chat', { conversationId: pushData.conversationId });
+          }
+        });
+      } catch (e) {
+        console.log('Expo push registration failed/skipped', e);
+      }
+
       setTimeout(() => navigation.navigate('LoginUser'), 1200);
     } catch (err) {
       console.error('❌ Registration error:', err);
