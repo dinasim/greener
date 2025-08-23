@@ -131,7 +131,7 @@ def send_fcm_notification_to_user(user_container, user_id, title, body, data=Non
     """
     try:
         # Query for user by email or id
-        user_query = "SELECT c.fcmToken, c.webPushSubscription FROM c WHERE c.id = @userId OR c.email = @userId"
+        user_query = "SELECT c.id, c.email, c.fcmToken, c.fcmTokens, c.webPushSubscription FROM c WHERE c.id = @userId OR c.email = @userId"
         user_params = [{"name": "@userId", "value": user_id}]
         
         users = list(user_container.query_items(
@@ -145,14 +145,54 @@ def send_fcm_notification_to_user(user_container, user_id, title, body, data=Non
             return False
         
         user = users[0]
-        fcm_token = user.get('fcmToken')
-        
-        if not fcm_token:
-            logging.warning(f"No FCM token found for user {user_id}")
+        tokens = []
+        primary = user.get('fcmToken')
+        if primary:
+            tokens.append(primary)
+        # Support array field fcmTokens
+        extra = user.get('fcmTokens') or []
+        if isinstance(extra, list):
+            tokens.extend([t for t in extra if t])
+        # Deduplicate
+        tokens = list(dict.fromkeys(tokens))
+        if not tokens:
+            logging.warning(f"No FCM tokens found for user {user_id}")
             return False
-        
-        # Send notification using Firebase Admin SDK
-        return send_fcm_notification(fcm_token, title, body, data)
+
+        success_any = False
+        invalid_tokens = []
+        for t in tokens:
+            ok = send_fcm_notification(t, title, body, data)
+            if ok:
+                success_any = True
+            else:
+                invalid_tokens.append(t)
+
+        # Optional: prune invalid tokens if we have a write path
+        if invalid_tokens:
+            try:
+                remaining = [t for t in tokens if t not in invalid_tokens]
+                # Only update if there is change and container has item (need partition key; assume id/email both cross-partition allowed)
+                # Fetch full record for update
+                if user.get('id'):
+                    # Requery full doc
+                    full_query = "SELECT * FROM c WHERE c.id = @uid"
+                    full_items = list(user_container.query_items(
+                        query=full_query,
+                        parameters=[{"name": "@uid", "value": user.get('id')}],
+                        enable_cross_partition_query=True
+                    ))
+                    if full_items:
+                        full_doc = full_items[0]
+                        full_doc['fcmTokens'] = remaining
+                        # Keep primary token field consistent
+                        if remaining:
+                            full_doc['fcmToken'] = remaining[0]
+                        user_container.upsert_item(full_doc)
+            except Exception as prune_err:
+                logging.warning(f"Failed pruning invalid tokens for user {user_id}: {prune_err}")
+
+        return success_any
         
     except Exception as e:
         logging.error(f"Error sending FCM notification to user {user_id}: {str(e)}")

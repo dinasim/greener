@@ -36,7 +36,7 @@ def main(req: func.HttpRequest, signalRMessages: func.Out[str]) -> func.HttpResp
         
         # Get the conversation to find the other participant
         try:
-            conversations_container = get_container("marketplace-conversations")
+            conversations_container = get_container("marketplace_conversations_new")
             
             # First try to read the conversation directly
             try:

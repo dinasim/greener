@@ -1,6 +1,4 @@
-# Backend: /backend/read-message/__init__.py
-#   marketplace file
-
+# read-message/__init__.py - FIXED VERSION - Removes all partition_key usage
 import logging
 import json
 import azure.functions as func
@@ -36,28 +34,14 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return create_error_response("User ID is required", 400)
         
         # Access the messages container
-        messages_container = get_container("marketplace-messages")
+        messages_container = get_container("marketplace_messages")
         
         # Query for messages that need to be marked as read
         if message_ids and len(message_ids) > 0:
             # Mark specific messages as read
             for message_id in message_ids:
                 try:
-                    # First try to read the message directly
-                    message = messages_container.read_item(item=message_id, partition_key=conversation_id)
-                    
-                    # Only mark as read if the message is not from the current user
-                    if message.get('senderId') != user_id:
-                        if 'status' not in message:
-                            message['status'] = {}
-                        
-                        message['status']['read'] = True
-                        message['status']['readAt'] = datetime.utcnow().isoformat()
-                        
-                        messages_container.replace_item(item=message_id, body=message)
-                except Exception as e:
-                    logging.warning(f"Error marking message {message_id} as read: {str(e)}")
-                    # Fallback to querying
+                    # FIXED: Use query instead of read_item to avoid partition_key issues
                     query = "SELECT * FROM c WHERE c.id = @id AND c.conversationId = @conversationId"
                     parameters = [
                         {"name": "@id", "value": message_id},
@@ -81,7 +65,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                             message['status']['read'] = True
                             message['status']['readAt'] = datetime.utcnow().isoformat()
                             
-                            messages_container.replace_item(item=message_id, body=message)
+                            # FIXED: Use upsert instead of replace_item to avoid partition_key issues
+                            messages_container.upsert_item(body=message)
+                            
+                except Exception as e:
+                    logging.warning(f"Error marking message {message_id} as read: {str(e)}")
+                    continue
         else:
             # Mark all unread messages in the conversation as read
             query = "SELECT * FROM c WHERE c.conversationId = @conversationId AND c.senderId != @userId AND (NOT IS_DEFINED(c.status.read) OR c.status.read = false)"
@@ -97,48 +86,44 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             ))
             
             for message in unread_messages:
-                if 'status' not in message:
-                    message['status'] = {}
-                
-                message['status']['read'] = True
-                message['status']['readAt'] = datetime.utcnow().isoformat()
-                
-                messages_container.replace_item(item=message['id'], body=message)
+                try:
+                    if 'status' not in message:
+                        message['status'] = {}
+                    
+                    message['status']['read'] = True
+                    message['status']['readAt'] = datetime.utcnow().isoformat()
+                    
+                    # FIXED: Use upsert instead of replace_item to avoid partition_key issues
+                    messages_container.upsert_item(body=message)
+                    
+                except Exception as e:
+                    logging.warning(f"Error marking message {message['id']} as read: {str(e)}")
+                    continue
         
         # Reset unread count in the conversation
         try:
-            conversations_container = get_container("marketplace-conversations")
+            conversations_container = get_container("marketplace_conversations_new")
             
-            # First try to read the conversation directly
-            try:
-                conversation = conversations_container.read_item(item=conversation_id, partition_key=conversation_id)
+            # FIXED: Use query instead of read_item to avoid partition_key issues
+            query = "SELECT * FROM c WHERE c.id = @id"
+            parameters = [{"name": "@id", "value": conversation_id}]
+            
+            conversations = list(conversations_container.query_items(
+                query=query,
+                parameters=parameters,
+                enable_cross_partition_query=True
+            ))
+            
+            if conversations:
+                conversation = conversations[0]
                 
                 # Reset unread count for the current user
                 if 'unreadCounts' in conversation and user_id in conversation['unreadCounts']:
                     conversation['unreadCounts'][user_id] = 0
                     
-                    conversations_container.replace_item(item=conversation_id, partition_key=conversation_id, body=conversation)
-            except Exception as e:
-                logging.warning(f"Error reading conversation directly: {str(e)}")
-                
-                # Fallback to querying
-                query = "SELECT * FROM c WHERE c.id = @id"
-                parameters = [{"name": "@id", "value": conversation_id}]
-                
-                conversations = list(conversations_container.query_items(
-                    query=query,
-                    parameters=parameters,
-                    enable_cross_partition_query=True
-                ))
-                
-                if conversations:
-                    conversation = conversations[0]
+                    # FIXED: Use upsert instead of replace_item to avoid partition_key issues
+                    conversations_container.upsert_item(body=conversation)
                     
-                    # Reset unread count for the current user
-                    if 'unreadCounts' in conversation and user_id in conversation['unreadCounts']:
-                        conversation['unreadCounts'][user_id] = 0
-                        
-                        conversations_container.replace_item(item=conversation_id, body=conversation)
         except Exception as e:
             logging.warning(f"Error updating conversation unread count: {str(e)}")
         

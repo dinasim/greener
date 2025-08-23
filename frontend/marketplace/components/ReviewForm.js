@@ -1,5 +1,5 @@
 // components/ReviewForm.js
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -17,24 +17,15 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { submitReview } from '../services/marketplaceApi';
 import { triggerUpdate, UPDATE_TYPES } from '../services/MarketplaceUpdates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import RatingStars from './RatingStars';
 
-/**
- * Enhanced ReviewForm component with better error handling and user feedback
- * 
- * @param {Object} props - Component props
- * @param {string} props.targetId - ID of the target (seller or product)
- * @param {string} props.targetType - Type of target ('seller' or 'product')
- * @param {boolean} props.isVisible - Whether the form is visible
- * @param {Function} props.onClose - Callback when the form is closed
- * @param {Function} props.onReviewSubmitted - Callback when a review is successfully submitted
- */
+const STARS = [1, 2, 3, 4, 5];
+
 const ReviewForm = ({
   targetId,
-  targetType = 'seller',
+  targetType = 'seller', // 'seller' | 'product'
   isVisible,
   onClose,
-  onReviewSubmitted
+  onReviewSubmitted,
 }) => {
   const [rating, setRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
@@ -44,13 +35,10 @@ const ReviewForm = ({
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [currentUser, setCurrentUser] = useState(null);
 
-  React.useEffect(() => {
-    AsyncStorage.getItem('userEmail').then(setCurrentUser);
+  useEffect(() => {
+    AsyncStorage.getItem('userEmail').then(setCurrentUser).catch(() => {});
   }, []);
 
-  /**
-   * Reset the form to initial state
-   */
   const resetForm = () => {
     setRating(5);
     setReviewText('');
@@ -59,13 +47,10 @@ const ReviewForm = ({
     setShowErrorDetails(false);
   };
 
-  /**
-   * Handle form submission with comprehensive error handling
-   */
   const handleSubmit = async () => {
     try {
-      // Prevent self-rating
-      if (currentUser && ((targetType === 'seller' && currentUser === targetId) || (targetType === 'product' && currentUser === targetId))) {
+      // Only block self-reviews for seller profiles (product IDs aren't emails)
+      if (targetType === 'seller' && currentUser && currentUser === targetId) {
         setError('You cannot review yourself.');
         return;
       }
@@ -73,85 +58,54 @@ const ReviewForm = ({
         setError('Please enter a review comment');
         return;
       }
-  
+
       setIsSubmitting(true);
       setError(null);
       setErrorDetails(null);
-  
-      // Log submission attempt
+
       console.log(`Submitting review for ${targetType} ${targetId}, rating: ${rating}`);
-  
-      const reviewData = {
+
+      const result = await submitReview(targetId, targetType, {
         rating,
-        text: reviewText.trim()
-      };
-  
-      // Submit review using the updated API function
-      const result = await submitReview(targetId, targetType, reviewData);
-      console.log('Review submission result:', result);
-  
+        text: reviewText.trim(),
+      });
+
       setIsSubmitting(false);
-  
-      if (result && result.success) {
-        console.log('Review submitted successfully');
-        
-        // Trigger global update notification
+
+      if (result && (result.success || result.ok)) {
         await triggerUpdate(UPDATE_TYPES.REVIEW, {
           targetId,
           targetType,
           rating,
-          timestamp: Date.now()
+          timestamp: Date.now(),
         });
-        
+
         resetForm();
-        onClose();
-        
-        // Show success message
-        Alert.alert(
-          'Review Submitted',
-          'Thank you for your feedback!',
-          [{ text: 'OK' }]
-        );
-        
-        // Notify parent component that a review was submitted
-        if (onReviewSubmitted) {
-          onReviewSubmitted(result.review);
-        }
+        onClose?.();
+
+        Alert.alert('Review submitted', 'Thank you for your feedback!', [{ text: 'OK' }]);
+        onReviewSubmitted?.(result.review || null);
       } else {
-        console.error('Review submission returned unsuccessful status', result);
         setError('Failed to submit review. Please try again.');
-        setErrorDetails(JSON.stringify(result, null, 2));
+        setErrorDetails(JSON.stringify(result || {}, null, 2));
       }
     } catch (err) {
       console.error('Error submitting review:', err);
-      setError(err.message || 'An error occurred. Please try again later.');
-      setErrorDetails(err.stack || 'No additional details available');
+      setError(err?.message || 'An error occurred. Please try again later.');
+      setErrorDetails(err?.stack || String(err));
       setIsSubmitting(false);
     }
   };
 
-  /**
-   * Handle cancel button press
-   */
   const handleCancel = () => {
     resetForm();
-    onClose();
+    onClose?.();
   };
 
-  /**
-   * Toggle error details visibility
-   */
-  const toggleErrorDetails = () => {
-    setShowErrorDetails(!showErrorDetails);
-  };
+  const toggleErrorDetails = () => setShowErrorDetails((v) => !v);
 
   return (
-    <Modal
-      visible={isVisible}
-      transparent
-      animationType="slide"
-      onRequestClose={handleCancel}
-    >
+    <Modal visible={isVisible} transparent animationType="slide" onRequestClose={handleCancel}>
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -159,31 +113,37 @@ const ReviewForm = ({
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                Write a Review
-              </Text>
+              {/* title uses requested casing */}
+              <Text style={styles.modalTitle}>Write a review</Text>
               <TouchableOpacity onPress={handleCancel} style={styles.closeButton}>
                 <MaterialIcons name="close" size={24} color="#666" />
               </TouchableOpacity>
             </View>
 
             <ScrollView contentContainerStyle={styles.scrollContent}>
+              {/* Rating */}
               <View style={styles.ratingContainer}>
                 <Text style={styles.ratingLabel}>Rating:</Text>
                 <View style={styles.starsContainer}>
-                  {/* Use RatingStars for display, but allow selection */}
-                  {[1, 2, 3, 4, 5].map(star => (
+                  {STARS.map((star) => (
                     <TouchableOpacity
                       key={star}
                       onPress={() => setRating(star)}
                       style={styles.starButton}
+                      accessibilityLabel={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                      accessibilityRole="button"
                     >
-                      <RatingStars rating={star} size={36} showHalfStars={false} color={star <= rating ? '#FFD700' : '#E0E0E0'} />
+                      <MaterialIcons
+                        name={rating >= star ? 'star' : 'star-border'}
+                        size={32}
+                        color="#FFC107"
+                      />
                     </TouchableOpacity>
                   ))}
                 </View>
               </View>
 
+              {/* Text */}
               <Text style={styles.inputLabel}>Your Review:</Text>
               <TextInput
                 style={styles.reviewInput}
@@ -193,26 +153,27 @@ const ReviewForm = ({
                 multiline
                 maxLength={500}
                 textAlignVertical="top"
+                editable={!isSubmitting}
               />
-              
-              {error && (
+
+              {/* Errors */}
+              {error ? (
                 <View style={styles.errorContainer}>
                   <Text style={styles.errorText}>{error}</Text>
-                  {errorDetails && (
+                  {errorDetails ? (
                     <TouchableOpacity onPress={toggleErrorDetails} style={styles.detailsButton}>
                       <Text style={styles.detailsButtonText}>
                         {showErrorDetails ? 'Hide Details' : 'Show Details'}
                       </Text>
                     </TouchableOpacity>
-                  )}
-                  
-                  {showErrorDetails && (
+                  ) : null}
+                  {showErrorDetails ? (
                     <View style={styles.errorDetailsContainer}>
                       <Text style={styles.errorDetails}>{errorDetails}</Text>
                     </View>
-                  )}
+                  ) : null}
                 </View>
-              )}
+              ) : null}
 
               <Text style={styles.helpText}>
                 Your review helps others make better decisions. Be honest and specific.
@@ -220,24 +181,23 @@ const ReviewForm = ({
 
               <View style={styles.targetInfo}>
                 <Text style={styles.targetInfoText}>
-                  Reviewing: <Text style={styles.targetInfoHighlight}>
+                  Reviewing:{' '}
+                  <Text style={styles.targetInfoHighlight}>
                     {targetType === 'product' ? 'Product' : 'Seller'} {targetId}
                   </Text>
                 </Text>
               </View>
 
+              {/* Actions */}
               <View style={styles.actionButtons}>
-                <TouchableOpacity 
-                  style={styles.cancelButton}
-                  onPress={handleCancel}
-                >
+                <TouchableOpacity style={styles.cancelButton} onPress={handleCancel}>
                   <Text style={styles.cancelButtonText}>Cancel</Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                   style={[
                     styles.submitButton,
-                    (isSubmitting || !reviewText.trim()) && styles.disabledButton
+                    (isSubmitting || !reviewText.trim()) && styles.disabledButton,
                   ]}
                   onPress={handleSubmit}
                   disabled={isSubmitting || !reviewText.trim()}
@@ -258,14 +218,8 @@ const ReviewForm = ({
 };
 
 const styles = StyleSheet.create({
-  keyboardView: {
-    flex: 1,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
+  keyboardView: { flex: 1 },
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
@@ -273,139 +227,39 @@ const styles = StyleSheet.create({
     padding: 20,
     maxHeight: '80%',
   },
-  scrollContent: {
-    paddingBottom: 20,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#333',
-  },
-  closeButton: {
-    padding: 5,
-  },
-  ratingContainer: {
-    marginBottom: 20,
-  },
-  ratingLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
-  },
-  starsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  starButton: {
-    padding: 5,
-  },
-  inputLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 10,
-    color: '#333',
-  },
-  reviewInput: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 15,
-    height: 150,
-    fontSize: 16,
-  },
+  scrollContent: { paddingBottom: 20 },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#333' },
+  closeButton: { padding: 5 },
+
+  ratingContainer: { marginBottom: 20 },
+  ratingLabel: { fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' },
+  starsContainer: { flexDirection: 'row', justifyContent: 'center' },
+  starButton: { padding: 5 },
+
+  inputLabel: { fontSize: 16, fontWeight: '600', marginBottom: 10, color: '#333' },
+  reviewInput: { borderWidth: 1, borderColor: '#ddd', borderRadius: 8, padding: 15, height: 150, fontSize: 16 },
+
   errorContainer: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#FFF2F2',
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#f44336',
+    marginTop: 10, padding: 10, backgroundColor: '#FFF2F2', borderRadius: 8, borderLeftWidth: 4, borderLeftColor: '#f44336',
   },
-  errorText: {
-    color: '#f44336',
-    fontSize: 14,
-  },
-  detailsButton: {
-    marginTop: 5,
-    alignSelf: 'flex-start',
-  },
-  detailsButtonText: {
-    color: '#666',
-    fontSize: 12,
-    textDecorationLine: 'underline',
-  },
-  errorDetailsContainer: {
-    marginTop: 5,
-    padding: 8,
-    backgroundColor: '#f8f8f8',
-    borderRadius: 4,
-  },
-  errorDetails: {
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
-    fontSize: 10,
-    color: '#666',
-  },
-  helpText: {
-    marginTop: 15,
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  targetInfo: {
-    marginTop: 10,
-    padding: 10,
-    backgroundColor: '#f4f4f4',
-    borderRadius: 8,
-  },
-  targetInfoText: {
-    fontSize: 12,
-    color: '#666',
-  },
-  targetInfoHighlight: {
-    fontWeight: '600',
-    color: '#4CAF50',
-  },
-  actionButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 20,
-  },
-  cancelButton: {
-    flex: 1,
-    paddingVertical: 12,
-    marginRight: 10,
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  cancelButtonText: {
-    color: '#666',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  submitButton: {
-    flex: 2,
-    backgroundColor: '#4CAF50',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  disabledButton: {
-    backgroundColor: '#A5D6A7',
-  },
-  submitButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  errorText: { color: '#f44336', fontSize: 14 },
+  detailsButton: { marginTop: 5, alignSelf: 'flex-start' },
+  detailsButtonText: { color: '#666', fontSize: 12, textDecorationLine: 'underline' },
+  errorDetailsContainer: { marginTop: 5, padding: 8, backgroundColor: '#f8f8f8', borderRadius: 4 },
+  errorDetails: { fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace', fontSize: 10, color: '#666' },
+
+  helpText: { marginTop: 15, fontSize: 12, color: '#666', fontStyle: 'italic' },
+  targetInfo: { marginTop: 10, padding: 10, backgroundColor: '#f4f4f4', borderRadius: 8 },
+  targetInfoText: { fontSize: 12, color: '#666' },
+  targetInfoHighlight: { fontWeight: '600', color: '#4CAF50' },
+
+  actionButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
+  cancelButton: { flex: 1, paddingVertical: 12, marginRight: 10, borderWidth: 1, borderColor: '#ddd', borderRadius: 8, alignItems: 'center' },
+  cancelButtonText: { color: '#666', fontSize: 16, fontWeight: '600' },
+  submitButton: { flex: 2, backgroundColor: '#4CAF50', paddingVertical: 12, borderRadius: 8, alignItems: 'center' },
+  disabledButton: { backgroundColor: '#A5D6A7' },
+  submitButtonText: { color: '#fff', fontSize: 16, fontWeight: '600' },
 });
 
 export default ReviewForm;

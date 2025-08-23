@@ -203,6 +203,30 @@ export async function updateUserProfile(userId, userData) {
   return result;
 }
 
+export async function fetchSellerProfile(id, type = 'user') {
+  if (!id) throw new Error('Seller ID is required');
+
+  try {
+    if (type === 'business') {
+      const businessRes = await fetchBusinessProfile(id);
+      if (businessRes?.success && businessRes.business) {
+        return { type: 'business', ...businessRes.business };
+      }
+    }
+
+    // fallback to user
+    const userRes = await fetchUserProfile(id);
+    if (userRes?.user) {
+      return { type: 'user', ...userRes.user };
+    }
+
+    throw new Error('Seller not found');
+  } catch (err) {
+    console.error('[fetchSellerProfile] error:', err);
+    throw err;
+  }
+}
+
 export const getUserListings  = async (userId, status = 'all') => apiRequest(`marketplace/users/${userId}/listings?status=${status}`);
 export const getUserWishlist = async (userId) => {
   const id = userId || (await AsyncStorage.getItem('userEmail'));
@@ -938,13 +962,89 @@ export const sendOrderMessage = async (recipientId, message, senderId, context =
 
 // ----------------------------
 // Reviews
-export const fetchReviews  = async (targetType, targetId) => { if (!targetType || !targetId) throw new Error('Target type and ID are required'); return apiRequest(`marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`); };
-export const submitReview  = async (targetId, targetType, reviewData) => {
-  if (!targetId || !targetType || !reviewData) throw new Error('Target ID, type, and review data are required');
-  if (!reviewData.rating || !reviewData.text) throw new Error('Rating and text are required for review');
-  return apiRequest('reviews-submit', { method: 'POST', body: JSON.stringify({ targetId, targetType, ...reviewData }) });
+
+// GET reviews (this already matches your working fetch path)
+export const fetchReviews = async (targetType, targetId) => {
+  if (!targetType || !targetId) throw new Error('Target type and ID are required');
+  return apiRequest(
+    `marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`
+  );
 };
-export const deleteReview  = async (targetType, targetId, reviewId) => { if (!targetType || !targetId || !reviewId) throw new Error('Target type, target ID, and review ID are required'); return apiRequest('reviews-delete', { method: 'DELETE', body: JSON.stringify({ targetType, targetId, reviewId }) }); };
+
+/**
+ * Submit a review.
+ * Supports both signatures:
+ * 1) submitReview(targetId, targetType, { rating, text|comment, ... })
+ * 2) submitReview({ targetId, targetType, rating, text|comment, ... })
+ */
+export const submitReview = async (...args) => {
+  // ---- normalize args
+  let targetId, targetType, reviewData;
+  if (typeof args[0] === 'object' && args[0] !== null && !args[1]) {
+    ({ targetId, targetType, ...reviewData } = args[0]);
+  } else {
+    [targetId, targetType, reviewData] = args;
+  }
+
+  if (!targetId || !targetType || !reviewData) {
+    throw new Error('Target ID, type, and review data are required');
+  }
+
+  const rating  = Number(reviewData.rating);
+  const comment = (reviewData.comment ?? reviewData.text ?? '').toString().trim();
+  if (!rating || rating < 1) throw new Error('Rating is required (1–5)');
+  if (!comment) throw new Error('Review text/comment is required');
+
+  const userEmail = (await AsyncStorage.getItem('userEmail')) || undefined;
+
+  const payload = {
+    targetId,
+    targetType,          // 'seller' | 'product'
+    rating,
+    comment,
+    userId: userEmail,   // some backends expect it
+  };
+  // Try a list of possible endpoints, first one that 2xxs wins
+  const candidates = [
+    'marketplace/reviews/submit',
+    `marketplace/reviews/${encodeURIComponent(targetType)}/submit`,
+    `marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}/submit`,
+    'reviews-submit', // legacy
+  ];
+
+  let lastErr;
+  for (const ep of candidates) {
+    try {
+      return await apiRequest(ep, { method: 'POST', body: JSON.stringify(payload) });
+    } catch (e) {
+      const msg = String(e?.message || '');
+      // If it’s not a 404, it’s a real failure — bail early
+      if (!/404|not found/i.test(msg)) throw e;
+      lastErr = e; // keep going and try next endpoint
+    }
+  }
+  throw lastErr || new Error('Review submission failed');
+};
+
+export const deleteReview = async (targetType, targetId, reviewId) => {
+  if (!targetType || !targetId || !reviewId) {
+    throw new Error('Target type, target ID, and review ID are required');
+  }
+  try {
+    return await apiRequest('marketplace/reviews/delete', {
+      method: 'DELETE',
+      body: JSON.stringify({ targetType, targetId, reviewId }),
+    });
+  } catch (err) {
+    if (/404|not found/i.test(String(err?.message || ''))) {
+      return apiRequest('reviews-delete', {
+        method: 'DELETE',
+        body: JSON.stringify({ targetType, targetId, reviewId }),
+      });
+    }
+    throw err;
+  }
+};
 
 // ----------------------------
 // Utilities
