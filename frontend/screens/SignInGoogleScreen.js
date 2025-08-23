@@ -20,7 +20,7 @@ import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
-import { initializeChatPush } from '../notifications/expoPushSetup';
+import { initializeChatPush, enablePushRegistration } from '../notifications/expoPushSetup';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -237,14 +237,20 @@ export default function SignInGoogleScreen({ navigation }) {
       
       // Register for push notifications (Expo) - AFTER successful registration
       try {
-        const pushToken = await initializeChatPush(userData.email, (notificationData) => {
-          // Navigation handler when notification is tapped
-          if (notificationData?.conversationId) {
-            navigation.navigate('Chat', { conversationId: notificationData.conversationId });
-          } else if (notificationData?.chatId) {
-            navigation.navigate('Chat', { chatId: notificationData.chatId });
-          }
-        });
+        const pushToken = await (async () => {
+          try {
+            enablePushRegistration();
+            const cleanEmail = (userData.email || '').trim();
+            return await initializeChatPush(cleanEmail, (notificationData) => {
+              // Navigation handler when notification is tapped
+              if (notificationData?.conversationId) {
+                navigation.navigate('Chat', { conversationId: notificationData.conversationId });
+              } else if (notificationData?.chatId) {
+                navigation.navigate('Chat', { chatId: notificationData.chatId });
+              }
+            });
+          } catch (e) { return null; }
+        })();
         
         if (pushToken) {
           console.log('Expo push token registered:', pushToken);

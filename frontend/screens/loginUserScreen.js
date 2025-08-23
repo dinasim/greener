@@ -7,7 +7,7 @@ import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registerAfterLogin } from '../pushRegistrationSnippet';
 
-const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
+const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginuser'; // adjusted to deployed name
 
 export default function LoginScreen({ navigation }) {
   const { updateFormData } = useForm();
@@ -41,15 +41,23 @@ export default function LoginScreen({ navigation }) {
   // Persist essentials
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('currentUserId', data.email);
-  // Register Expo push (non-blocking)
-      console.log('[push] requesting Expo token post-login');
-      registerAfterLogin(data.email, pushData => {
+      
+      // Fix: Use data.email instead of cleanEmail
+      const userEmail = (data.email || '').trim();
+      console.log('🔑 Starting login process...');
+      console.log('✅ Login successful for user:', userEmail);
+      console.log('🔔 Setting up universal notifications...');
+      console.log('[push] initiating post-login push registration for', userEmail);
+      
+      const regPromise = registerAfterLogin(userEmail, pushData => {
         if (pushData?.conversationId) {
           // navigation.navigate('Chat', { conversationId: pushData.conversationId });
         }
       })
-        .then(t => console.log('[push] token request finished'))
-        .catch(e => console.warn('[Push] post-login init failed:', e?.message));
+        .then(() => console.log('[push] token request finished'))
+        .catch(e => console.warn('[push] post-login init failed:', e?.message));
+      // Optionally await to ensure registration before navigation:
+      await regPromise; // TEMP: await so we can see logs before navigation
       navigation.navigate('Home');
     } catch (err) {
       setErrorMsg(err.message);

@@ -32,12 +32,12 @@
       }
     },
     "android": {
+      "package": "com.yourname.greener",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.yourname.greener",
-      "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
           "action": "VIEW",

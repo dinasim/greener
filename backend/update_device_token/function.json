@@ -5,8 +5,7 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["post", "options"],
-      "route": "update_device_token"
+      "methods": ["post", "options", "get"]
     },
     {
       "type": "http",
