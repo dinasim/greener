@@ -1,4 +1,3 @@
-// components/ReviewsList.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,7 +6,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 import ReviewItem from './ReviewItem';
@@ -16,15 +14,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import RatingStars from './RatingStars';
 
 /**
- * Component to display a list of reviews
- * 
- * @param {Object} props - Component props
- * @param {string} props.targetType - Type of the review target ('seller' or 'product')
- * @param {string} props.targetId - ID of the review target
- * @param {Function} props.onAddReview - Callback when the add review button is pressed
- * @param {Function} props.onReviewsLoaded - Callback when reviews are loaded, passing the average rating
- * @param {boolean} props.autoLoad - Whether to load reviews automatically (default: true)
- * @param {boolean} props.hideAddButton - Whether to hide the add review button (default: false)
+ * List of reviews with an inline header (stats + add button).
+ * If ListHeaderComponent is provided, it will be rendered ABOVE the stats header,
+ * so the whole screen scrolls as a single VirtualizedList.
  */
 const ReviewsList = ({
   targetType,
@@ -33,6 +25,7 @@ const ReviewsList = ({
   onReviewsLoaded,
   autoLoad = true,
   hideAddButton = false,
+  ListHeaderComponent, // <-- parent can pass page header here
 }) => {
   const [reviews, setReviews] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,62 +45,42 @@ const ReviewsList = ({
         console.error('Error getting user email:', err);
       }
     };
-    
     getUser();
   }, []);
 
-  // Load reviews when component mounts or when the target changes
+  // Auto-load reviews when target changes
   useEffect(() => {
     if (autoLoad && targetId && targetType) {
-      console.log(`Auto-loading reviews for ${targetType} ${targetId}`);
       loadReviews();
     }
   }, [targetId, targetType, autoLoad]);
 
-  /**
-   * Load reviews from the API with improved debugging
-   */
   const loadReviews = async () => {
     if (!targetId || !targetType) {
       setError('Missing target information');
       setIsLoading(false);
       return;
     }
-
     try {
       setIsLoading(true);
       setError(null);
-      
-      console.log(`[REVIEWSLIST] Fetching reviews for ${targetType} ${targetId}...`);
+
       const data = await fetchReviews(targetType, targetId);
-      console.log(`[REVIEWSLIST] Reviews fetch response:`, data);
 
       if (data) {
-        // Get current user to determine which reviews can be deleted
         const userEmail = await AsyncStorage.getItem('userEmail');
-        
-        // Mark reviews owned by the current user
-        const processedReviews = (data.reviews || []).map(review => ({
+        const processedReviews = (data.reviews || []).map((review) => ({
           ...review,
-          isOwnReview: review.userId === userEmail
+          isOwnReview: review.userId === userEmail,
         }));
-        
-        setReviews(processedReviews);
-        setAverageRating(data.averageRating || 0);
-        setReviewCount(data.count || 0);
-        
-        console.log(`[REVIEWSLIST] Loaded ${processedReviews.length} reviews with average rating ${data.averageRating || 0}`);
-        console.log(`[REVIEWSLIST] Current user: ${userEmail}`);
 
-        // Notify parent component that reviews are loaded
-        if (onReviewsLoaded) {
-          onReviewsLoaded({
-            averageRating: data.averageRating || 0,
-            count: data.count || 0
-          });
-        }
-      } else {
-        console.warn('[REVIEWSLIST] Review data is undefined or null');
+        setReviews(processedReviews);
+        const avg = Number(data.averageRating || 0);
+        const cnt = Number(data.count || processedReviews.length || 0);
+        setAverageRating(processedReviews.length ? avg : 0);
+        setReviewCount(cnt);
+
+        onReviewsLoaded?.({ averageRating: processedReviews.length ? avg : 0, count: cnt });
       }
 
       setIsLoading(false);
@@ -120,191 +93,138 @@ const ReviewsList = ({
     }
   };
 
-  /**
-   * Handle pull-to-refresh
-   */
   const handleRefresh = () => {
     setRefreshing(true);
     loadReviews();
   };
 
-  /**
-   * Handle review deletion and update average rating
-   */
   const handleDeleteReview = (reviewId) => {
-    console.log(`[REVIEWSLIST] Handling delete for review ${reviewId}`);
-    
-    // Find the review being deleted
-    const deletedReview = reviews.find(r => r.id === reviewId);
-    
-    // Remove the review from the local state
-    const updatedReviews = reviews.filter(r => r.id !== reviewId);
-    setReviews(updatedReviews);
-    
-    // Update count
+    const deletedReview = reviews.find((r) => r.id === reviewId);
+    const updated = reviews.filter((r) => r.id !== reviewId);
+    setReviews(updated);
+
     const newCount = Math.max(0, reviewCount - 1);
     setReviewCount(newCount);
-    
-    // Recalculate average rating
+
     let newAverage = 0;
-    if (updatedReviews.length > 0) {
-      const totalRating = updatedReviews.reduce((sum, r) => sum + r.rating, 0);
-      newAverage = totalRating / updatedReviews.length;
-    } 
-    // If there are no more reviews, the average is 0
-    setAverageRating(newAverage);
-    
-    // Notify parent component of updated ratings
-    if (onReviewsLoaded) {
-      onReviewsLoaded({
-        averageRating: newAverage,
-        count: newCount
-      });
+    if (updated.length > 0) {
+      const totalRating = updated.reduce((sum, r) => sum + r.rating, 0);
+      newAverage = totalRating / updated.length;
     }
+    setAverageRating(newAverage);
+    onReviewsLoaded?.({ averageRating: newAverage, count: newCount });
   };
 
-  /**
-   * Render the review count and average rating section
-   */
-  const renderReviewStats = () => {
-    return (
+  // --- Small render helpers --------------------------------------------------
+
+  const renderStatsHeader = () => (
+    <View style={styles.inlineHeader}>
       <View style={styles.statsContainer}>
         <View style={styles.ratingContainer}>
           <Text style={styles.ratingValue}>{averageRating.toFixed(1)}</Text>
           <RatingStars rating={averageRating} size={18} />
         </View>
-        <Text style={styles.reviewCount}>{reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}</Text>
+        <Text style={styles.reviewCount}>
+          {reviewCount} {reviewCount === 1 ? 'review' : 'reviews'}
+        </Text>
       </View>
-    );
-  };
 
-  /**
-   * Render empty state when there are no reviews
-   */
-  const renderEmptyState = () => {
-    return (
-      <View style={styles.emptyContainer}>
-        <MaterialIcons name="rate-review" size={48} color="#ccc" />
-        <Text style={styles.emptyText}>No reviews yet</Text>
-        <Text style={styles.emptySubtext}>Be the first to leave a review!</Text>
-      </View>
-    );
-  };
+      {!hideAddButton &&
+        !(
+          currentUser &&
+          (
+            (targetType === 'seller' && currentUser === targetId) ||
+            (targetType === 'product' && reviews.some((r) => r.userId === currentUser))
+          )
+        ) && (
+          <TouchableOpacity style={styles.addButton} onPress={onAddReview}>
+            <MaterialIcons name="add" size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Review</Text>
+          </TouchableOpacity>
+        )}
+    </View>
+  );
 
-  /**
-   * Render loading state
-   */
-  const renderLoading = () => {
+  const renderEmpty = () => (
+    <View style={styles.emptyContainer}>
+      <MaterialIcons name="rate-review" size={48} color="#ccc" />
+      <Text style={styles.emptyText}>No reviews yet</Text>
+      <Text style={styles.emptySubtext}>Be the first to leave a review!</Text>
+    </View>
+  );
+
+  if (isLoading && !refreshing && reviews.length === 0) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#4CAF50" />
         <Text style={styles.loadingText}>Loading reviews...</Text>
       </View>
     );
-  };
+  }
 
-  /**
-   * Render error state with more details
-   */
-  const renderError = () => {
+  if (error && !refreshing && reviews.length === 0) {
     return (
       <View style={styles.errorContainer}>
         <MaterialIcons name="error-outline" size={48} color="#f44336" />
         <Text style={styles.errorText}>{error}</Text>
-        <Text style={styles.errorSubtext}>
-          targetType: {targetType}, targetId: {targetId}
-        </Text>
         <TouchableOpacity style={styles.retryButton} onPress={loadReviews}>
           <Text style={styles.retryText}>Retry</Text>
         </TouchableOpacity>
       </View>
     );
-  };
-
-  // Main render logic
-  if (isLoading && !refreshing && reviews.length === 0) {
-    return renderLoading();
   }
-
-  if (error && !refreshing && reviews.length === 0) {
-    return renderError();
-  }
-
-  console.log(`[REVIEWSLIST] Rendering with targetType=${targetType}, targetId=${targetId}`);
 
   return (
-    <View style={styles.container}>
-      {/* Header section with stats and add button */}
-      <View style={styles.header}>
-        {renderReviewStats()}
-        {!hideAddButton && !(currentUser && ((targetType === 'seller' && currentUser === targetId) || (targetType === 'product' && reviews.some(r => r.userId === currentUser)))) && (
-          <TouchableOpacity
-            style={styles.addButton}
-            onPress={onAddReview}
-          >
-            <MaterialIcons name="add" size={20} color="#fff" />
-            <Text style={styles.addButtonText}>Review</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {/* Reviews list */}
-      <FlatList
-        data={reviews}
-        renderItem={({ item }) => {
-          console.log(`[REVIEWSLIST] Rendering review item: ${item.id}, isOwnReview=${item.isOwnReview}`);
-          return (
-            <ReviewItem 
-              review={item} 
-              targetType={targetType}
-              targetId={targetId}
-              onDelete={handleDeleteReview}
-              onReviewDeleted={loadReviews}
-            />
-          );
-        }}
-        keyExtractor={item => item.id || `review-${item.userId}-${Date.now()}`}
-        contentContainerStyle={styles.listContent}
-        ListEmptyComponent={renderEmptyState}
-        refreshing={refreshing}
-        onRefresh={handleRefresh}
-      />
-    </View>
+    <FlatList
+      data={reviews}
+      keyExtractor={(item) => item.id || `review-${item.userId}-${item.createdAt || Math.random()}`}
+      renderItem={({ item }) => (
+        <ReviewItem
+          review={item}
+          targetType={targetType}
+          targetId={targetId}
+          onDelete={handleDeleteReview}
+          onReviewDeleted={loadReviews}
+        />
+      )}
+      refreshing={refreshing}
+      onRefresh={handleRefresh}
+      ListEmptyComponent={renderEmpty}
+      contentContainerStyle={styles.listContent}
+      // SINGLE scroll container: parent header + stats+button are part of the list
+      ListHeaderComponent={() => (
+        <View>
+          {ListHeaderComponent ? <ListHeaderComponent /> : null}
+          {renderStatsHeader()}
+        </View>
+      )}
+      ListFooterComponent={<View style={{ height: 16 }} />}
+    />
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  listContent: {
+    flexGrow: 1,
     backgroundColor: '#fff',
+    paddingBottom: 8,
   },
-  header: {
+
+  // Inline (scrollable) header
+  inlineHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
+    backgroundColor: '#fff',
   },
-  statsContainer: {
-    flex: 1,
-  },
-  ratingContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  ratingValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginRight: 8,
-    color: '#333',
-  },
-  reviewCount: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 4,
-  },
+  statsContainer: { flex: 1 },
+  ratingContainer: { flexDirection: 'row', alignItems: 'center' },
+  ratingValue: { fontSize: 24, fontWeight: 'bold', marginRight: 8, color: '#333' },
+  reviewCount: { fontSize: 14, color: '#666', marginTop: 4 },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -313,71 +233,19 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 4,
   },
-  addButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    marginLeft: 4,
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    marginTop: 8,
-    color: '#666',
-    fontSize: 16,
-  },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  errorText: {
-    marginTop: 8,
-    color: '#f44336',
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  errorSubtext: {
-    color: '#666',
-    fontSize: 12,
-    marginBottom: 16,
-  },
-  retryButton: {
-    backgroundColor: '#4CAF50',
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 4,
-  },
-  retryText: {
-    color: '#fff',
-    fontWeight: 'bold',
-  },
-  listContent: {
-    flexGrow: 1,
-    padding: 16,
-  },
-  emptyContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#666',
-    marginTop: 16,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#999',
-    marginTop: 8,
-    textAlign: 'center',
-  },
+  addButtonText: { color: '#fff', fontWeight: 'bold', marginLeft: 4 },
+
+  // States
+  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' },
+  loadingText: { marginTop: 8, color: '#666', fontSize: 16 },
+  errorContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: '#fff' },
+  errorText: { marginTop: 8, color: '#f44336', fontSize: 16, textAlign: 'center', marginBottom: 8 },
+  retryButton: { backgroundColor: '#4CAF50', paddingVertical: 8, paddingHorizontal: 16, borderRadius: 4 },
+  retryText: { color: '#fff', fontWeight: 'bold' },
+
+  emptyContainer: { justifyContent: 'center', alignItems: 'center', padding: 40, backgroundColor: '#fff' },
+  emptyText: { fontSize: 18, fontWeight: 'bold', color: '#666', marginTop: 16 },
+  emptySubtext: { fontSize: 14, color: '#999', marginTop: 8, textAlign: 'center' },
 });
 
 export default ReviewsList;

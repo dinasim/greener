@@ -78,8 +78,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         seller_id = None
         if target_type == 'product':
             try:
-                # Get the product to find the sellerId
-                logging.info(f"Finding sellerId for product {target_id}")
+                # Get the product to find the actual sellerId
                 products_container = get_container("marketplace_plants")
                 product_query = "SELECT c.sellerId FROM c WHERE c.id = @id"
                 product_params = [{"name": "@id", "value": target_id}]
@@ -91,15 +90,12 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 ))
                 
                 if products and 'sellerId' in products[0]:
-                    seller_id = products[0]['sellerId']
-                    logging.info(f"Found sellerId {seller_id} for product {target_id}")
+                    seller_id = products[0]['sellerId']  # Use the actual seller ID
+                    logging.info(f"Found actual sellerId {seller_id} for product {target_id}")
                 else:
-                    # Fallback if product doesn't have sellerId
-                    logging.warning(f"Could not find sellerId for product {target_id}")
-                    seller_id = f"product_{target_id}_seller"
+                    seller_id = f"product_{target_id}_seller"  # Fallback
             except Exception as e:
-                logging.warning(f"Error finding product seller: {str(e)}")
-                seller_id = f"product_{target_id}_seller"
+                seller_id = f"product_{target_id}_seller"  # Fallback
         else:
             # For seller reviews, the seller ID is the target ID
             seller_id = target_id

@@ -561,6 +561,7 @@ const MarketplaceScreen = ({ navigation, route }) => {
           onRemoveFilter={handleRemoveFilter}
           onResetFilters={handleResetFilters}
           businessCounts={sellerTypeCounts}
+          showActiveChips
         />
       </View>
 

@@ -1,306 +1,206 @@
 // frontend/components/PriceRange.js
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, TextInput, Platform } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 
-// Create a cross-platform slider component that works on web
-const WebSlider = ({ value, minimumValue, maximumValue, step, onValueChange, onSlidingComplete, style, minimumTrackTintColor, thumbTintColor }) => {
-  if (Platform.OS === 'web') {
-    return (
+const GREEN = '#4CAF50';
+const TRACK = '#E0E0E0';
+
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+
+/** Web-only input range with proper styling injected once per mount */
+const WebRange = ({ value, min = 0, max = 1000, step = 10, onChange, onComplete, ariaLabel }) => {
+  return (
+    <>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+          input.greener-range {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 28px;
+            background: transparent;
+            outline: none;
+            margin: 0;
+            padding: 0;
+          }
+          input.greener-range::-webkit-slider-runnable-track {
+            height: 4px;
+            background: transparent;
+            border-radius: 2px;
+          }
+          input.greener-range::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: ${GREEN};
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+            margin-top: -6px; /* center on 4px track */
+            cursor: pointer;
+          }
+          input.greener-range::-moz-range-track {
+            height: 4px;
+            background: transparent;
+            border: none;
+            border-radius: 2px;
+          }
+          input.greener-range::-moz-range-thumb {
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: ${GREEN};
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+            cursor: pointer;
+          }
+        `,
+        }}
+      />
       <input
+        className="greener-range"
         type="range"
-        min={minimumValue}
-        max={maximumValue}
+        min={min}
+        max={max}
         step={step}
         value={value}
-        onChange={(e) => onValueChange && onValueChange(parseFloat(e.target.value))}
-        onMouseUp={() => onSlidingComplete && onSlidingComplete()}
-        onTouchEnd={() => onSlidingComplete && onSlidingComplete()}
-        style={{
-          width: '100%',
-          height: '40px',
-          background: 'transparent',
-          outline: 'none',
-          appearance: 'none',
-          WebkitAppearance: 'none',
-          cursor: 'pointer',
-          ...style,
-        }}
-        css={`
-          &::-webkit-slider-track {
-            height: 4px;
-            background: #E0E0E0;
-            border-radius: 2px;
-          }
-          &::-webkit-slider-thumb {
-            appearance: none;
-            height: 20px;
-            width: 20px;
-            border-radius: 50%;
-            background: ${thumbTintColor || '#4CAF50'};
-            cursor: pointer;
-            border: 2px solid #fff;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-          }
-          &::-moz-range-track {
-            height: 4px;
-            background: #E0E0E0;
-            border-radius: 2px;
-            border: none;
-          }
-          &::-moz-range-thumb {
-            height: 20px;
-            width: 20px;
-            border-radius: 50%;
-            background: ${thumbTintColor || '#4CAF50'};
-            cursor: pointer;
-            border: 2px solid #fff;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-          }
-        `}
+        onChange={(e) => onChange?.(Number(e.target.value))}
+        onMouseUp={() => onComplete?.()}
+        onTouchEnd={() => onComplete?.()}
+        aria-label={ariaLabel}
+        style={{ width: '100%', height: '100%' }}
       />
-    );
-  }
-  
-  // Fallback for mobile platforms - simple input
-  return (
-    <TextInput
-      style={[{
-        height: 40,
-        borderWidth: 1,
-        borderColor: '#ddd',
-        borderRadius: 4,
-        paddingHorizontal: 8,
-        textAlign: 'center',
-      }, style]}
-      value={String(value)}
-      onChangeText={(text) => {
-        const numValue = parseFloat(text.replace(/[^0-9.]/g, ''));
-        if (!isNaN(numValue) && numValue >= minimumValue && numValue <= maximumValue) {
-          onValueChange && onValueChange(numValue);
-        }
-      }}
-      onBlur={() => onSlidingComplete && onSlidingComplete()}
-      keyboardType="numeric"
-      placeholder={`${minimumValue}-${maximumValue}`}
-    />
+    </>
   );
 };
 
-const PriceRange = ({ 
-  initialMin = 0, 
-  initialMax = 1000, 
-  onPriceChange, 
+/**
+ * Compact, slider-only PriceRange
+ * Web: dual-thumb slider with separate hit areas (left=min, right=max)
+ * Native: returns null (you already have Min/Max inputs in the modal)
+ */
+const PriceRange = ({
+  initialMin = 0,
+  initialMax = 1000,
+  onPriceChange,
   style,
-  hideTitle = false,
-  max = 1000
+  hideTitle = true,
+  max = 1000,
+  step = 10,
 }) => {
-  const [minValue, setMinValue] = useState(initialMin !== undefined && !isNaN(initialMin) ? Number(initialMin) : 0);
-  const [maxValue, setMaxValue] = useState(initialMax !== undefined && !isNaN(initialMax) ? Number(initialMax) : max);
-  
-  // Update local state when props change - with safety checks
+  const [minValue, setMinValue] = useState(
+    Number.isFinite(Number(initialMin)) ? Number(initialMin) : 0
+  );
+  const [maxValue, setMaxValue] = useState(
+    Number.isFinite(Number(initialMax)) ? Number(initialMax) : max
+  );
+
   useEffect(() => {
-    const safeMin = initialMin !== undefined && !isNaN(initialMin) ? Number(initialMin) : 0;
-    const safeMax = initialMax !== undefined && !isNaN(initialMax) ? Number(initialMax) : max;
-    
-    setMinValue(safeMin);
-    setMaxValue(safeMax);
+    const safeMin = Number.isFinite(Number(initialMin)) ? Number(initialMin) : 0;
+    const safeMax = Number.isFinite(Number(initialMax)) ? Number(initialMax) : max;
+    setMinValue(clamp(safeMin, 0, max));
+    setMaxValue(clamp(safeMax, 0, max));
   }, [initialMin, initialMax, max]);
-  
-  // Handle min input change
-  const handleMinChange = (text) => {
-    // Remove non-numeric characters
-    text = text.replace(/[^0-9]/g, '');
-    
-    let value = parseInt(text);
-    
-    if (isNaN(value)) {
-      value = 0;
-    }
-    
-    // Ensure min is not greater than max
-    value = Math.min(value, maxValue);
-    
-    setMinValue(value);
-    
-    if (onPriceChange) {
-      onPriceChange([value, maxValue]);
-    }
+
+  const toPct = (v) => (max > 0 ? (v / max) * 100 : 0);
+  const leftPct = useMemo(() => toPct(minValue), [minValue, max]);
+  const rightPct = useMemo(() => toPct(maxValue), [maxValue, max]);
+
+  const handleMin = (v) => {
+    const next = clamp(Math.round(v / step) * step, 0, maxValue);
+    setMinValue(next);
+    onPriceChange?.([next, maxValue]);
   };
-  
-  // Handle max input change
-  const handleMaxChange = (text) => {
-    // Remove non-numeric characters
-    text = text.replace(/[^0-9]/g, '');
-    
-    let value = parseInt(text);
-    
-    if (isNaN(value)) {
-      value = max;
-    }
-    
-    // Ensure max is not less than min and not greater than the maximum allowed
-    value = Math.max(value, minValue);
-    value = Math.min(value, max);
-    
-    setMaxValue(value);
-    
-    if (onPriceChange) {
-      onPriceChange([minValue, value]);
-    }
+  const handleMax = (v) => {
+    const next = clamp(Math.round(v / step) * step, minValue, max);
+    setMaxValue(next);
+    onPriceChange?.([minValue, next]);
   };
-  
-  // Handle slider change
-  const handleSliderChange = (values) => {
-    if (!Array.isArray(values) || values.length !== 2) {
-      return;
-    }
-    
-    const [min, max] = values;
-    
-    // Ensure values are valid numbers
-    if (typeof min !== 'number' || typeof max !== 'number') {
-      return;
-    }
-    
-    const roundedMin = Math.round(min);
-    const roundedMax = Math.round(max);
-    
-    setMinValue(roundedMin);
-    setMaxValue(roundedMax);
-  };
-  
-  const handleSliderComplete = () => {
-    if (onPriceChange) {
-      onPriceChange([minValue, maxValue]);
-    }
-  };
-  
+  const handleComplete = () => onPriceChange?.([minValue, maxValue]);
+
+  if (Platform.OS !== 'web') {
+    return null; // keep native UI clean (you have inputs in the modal)
+  }
+
   return (
     <View style={[styles.container, style]}>
-      {!hideTitle && <Text style={styles.title}>Price Range</Text>}
-      
-      <View style={styles.inputsContainer}>
-        <View style={styles.inputWrapper}>
-          <Text style={styles.inputLabel}>Min</Text>
-          <View style={styles.inputContainer}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <TextInput
-              style={styles.input}
-              value={String(minValue)}
-              onChangeText={handleMinChange}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-          </View>
-        </View>
-        
-        <View style={styles.separator} />
-        
-        <View style={styles.inputWrapper}>
-          <Text style={styles.inputLabel}>Max</Text>
-          <View style={styles.inputContainer}>
-            <Text style={styles.currencySymbol}>$</Text>
-            <TextInput
-              style={styles.input}
-              value={String(maxValue)}
-              onChangeText={handleMaxChange}
-              keyboardType="numeric"
-              maxLength={5}
-            />
-          </View>
-        </View>
-      </View>
-      
-      <View style={styles.sliderContainer}>
-        <WebSlider
-          style={styles.slider}
-          minimumValue={0}
-          maximumValue={max}
-          step={10}
-          minimumTrackTintColor="#4CAF50"
-          maximumTrackTintColor="#E0E0E0"
-          thumbTintColor="#4CAF50"
-          value={minValue}
-          onValueChange={(val) => handleSliderChange([val, maxValue])}
-          onSlidingComplete={handleSliderComplete}
+      {!hideTitle && <Text style={styles.title}>Price</Text>}
+
+      <View style={styles.sliderWrap}>
+        {/* Base track */}
+        <View style={styles.track} />
+
+        {/* Active range */}
+        <View
+          style={[
+            styles.active,
+            { left: `${leftPct}%`, width: `${Math.max(0, rightPct - leftPct)}%` },
+          ]}
         />
-        <WebSlider
-          style={[styles.slider, styles.secondSlider]}
-          minimumValue={0}
-          maximumValue={max}
-          step={10}
-          minimumTrackTintColor="#E0E0E0"
-          maximumTrackTintColor="#E0E0E0"
-          thumbTintColor="#4CAF50"
-          value={maxValue}
-          onValueChange={(val) => handleSliderChange([minValue, val])}
-          onSlidingComplete={handleSliderComplete}
-        />
+
+        {/* Min slider hit area: left side up to current max */}
+        <View style={[styles.hitBox, { left: 0, right: `${100 - rightPct}%`, zIndex: 5 }]}>
+          <WebRange
+            value={minValue}
+            min={0}
+            max={max}
+            step={step}
+            onChange={handleMin}
+            onComplete={handleComplete}
+            ariaLabel="Minimum price"
+          />
+        </View>
+
+        {/* Max slider hit area: right side from current min */}
+        <View style={[styles.hitBox, { left: `${leftPct}%`, right: 0, zIndex: 6 }]}>
+          <WebRange
+            value={maxValue}
+            min={0}
+            max={max}
+            step={step}
+            onChange={handleMax}
+            onComplete={handleComplete}
+            ariaLabel="Maximum price"
+          />
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    backgroundColor: '#fff',
-    padding: 16,
-    borderRadius: 8,
-  },
+  container: { padding: 0, backgroundColor: 'transparent' },
   title: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    marginBottom: 16,
     color: '#333',
+    marginBottom: 8,
+    textAlign: 'center',
   },
-  sliderContainer: {
-    marginTop: 20,
-    height: 40,
-    position: 'relative', 
+  sliderWrap: {
+    position: 'relative',
+    height: 28, // compact
+    justifyContent: 'center',
   },
-  slider: {
-    width: '100%',
-    height: 40,
+  track: {
     position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: TRACK,
   },
-  secondSlider: {
-    zIndex: 1,
+  active: {
+    position: 'absolute',
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: GREEN,
   },
-  inputsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  inputWrapper: {
-    flex: 1,
-  },
-  inputLabel: {
-    fontSize: 12,
-    color: '#888',
-    marginBottom: 4,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    height: 40,
-  },
-  currencySymbol: {
-    color: '#4CAF50',
-    fontWeight: '600',
-    fontSize: 16,
-    marginRight: 4,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  separator: {
-    width: 16,
+  hitBox: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
   },
 });
 

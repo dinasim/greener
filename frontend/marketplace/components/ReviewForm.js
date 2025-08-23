@@ -49,7 +49,7 @@ const ReviewForm = ({
 
   const handleSubmit = async () => {
     try {
-      // Only block self-reviews for seller profiles (product IDs aren't emails)
+      // Block self-reviews for seller profiles (product IDs aren't emails)
       if (targetType === 'seller' && currentUser && currentUser === targetId) {
         setError('You cannot review yourself.');
         return;
@@ -65,12 +65,13 @@ const ReviewForm = ({
 
       console.log(`Submitting review for ${targetType} ${targetId}, rating: ${rating}`);
 
-      const result = await submitReview(targetId, targetType, {
+      // >>> call the fixed API (object shape; comment field)
+      const result = await submitReview({
+        targetType,            // 'seller' | 'product'
+        targetId,              // e.g. 'ella@plant.com'
         rating,
-        text: reviewText.trim(),
+        comment: reviewText.trim(),
       });
-
-      setIsSubmitting(false);
 
       if (result && (result.success || result.ok)) {
         await triggerUpdate(UPDATE_TYPES.REVIEW, {
@@ -82,7 +83,6 @@ const ReviewForm = ({
 
         resetForm();
         onClose?.();
-
         Alert.alert('Review submitted', 'Thank you for your feedback!', [{ text: 'OK' }]);
         onReviewSubmitted?.(result.review || null);
       } else {
@@ -93,9 +93,11 @@ const ReviewForm = ({
       console.error('Error submitting review:', err);
       setError(err?.message || 'An error occurred. Please try again later.');
       setErrorDetails(err?.stack || String(err));
+    } finally {
       setIsSubmitting(false);
     }
   };
+
 
   const handleCancel = () => {
     resetForm();

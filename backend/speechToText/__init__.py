@@ -5,11 +5,12 @@ import urllib.request
 import traceback
 from http_helpers import handle_options_request, create_error_response, create_success_response
 
-# --- Optional inline transcode safety net (mirrors upload-image) ---
-import shutil
-import subprocess
-# add to backend/speechtotext/__init__.py
-import time, requests, os
+# --- Optional inline transcode safety net & deps ---
+import time, requests, os, shutil, subprocess
+
+# =========================
+# Helpers: conversion utils
+# =========================
 
 def _cloudconvert_3gp_to_wav(url: str, timeout_s: int = 120) -> bytes:
     """
@@ -22,7 +23,6 @@ def _cloudconvert_3gp_to_wav(url: str, timeout_s: int = 120) -> bytes:
 
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # Create a job: import URL -> convert -> export URL
     job_payload = {
         "tasks": {
             "import-file": {"operation": "import/url", "url": url},
@@ -31,7 +31,6 @@ def _cloudconvert_3gp_to_wav(url: str, timeout_s: int = 120) -> bytes:
                 "input": "import-file",
                 "input_format": "3gp",
                 "output_format": "wav",
-                # force 16 kHz mono PCM
                 "audio_codec": "pcm_s16le",
                 "audio_frequency": 16000,
                 "audio_channels": 1
@@ -43,7 +42,6 @@ def _cloudconvert_3gp_to_wav(url: str, timeout_s: int = 120) -> bytes:
                         json=job_payload, headers=headers, timeout=30).json()["data"]
     job_id = job["id"]
 
-    # Poll until finished
     t0 = time.time()
     export_url = None
     while time.time() - t0 < timeout_s:
@@ -61,9 +59,7 @@ def _cloudconvert_3gp_to_wav(url: str, timeout_s: int = 120) -> bytes:
     if not export_url:
         raise TimeoutError("CloudConvert export timed out")
 
-    # Download the WAV bytes
-    wav_bytes = requests.get(export_url, timeout=60).content
-    return wav_bytes
+    return requests.get(export_url, timeout=60).content
 
 
 def _resolve_ffmpeg_path() -> str:
@@ -84,34 +80,61 @@ def _resolve_ffmpeg_path() -> str:
     return ""
 
 
-def _transcode_file_to_wav_16k(src_path: str) -> bytes:
+def _transcode_bytes_to_wav_16k(raw_bytes: bytes) -> bytes:
+    """
+    Transcode arbitrary audio bytes to 16kHz mono 16-bit PCM WAV using ffmpeg.
+    """
     ffmpeg = _resolve_ffmpeg_path()
     if not ffmpeg:
-        raise RuntimeError("ffmpeg not found for STT (set FFMPEG_PATH or include ./bin/ffmpeg)")
+        raise RuntimeError("ffmpeg not found (set FFMPEG_PATH or include ./bin/ffmpeg)")
+
+    # Ensure executable on Linux
     try:
         if not ffmpeg.endswith(".exe"):
             os.chmod(ffmpeg, 0o755)
     except Exception:
         pass
 
-    tout_path = src_path + ".wav"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".in") as tin:
+        tin.write(raw_bytes)
+        tin_path = tin.name
+    tout_path = tin_path + ".wav"
+
     try:
-        subprocess.run(
-            [ffmpeg, "-y", "-i", src_path, "-ac", "1", "-ar", "16000", "-sample_fmt", "s16", tout_path],
+        proc = subprocess.run(
+            [
+                ffmpeg, "-y",
+                "-i", tin_path,
+                "-ac", "1",
+                "-ar", "16000",
+                "-sample_fmt", "s16",
+                "-vn",  # no video
+                tout_path
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=True,
+            check=False,
         )
+        if proc.returncode != 0 or not os.path.exists(tout_path):
+            raise RuntimeError(
+                f"ffmpeg failed (code={proc.returncode}) stderr={proc.stderr.decode(errors='ignore')[:400]}"
+            )
         with open(tout_path, "rb") as f:
             return f.read()
     finally:
+        try:
+            os.unlink(tin_path)
+        except Exception:
+            pass
         try:
             if os.path.exists(tout_path):
                 os.unlink(tout_path)
         except Exception:
             pass
-# ------------------------------------------------------------------
 
+# =========================
+# Helpers: STT response
+# =========================
 
 def _extract_text_from_azure(payload: dict) -> str:
     """Supports both detailed and simple responses from Azure Speech Service."""
@@ -146,6 +169,9 @@ def _extract_text_from_azure(payload: dict) -> str:
 
     return ""
 
+# =========================
+# Helpers: content type
+# =========================
 
 def _determine_content_type(audio_url: str, temp_file_path: str) -> str:
     """Enhanced content type detection with better 3GP handling."""
@@ -156,18 +182,17 @@ def _determine_content_type(audio_url: str, temp_file_path: str) -> str:
     except Exception:
         header = b""
 
-    # Enhanced 3GP/AMR detection
+    # AMR/3GP magic
     if header.startswith(b"#!AMR") or header.startswith(b"#!AMR-WB"):
         logging.info("Detected AMR magic header")
         return "audio/3gpp"
 
-    # Check for 3GP container with ftyp box
+    # 3GP/MP4 brands in ftyp
     if len(header) >= 16 and header[4:8] == b"ftyp":
         brand = header[8:12]
         if brand in (b"3gp4", b"3gp5", b"3gpp", b"3ge6", b"3ge7"):
             logging.info(f"Detected 3GP container with brand: {brand}")
             return "audio/3gpp"
-        # Standard MP4/M4A brands
         elif brand in (b"isom", b"mp42", b"M4A ", b"M4B ", b"iso2"):
             logging.info(f"Detected MP4/M4A container with brand: {brand}")
             return "audio/mp4"
@@ -176,7 +201,7 @@ def _determine_content_type(audio_url: str, temp_file_path: str) -> str:
     if header.startswith(b"RIFF") and b"WAVE" in header[:12]:
         return "audio/wav"
 
-    # WebM
+    # WebM/Matroska
     if header.startswith(b"\x1a\x45\xdf\xa3"):
         return "audio/webm"
 
@@ -188,7 +213,7 @@ def _determine_content_type(audio_url: str, temp_file_path: str) -> str:
     if header.startswith(b"OggS"):
         return "audio/ogg"
 
-    # Fallback: check URL extension
+    # Fallback by URL
     if ".3gp" in url or ".amr" in url:
         logging.info("Detected 3GP from URL extension")
         return "audio/3gpp"
@@ -204,6 +229,9 @@ def _determine_content_type(audio_url: str, temp_file_path: str) -> str:
     logging.warning("Unknown audio format, defaulting to audio/wav")
     return "audio/wav"
 
+# =========================
+# Azure Speech Function
+# =========================
 
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("speechToText function triggered.")
@@ -263,13 +291,19 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
         content_type = _determine_content_type(audio_url, temp_file_path)
         logging.info(f"Detected content type: {content_type}")
 
-        # If 3GP/AMR slipped through, try inline transcode; otherwise bail with a friendly message.
+        # Read original bytes
+        with open(temp_file_path, "rb") as f:
+            audio_bytes = f.read()
+
+        # Normalize to WAV 16k mono if needed
+        normalized = False
         if content_type == "audio/3gpp":
             logging.warning("3GP/AMR received; converting via CloudConvert.")
             try:
                 audio_bytes = _cloudconvert_3gp_to_wav(audio_url)
                 content_type = "audio/wav"
-                logging.info("CloudConvert OK; proceeding with Azure STT.")
+                normalized = True
+                logging.info("CloudConvert OK; proceeding with Azure STT as WAV 16k mono.")
             except Exception as e:
                 logging.error(f"CloudConvert failed: {e}")
                 return create_success_response({
@@ -279,12 +313,36 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     "status": "UnsupportedAudioFormat",
                     "message": "3GP/AMR not supported by Azure Speech and conversion failed.",
                     "suggestedAction": "rerecord",
-                    "supportedFormats": ["audio/mp4", "audio/wav", "audio/mpeg", "audio/webm", "audio/ogg"]
+                    "supportedFormats": ["audio/wav", "audio/mp4", "audio/mpeg", "audio/webm", "audio/ogg"]
                 })
-        else:
-            with open(temp_file_path, "rb") as f:
-                audio_bytes = f.read()
+        elif content_type != "audio/wav":
+            # Inline ffmpeg normalization for mp4/m4a, webm, mp3, ogg, etc.
+            logging.info(f"Normalizing non-WAV audio to WAV 16k mono (was {content_type}).")
+            try:
+                audio_bytes = _transcode_bytes_to_wav_16k(audio_bytes)
+                content_type = "audio/wav"
+                normalized = True
+            except Exception as e:
+                logging.error(f"ffmpeg transcode failed; proceeding with original bytes as last resort: {e}")
 
+        # Choose Azure content type header based on (possibly normalized) bytes
+        if content_type == "audio/wav":
+            azure_content_type = "audio/wav; codecs=audio/pcm; samplerate=16000"
+        elif content_type == "audio/mp4":
+            azure_content_type = "audio/mp4"
+        elif content_type == "audio/mpeg":
+            azure_content_type = "audio/mpeg"
+        elif content_type == "audio/webm":
+            azure_content_type = "audio/webm"
+        elif content_type == "audio/ogg":
+            azure_content_type = "audio/ogg"
+        else:
+            # Fallback (shouldn't happen if normalization worked)
+            azure_content_type = "audio/wav; codecs=audio/pcm; samplerate=16000"
+
+        logging.info(f"Using Azure Content-Type header: {azure_content_type}")
+        if normalized:
+            logging.info("Audio normalized to WAV 16k mono prior to STT.")
 
         # Azure endpoint + params
         endpoint = (
@@ -295,20 +353,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             "language": language,
             "format": "detailed",
             "profanity": "raw",
-            "wordLevelTimestamps": "false",
-            "diarization": "false",
         }
+
         headers = {
             "Ocp-Apim-Subscription-Key": speech_key,
-            "Content-Type": content_type,
+            "Content-Type": azure_content_type,  # <-- IMPORTANT: use computed type
             "Accept": "application/json",
             "User-Agent": "SpeechToText/1.0",
         }
 
-        logging.info(
-            f"Sending {len(audio_bytes)} bytes to Azure Speech Service (lang={language}, content-type={content_type})"
-        )
-
+        logging.info(f"Sending {len(audio_bytes)} bytes to Azure Speech Service (lang={language})")
         response = requests.post(endpoint, params=params, headers=headers, data=audio_bytes, timeout=30)
 
         logging.info(f"Azure Speech API response: {response.status_code}")
@@ -359,7 +413,10 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             nbest = data.get("NBest", [])
             if nbest and isinstance(nbest[0], dict):
                 azure_conf = nbest[0].get("Confidence", 0.8)
-                conf = max(0.1, float(azure_conf))
+                try:
+                    conf = max(0.1, float(azure_conf))
+                except Exception:
+                    pass
         elif status in ("InitialSilenceTimeout", "BabbleTimeout", "Error"):
             conf = 0.0
         else:

@@ -112,8 +112,8 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
       plantName: plantData.title,
       sellerName: plantData.sellerInfo.name,
       autoMessage: plantData.sellerInfo.isBusiness
-        ? `Hello, I'd like to order "${plantData.title}" ($${plantData.formattedPrice}). How do I pick it up?`
-        : `Hello, is "${plantData.title}" still available for $${plantData.formattedPrice}?`,
+        ? `Hello, I'd like to order "${plantData.title}" (₪${plantData.formattedPrice}). How do I pick it up?`
+        : `Hello, is "${plantData.title}" still available for ₪${plantData.formattedPrice}?`,
       isBusiness: plantData.sellerInfo.isBusiness,
       isOrderInquiry: true
     });
@@ -166,7 +166,7 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
     try {
       await Share.share({
         title: plantData.title,
-        message: `${plantData.title}\nPrice: $${plantData.formattedPrice}\n${plantData.description || ''}`
+        message: `${plantData.title}\nPrice: ₪${plantData.formattedPrice}\n${plantData.description || ''}`
       });
     } catch {
       Alert.alert('Error', 'Could not share this product.');
@@ -248,7 +248,7 @@ const PlantCard = React.memo(({ plant, showActions = true, layout = 'grid', styl
           <Text style={[styles.name, isGrid && styles.nameGrid]} numberOfLines={isGrid ? 1 : 2}>
             {plantData.title}
           </Text>
-          <Text style={styles.price}>${plantData.formattedPrice}</Text>
+          <Text style={styles.price}>₪{plantData.formattedPrice}</Text>
         </View>
 
         {!!plantData.description && (

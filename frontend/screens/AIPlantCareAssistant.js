@@ -1,4 +1,4 @@
-// screens/AIPlantCareAssistant.js - Real-time AI chat box for plant care
+// screens/AIPlantCareAssistant.js
 import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
@@ -16,12 +16,17 @@ import {
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CosmosDbService from '../services/CosmosDbService';
 import MainLayout from '../components/MainLayout';
 
 const AI_CHAT_API = 'https://usersfunctions.azurewebsites.net/api/ai-plant-care-chat';
 
-export default function AIPlantCareAssistant({ navigation, route, embedded = false, onClose }) {
+// Adjust this if your NavigationBar is taller/shorter
+const NAV_H = 96;
+
+export default function AIPlantCareAssistant({ navigation, route }) {
+  const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -31,383 +36,257 @@ export default function AIPlantCareAssistant({ navigation, route, embedded = fal
   const [isInitializing, setIsInitializing] = useState(true);
   const [isBusiness, setIsBusiness] = useState(false);
 
-  const isEmbedded = route?.params?.embedded ?? embedded;
+  const [composerH, setComposerH] = useState(60);
 
-  const scrollViewRef = useRef();
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const typingAnim = useRef(new Animated.Value(0)).current;
-
-  // Business/user detection logic (matches your other screens)
-  useEffect(() => {
-    const checkUserType = async () => {
-      if (route?.params?.business === true) {
-        setIsBusiness(true);
-        return;
-      }
-      const userType = await AsyncStorage.getItem('userType');
-      const businessId = await AsyncStorage.getItem('businessId');
-      if (userType === 'business' || businessId) {
-        setIsBusiness(true);
-        return;
-      }
-      const currentRouteName = navigation.getState()?.routeNames?.[0];
-      if (
-        currentRouteName?.includes('Business') ||
-        navigation.getState()?.routes?.some(route => route.name.includes('Business'))
-      ) {
-        setIsBusiness(true);
-        return;
-      }
-      setIsBusiness(false);
-    };
-    checkUserType();
-  }, [route?.params, navigation]);
+  const scrollViewRef = useRef(null);
+  const fade = useRef(new Animated.Value(0)).current;
+  const typing = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    initializeChat();
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 600,
-      useNativeDriver: true,
-    }).start();
+    (async () => {
+      if (route?.params?.business === true) { setIsBusiness(true); }
+      else {
+        const ut = await AsyncStorage.getItem('userType');
+        const bid = await AsyncStorage.getItem('businessId');
+        setIsBusiness(ut === 'business' || !!bid);
+      }
+    })();
+  }, [route?.params]);
+
+  useEffect(() => {
+    init();
+    Animated.timing(fade, { toValue: 1, duration: 400, useNativeDriver: true }).start();
   }, []);
 
   useEffect(() => {
-    if (isTyping) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(typingAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-          Animated.timing(typingAnim, { toValue: 0, duration: 500, useNativeDriver: true }),
-        ])
-      ).start();
-    } else {
-      typingAnim.stopAnimation();
-      typingAnim.setValue(0);
-    }
+    if (!isTyping) { typing.stopAnimation(); typing.setValue(0); return; }
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(typing, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(typing, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ])
+    ).start();
   }, [isTyping]);
 
-  const initializeChat = async () => {
+  const init = async () => {
     try {
       setIsInitializing(true);
-      const currentUserId = await AsyncStorage.getItem('currentUserId');
-      setUserId(currentUserId);
+      const uid = await AsyncStorage.getItem('currentUserId');
+      setUserId(uid || null);
 
       let sessionId = await AsyncStorage.getItem('aiChatSession');
       if (!sessionId) {
-        sessionId = generateSessionId(currentUserId);
+        sessionId = `${uid ? uid.slice(0, 8) + '_' : ''}chat_${Date.now()}_${Math.random()
+          .toString(36)
+          .slice(2, 9)}`;
         await AsyncStorage.setItem('aiChatSession', sessionId);
       }
       setChatSession(sessionId);
 
-      const chatHistory = await CosmosDbService.getChatHistory(sessionId);
-      if (chatHistory && chatHistory.length > 0) {
-        setMessages(chatHistory);
+      const history = await CosmosDbService.getChatHistory(sessionId);
+      if (history?.length) {
+        setMessages(history);
       } else {
-        const welcomeMessage = {
+        const welcome = {
           id: Date.now().toString(),
-          text: "🌿 Hello! I'm your AI Plant Care Assistant. I specialize in helping you care for your plants, diagnose issues, and provide expert gardening advice. How can I help you today?",
+          text:
+            "🌿 Hello! I'm your AI Plant Care Assistant. Ask me about watering, pests, light, soil, and more.",
           isUser: false,
           timestamp: new Date(),
-          type: 'welcome'
+          type: 'welcome',
         };
-        setMessages([welcomeMessage]);
-        await CosmosDbService.saveChatMessages(sessionId, [welcomeMessage]);
+        setMessages([welcome]);
+        await CosmosDbService.saveChatMessages(sessionId, [welcome]);
       }
-    } catch (error) {
-      console.error('Error initializing chat:', error);
-      Alert.alert(
-        "Connection Error",
-        "Unable to connect to the chat service. Please check your internet connection and try again.",
-        [{ text: "OK", onPress: () => navigation.goBack() }]
-      );
+    } catch (e) {
+      console.error(e);
+      Alert.alert('Connection Error', 'Unable to start the chat.');
+      navigation.goBack?.();
     } finally {
       setIsInitializing(false);
     }
   };
 
-  const generateSessionId = (userId) => {
-    const userPrefix = userId ? `${userId.substr(0, 8)}_` : '';
-    return `${userPrefix}chat_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  };
-
-  const saveMessages = async (newMessages) => {
-    if (chatSession) {
-      try {
-        await CosmosDbService.saveChatMessages(chatSession, newMessages);
-      } catch (error) {
-        console.error('Error saving messages to Cosmos DB:', error);
-        Alert.alert(
-          "Save Error",
-          "We couldn't save your conversation. Please check your connection and try again."
-        );
-      }
-    }
+  const saveMessages = async (arr) => {
+    if (!chatSession) return;
+    try { await CosmosDbService.saveChatMessages(chatSession, arr); }
+    catch (e) { /* non-fatal */ }
   };
 
   const sendMessage = async () => {
     if (!inputText.trim() || isLoading) return;
-    const userMessage = {
-      id: Date.now().toString(),
-      text: inputText.trim(),
-      isUser: true,
-      timestamp: new Date(),
-    };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    const userMsg = { id: Date.now().toString(), text: inputText.trim(), isUser: true, timestamp: new Date() };
+    const next = [...messages, userMsg];
+    setMessages(next);
     setInputText('');
     setIsLoading(true);
     setIsTyping(true);
 
     try {
-      await saveMessages([userMessage]);
-      const context = newMessages.slice(-10).map(msg => ({
-        role: msg.isUser ? 'user' : 'assistant',
-        content: msg.text
-      }));
+      await saveMessages([userMsg]);
+      const context = next.slice(-10).map(m => ({ role: m.isUser ? 'user' : 'assistant', content: m.text }));
 
-      const response = await fetch(AI_CHAT_API, {
+      const res = await fetch(AI_CHAT_API, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: userMessage.text,
-          context: context,
-          sessionId: chatSession,
-          specialization: 'plant_care'
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg.text, context, sessionId: chatSession, specialization: 'plant_care' }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-
-      const aiMessage = {
+      const aiMsg = {
         id: (Date.now() + 1).toString(),
-        text: data.response || 'I apologize, but I encountered an error. Please try asking your question again.',
+        text: data.response || 'Sorry, something went wrong. Try again.',
         isUser: false,
         timestamp: new Date(),
         confidence: data.confidence,
-        sources: data.sources,
       };
-
-      const finalMessages = [...newMessages, aiMessage];
-      setMessages(finalMessages);
-
-      await saveMessages([aiMessage]);
-    } catch (error) {
-      console.error('Error sending message:', error);
-
-      const errorMessage = {
+      const final = [...next, aiMsg];
+      setMessages(final);
+      await saveMessages([aiMsg]);
+    } catch (e) {
+      const errMsg = {
         id: (Date.now() + 1).toString(),
-        text: "I'm sorry, I'm having trouble connecting right now. Please check your internet connection and try again.",
+        text: "I'm having trouble connecting. Please try again.",
         isUser: false,
         timestamp: new Date(),
-        type: 'error'
+        type: 'error',
       };
-
-      const finalMessages = [...newMessages, errorMessage];
-      setMessages(finalMessages);
-
-      await saveMessages([errorMessage]);
+      setMessages(prev => [...prev, errMsg]);
+      await saveMessages([errMsg]);
     } finally {
       setIsLoading(false);
       setIsTyping(false);
-
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 80);
     }
   };
 
   const clearChat = () => {
-    Alert.alert(
-      'Clear Chat History',
-      'Are you sure you want to clear all chat messages?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              setIsLoading(true);
-              await CosmosDbService.deleteChatHistory(chatSession);
-
-              const newSessionId = generateSessionId(userId);
-              await AsyncStorage.setItem('aiChatSession', newSessionId);
-              setChatSession(newSessionId);
-
-              const welcomeMessage = {
-                id: Date.now().toString(),
-                text: "🌿 Hello! I'm your AI Plant Care Assistant. I specialize in helping you care for your plants, diagnose issues, and provide expert gardening advice. How can I help you today?",
-                isUser: false,
-                timestamp: new Date(),
-                type: 'welcome'
-              };
-
-              setMessages([welcomeMessage]);
-              await CosmosDbService.saveChatMessages(newSessionId, [welcomeMessage]);
-            } catch (error) {
-              console.error('Error clearing chat:', error);
-              Alert.alert(
-                "Error",
-                "Failed to clear chat history. Please try again."
-              );
-            } finally {
-              setIsLoading(false);
-            }
-          }
-        }
-      ]
-    );
+    Alert.alert('Clear chat?', 'This will remove the entire conversation.', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            setIsLoading(true);
+            await CosmosDbService.deleteChatHistory(chatSession);
+            const newId = `${userId ? userId.slice(0, 8) + '_' : ''}chat_${Date.now()}_${Math.random()
+              .toString(36)
+              .slice(2, 9)}`;
+            await AsyncStorage.setItem('aiChatSession', newId);
+            setChatSession(newId);
+            const welcome = {
+              id: Date.now().toString(),
+              text:
+                "🌿 Hello! I'm your AI Plant Care Assistant. Ask me about watering, pests, light, soil, and more.",
+              isUser: false,
+              timestamp: new Date(),
+              type: 'welcome',
+            };
+            setMessages([welcome]);
+            await CosmosDbService.saveChatMessages(newId, [welcome]);
+          } finally { setIsLoading(false); }
+        },
+      },
+    ]);
   };
 
-  const getQuickSuggestions = () => [
-    "🌿 How often should I water my houseplants?",
-    "🐛 My plant has yellow leaves, what's wrong?",
-    "☀️ What plants are good for low light conditions?",
-    "🌱 How do I propagate my plants?",
-    "🏠 Best indoor plants for beginners?",
-    "💧 Signs of overwatering vs underwatering?",
+  const suggestions = [
+    'How often should I water a fiddle leaf fig?',
+    'Yellow leaves—overwatered or underwatered?',
+    'Best low-light plants for bedrooms?',
+    'How do I propagate pothos in water?',
   ];
 
-  const handleSuggestionPress = (suggestion) => {
-    setInputText(suggestion.replace(/^[🌿🐛☀️🌱🏠💧]\s*/, ''));
-  };
-
-  const renderMessage = (message) => {
-    const isUser = message.isUser;
+  const renderMessage = (m) => {
+    const isUser = m.isUser;
     return (
-      <View
-        key={message.id}
-        style={[
-          styles.messageContainer,
-          isUser ? styles.userMessageContainer : styles.aiMessageContainer
-        ]}
-      >
+      <View key={m.id} style={[styles.msgRow, isUser ? styles.rowUser : styles.rowAI]}>
         {!isUser && (
           <View style={styles.aiAvatar}>
-            <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" />
+            <MaterialCommunityIcons name="leaf" size={14} color="#4CAF50" />
           </View>
         )}
-
-        <View style={[styles.messageBubble, isUser ? styles.userBubble : styles.aiBubble]}>
-          <RichText
-            style={[styles.messageText, isUser ? styles.userText : styles.aiText]}
-            text={message.text}
-          />
-
-          {message.confidence && (
-            <View style={styles.confidenceContainer}>
-              <Text style={styles.confidenceText}>
-                Confidence: {Math.round(message.confidence * 100)}%
-              </Text>
-            </View>
+        <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAI]}>
+          <Text style={[styles.bubbleText, isUser ? styles.userText : styles.aiText]}>{m.text}</Text>
+          {m.confidence != null && (
+            <Text style={[styles.ts, isUser ? styles.tsUser : styles.tsAI]}>
+              Confidence: {Math.round(m.confidence * 100)}%
+            </Text>
           )}
-
-          <Text style={[styles.timestamp, isUser ? styles.userTimestamp : styles.aiTimestamp]}>
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          <Text style={[styles.ts, isUser ? styles.tsUser : styles.tsAI]}>
+            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </Text>
         </View>
-
         {isUser && (
           <View style={styles.userAvatar}>
-            <MaterialIcons name="person" size={20} color="#fff" />
+            <MaterialIcons name="person" size={12} color="#fff" />
           </View>
         )}
       </View>
     );
   };
 
-  const renderTypingIndicator = () => {
-    if (!isTyping) return null;
-    return (
-      <View style={[styles.messageContainer, styles.aiMessageContainer]}>
-        <View style={styles.aiAvatar}>
-          <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" />
-        </View>
-        <View style={[styles.messageBubble, styles.aiBubble, styles.typingBubble]}>
-          <View style={styles.typingIndicator}>
-            <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
-            <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
-            <Animated.View style={[styles.typingDot, { opacity: typingAnim }]} />
-          </View>
-          <Text style={styles.typingText}>AI is thinking...</Text>
-        </View>
+  const typingIndicator = !isTyping ? null : (
+    <View style={[styles.msgRow, styles.rowAI]}>
+      <View style={styles.aiAvatar}>
+        <MaterialCommunityIcons name="leaf" size={14} color="#4CAF50" />
       </View>
-    );
-  };
+      <View style={[styles.bubble, styles.bubbleAI, styles.typingBubble]}>
+        <View style={styles.typingDots}>
+          <Animated.View style={[styles.dot, { opacity: typing }]} />
+          <Animated.View style={[styles.dot, { opacity: typing }]} />
+          <Animated.View style={[styles.dot, { opacity: typing }]} />
+        </View>
+        <Text style={styles.typingText}>AI is thinking…</Text>
+      </View>
+    </View>
+  );
 
   if (isInitializing) {
     return (
-      <SafeAreaView style={styles.loadingContainer}>
+      <SafeAreaView style={styles.loadingWrap}>
         <ActivityIndicator size="large" color="#4CAF50" />
-        <Text style={styles.loadingText}>Loading your plant care assistant...</Text>
+        <Text style={styles.loadingNote}>Loading your plant care assistant…</Text>
       </SafeAreaView>
     );
   }
 
-  const screenContent = (
-    <SafeAreaView style={[styles.container, isEmbedded && { borderTopLeftRadius: 16, borderTopRightRadius: 16 }]}>
-      {/* Header */}
-      {isEmbedded ? (
-        <View style={[styles.header, { borderTopLeftRadius: 16, borderTopRightRadius: 16 }]}>
-          <TouchableOpacity onPress={onClose} style={styles.backButton}>
-            <MaterialIcons name="close" size={22} color="#4CAF50" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerTitle}>
-              <MaterialCommunityIcons name="robot" size={22} color="#4CAF50" />
-              <Text style={styles.headerTitleText}>AI Assistant</Text>
-            </View>
-            <Text style={styles.headerSubtitle}>Plant care & shop help</Text>
-          </View>
-          <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
-            <MaterialIcons name="delete-outline" size={22} color="#666" />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-            <MaterialIcons name="arrow-back" size={24} color="#4CAF50" />
-          </TouchableOpacity>
-          <View style={styles.headerCenter}>
-            <View style={styles.headerTitle}>
-              <MaterialCommunityIcons name="robot" size={24} color="#4CAF50" />
-              <Text style={styles.headerTitleText}>AI Plant Care Assistant</Text>
-            </View>
-            <Text style={styles.headerSubtitle}>Powered by Gemini AI</Text>
-          </View>
-          <TouchableOpacity onPress={clearChat} style={styles.clearButton}>
-            <MaterialIcons name="delete-outline" size={24} color="#666" />
-          </TouchableOpacity>
-        </View>
-      )}
+  const screen = (
+    <SafeAreaView
+      style={[
+        styles.screen,
+        // Reserve space for bottom NavigationBar so it never overlaps
+        !isBusiness && { paddingBottom: NAV_H + insets.bottom },
+      ]}
+    >
+      {/* Slimmer header */}
+      <View style={styles.header}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.hBtn}>
+          <MaterialIcons name="arrow-back" size={20} color="#2e7d32" />
+        </TouchableOpacity>
+        <Text style={styles.hTitle}>AI Plant Care</Text>
+        <TouchableOpacity onPress={clearChat} style={styles.hBtn}>
+          <MaterialIcons name="delete-outline" size={20} color="#2e7d32" />
+        </TouchableOpacity>
+      </View>
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-        {/* Chat Messages */}
+      <Animated.View style={[styles.body, { opacity: fade }]}>
         <ScrollView
           ref={scrollViewRef}
-          style={styles.messagesContainer}
+          style={styles.messages}
+          contentContainerStyle={{ padding: 16, paddingBottom: composerH + 12 }}
           showsVerticalScrollIndicator={false}
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.map(renderMessage)}
-          {renderTypingIndicator()}
-
+          {typingIndicator}
           {messages.length <= 1 && (
-            <View style={styles.suggestionsContainer}>
-              <Text style={styles.suggestionsTitle}>Try asking about:</Text>
-              {getQuickSuggestions().map((suggestion, index) => (
-                <TouchableOpacity
-                  key={index}
-                  style={styles.suggestionButton}
-                  onPress={() => handleSuggestionPress(suggestion)}
-                >
-                  <Text style={styles.suggestionText}>{suggestion}</Text>
+            <View style={styles.suggestions}>
+              {suggestions.map((s, i) => (
+                <TouchableOpacity key={i} style={styles.suggBtn} onPress={() => setInputText(s)}>
+                  <Text style={styles.suggTxt}>{s}</Text>
                 </TouchableOpacity>
               ))}
             </View>
@@ -415,15 +294,17 @@ export default function AIPlantCareAssistant({ navigation, route, embedded = fal
         </ScrollView>
 
         <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={styles.inputContainer}
+          behavior={Platform.select({ ios: 'padding', android: 'height' })}
+          keyboardVerticalOffset={insets.top + (!isBusiness ? NAV_H : 0)}
+          onLayout={(e) => setComposerH(e.nativeEvent.layout.height)}
+          style={styles.composerWrap}
         >
-          <View style={styles.inputRow}>
+          <View style={styles.composerRow}>
             <TextInput
-              style={styles.textInput}
+              style={styles.input}
               value={inputText}
               onChangeText={setInputText}
-              placeholder="Ask me anything about plant care..."
+              placeholder="Ask about watering, pests, light, soil…"
               placeholderTextColor="#999"
               multiline
               maxLength={500}
@@ -431,327 +312,151 @@ export default function AIPlantCareAssistant({ navigation, route, embedded = fal
               onSubmitEditing={sendMessage}
               editable={!isLoading}
             />
-
             <TouchableOpacity
-              style={[styles.sendButton, (!inputText.trim() || isLoading) && styles.sendButtonDisabled]}
+              style={[styles.send, (!inputText.trim() || isLoading) && styles.sendDisabled]}
               onPress={sendMessage}
               disabled={!inputText.trim() || isLoading}
             >
-              {isLoading ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <MaterialIcons name="send" size={24} color="#fff" />
-              )}
+              {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={18} color="#fff" />}
             </TouchableOpacity>
-          </View>
-
-          <View style={styles.inputFooter}>
-            <Text style={styles.inputHint}>
-              💡 Ask about watering, diseases, plant identification, care tips, and more!
-            </Text>
           </View>
         </KeyboardAvoidingView>
       </Animated.View>
     </SafeAreaView>
   );
 
-  if (isEmbedded) {
-    // Render directly inside a modal/sheet
-    return screenContent;
-  } else if (!isBusiness) {
+  if (!isBusiness) {
     return (
       <MainLayout
         currentTab="ai"
-        onTabPress={tab => navigation.navigate(
-          tab === 'plants'
-            ? 'Locations'
-            : tab.charAt(0).toUpperCase() + tab.slice(1)
-        )}
+        onTabPress={(tab) => navigation.navigate(tab === 'plants' ? 'Locations' : tab.charAt(0).toUpperCase() + tab.slice(1))}
       >
-        {screenContent}
+        {screen}
       </MainLayout>
     );
-  } else {
-    return screenContent;
   }
+  return screen;
 }
 
-/** Lightweight **bold** renderer for RN text */
-const RichText = ({ text = '', style }) => {
-  const lines = String(text).split('\n');
-  return (
-    <Text style={style}>
-      {lines.map((line, li) => {
-        const parts = line.split(/(\*\*.+?\*\*)/g);
-        return (
-          <Text key={`ln-${li}`}>
-            {parts.map((part, pi) => {
-              const isBold = part.startsWith('**') && part.endsWith('**') && part.length > 4;
-              if (isBold) {
-                return (
-                  <Text key={`pt-${pi}`} style={{ fontWeight: '700' }}>
-                    {part.slice(2, -2)}
-                  </Text>
-                );
-              }
-              return <Text key={`pt-${pi}`}>{part}</Text>;
-            })}
-            {li < lines.length - 1 ? '\n' : null}
-          </Text>
-        );
-      })}
-    </Text>
-  );
-};
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#f8f9fa',
-  },
-  loadingText: {
-    marginTop: 16,
-    color: '#4CAF50',
-    fontSize: 16,
-  },
+  screen: { flex: 1, backgroundColor: '#F7F9F7' },
+
+  // Header
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 16,
+    height: 54,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  backButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f0f9f3',
-  },
-  headerCenter: {
-    flex: 1,
-    alignItems: 'center',
-    marginHorizontal: 16,
-  },
-  headerTitle: {
+    borderBottomColor: '#E7F0E7',
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 2,
+    paddingHorizontal: 8,
   },
-  headerTitleText: {
+  hBtn: {
+    width: 36, height: 36, borderRadius: 18,
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F0F7F0',
+  },
+  hTitle: {
+    flex: 1,
+    textAlign: 'center',
     fontSize: 18,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
+    fontWeight: '700',
+    color: '#2e7d32',
   },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#666',
-  },
-  clearButton: {
-    padding: 8,
-    borderRadius: 8,
-    backgroundColor: '#f5f5f5',
-  },
-  content: {
-    flex: 1,
-  },
-  messagesContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  messageContainer: {
-    flexDirection: 'row',
-    marginBottom: 16,
-    alignItems: 'flex-end',
-  },
-  userMessageContainer: {
-    justifyContent: 'flex-end',
-  },
-  aiMessageContainer: {
-    justifyContent: 'flex-start',
-  },
+
+  body: { flex: 1 },
+  messages: { flex: 1 },
+
+  // Messages
+  msgRow: { flexDirection: 'row', marginBottom: 10, alignItems: 'flex-end' },
+  rowUser: { justifyContent: 'flex-end' },
+  rowAI: { justifyContent: 'flex-start' },
+
   aiAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e8f5e8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 8,
+    width: 24, height: 24, borderRadius: 12,
+    backgroundColor: '#EAF7EA',
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: 6,
   },
   userAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+    width: 24, height: 24, borderRadius: 12,
     backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
+    alignItems: 'center', justifyContent: 'center',
+    marginLeft: 6,
   },
-  messageBubble: {
-    maxWidth: '75%',
+
+  bubble: {
+    maxWidth: '94%', // wider bubbles
     borderRadius: 16,
-    padding: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
     elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 2,
   },
-  userBubble: {
-    backgroundColor: '#4CAF50',
-    borderBottomRightRadius: 4,
-  },
-  aiBubble: {
-    backgroundColor: '#fff',
-    borderBottomLeftRadius: 4,
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-  },
-  typingBubble: {
-    paddingVertical: 16,
-  },
-  messageText: {
-    fontSize: 16,
-    lineHeight: 22,
-  },
-  userText: {
-    color: '#fff',
-  },
-  aiText: {
-    color: '#333',
-  },
-  timestamp: {
-    fontSize: 11,
-    marginTop: 4,
-  },
-  userTimestamp: {
-    color: 'rgba(255, 255, 255, 0.7)',
-    textAlign: 'right',
-  },
-  aiTimestamp: {
-    color: '#999',
-  },
-  confidenceContainer: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-  },
-  confidenceText: {
-    fontSize: 12,
-    color: '#666',
-    fontStyle: 'italic',
-  },
-  typingIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  typingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: '#4CAF50',
-    marginHorizontal: 2,
-  },
-  typingText: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-  },
-  suggestionsContainer: {
-    marginTop: 20,
-    paddingHorizontal: 8,
-  },
-  suggestionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  suggestionButton: {
+  bubbleUser: { backgroundColor: '#4CAF50', borderBottomRightRadius: 6 },
+  bubbleAI: { backgroundColor: '#fff', borderBottomLeftRadius: 6, borderWidth: 1, borderColor: '#E6EDE6' },
+
+  bubbleText: { fontSize: 15, lineHeight: 21 },
+  userText: { color: '#fff' },
+  aiText: { color: '#222' },
+
+  ts: { marginTop: 6, fontSize: 11 },
+  tsUser: { color: 'rgba(255,255,255,0.8)', textAlign: 'right' },
+  tsAI: { color: '#8A8A8A' },
+
+  // Typing
+  typingBubble: { paddingVertical: 12 },
+  typingDots: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  dot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#4CAF50', marginHorizontal: 3 },
+  typingText: { fontSize: 12, color: '#666', textAlign: 'center' },
+
+  // Suggestions
+  suggestions: { marginTop: 6 },
+  suggBtn: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    elevation: 1,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
+    borderColor: '#E6EDE6',
   },
-  suggestionText: {
-    fontSize: 14,
-    color: '#333',
-    textAlign: 'center',
-  },
-  inputContainer: {
+  suggTxt: { fontSize: 14, color: '#333', textAlign: 'center' },
+
+  // Composer
+  composerWrap: {
     backgroundColor: '#fff',
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 20 : 12,
+    borderTopColor: '#E6EDE6',
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: Platform.OS === 'ios' ? 16 : 8,
   },
-  inputRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    marginBottom: 8,
-  },
-  textInput: {
+  composerRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  input: {
     flex: 1,
+    backgroundColor: '#F4F6F4',
     borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    maxHeight: 100,
-    marginRight: 12,
-    backgroundColor: '#f8f9fa',
+    borderColor: '#E0E6E0',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    fontSize: 15,
+    maxHeight: 120,
+    marginRight: 10,
   },
-  sendButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+  send: {
+    width: 40, height: 40, borderRadius: 20,
     backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.2,
-    shadowRadius: 2,
+    alignItems: 'center', justifyContent: 'center',
+    elevation: 2, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.15, shadowRadius: 2,
   },
-  sendButtonDisabled: {
-    backgroundColor: '#ccc',
-    elevation: 0,
-    shadowOpacity: 0,
-  },
-  inputFooter: {
-    alignItems: 'center',
-  },
-  inputHint: {
-    fontSize: 12,
-    color: '#666',
-    textAlign: 'center',
-    lineHeight: 16,
-  },
+  sendDisabled: { backgroundColor: '#BDBDBD', elevation: 0, shadowOpacity: 0 },
+
+  // Loading
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F7F9F7' },
+  loadingNote: { marginTop: 12, color: '#4CAF50', fontSize: 16 },
 });
