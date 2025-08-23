@@ -1,214 +1,146 @@
 // components/ai/SmartPlantCareAssistant.js
 import React, { useState, useRef, useEffect } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
-  TextInput,
-  Image,
-  Alert,
-  ActivityIndicator,
-  SafeAreaView,
-  Animated,
-  Easing,
-  Dimensions,
-  KeyboardAvoidingView,
-  Platform
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Image,
+  Alert, ActivityIndicator, SafeAreaView, Animated, Easing, Dimensions,
+  KeyboardAvoidingView, Platform, Keyboard
 } from 'react-native';
-import NavigationBar from '../NavigationBar'; 
-import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NavigationBar from '../NavigationBar';
 import GreenerLogo from '../../assets/icon.png';
 import { getBusinessInventory, getBusinessProfile } from '../../Business/services/businessApi';
 
 const PLANT_SEARCH_URL = 'https://usersfunctions.azurewebsites.net/api/plant_search';
-const { width, height } = Dimensions.get('window');
-const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+const API_BASE_URL     = 'https://usersfunctions.azurewebsites.net/api';
+const { width }        = Dimensions.get('window');
+
+const DEFAULT_NAV_H   = 88;                          // fallback nav height
+const SAFE_BOTTOM_PAD = Platform.OS === 'ios' ? 20 : 8;
 
 export default function GreenerPlantCareAssistant({ navigation, route }) {
-  const routePlant = route?.params?.plant || null;
+  const routePlant   = route?.params?.plant || null;
   const onSelectPlant = route?.params?.onSelectPlant;
+
+  // ui state
+  const [kbVisible, setKbVisible] = useState(false);
+  const [navH, setNavH]           = useState(DEFAULT_NAV_H); // measured nav height
+  const [composerH, setComposerH] = useState(64);
+
+  // chat state
   const [isLoading, setIsLoading] = useState(false);
-  const [question, setQuestion] = useState('');
+  const [question, setQuestion]   = useState('');
   const [selectedImage, setSelectedImage] = useState(null);
   const [diagnosis, setDiagnosis] = useState(null);
   const [recommendations, setRecommendations] = useState([]);
   const [chatHistory, setChatHistory] = useState([]);
+  const [showWelcome, setShowWelcome] = useState(true);
+  const [lastChatHistory, setLastChatHistory] = useState([]);
+  const [persona, setPersona] = useState('business');
+  const [ownerName, setOwnerName] = useState('');
   const [plantSelectVisible, setPlantSelectVisible] = useState(false);
   const [inventoryPlants, setInventoryPlants] = useState([]);
   const [plantSearchResults, setPlantSearchResults] = useState([]);
   const [plantSearchQuery, setPlantSearchQuery] = useState('');
   const [plantTab, setPlantTab] = useState('inventory');
   const [isInventoryLoading, setIsInventoryLoading] = useState(false);
-  const [selectedPlant, setSelectedPlant] = useState(routePlant);
-  const [messageAnimations, setMessageAnimations] = useState([]);
   const [isPlantSearchLoading, setIsPlantSearchLoading] = useState(false);
-  const [ownerName, setOwnerName] = useState('');
-  const [showWelcome, setShowWelcome] = useState(true);
-  const [chatStarted, setChatStarted] = useState(false);
-  const [hasExistingChat, setHasExistingChat] = useState(false);
-  const [lastChatHistory, setLastChatHistory] = useState([]);
-  const [persona, setPersona] = useState('business');
+  const [selectedPlant, setSelectedPlant] = useState(routePlant);
+
   const scrollViewRef = useRef(null);
   const plantSearchDebounce = useRef(null);
 
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(0)).current;
+  // simple entrance animation
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(-40)).current;
 
   useEffect(() => {
-    // Animate on mount
-    fadeAnim.setValue(0);
-    slideAnim.setValue(-50);
-    Animated.sequence([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: false,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 300,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }),
+    Animated.parallel([
+      Animated.timing(fadeAnim,  { toValue: 1, duration: 250, useNativeDriver: false }),
+      Animated.timing(slideAnim, { toValue: 0, duration: 250, easing: Easing.out(Easing.ease), useNativeDriver: false }),
     ]).start();
   }, []);
 
+  // keyboard listeners (hide nav + adjust paddings)
   useEffect(() => {
-    const detectPersonaAndSetName = async () => {
-      let personaType = 'business';
-      let name = '';
+    const sEvt = Platform.OS === 'android' ? 'keyboardDidShow' : 'keyboardWillShow';
+    const hEvt = Platform.OS === 'android' ? 'keyboardDidHide' : 'keyboardWillHide';
+    const s = Keyboard.addListener(sEvt, () => setKbVisible(true));
+    const h = Keyboard.addListener(hEvt, () => setKbVisible(false));
+    return () => { s.remove(); h.remove(); };
+  }, []);
+
+  // keep scrolled to end when layout changes
+  useEffect(() => {
+    const t = setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 120);
+    return () => clearTimeout(t);
+  }, [kbVisible, composerH, chatHistory.length]);
+
+  // detect persona + owner name
+  useEffect(() => {
+    (async () => {
+      let p = 'business', name = '';
       try {
         const storedPersona = await AsyncStorage.getItem('persona');
         if (storedPersona === 'consumer') {
-          personaType = 'consumer';
-          const userName = await AsyncStorage.getItem('userName');
+          p = 'consumer';
+          const userName  = await AsyncStorage.getItem('userName');
           const userEmail = await AsyncStorage.getItem('userEmail');
           name = userName || userEmail || 'there';
         } else {
           const profile = await getBusinessProfile();
           name = profile?.contactName || profile?.name || profile?.businessName || 'there';
         }
-      } catch (e) {
-        name = 'there';
-      }
-      setPersona(personaType);
+      } catch { name = 'there'; }
+      setPersona(p);
       setOwnerName(name);
-    };
-    detectPersonaAndSetName();
+    })();
   }, []);
 
+  // ---- plant sources ----
   const fetchInventoryPlants = async () => {
     setIsInventoryLoading(true);
     try {
       const userEmail = await AsyncStorage.getItem('userEmail');
-      if (!userEmail) throw new Error('No user email found');
+      if (!userEmail) throw new Error('No user email');
       let plants = [];
       if (persona === 'consumer') {
-        const res = await fetch(`https://usersfunctions.azurewebsites.net/api/getalluserplants?email=${encodeURIComponent(userEmail)}`);
+        const res  = await fetch(`${API_BASE_URL}/getalluserplants?email=${encodeURIComponent(userEmail)}`);
         const data = await res.json();
         if (Array.isArray(data)) {
-          data.forEach(locationObj => {
-            if (locationObj.plants && Array.isArray(locationObj.plants)) {
-              locationObj.plants.forEach(p => {
-                plants.push({ ...p, name: p.nickname || p.common_name, mainImage: p.image_url });
-              });
+          data.forEach(loc => {
+            if (Array.isArray(loc.plants)) {
+              loc.plants.forEach(p => plants.push({ ...p, name: p.nickname || p.common_name, mainImage: p.image_url }));
             }
           });
         }
       } else {
         const inv = await getBusinessInventory(userEmail);
-        plants = (inv.inventory || inv || []).filter(item => (item.productType === 'plant' || item.category === 'Plants'));
+        plants = (inv.inventory || inv || []).filter(it => it.productType === 'plant' || it.category === 'Plants');
       }
       setInventoryPlants(plants);
-    } catch (e) {
+    } catch {
       setInventoryPlants([]);
-    } finally {
-      setIsInventoryLoading(false);
-    }
+    } finally { setIsInventoryLoading(false); }
   };
 
-  const fetchGeneralPlants = async (query = '') => {
+  const fetchGeneralPlants = async (q = '') => {
     try {
       let url = PLANT_SEARCH_URL;
-      if (query && query.length >= 2) {
-        url += `?name=${encodeURIComponent(query)}`;
-      }
-      const res = await fetch(url);
+      if (q && q.length >= 2) url += `?name=${encodeURIComponent(q)}`;
+      const res  = await fetch(url);
       const data = await res.json();
-      const normalize = p => ({
+      const norm = p => ({
         id: p.id,
         name: p.common_name || p.name || '',
         common_name: p.common_name || '',
         scientific_name: p.scientific_name || p.latin_name || '',
         mainImage: p.image_url || (Array.isArray(p.image_urls) ? p.image_urls[0] : null) || null,
       });
-      setPlantSearchResults((data || []).map(normalize));
-    } catch (e) {
-      setPlantSearchResults([]);
-    }
+      setPlantSearchResults((data || []).map(norm));
+    } catch { setPlantSearchResults([]); }
   };
-
-  const handleOpenPlantPicker = () => {
-    setPlantSelectVisible(true);
-    fetchInventoryPlants();
-  };
-
-  const handleSelectPlant = (plant) => {
-    setSelectedPlant(plant);
-    setPlantSelectVisible(false);
-    if (onSelectPlant) onSelectPlant(plant);
-  };
-
-  const handleResetChat = () => {
-    setLastChatHistory(chatHistory);
-    setChatHistory([
-      {
-        id: Date.now(),
-        type: 'ai_response',
-        diagnosis: `Hello ${ownerName || 'there'}, how can I help you today?`,
-        recommendations: [],
-        timestamp: new Date().toISOString(),
-        hasImage: false
-      }
-    ]);
-    setDiagnosis(null);
-    setRecommendations([]);
-    setMessageAnimations([]);
-  };
-
-  const animateMessage = (index) => {
-    const anim = new Animated.Value(0);
-    setMessageAnimations((prev) => {
-      const arr = [...prev];
-      arr[index] = anim;
-      return arr;
-    });
-
-    Animated.sequence([
-      Animated.timing(anim, {
-        toValue: 0.8,
-        duration: 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: false,
-      }),
-      Animated.spring(anim, {
-        toValue: 1,
-        tension: 100,
-        friction: 8,
-        useNativeDriver: false,
-      }),
-    ]).start();
-  };
-
-  useEffect(() => {
-    if (chatHistory.length > 0) {
-      animateMessage(chatHistory.length - 1);
-    }
-  }, [chatHistory.length]);
 
   useEffect(() => {
     if (plantTab !== 'all') return;
@@ -216,39 +148,24 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
     if (plantSearchQuery.length >= 2) {
       setIsPlantSearchLoading(true);
       plantSearchDebounce.current = setTimeout(async () => {
-        try {
-          await fetchGeneralPlants(plantSearchQuery);
-        } finally {
-          setIsPlantSearchLoading(false);
-        }
+        try { await fetchGeneralPlants(plantSearchQuery); }
+        finally { setIsPlantSearchLoading(false); }
       }, 350);
     } else {
       setPlantSearchResults([]);
       setIsPlantSearchLoading(false);
     }
-    return () => {
-      if (plantSearchDebounce.current) clearTimeout(plantSearchDebounce.current);
-    };
+    return () => plantSearchDebounce.current && clearTimeout(plantSearchDebounce.current);
   }, [plantSearchQuery, plantTab]);
 
-  useEffect(() => {
-    setHasExistingChat(chatHistory.length > 0);
-  }, [chatHistory.length]);
-
-  useEffect(() => {
-    setShowWelcome(true);
-    setChatStarted(false);
-  }, []);
-
+  // ---- chat helpers ----
   const analyzePlantHealth = async (imageUri = null, userQuestion = '') => {
-    if (!userQuestion.trim() && !imageUri) {
-      return;
-    }
+    if (!userQuestion.trim() && !imageUri) return;
     setIsLoading(true);
     try {
       const userEmail = await AsyncStorage.getItem('userEmail');
-      const requestBody = {
-        message: userQuestion || 'Analyze this plant\'s health and provide care recommendations',
+      const body = {
+        message: userQuestion || "Analyze this plant's health and provide care recommendations",
         plantInfo: selectedPlant ? {
           name: selectedPlant.name || selectedPlant.common_name,
           scientificName: selectedPlant.scientific_name,
@@ -256,421 +173,260 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
           light: selectedPlant.light,
           humidity: selectedPlant.humidity
         } : null,
-        imageUri: imageUri,
-        userEmail: userEmail
+        imageUri, userEmail
       };
-
-      const response = await fetch(`${API_BASE_URL}/ai-plant-care-chat`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+      const r = await fetch(`${API_BASE_URL}/ai-plant-care-chat`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`AI service unavailable (${response.status}). Please try again later.`);
-      }
-
-      const result = await response.json();
-      const aiResponse = result.message || result.diagnosis || result.response || 'No response received';
-      const recommendations = result.recommendations || [];
-
-      setDiagnosis(aiResponse);
-      setRecommendations(Array.isArray(recommendations) ? recommendations : []);
-      const newMessage = {
-        id: Date.now(),
-        type: 'ai_response',
-        question: userQuestion,
-        diagnosis: aiResponse,
-        recommendations: Array.isArray(recommendations) ? recommendations : [],
-        timestamp: new Date().toISOString(),
-        hasImage: !!imageUri
+      if (!r.ok) throw new Error(`AI service unavailable (${r.status})`);
+      const json = await r.json();
+      const aiResponse = json.message || json.diagnosis || json.response || 'No response received';
+      const recs = Array.isArray(json.recommendations) ? json.recommendations : [];
+      const newMsg = {
+        id: Date.now(), type: 'ai_response', question: userQuestion, diagnosis: aiResponse,
+        recommendations: recs, timestamp: new Date().toISOString(), hasImage: !!imageUri
       };
-
-      setChatHistory(prev => [...prev, newMessage]);
-    } catch (error) {
-      let errorMessage = 'Failed to analyze plant. ';
-      if (error.message.includes('Failed to fetch')) {
-        errorMessage += 'Network connection issue. Please check your internet connection.';
-      } else if (error.message.includes('404')) {
-        errorMessage += 'AI service is temporarily unavailable. Please try again later.';
-      } else if (error.message.includes('500')) {
-        errorMessage += 'Server error occurred. Please try again in a few minutes.';
-      } else {
-        errorMessage += error.message || 'Please try again.';
-      }
-      showToast(errorMessage, 'error');
-    } finally {
-      setIsLoading(false);
-    }
+      setChatHistory(prev => [...prev, newMsg]);
+      setDiagnosis(aiResponse);
+      setRecommendations(recs);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'Failed to analyze plant');
+    } finally { setIsLoading(false); }
   };
 
   const handleImagePick = async () => {
-    const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission Required', 'Please allow access to photos for plant analysis');
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
+    const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!p.granted) { Alert.alert('Permission required', 'Allow access to photos.'); return; }
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, quality: 0.85,
     });
-    if (!result.canceled && result.assets[0]) {
-      setSelectedImage(result.assets[0].uri);
-    }
+    if (!res.canceled && res.assets?.[0]) setSelectedImage(res.assets[0].uri);
   };
 
   const handleTakePhoto = async () => {
-    const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
-    if (permissionResult.granted === false) {
-      Alert.alert('Permission Required', 'Please allow camera access for plant analysis');
-      return;
-    }
-    const result = await ImagePicker.launchCameraAsync({
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setSelectedImage(result.assets[0].uri);
-    }
+    const p = await ImagePicker.requestCameraPermissionsAsync();
+    if (!p.granted) { Alert.alert('Permission required', 'Allow camera access.'); return; }
+    const res = await ImagePicker.launchCameraAsync({ allowsEditing: true, quality: 0.85 });
+    if (!res.canceled && res.assets?.[0]) setSelectedImage(res.assets[0].uri);
+  };
+
+  const startNewChatIfNeeded = () => {
+    if (!showWelcome) return;
+    setChatHistory([{
+      id: Date.now(),
+      type: 'ai_response',
+      diagnosis: `Hello ${ownerName || 'there'}, how can I help you with your plants today?`,
+      recommendations: [],
+      timestamp: new Date().toISOString(),
+      hasImage: false
+    }]);
+    setShowWelcome(false);
   };
 
   const handleSubmitQuestion = () => {
     if (!question.trim() && !selectedImage) {
-      Alert.alert('Input Required', 'Please ask a question or upload an image');
+      Alert.alert('Input required', 'Ask a question or add a photo');
       return;
     }
-    if (showWelcome) {
-      handleStartNewChat();
-    }
-    const userMessage = {
-      id: Date.now(),
-      type: 'user_question',
-      question: question.trim(),
-      image: selectedImage,
-      timestamp: new Date().toISOString()
+    startNewChatIfNeeded();
+    const userMsg = {
+      id: Date.now(), type: 'user_question', question: question.trim(),
+      image: selectedImage, timestamp: new Date().toISOString()
     };
-    setChatHistory(prev => [...prev, userMessage]);
+    setChatHistory(prev => [...prev, userMsg]);
     analyzePlantHealth(selectedImage, question.trim());
     setQuestion('');
     setSelectedImage(null);
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
   };
 
-  const handleStartNewChat = () => {
-    setChatHistory([
-      {
-        id: Date.now(),
-        type: 'ai_response',
-        diagnosis: `Hello ${ownerName || 'there'}, how can I help you with your plants today?`,
-        recommendations: [],
-        timestamp: new Date().toISOString(),
-        hasImage: false
-      }
-    ]);
-    setShowWelcome(false);
-    setChatStarted(true);
-    setHasExistingChat(true);
+  const formatTime = (ts) => {
+    const d = new Date(ts);
+    const h = String(d.getHours()).padStart(2, '0');
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const today = new Date().toDateString() === d.toDateString();
+    return today ? `${h}:${m}` : `${d.toLocaleDateString()}, ${h}:${m}`;
   };
 
-  const getQuickSuggestions = () => [
-    { text: "Why are my plant's leaves turning yellow?", icon: "help-outline" },
-    { text: "How often should I water this plant?", icon: "opacity" },
-    { text: "What's wrong with my plant's growth?", icon: "trending-up" },
-    { text: "Is my plant getting enough light?", icon: "wb-sunny" },
-    { text: "How to treat plant pests naturally?", icon: "bug-report" },
-    { text: "When should I repot my plant?", icon: "home" }
-  ];
+  // --- Plant modal helpers ---
+  const handleOpenPlantPicker = () => { setPlantSelectVisible(true); fetchInventoryPlants(); };
+  const handleSelectPlant     = (plant) => { setSelectedPlant(plant); setPlantSelectVisible(false); onSelectPlant && onSelectPlant(plant); };
 
-  const renderChatMessage = (message, idx) => {
-    const anim = messageAnimations[idx] || new Animated.Value(1);
-    if (message.type === 'user_question') {
-      return (
-        <Animated.View
-          key={`${message.id}-${idx}`}
-          style={{ alignItems: 'flex-end', marginBottom: 24 }}
-        >
-          <View style={styles.userMessageWrapper}>
-            <View style={styles.userMessageBubble}>
-              {message.question && (
-                <Text style={[styles.userMessageText, { color: '#000' }]}>{message.question}</Text>
-              )}
-              {message.image && (
-                <Image source={{ uri: message.image }} style={styles.messageImage} />
-              )}
-              <Text style={styles.userMessageTime}>{formatTimestamp(message.timestamp)}</Text>
-            </View>
-          </View>
-        </Animated.View>
-      );
-    } else {
-      return (
-        <Animated.View
-          key={`${message.id}-${idx}`}
-          style={[
-            styles.aiMessageContainer,
-            {
-              transform: [
-                { scale: anim },
-                {
-                  translateX: Animated.multiply(
-                    anim.interpolate({ inputRange: [0, 1], outputRange: [-50, 0] }),
-                    1
-                  ),
-                },
-              ],
-              opacity: anim,
-            },
-          ]}
-        >
-          <View style={styles.aiMessage}>
-            <View style={styles.aiHeader}>
-              <View style={styles.aiAvatarContainer}>
-                <Image source={GreenerLogo} style={styles.aiAvatar} />
-                <View style={styles.aiStatusDot} />
-              </View>
-              <View style={styles.aiHeaderText}>
-                <Text style={styles.aiTitle}>Greener AI</Text>
-                <Text style={styles.aiSubtitle}>Plant Care Expert</Text>
-              </View>
-            </View>
-            {message.diagnosis && (
-              <View style={styles.diagnosisSection}>
-                <Text style={styles.diagnosisText}>{message.diagnosis}</Text>
-              </View>
-            )}
-            {message.recommendations && message.recommendations.length > 0 && (
-              <View style={styles.recommendationsSection}>
-                <View style={styles.sectionHeader}>
-                  <MaterialIcons name="lightbulb" size={18} color="#FF9800" />
-                  <Text style={styles.sectionTitle}>Recommendations</Text>
-                </View>
-                {message.recommendations.map((rec, index) => (
-                  <View key={index} style={styles.recommendationItem}>
-                    <View style={styles.bulletPoint} />
-                    <Text style={styles.recommendationText}>{rec}</Text>
-                  </View>
-                ))}
-              </View>
-            )}
-            <Text style={styles.aiMessageTime}>
-              {formatTimestamp(message.timestamp)}
-            </Text>
-          </View>
-        </Animated.View>
-      );
-    }
-  };
+  // bottom padding: reserve for nav when keyboard hidden; keep small safe pad when keyboard shown
+  const bottomPad = kbVisible ? SAFE_BOTTOM_PAD : navH;
 
-  const formatTimestamp = (dateStr) => {
-    const date = new Date(dateStr);
-    const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
-    const hours = date.getHours().toString().padStart(2, '0');
-    const mins = date.getMinutes().toString().padStart(2, '0');
-    if (isToday) return `${hours}:${mins}`;
-    return `${date.toLocaleDateString()}, ${hours}:${mins}`;
-  };
-
-  const renderChatHistory = () => {
-    let lastDay = '';
-    return chatHistory.map((message, idx) => {
-      const date = new Date(message.timestamp);
-      const dayStr = date.toDateString();
-      const showDay = dayStr !== lastDay;
-      lastDay = dayStr;
-      return (
-        <React.Fragment key={`${message.id}-fragment`}>
-          {showDay && (
-            <View style={styles.daySeparator}>
-              <Text style={styles.daySeparatorText}>{dayStr}</Text>
-            </View>
-          )}
-          {renderChatMessage(message, idx)}
-        </React.Fragment>
-      );
-    });
-  };
-
-  // Show toast helper
-  const showToast = (msg, type = 'info') => {
-    if (typeof window !== 'undefined' && window.showToast) {
-      window.showToast(msg, type);
-    } else if (typeof global !== 'undefined' && global.showToast) {
-      global.showToast(msg, type);
-    }
-  };
-
-  // --- UI ---
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={styles.safeArea }>
         <KeyboardAvoidingView
-          style={styles.keyboardView}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={0}
+          style={styles.keyboardView}
         >
           {/* Header */}
           <Animated.View style={[styles.header, { transform: [{ translateY: slideAnim }] }]}>
-            <View style={styles.headerCenterLabelWrapper}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-                <Image source={GreenerLogo} style={styles.headerLogo} />
-                <View>
-                  <Text style={styles.headerCenterLabelMain}>AI Plant Care</Text>
-                  <Text style={styles.headerCenterLabelSub}>Your Smart Garden Assistant</Text>
-                </View>
+            <View style={styles.headerCenter}>
+              <Image source={GreenerLogo} style={styles.headerLogo} />
+              <View>
+                <Text style={styles.headerTitle}>AI Plant Care</Text>
+                <Text style={styles.headerSubtitle}>Your Smart Garden Assistant</Text>
               </View>
             </View>
+
             {!showWelcome && (
-              <View style={styles.headerActions}>
-                <TouchableOpacity onPress={handleResetChat} style={[styles.headerActionButton, { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]}>
-                  <MaterialIcons name="delete-sweep" size={20} color="#4CAF50" />
-                  <Text style={{ marginLeft: 6, color: '#4CAF50', fontWeight: '600', fontSize: 14 }}>Clear Chat History</Text>
-                </TouchableOpacity>
-              </View>
+              <TouchableOpacity
+                onPress={() => {
+                  setLastChatHistory(chatHistory);
+                  setChatHistory([{
+                    id: Date.now(),
+                    type: 'ai_response',
+                    diagnosis: `Hello ${ownerName || 'there'}, how can I help you today?`,
+                    recommendations: [],
+                    timestamp: new Date().toISOString(),
+                    hasImage: false
+                  }]);
+                  setDiagnosis(null);
+                  setRecommendations([]);
+                }}
+                style={styles.clearBtn}
+              >
+                <MaterialIcons name="delete-sweep" size={18} color="#4CAF50" />
+                <Text style={styles.clearTxt}>Clear</Text>
+              </TouchableOpacity>
             )}
           </Animated.View>
 
-          {/* Plant Info Bar */}
+          {/* Plant info bar */}
           <Animated.View style={[styles.plantInfoBar, { transform: [{ translateY: slideAnim }] }]}>
             <Image
-              source={selectedPlant && selectedPlant.mainImage ? { uri: selectedPlant.mainImage } : GreenerLogo}
-              style={styles.plantInfoImage}
+              source={selectedPlant?.mainImage ? { uri: selectedPlant.mainImage } : GreenerLogo}
+              style={styles.plantInfoImg}
             />
-            <View style={styles.plantInfoText}>
+            <View style={{ flex: 1 }}>
               <Text style={styles.plantInfoName}>{selectedPlant?.name || selectedPlant?.common_name || 'No plant selected'}</Text>
-              <Text style={styles.plantInfoScientific}>{selectedPlant?.scientific_name || ''}</Text>
+              <Text style={styles.plantInfoSci}>{selectedPlant?.scientific_name || ''}</Text>
             </View>
-            <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.changePlantButton}>
-              <MaterialIcons name="edit" size={16} color="#4CAF50" />
+            <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.editPlantBtn}>
+              <MaterialIcons name="edit" size={14} color="#4CAF50" />
             </TouchableOpacity>
           </Animated.View>
 
+          {/* Chat list */}
           <ScrollView
             ref={scrollViewRef}
-            style={styles.chatContainer}
-            contentContainerStyle={styles.chatContent}
+            style={styles.chat}
+            contentContainerStyle={{ padding: 16, paddingBottom: (showWelcome ? 12 : (composerH + 16)) }}
             showsVerticalScrollIndicator={false}
             onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
           >
             {showWelcome ? (
-              <View style={styles.welcomeContainer}>
-                <View style={styles.welcomeHeader}>
-                  <Image source={GreenerLogo} style={styles.welcomeAvatar} />
-                  <Text style={styles.welcomeTitle}>Welcome to Greener AI! 🌱</Text>
-                  <Text style={styles.welcomeText}>
-                    I'm here to help you care for your plants. Ask me anything about plant health,
-                    watering schedules, diseases, or upload a photo for instant analysis!
-                  </Text>
-                </View>
-                <View style={styles.suggestionsContainer}>
-                  <Text style={styles.suggestionsTitle}>Quick Questions:</Text>
-                  {getQuickSuggestions().map((suggestion, index) => (
+              <View style={{ alignItems: 'center', paddingTop: 32 }}>
+                <Image source={GreenerLogo} style={styles.welcomeAvatar} />
+                <Text style={styles.welcomeTitle}>Welcome to Greener AI! 🌱</Text>
+                <Text style={styles.welcomeText}>
+                  Ask about plant health, watering, light, pests, or upload a photo for instant help.
+                </Text>
+
+                <View style={{ width: '100%', marginTop: 18 }}>
+                  <Text style={styles.suggestTitle}>Quick Questions</Text>
+                  {[
+                    { text: "Why are my plant's leaves turning yellow?", icon: "help-outline" },
+                    { text: "How often should I water this plant?", icon: "opacity" },
+                    { text: "Is my plant getting enough light?", icon: "wb-sunny" },
+                    { text: "How to treat plant pests naturally?", icon: "bug-report" },
+                    { text: "When should I repot my plant?", icon: "home" },
+                  ].map((s, idx) => (
                     <TouchableOpacity
-                      key={index}
-                      style={styles.suggestionButton}
+                      key={idx}
+                      style={styles.suggestionBtn}
                       onPress={() => {
                         setShowWelcome(false);
-                        setChatStarted(true);
-                        const userMessage = {
-                          id: Date.now() + 1,
-                          type: 'user_question',
-                          question: suggestion.text,
-                          image: null,
+                        const userMsg = {
+                          id: Date.now() + 1, type: 'user_question', question: s.text, image: null,
                           timestamp: new Date().toISOString()
                         };
-                        setChatHistory([userMessage]);
-                        analyzePlantHealth(null, suggestion.text);
-                        setQuestion('');
-                        setSelectedImage(null);
-                        setTimeout(() => {
-                          scrollViewRef.current?.scrollToEnd({ animated: true });
-                        }, 100);
+                        setChatHistory([userMsg]);
+                        analyzePlantHealth(null, s.text);
                       }}
-                      activeOpacity={0.7}
                     >
-                      <MaterialIcons name={suggestion.icon} size={18} color="#4CAF50" />
-                      <Text style={styles.suggestionText}>{suggestion.text}</Text>
+                      <MaterialIcons name={s.icon} size={16} color="#4CAF50" />
+                      <Text style={styles.suggestionTxt}>{s.text}</Text>
                     </TouchableOpacity>
                   ))}
+
+                  {/* RESTORED: type your own option */}
                   <TouchableOpacity
-                    style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#e8f5e8', borderColor: '#4CAF50' }]}
+                    style={[styles.suggestionBtn, { backgroundColor: '#e8f5e8', borderColor: '#4CAF50', marginTop: 8 }]}
                     onPress={() => {
                       setShowWelcome(false);
-                      setChatStarted(true);
-                      setChatHistory([
-                        {
-                          id: Date.now(),
-                          type: 'ai_response',
-                          diagnosis: `Hello ${ownerName || 'there'}, how can I help you today?`,
-                          recommendations: [],
-                          timestamp: new Date().toISOString(),
-                          hasImage: false
-                        }
-                      ]);
+                      // Just reveal composer; first AI greeting will appear on first send
                     }}
-                    activeOpacity={0.7}
                   >
-                    <MaterialIcons name="edit" size={18} color="#4CAF50" />
-                    <Text style={styles.suggestionText}>Type your own question</Text>
+                    <MaterialIcons name="edit" size={16} color="#4CAF50" />
+                    <Text style={styles.suggestionTxt}>Type your own question</Text>
                   </TouchableOpacity>
-                  {lastChatHistory && lastChatHistory.length > 1 ? (
-                    <TouchableOpacity
-                      style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800' }]}
-                      onPress={() => {
-                        setShowWelcome(false);
-                        setChatStarted(true);
-                        setChatHistory(lastChatHistory);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <MaterialIcons name="history" size={18} color="#FF9800" />
-                      <Text style={styles.suggestionText}>Continue with last chat</Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={[styles.suggestionButton, { marginTop: 16, backgroundColor: '#fffde7', borderColor: '#FF9800' }]}
-                      onPress={() => {
-                        showToast('No previous chat history found.', 'info');
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <MaterialIcons name="history" size={18} color="#FF9800" />
-                      <Text style={styles.suggestionText}>Continue with last chat</Text>
-                    </TouchableOpacity>
-                  )}
                 </View>
               </View>
             ) : (
-              renderChatHistory()
+              chatHistory.map((m, i) => {
+                const isUser = m.type === 'user_question';
+                return (
+                  <View key={`${m.id}-${i}`} style={[isUser ? styles.userRow : styles.aiRow]}>
+                    {isUser ? (
+                      <View style={styles.userBubble}>
+                        {!!m.question && <Text style={styles.userText}>{m.question}</Text>}
+                        {!!m.image && <Image source={{ uri: m.image }} style={styles.msgImage} />}
+                        <Text style={styles.time}>{formatTime(m.timestamp)}</Text>
+                      </View>
+                    ) : (
+                      <View style={styles.aiBubble}>
+                        <View style={styles.aiHeader}>
+                          <Image source={GreenerLogo} style={styles.aiAvatar} />
+                          <View style={{ marginLeft: 8 }}>
+                            <Text style={styles.aiTitle}>Greener AI</Text>
+                            <Text style={styles.aiSub}>Plant Care Expert</Text>
+                          </View>
+                        </View>
+                        {!!m.diagnosis && <Text style={styles.aiText}>{m.diagnosis}</Text>}
+                        {!!m.recommendations?.length && (
+                          <View style={{ marginTop: 10 }}>
+                            {m.recommendations.map((r, j) => (
+                              <View key={j} style={styles.recItem}>
+                                <View style={styles.recDot} />
+                                <Text style={styles.recTxt}>{r}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        )}
+                        <Text style={[styles.time, { marginTop: 6 }]}>{formatTime(m.timestamp)}</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
             )}
           </ScrollView>
+
+          {/* Composer */}
           {!showWelcome && (
-            <Animated.View style={[styles.inputSection, { transform: [{ translateY: slideAnim }] }]}>
+            <Animated.View
+              style={styles.composer}
+              onLayout={e => setComposerH(e.nativeEvent.layout.height)}
+            >
               {selectedImage && (
                 <View style={styles.imagePreview}>
                   <Image source={{ uri: selectedImage }} style={styles.previewImage} />
-                  <TouchableOpacity
-                    style={styles.removeImageButton}
-                    onPress={() => setSelectedImage(null)}
-                  >
-                    <MaterialIcons name="close" size={16} color="#fff" />
+                  <TouchableOpacity style={styles.removeImageButton} onPress={() => setSelectedImage(null)}>
+                    <MaterialIcons name="close" size={14} color="#fff" />
                   </TouchableOpacity>
                 </View>
               )}
-              <View style={styles.inputContainer}>
-                <View style={styles.textInputContainer}>
+
+              <View style={styles.inputRow}>
+                <View style={styles.textBox}>
                   <TextInput
-                    style={styles.textInput}
+                    style={styles.input}
                     placeholder="Ask about your plant's care, health, or problems..."
-                    placeholderTextColor="#999"
+                    placeholderTextColor="#99a39b"
                     value={question}
                     onChangeText={setQuestion}
                     multiline
@@ -678,30 +434,22 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
                     textAlignVertical="top"
                   />
                 </View>
-                <View style={styles.inputActions}>
-                  <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.actionButton}>
-                    <MaterialIcons name="local-florist" size={22} color="#4CAF50" />
+                <View style={styles.actions}>
+                  <TouchableOpacity onPress={handleOpenPlantPicker} style={styles.iconBtn}>
+                    <MaterialIcons name="local-florist" size={18} color="#4CAF50" />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handleTakePhoto} style={styles.actionButton}>
-                    <MaterialIcons name="camera-alt" size={22} color="#4CAF50" />
+                  <TouchableOpacity onPress={handleTakePhoto} style={styles.iconBtn}>
+                    <MaterialIcons name="camera-alt" size={18} color="#4CAF50" />
                   </TouchableOpacity>
-                  <TouchableOpacity onPress={handleImagePick} style={styles.actionButton}>
-                    <MaterialIcons name="photo-library" size={22} color="#4CAF50" />
+                  <TouchableOpacity onPress={handleImagePick} style={styles.iconBtn}>
+                    <MaterialIcons name="photo-library" size={18} color="#4CAF50" />
                   </TouchableOpacity>
                   <TouchableOpacity
                     onPress={handleSubmitQuestion}
-                    style={[
-                      styles.sendButton,
-                      (!question.trim() && !selectedImage) && styles.sendButtonDisabled
-                    ]}
-                    disabled={!question.trim() && !selectedImage || isLoading}
-                    activeOpacity={0.8}
+                    style={[styles.sendBtn, (!question.trim() && !selectedImage) && styles.sendBtnDisabled]}
+                    disabled={(!question.trim() && !selectedImage) || isLoading}
                   >
-                    {isLoading ? (
-                      <ActivityIndicator size="small" color="#fff" />
-                    ) : (
-                      <MaterialIcons name="send" size={20} color="#fff" />
-                    )}
+                    {isLoading ? <ActivityIndicator size="small" color="#fff" /> : <MaterialIcons name="send" size={18} color="#fff" />}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -710,22 +458,23 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
         </KeyboardAvoidingView>
       </SafeAreaView>
 
-      {/* PLANT SELECT MODAL */}
+      {/* PLANT SELECT MODAL (unchanged content) */}
       {plantSelectVisible && (
         <View style={StyleSheet.absoluteFillObject}>
           <SafeAreaView style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Select a Plant</Text>
               <TouchableOpacity onPress={() => setPlantSelectVisible(false)} style={styles.modalCloseButton}>
-                <MaterialIcons name="close" size={24} color="#666" />
+                <MaterialIcons name="close" size={22} color="#666" />
               </TouchableOpacity>
             </View>
+
             <View style={styles.modalTabs}>
               <TouchableOpacity
                 onPress={() => { setPlantTab('inventory'); setPlantSearchQuery(''); }}
                 style={[styles.modalTab, plantTab === 'inventory' && styles.modalTabActive]}
               >
-                <MaterialIcons name="inventory" size={20} color={plantTab === 'inventory' ? '#4CAF50' : '#888'} />
+                <MaterialIcons name="inventory" size={18} color={plantTab === 'inventory' ? '#4CAF50' : '#888'} />
                 <Text style={[styles.modalTabText, plantTab === 'inventory' && styles.modalTabTextActive]}>
                   {persona === 'consumer' ? 'My Plants' : 'Business Inventory'}
                 </Text>
@@ -734,15 +483,14 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
                 onPress={() => { setPlantTab('all'); setPlantSearchQuery(''); fetchGeneralPlants(); }}
                 style={[styles.modalTab, plantTab === 'all' && styles.modalTabActive]}
               >
-                <MaterialIcons name="search" size={20} color={plantTab === 'all' ? '#4CAF50' : '#888'} />
-                <Text style={[styles.modalTabText, plantTab === 'all' && styles.modalTabTextActive]}>
-                  All Plants
-                </Text>
+                <MaterialIcons name="search" size={18} color={plantTab === 'all' ? '#4CAF50' : '#888'} />
+                <Text style={[styles.modalTabText, plantTab === 'all' && styles.modalTabTextActive]}>All Plants</Text>
               </TouchableOpacity>
             </View>
+
             {plantTab === 'all' && (
-              <View style={styles.searchContainer}>
-                <MaterialIcons name="search" size={20} color="#999" style={styles.searchIcon} />
+              <View style={styles.searchRow}>
+                <MaterialIcons name="search" size={18} color="#999" style={{ marginRight: 8 }} />
                 <TextInput
                   style={styles.searchInput}
                   placeholder="Search plants..."
@@ -753,38 +501,29 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
                 />
               </View>
             )}
-            <ScrollView style={styles.plantsScrollView} showsVerticalScrollIndicator={false}>
+
+            <ScrollView style={{ flex: 1, paddingHorizontal: 16 }} showsVerticalScrollIndicator={false}>
               {(isInventoryLoading && plantTab === 'inventory') || (isPlantSearchLoading && plantTab === 'all') ? (
-                <View style={styles.modalLoadingContainer}>
+                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
                   <ActivityIndicator size="large" color="#4CAF50" />
-                  <Text style={styles.modalLoadingText}>Loading plants...</Text>
+                  <Text style={{ color: '#66bb6a', marginTop: 12 }}>Loading plants...</Text>
                 </View>
               ) : (
                 <>
                   {(plantTab === 'inventory' ? inventoryPlants : plantSearchResults).length === 0 && (
-                    <View style={styles.emptyState}>
+                    <View style={{ alignItems: 'center', paddingVertical: 60 }}>
                       <MaterialIcons name="eco" size={48} color="#ccc" />
-                      <Text style={styles.emptyStateText}>
-                        {plantTab === 'inventory' ? 'No plants in your inventory' : 'No plants found'}
-                      </Text>
+                      <Text style={{ color: '#999', marginTop: 16 }}>No plants found</Text>
                     </View>
                   )}
-                  {(plantTab === 'inventory' ? inventoryPlants : plantSearchResults).map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      style={styles.plantItem}
-                      onPress={() => handleSelectPlant(item)}
-                      activeOpacity={0.7}
-                    >
-                      <Image
-                        source={item.mainImage ? { uri: item.mainImage } : GreenerLogo}
-                        style={styles.plantItemImage}
-                      />
-                      <View style={styles.plantItemInfo}>
+                  {(plantTab === 'inventory' ? inventoryPlants : plantSearchResults).map(item => (
+                    <TouchableOpacity key={item.id} style={styles.plantItem} onPress={() => handleSelectPlant(item)}>
+                      <Image source={item.mainImage ? { uri: item.mainImage } : GreenerLogo} style={styles.plantItemImage} />
+                      <View style={{ flex: 1 }}>
                         <Text style={styles.plantItemName}>{item.name || item.common_name}</Text>
                         <Text style={styles.plantItemScientific}>{item.scientific_name}</Text>
                       </View>
-                      <MaterialIcons name="chevron-right" size={24} color="#4CAF50" />
+                      <MaterialIcons name="chevron-right" size={22} color="#4CAF50" />
                     </TouchableOpacity>
                   ))}
                 </>
@@ -793,664 +532,98 @@ export default function GreenerPlantCareAssistant({ navigation, route }) {
           </SafeAreaView>
         </View>
       )}
-    <NavigationBar currentTab="ai" navigation={navigation} />
+
+      {/* Bottom Navigation — hidden while keyboard is open to avoid overlap */}
+      <View
+        style={{ opacity: kbVisible ? 0 : 1, height: kbVisible ? 0 : undefined }}
+        onLayout={e => setNavH(e.nativeEvent.layout.height || DEFAULT_NAV_H)}
+      >
+        <NavigationBar currentTab="ai" navigation={navigation} />
+      </View>
     </Animated.View>
   );
 }
 
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  keyboardView: {
-    flex: 1,
-  },
+  container: { flex: 1 },
+  safeArea: { flex: 1 },
+  keyboardView: { flex: 1 },
+
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8f5e8',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  closeButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f8f0',
-  },
-  headerCenterLabelWrapper: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerCenterLabelMain: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#2e7d32',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  headerCenterLabelSub: {
-    fontSize: 12,
-    color: '#66bb6a',
-    textAlign: 'center',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  headerLogo: {
-    width: 38,
-    height: 38,
-    marginRight: 12,
-    borderRadius: 19,
-    borderWidth: 2,
-    borderColor: '#4CAF50',
-    backgroundColor: '#fff',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  headerActionButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f0f8f0',
-    marginLeft: 8,
-  },
-  plantInfoBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#e8f5e8',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#d4edda',
-  },
-  plantInfoImage: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#fff',
-    marginRight: 12,
-  },
-  plantInfoText: {
-    flex: 1,
-  },
-  plantInfoName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2e7d32',
-  },
-  plantInfoScientific: {
-    fontSize: 12,
-    color: '#66bb6a',
-    fontStyle: 'italic',
-  },
-  changePlantButton: {
-    padding: 6,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-  },
-  chatContainer: {
-    flex: 1,
-    backgroundColor: '#f8fffe',
-  },
-  chatContent: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
-  },
-  welcomeContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  welcomeHeader: {
-    alignItems: 'center',
-    marginBottom: 32,
-  },
-  welcomeAvatar: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginBottom: 20,
-    backgroundColor: '#e8f5e8',
-    borderWidth: 3,
-    borderColor: '#4CAF50',
-  },
-  welcomeTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#2e7d32',
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  welcomeText: {
-    fontSize: 16,
-    color: '#66bb6a',
-    textAlign: 'center',
-    lineHeight: 24,
-    paddingHorizontal: 20,
-  },
-  chatOptionsContainer: {
-    width: '100%',
-    paddingHorizontal: 20,
-    marginBottom: 24,
-  },
-  continueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#4CAF50',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  continueButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginLeft: 8,
-  },
-  newChatButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: '#FF9800',
-    shadowColor: '#FF9800',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  newChatButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FF9800',
-    marginLeft: 8,
-  },
-  suggestionsContainer: {
-    width: '100%',
-    paddingHorizontal: 20,
-  },
-  suggestionsTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#2e7d32',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  suggestionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  customQuestionButton: {
-    marginTop: 16,
-    backgroundColor: '#e8f5e8',
-    borderColor: '#4CAF50',
-  },
-  suggestionText: {
-    fontSize: 15,
-    color: '#2e7d32',
-    marginLeft: 12,
-    flex: 1,
-  },
-  userMessageContainer: {
-    alignItems: 'flex-end',
-    marginBottom: 16,
-  },
-  userMessageWrapper: {
-    maxWidth: '85%',
-    alignItems: 'flex-end',
-  },
-  userMessageBubble: {
-    backgroundColor: '#E3F2FD', // FIXED: Much lighter blue background
-    borderRadius: 18,
-    borderTopRightRadius: 4,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    shadowColor: '#2196F3',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
-    marginBottom: 4,
-  },
-  userMessageText: {
-    fontSize: 16,
-    color: '#000',
-    lineHeight: 22,
-  },
-  userMessageTime: {
-    fontSize: 11,
-    color: '#666', // FIXED: Darker color for better visibility
-    marginTop: 4,
-    marginRight: 8,
-    fontWeight: '400',
-  },
-  messageImage: {
-    width: 180,
-    height: 180,
-    borderRadius: 12,
-    marginTop: 12,
-  },
-  aiMessageContainer: {
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  aiMessage: {
-    backgroundColor: '#e8f5e8', // changed from '#fff' to a light green
-    borderRadius: 24,
-    borderTopLeftRadius: 8,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    maxWidth: '90%',
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  aiHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  aiAvatarContainer: {
-    position: 'relative',
-    marginRight: 12,
-  },
-  aiAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e8f5e8',
-  },
-  aiStatusDot: {
-    position: 'absolute',
-    bottom: -2,
-    right: -2,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#4CAF50',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  aiHeaderText: {
-    flex: 1,
-  },
-  aiTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2e7d32',
-  },
-  aiSubtitle: {
-    fontSize: 12,
-    color: '#66bb6a',
-    marginTop: 2,
-  },
-  diagnosisSection: {
-    marginBottom: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2e7d32',
-    marginLeft: 8,
-  },
-  diagnosisText: {
-    fontSize: 15,
-    color: '#424242',
-    lineHeight: 22,
-    backgroundColor: '#f8fffe',
-    padding: 16,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#4CAF50',
-  },
-  recommendationsSection: {
-    marginBottom: 16,
-  },
-  recommendationItem: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-    backgroundColor: '#fff8e1',
-    padding: 12,
-    borderRadius: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: '#FF9800',
-  },
-  bulletPoint: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: '#FF9800',
-    marginTop: 8,
-    marginRight: 12,
-  },
-  recommendationText: {
-    fontSize: 14,
-    color: '#424242',
-    flex: 1,
-    lineHeight: 20,
-  },
-  aiMessageTime: {
-    fontSize: 11,
-    color: '#888',
-    marginTop: 8,
-    alignSelf: 'flex-start',
-  },
-  loadingContainer: {
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  loadingBubble: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 24,
-    borderTopLeftRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#66bb6a',
-    marginLeft: 12,
-    fontStyle: 'italic',
-  },
-  inputSection: {
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderTopColor: '#e8f5e8',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  imagePreview: {
-    position: 'relative',
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-  },
-  previewImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 12,
-    backgroundColor: '#f5f5f5',
-  },
-  removeImageButton: {
-    position: 'absolute',
-    top: -8,
-    right: -8,
-    backgroundColor: '#f44336',
-    borderRadius: 12,
-    width: 24,
-    height: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#f44336',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-  },
-  textInputContainer: {
-    flex: 1,
-    backgroundColor: '#f8fffe',
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    marginRight: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    minHeight: 48,
-    maxHeight: 120,
-  },
-  textInput: {
-    fontSize: 16,
-    color: '#2e7d32',
-    lineHeight: 22,
-    maxHeight: 80,
-  },
-  inputActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  actionButton: {
-    padding: 12,
-    borderRadius: 24,
-    backgroundColor: '#f8fffe',
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-  },
-  sendButton: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 24,
-    padding: 12,
-    minWidth: 48,
-    minHeight: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  sendButtonDisabled: {
-    backgroundColor: '#bdbdbd',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  daySeparator: {
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  daySeparatorText: {
-    backgroundColor: 'rgba(76, 175, 80, 0.1)',
-    color: '#4CAF50',
-    fontSize: 12,
-    fontWeight: '500',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  
-  // Modal styles
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#f8fffe',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e8f5e8',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#2e7d32',
-  },
-  modalCloseButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f5f5f5',
-  },
-  modalTabs: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  modalTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 16,
-    marginHorizontal: 4,
-    backgroundColor: '#f8fffe',
-  },
-  modalTabActive: {
-    backgroundColor: '#e8f5e8',
-  },
-  modalTabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#888',
-    marginLeft: 8,
-  },
-  modalTabTextActive: {
-    color: '#4CAF50',
-    fontWeight: '600',
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    marginHorizontal: 20,
-    marginBottom: 16,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    paddingHorizontal: 16,
-  },
-  searchIcon: {
-    marginRight: 12,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: '#2e7d32',
-    paddingVertical: 12,
-  },
-  plantsScrollView: {
-    flex: 1,
-    paddingHorizontal: 20,
-  },
-  modalLoadingContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  modalLoadingText: {
-    fontSize: 16,
-    color: '#66bb6a',
-    marginTop: 12,
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#999',
-    marginTop: 16,
-    textAlign: 'center',
-  },
-  plantItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e8f5e8',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  plantItemImage: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    marginRight: 16,
-    backgroundColor: '#e8f5e8',
-  },
-  plantItemInfo: {
-    flex: 1,
-  },
-  plantItemName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2e7d32',
-    marginBottom: 4,
-  },
-  plantItemScientific: {
-    fontSize: 13,
-    color: '#66bb6a',
-    fontStyle: 'italic',
-  },
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e8f5e8',
+    paddingHorizontal: 14, paddingVertical: 12,
+  },
+  headerCenter: { flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center' },
+  headerLogo: { width: 28, height: 28, borderRadius: 14, borderWidth: 1.5, borderColor: '#4CAF50', marginRight: 8 },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: '#2e7d32', textAlign: 'center' },
+  headerSubtitle: { fontSize: 11, color: '#66bb6a', textAlign: 'center' },
+  clearBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#f0f8f0', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 14 },
+  clearTxt: { marginLeft: 6, color: '#4CAF50', fontWeight: '600', fontSize: 13 },
+
+  plantInfoBar: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#e8f5e8', paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#d4edda' },
+  plantInfoImg: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#fff', marginRight: 10 },
+  plantInfoName: { fontSize: 13, fontWeight: '700', color: '#2e7d32' },
+  plantInfoSci: { fontSize: 11, color: '#66bb6a', fontStyle: 'italic' },
+  editPlantBtn: { padding: 6, borderRadius: 12, backgroundColor: '#fff' },
+
+  chat: { flex: 1, backgroundColor: '#f8fffe' },
+
+  // welcome
+  welcomeAvatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: '#e8f5e8', borderWidth: 2, borderColor: '#4CAF50', marginBottom: 16 },
+  welcomeTitle: { fontSize: 22, fontWeight: '700', color: '#2e7d32', marginBottom: 8, textAlign: 'center' },
+  welcomeText: { fontSize: 15, color: '#66bb6a', textAlign: 'center', lineHeight: 22, paddingHorizontal: 18 },
+  suggestTitle: { fontSize: 16, fontWeight: '700', color: '#2e7d32', textAlign: 'center', marginBottom: 10 },
+  suggestionBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, borderWidth: 1, borderColor: '#e8f5e8', marginBottom: 8 },
+  suggestionTxt: { marginLeft: 10, color: '#2e7d32', fontSize: 14, flexShrink: 1 },
+
+  // bubbles
+  userRow: { alignItems: 'flex-end', marginBottom: 14 },
+  aiRow: { alignItems: 'flex-start', marginBottom: 16 },
+
+  userBubble: { maxWidth: '94%', backgroundColor: '#E3F2FD', borderRadius: 18, borderTopRightRadius: 4, paddingVertical: 12, paddingHorizontal: 14 },
+  userText: { fontSize: 15, color: '#000' },
+  time: { fontSize: 11, color: '#666', marginTop: 4 },
+  msgImage: { width: 180, height: 180, borderRadius: 12, marginTop: 10 },
+
+  aiBubble: { maxWidth: '94%', backgroundColor: '#e8f5e8', borderRadius: 22, borderTopLeftRadius: 8, paddingVertical: 14, paddingHorizontal: 16, borderWidth: 1, borderColor: '#e8f5e8' },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 8 },
+  aiAvatar: { width: 26, height: 26, borderRadius: 13, backgroundColor: '#e8f5e8' },
+  aiTitle: { fontSize: 14, fontWeight: '700', color: '#2e7d32' },
+  aiSub: { fontSize: 11, color: '#66bb6a' },
+  aiText: { fontSize: 14, color: '#424242', lineHeight: 21, backgroundColor: '#f8fffe', padding: 12, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#4CAF50' },
+  recItem: { flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#fff8e1', padding: 10, borderRadius: 10, borderLeftWidth: 4, borderLeftColor: '#FF9800', marginTop: 8 },
+  recDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#FF9800', marginTop: 7, marginRight: 10 },
+  recTxt: { fontSize: 13, color: '#424242', flex: 1, lineHeight: 19 },
+
+  // composer
+  composer: { backgroundColor: '#fff', borderTopWidth: 1, borderTopColor: '#e8f5e8', paddingHorizontal: 12, paddingVertical: 12, elevation: 5 },
+  imagePreview: { position: 'relative', alignSelf: 'flex-start', marginBottom: 10 },
+  previewImage: { width: 80, height: 80, borderRadius: 12, backgroundColor: '#f5f5f5' },
+  removeImageButton: { position: 'absolute', top: -8, right: -8, backgroundColor: '#f44336', borderRadius: 12, width: 22, height: 22, justifyContent: 'center', alignItems: 'center' },
+
+  inputRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  textBox: { flex: 1, backgroundColor: '#f8fffe', borderRadius: 20, borderWidth: 1, borderColor: '#e8f5e8', marginRight: 6, paddingHorizontal: 12, paddingVertical: 10, minHeight: 46, maxHeight: 120 },
+  input: { fontSize: 15, color: '#2e7d32', lineHeight: 20, maxHeight: 90 },
+  actions: { flexDirection: 'row', alignItems: 'center' },
+  iconBtn: { padding: 8, borderRadius: 18, backgroundColor: '#f8fffe', marginRight: 6, borderWidth: 1, borderColor: '#e8f5e8' }, // smaller icons/buttons
+  sendBtn: { backgroundColor: '#4CAF50', borderRadius: 22, paddingHorizontal: 12, paddingVertical: 10, minWidth: 44, minHeight: 44, justifyContent: 'center', alignItems: 'center' },
+  sendBtnDisabled: { backgroundColor: '#bdbdbd' },
+
+  // modal bits
+  modalContainer: { flex: 1, backgroundColor: '#f8fffe' },
+  modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 14, backgroundColor: '#fff', borderBottomWidth: 1, borderBottomColor: '#e8f5e8' },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: '#2e7d32' },
+  modalCloseButton: { padding: 8, borderRadius: 18, backgroundColor: '#f5f5f5' },
+  modalTabs: { flexDirection: 'row', backgroundColor: '#fff', paddingHorizontal: 16, paddingBottom: 12 },
+  modalTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, marginHorizontal: 4, backgroundColor: '#f8fffe' },
+  modalTabActive: { backgroundColor: '#e8f5e8' },
+  modalTabText: { fontSize: 14, color: '#888', marginLeft: 6 },
+  modalTabTextActive: { color: '#4CAF50', fontWeight: '600' },
+  searchRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', marginHorizontal: 16, marginBottom: 12, borderRadius: 12, borderWidth: 1, borderColor: '#e8f5e8', paddingHorizontal: 12, paddingVertical: 8 },
+  searchInput: { flex: 1, fontSize: 16, color: '#2e7d32' },
+  plantItem: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: '#e8f5e8', elevation: 2 },
+  plantItemImage: { width: 56, height: 56, borderRadius: 28, backgroundColor: '#e8f5e8', marginRight: 14 },
+  plantItemName: { fontSize: 16, fontWeight: '600', color: '#2e7d32' },
+  plantItemScientific: { fontSize: 13, color: '#66bb6a', fontStyle: 'italic' },
 });

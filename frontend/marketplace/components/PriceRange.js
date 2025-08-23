@@ -7,20 +7,10 @@ const TRACK = '#E0E0E0';
 
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
-/** Web-only input range with proper styling via a <style> block */
-const WebRange = ({
-  value,
-  min = 0,
-  max = 1000,
-  step = 10,
-  onChange,
-  onComplete,
-  zIndex = 1,
-  isMin = false,
-}) => {
+/** Web-only input range with proper styling injected once per mount */
+const WebRange = ({ value, min = 0, max = 1000, step = 10, onChange, onComplete, ariaLabel }) => {
   return (
     <>
-      {/* inject CSS (safe to duplicate) */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -28,7 +18,7 @@ const WebRange = ({
             -webkit-appearance: none;
             appearance: none;
             width: 100%;
-            height: 28px;      /* overall input box height */
+            height: 28px;
             background: transparent;
             outline: none;
             margin: 0;
@@ -36,7 +26,7 @@ const WebRange = ({
           }
           input.greener-range::-webkit-slider-runnable-track {
             height: 4px;
-            background: transparent; /* we draw the track ourselves */
+            background: transparent;
             border-radius: 2px;
           }
           input.greener-range::-webkit-slider-thumb {
@@ -47,10 +37,9 @@ const WebRange = ({
             background: ${GREEN};
             border: 2px solid #fff;
             box-shadow: 0 1px 3px rgba(0,0,0,0.25);
-            margin-top: -6px; /* centers thumb on 4px track */
+            margin-top: -6px; /* center on 4px track */
             cursor: pointer;
           }
-          /* Firefox */
           input.greener-range::-moz-range-track {
             height: 4px;
             background: transparent;
@@ -79,25 +68,17 @@ const WebRange = ({
         onChange={(e) => onChange?.(Number(e.target.value))}
         onMouseUp={() => onComplete?.()}
         onTouchEnd={() => onComplete?.()}
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          top: 0,
-          bottom: 0,
-          zIndex,
-        }}
-        // Accessibility
-        aria-label={isMin ? 'Minimum price' : 'Maximum price'}
+        aria-label={ariaLabel}
+        style={{ width: '100%', height: '100%' }}
       />
     </>
   );
 };
 
 /**
- * Compact, slider-only PriceRange.
- * Web: dual-thumb slider with highlighted active range.
- * Native: returns null (use your modal Min/Max inputs).
+ * Compact, slider-only PriceRange
+ * Web: dual-thumb slider with separate hit areas (left=min, right=max)
+ * Native: returns null (you already have Min/Max inputs in the modal)
  */
 const PriceRange = ({
   initialMin = 0,
@@ -122,25 +103,24 @@ const PriceRange = ({
     setMaxValue(clamp(safeMax, 0, max));
   }, [initialMin, initialMax, max]);
 
-  const percent = (v) => (max > 0 ? (v / max) * 100 : 0);
-  const leftPct = useMemo(() => percent(minValue), [minValue, max]);
-  const rightPct = useMemo(() => percent(maxValue), [maxValue, max]);
+  const toPct = (v) => (max > 0 ? (v / max) * 100 : 0);
+  const leftPct = useMemo(() => toPct(minValue), [minValue, max]);
+  const rightPct = useMemo(() => toPct(maxValue), [maxValue, max]);
 
   const handleMin = (v) => {
-    const next = clamp(v, 0, maxValue);
+    const next = clamp(Math.round(v / step) * step, 0, maxValue);
     setMinValue(next);
     onPriceChange?.([next, maxValue]);
   };
   const handleMax = (v) => {
-    const next = clamp(v, minValue, max);
+    const next = clamp(Math.round(v / step) * step, minValue, max);
     setMaxValue(next);
     onPriceChange?.([minValue, next]);
   };
   const handleComplete = () => onPriceChange?.([minValue, maxValue]);
 
-  // Native: keep the UI clean; you already have Min/Max inputs in the modal
   if (Platform.OS !== 'web') {
-    return null;
+    return null; // keep native UI clean (you have inputs in the modal)
   }
 
   return (
@@ -151,47 +131,46 @@ const PriceRange = ({
         {/* Base track */}
         <View style={styles.track} />
 
-        {/* Active range highlight */}
+        {/* Active range */}
         <View
           style={[
             styles.active,
-            {
-              left: `${leftPct}%`,
-              width: `${Math.max(0, rightPct - leftPct)}%`,
-            },
+            { left: `${leftPct}%`, width: `${Math.max(0, rightPct - leftPct)}%` },
           ]}
         />
 
-        {/* Sliders (stacked) */}
-        <WebRange
-          value={minValue}
-          min={0}
-          max={max}
-          step={step}
-          onChange={(v) => handleMin(v)}
-          onComplete={handleComplete}
-          zIndex={rightPct - leftPct < 3 ? 4 : 2} // keep min handle on top when close
-          isMin
-        />
-        <WebRange
-          value={maxValue}
-          min={0}
-          max={max}
-          step={step}
-          onChange={(v) => handleMax(v)}
-          onComplete={handleComplete}
-          zIndex={3}
-        />
+        {/* Min slider hit area: left side up to current max */}
+        <View style={[styles.hitBox, { left: 0, right: `${100 - rightPct}%`, zIndex: 5 }]}>
+          <WebRange
+            value={minValue}
+            min={0}
+            max={max}
+            step={step}
+            onChange={handleMin}
+            onComplete={handleComplete}
+            ariaLabel="Minimum price"
+          />
+        </View>
+
+        {/* Max slider hit area: right side from current min */}
+        <View style={[styles.hitBox, { left: `${leftPct}%`, right: 0, zIndex: 6 }]}>
+          <WebRange
+            value={maxValue}
+            min={0}
+            max={max}
+            step={step}
+            onChange={handleMax}
+            onComplete={handleComplete}
+            ariaLabel="Maximum price"
+          />
+        </View>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
-    padding: 0,          // keep it tight (modal already has padding)
-    backgroundColor: 'transparent',
-  },
+  container: { padding: 0, backgroundColor: 'transparent' },
   title: {
     fontSize: 14,
     fontWeight: '600',
@@ -201,7 +180,7 @@ const styles = StyleSheet.create({
   },
   sliderWrap: {
     position: 'relative',
-    height: 28,          // compact!
+    height: 28, // compact
     justifyContent: 'center',
   },
   track: {
@@ -217,6 +196,11 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: GREEN,
+  },
+  hitBox: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
   },
 });
 

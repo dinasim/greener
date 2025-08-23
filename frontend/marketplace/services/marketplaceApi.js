@@ -157,29 +157,35 @@ export async function fetchBusinessInventory(businessId) {
 export async function fetchBusinessProfile(businessId) {
   if (!businessId) throw new Error('Business ID is required');
 
+  const CACHE_KEY = `unified_business_profile:${businessId}`; // <-- per business key
+
+  // try cache
   try {
-    const cachedStr = await AsyncStorage.getItem('unified_business_profile');
+    const cachedStr = await AsyncStorage.getItem(CACHE_KEY);
     if (cachedStr) {
       const cached = JSON.parse(cachedStr);
-      if (Date.now() - cached.timestamp < 300000) {
-        console.log('📱 Using unified cached business profile');
+      if (Date.now() - cached.timestamp < 300000) { // 5 min
+        console.log('📱 Using unified cached business profile', businessId);
         return { success: true, business: normalizeBusiness(cached.data) };
       }
     }
   } catch {}
 
+  // fetch fresh
   const response = await apiRequest(`marketplace/business/${encodeURIComponent(businessId)}/profile`);
   const raw = response.business || response.profile || response.data || response || {};
   const normalized = normalizeBusiness(raw);
 
-  await AsyncStorage.setItem('unified_business_profile', JSON.stringify({
-    data: normalized,
-    timestamp: Date.now(),
-    source: 'marketplace',
-  }));
+  try {
+    await AsyncStorage.setItem(
+      CACHE_KEY,
+      JSON.stringify({ data: normalized, businessId, timestamp: Date.now(), source: 'marketplace' })
+    );
+  } catch {}
 
   return { success: true, business: normalized };
 }
+
 
 // ----------------------------
 // User endpoints
@@ -192,7 +198,7 @@ export async function updateUserProfile(userId, userData) {
   const endpoint = `marketplace/users/${userId}`;
 
   const result = await apiRequest(endpoint, {
-    method: 'PUT',
+    method: 'PATCH',  // Changed from PUT to PATCH
     body: JSON.stringify(userData),
   });
 
@@ -281,8 +287,10 @@ export function convertInventoryToProducts(inventory, business, category, search
 
   return inventory
     .filter((item) => {
-      if (item.status !== 'active' || (item.quantity || 0) <= 0) return false;
-
+const status = String(item.status ?? 'active').toLowerCase();
+      const qty =
+        Number(item.quantity ?? item.availableQuantity ?? item.inventory?.quantity ?? 0);
+      if (status !== 'active' || qty <= 0) return false
       if (category && category !== 'All' && category !== 'all') {
         const itemCategory = item.category || item.productType || '';
         const categoryVariations = [category.toLowerCase(), category.toLowerCase().replace(/s$/, ''), `${category.toLowerCase()}s`];
@@ -731,7 +739,10 @@ export async function uploadAudio(file, contentType = (Platform.OS === 'web' ? '
 
 // ----------------------------
 // STT
-
+export const getSpeechToken = async () => {
+  // GET or POST both supported by the Function; GET is simplest.
+  return apiRequest('speechToken', { method: 'GET' });
+};
 // Full response (text, status, confidence, debug if server returns it)
 export const speechToTextRaw = async (audioUrl, language = 'en-US') => {
   if (!audioUrl) throw new Error('Audio URL is required');
@@ -999,31 +1010,17 @@ export const submitReview = async (...args) => {
 
   const payload = {
     targetId,
-    targetType,          // 'seller' | 'product'
+    targetType,
     rating,
-    comment,
-    userId: userEmail,   // some backends expect it
+    text: comment,  // Changed from 'comment' to 'text'
+    userId: userEmail,
   };
-  // Try a list of possible endpoints, first one that 2xxs wins
-  const candidates = [
-    'marketplace/reviews/submit',
-    `marketplace/reviews/${encodeURIComponent(targetType)}/submit`,
-    `marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}/submit`,
-    'reviews-submit', // legacy
-  ];
-
-  let lastErr;
-  for (const ep of candidates) {
-    try {
-      return await apiRequest(ep, { method: 'POST', body: JSON.stringify(payload) });
-    } catch (e) {
-      const msg = String(e?.message || '');
-      // If it’s not a 404, it’s a real failure — bail early
-      if (!/404|not found/i.test(msg)) throw e;
-      lastErr = e; // keep going and try next endpoint
-    }
-  }
-  throw lastErr || new Error('Review submission failed');
+  const endpoint = `submitreview/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`;
+  
+  return await apiRequest(endpoint, { 
+    method: 'POST', 
+    body: JSON.stringify(payload) 
+  });
 };
 
 export const deleteReview = async (targetType, targetId, reviewId) => {
@@ -1132,7 +1129,7 @@ export default {
   fetchBusinessProfile,
   fetchBusinessInventory,
   purchaseBusinessProduct,
-
+  getSpeechToken,
   // Location
   getNearbyProducts,
   getNearbyBusinesses,

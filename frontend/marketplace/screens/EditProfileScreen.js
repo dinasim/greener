@@ -1,4 +1,4 @@
-// screens/EditProfileScreen.js (enhanced version)
+// screens/EditProfileScreen.js (with device location)
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -18,10 +18,10 @@ import {
 import { MaterialIcons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
+import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { updateUserProfile, fetchUserProfile } from '../services/marketplaceApi';
 import MarketplaceHeader from '../components/MarketplaceHeader';
-import LocationPicker from '../components/LocationPicker';
 
 const EditProfileScreen = () => {
   const navigation = useNavigation();
@@ -37,21 +37,13 @@ const EditProfileScreen = () => {
     languages: '',
     fullAddress: '',
     birthDate: '',
-    // Marketplace-relevant user preferences
-    animals: '',
-    kids: '',
-    interests: '',
-    socialMedia: {
-      instagram: '',
-      facebook: '',
-    },
-    location: null,
     joinDate: new Date().toISOString()
   });
   
   // UI state
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGettingLocation, setIsGettingLocation] = useState(false);
   const [error, setError] = useState(null);
   const [avatarChanged, setAvatarChanged] = useState(false);
   
@@ -86,18 +78,11 @@ const EditProfileScreen = () => {
           email: data.user.email || userEmail,
           avatar: data.user.avatar || '',
           bio: data.user.bio || '',
-          city: data.user.city || (data.user.location?.city || ''),
+          city: data.user.city || '',
           phone: data.user.phone || '',
           languages: data.user.languages || '',
           fullAddress: data.user.fullAddress || '',
           birthDate: data.user.birthDate || '',
-          animals: data.user.animals || '',
-          kids: data.user.kids || '',
-          interests: data.user.interests || '',
-          socialMedia: data.user.socialMedia || {
-            instagram: '',
-            facebook: ''
-          },
           joinDate: data.user.joinDate || new Date().toISOString()
         });
       } else {
@@ -118,32 +103,45 @@ const EditProfileScreen = () => {
   
   // Handle field changes
   const handleChange = (field, value) => {
-    if (field.includes('.')) {
-      // Handle nested fields like socialMedia.instagram
-      const [parent, child] = field.split('.');
-      setProfile(prev => ({
-        ...prev,
-        [parent]: {
-          ...prev[parent],
-          [child]: value
-        }
-      }));
-    } else {
-      // Handle regular fields
-      setProfile(prev => ({
-        ...prev,
-        [field]: value
-      }));
-    }
-  };
-  
-  // Handle location change
-  const handleLocationChange = (locationData) => {
     setProfile(prev => ({
       ...prev,
-      location: locationData,
-      city: locationData.city || prev.city
+      [field]: value
     }));
+  };
+
+  // Get current location
+  const getCurrentLocation = async () => {
+    try {
+      setIsGettingLocation(true);
+      
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location access is required.');
+        return;
+      }
+      
+      const location = await Location.getCurrentPositionAsync({});
+      const address = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+      });
+      
+      if (address[0]) {
+        const cityRegion = `${address[0].city || ''}, ${address[0].region || ''}`.replace(/^, |, $/, '');
+        handleChange('city', cityRegion);
+        
+        // Also update full address if available
+        const fullAddr = `${address[0].street || ''} ${address[0].streetNumber || ''}, ${address[0].city || ''}, ${address[0].region || ''} ${address[0].postalCode || ''}`.trim().replace(/^, |, $/, '');
+        if (fullAddr && fullAddr !== ', ,') {
+          handleChange('fullAddress', fullAddr);
+        }
+      }
+    } catch (error) {
+      console.error('Location error:', error);
+      Alert.alert('Location Error', 'Could not get your current location. Please try again.');
+    } finally {
+      setIsGettingLocation(false);
+    }
   };
   
   // Pick avatar image (gallery or camera)
@@ -183,7 +181,12 @@ const EditProfileScreen = () => {
                 Alert.alert('Permission Required', 'Camera access is needed.');
                 return;
               }
-              result = await ImagePicker.launchCameraAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+              result = await ImagePicker.launchCameraAsync({ 
+                mediaTypes: ImagePicker.MediaTypeOptions.Images, 
+                allowsEditing: true, 
+                aspect: [1, 1], 
+                quality: 0.7 
+              });
               if (!result.cancelled && result.assets?.[0]?.uri) {
                 setProfile(prev => ({ ...prev, avatar: result.assets[0].uri }));
                 setAvatarChanged(true);
@@ -198,7 +201,12 @@ const EditProfileScreen = () => {
                 Alert.alert('Permission Required', 'We need permission to access your photos');
                 return;
               }
-              result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, allowsEditing: true, aspect: [1, 1], quality: 0.7 });
+              result = await ImagePicker.launchImageLibraryAsync({ 
+                mediaTypes: ImagePicker.MediaTypeOptions.Images, 
+                allowsEditing: true, 
+                aspect: [1, 1], 
+                quality: 0.7 
+              });
               if (!result.cancelled && result.assets?.[0]?.uri) {
                 setProfile(prev => ({ ...prev, avatar: result.assets[0].uri }));
                 setAvatarChanged(true);
@@ -233,11 +241,6 @@ const EditProfileScreen = () => {
         languages: profile.languages,
         fullAddress: profile.fullAddress,
         birthDate: profile.birthDate,
-        animals: profile.animals,
-        kids: profile.kids,
-        interests: profile.interests,
-        socialMedia: profile.socialMedia,
-        location: profile.location,
       };
       
       // Upload avatar if changed
@@ -259,8 +262,10 @@ const EditProfileScreen = () => {
       Alert.alert('Success', 'Profile updated successfully');
       
       // Navigate back
-      navigation.navigate('Profile', { refresh: true });
-    } catch (err) {
+navigation.navigate('MarketplaceTabs', { 
+  screen: 'Profile',
+  params: { refresh: true }
+});    } catch (err) {
       console.error('Error saving profile:', err);
       Alert.alert('Error', 'Failed to save profile. Please try again.');
     } finally {
@@ -364,11 +369,28 @@ const EditProfileScreen = () => {
               placeholder="Hebrew, English, Arabic, etc."
             />
             
-            <Text style={styles.label}>Location</Text>
-            <LocationPicker
-              value={profile.location}
-              onChange={handleLocationChange}
-            />
+            <View style={styles.locationContainer}>
+              <Text style={styles.label}>City</Text>
+              <View style={styles.locationInputContainer}>
+                <TextInput
+                  style={[styles.input, styles.locationInput]}
+                  value={profile.city}
+                  onChangeText={(text) => handleChange('city', text)}
+                  placeholder="Your city"
+                />
+                <TouchableOpacity
+                  style={[styles.locationButton, isGettingLocation && styles.disabledButton]}
+                  onPress={getCurrentLocation}
+                  disabled={isGettingLocation}
+                >
+                  {isGettingLocation ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <MaterialIcons name="my-location" size={20} color="#fff" />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
           </View>
           
           <View style={styles.formSection}>
@@ -399,55 +421,6 @@ const EditProfileScreen = () => {
               value={profile.birthDate}
               onChangeText={(text) => handleChange('birthDate', text)}
               placeholder="YYYY-MM-DD"
-            />
-          </View>
-          
-          <View style={styles.formSection}>
-            <Text style={styles.sectionTitle}>Social Media</Text>
-            
-            <Text style={styles.label}>Instagram</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.socialMedia?.instagram || ''}
-              onChangeText={(text) => handleChange('socialMedia.instagram', text)}
-              placeholder="Your Instagram username"
-            />
-            
-            <Text style={styles.label}>Facebook</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.socialMedia?.facebook || ''}
-              onChangeText={(text) => handleChange('socialMedia.facebook', text)}
-              placeholder="Your Facebook profile"
-            />
-          </View>
-          
-          <View style={styles.formSection}>
-            <Text style={styles.sectionTitle}>Marketplace Preferences</Text>
-            <Text style={styles.sectionSubtitle}>Set your preferences for a better experience</Text>
-            
-            <Text style={styles.label}>Animals</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.animals}
-              onChangeText={(text) => handleChange('animals', text)}
-              placeholder="Preferred animals (e.g., Dogs, Cats)"
-            />
-            
-            <Text style={styles.label}>Kids</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.kids}
-              onChangeText={(text) => handleChange('kids', text)}
-              placeholder="Do you have kids? (Yes/No)"
-            />
-            
-            <Text style={styles.label}>Interests</Text>
-            <TextInput
-              style={styles.input}
-              value={profile.interests}
-              onChangeText={(text) => handleChange('interests', text)}
-              placeholder="Your interests (e.g., Sports, Music)"
             />
           </View>
           
@@ -579,6 +552,26 @@ const styles = StyleSheet.create({
   textArea: {
     height: 100,
     textAlignVertical: 'top',
+  },
+  locationContainer: {
+    marginBottom: 0,
+  },
+  locationInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  locationInput: {
+    flex: 1,
+    marginRight: 8,
+    marginBottom: 0,
+  },
+  locationButton: {
+    backgroundColor: '#4CAF50',
+    padding: 12,
+    borderRadius: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 48,
   },
   saveButton: {
     backgroundColor: '#4CAF50',

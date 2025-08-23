@@ -80,12 +80,6 @@ export default function LocationPlantsScreen() {
             {plants.length} plant • {locations.length} site
           </Text>
         </View>
-        <TouchableOpacity
-          style={styles.gearBtn}
-          onPress={() => navigation.navigate('Settings')}
-        >
-          <Ionicons name="settings-outline" size={24} color="#647264" />
-        </TouchableOpacity>
       </View>
 
       {/* Tabs */}
