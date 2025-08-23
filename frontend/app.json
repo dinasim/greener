@@ -2,10 +2,7 @@
   "expo": {
     "name": "Greener",
     "slug": "greener",
-    "platforms": [
-      "android",
-      "web"
-    ],
+    "platforms": ["android", "web"],
     "originalFullName": "@dinasim/greener",
     "owner": "dina2",
     "version": "1.0.0",
@@ -18,49 +15,26 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": [
-      "**/*"
-    ],
-    "ios": {
-      "supportsTablet": true,
-      "bundleIdentifier": "com.dinasim.greener",
-      "infoPlist": {
-        "NSMicrophoneUsageDescription": "This app requires access to your microphone for voice search.",
-        "NSLocationWhenInUseUsageDescription": "This app needs location access to help you find nearby services and set your business location.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "This app needs location access to help you find nearby services and set your business location.",
-        "ITSAppUsesNonExemptEncryption": false
-      }
-    },
+    "assetBundlePatterns": ["**/*"],
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
       "package": "com.yourname.greener",
+      "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
           "action": "VIEW",
-          "data": {
-            "scheme": "greener",
-            "host": "",
-            "pathPrefix": "/"
-          },
-          "category": [
-            "BROWSABLE",
-            "DEFAULT"
-          ]
+          "data": { "scheme": "greener", "host": "", "pathPrefix": "/" },
+          "category": ["BROWSABLE", "DEFAULT"]
         }
       ],
       "edgeToEdge": true,
-      "permissions": [
-        "RECORD_AUDIO",
-        "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
-      ]
+      "permissions": ["RECORD_AUDIO", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION",  "POST_NOTIFICATIONS"
+]
     },
-    "web": {
-      "favicon": "./assets/favicon.png"
-    },
+    "web": { "favicon": "./assets/favicon.png" },
     "notification": {
       "vapidPublicKey": "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg"
     },
@@ -70,9 +44,7 @@
       "iosClientId": "241318918547-cmj5p79839ci9kdrgjmbuskpfu6j4e6h.apps.googleusercontent.com",
       "androidClientId": "241318918547-tctcf9f11ii3ndn0ilohgqbjpjbej9a8.apps.googleusercontent.com",
       "maptilerKey": "6LEIELmBStgzi9h3tRj6",
-      "eas": {
-        "projectId": "6915a87a-3492-4315-b77e-ca7cfbf609fc"
-      }
+      "eas": { "projectId": "6915a87a-3492-4315-b77e-ca7cfbf609fc" }
     },
     "plugins": [
       "expo-asset",
@@ -85,7 +57,7 @@
           "isIosBackgroundLocationEnabled": false,
           "isAndroidBackgroundLocationEnabled": false
         }
-      ]
-    ]
+      ],
+      "@react-native-firebase/app"    ]
   }
 }

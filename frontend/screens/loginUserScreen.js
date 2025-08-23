@@ -1,3 +1,4 @@
+// screens/LoginScreen.js
 import React, { useState, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
@@ -7,11 +8,78 @@ import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ensureChatFCM } from '../notifications/chatFCMSetup';
 
+// 🔑 Firebase (react-native-firebase)
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
+
+// --- Helper: make Firebase account/session + ensure profile doc.
+// Does NOT throw — it logs and returns null on failure (non-breaking).
+async function ensureFirebaseAuthAndProfile(email, password, role /* 'private' | 'business' | null */) {
+  try {
+    if (!email || !password) {
+      console.warn('[Firebase] Skipping ensure: email/password missing');
+      return null;
+    }
+
+    let userCred = null;
+    try {
+      // Try normal sign-in first
+      userCred = await auth().signInWithEmailAndPassword(email.trim(), password);
+    } catch (e) {
+      if (e?.code === 'auth/user-not-found') {
+        // Create Firebase account if it doesn't exist
+        userCred = await auth().createUserWithEmailAndPassword(email.trim(), password);
+      } else if (e?.code === 'auth/invalid-credential' || e?.code === 'auth/wrong-password') {
+        // Optional best-effort link via anonymous; don't block UX if this fails.
+        try {
+          const anon = await auth().signInAnonymously();
+          const credential = auth.EmailAuthProvider.credential(email.trim(), password);
+          const linked = await anon.user.linkWithCredential(credential);
+          userCred = linked;
+        } catch (linkErr) {
+          console.warn('[Firebase] linkWithCredential failed:', linkErr?.code || linkErr?.message);
+          return null;
+        }
+      } else {
+        console.warn('[Firebase] signIn failed:', e?.code || e?.message);
+        return null;
+      }
+    }
+
+    const u = userCred?.user || auth().currentUser;
+    if (!u) return null;
+
+    // Ensure Firestore users/{uid}
+    const userRef = firestore().collection('users').doc(u.uid);
+    const snap = await userRef.get();
+    const base = {
+      uid: u.uid,
+      email: u.email,
+      updatedAt: firestore.FieldValue.serverTimestamp(),
+    };
+    if (!snap.exists) {
+      await userRef.set(
+        { ...base, createdAt: firestore.FieldValue.serverTimestamp(), role: role ?? null },
+        { merge: true }
+      );
+    } else {
+      // Optionally set role once if you want "private" default
+      const existing = snap.data() || {};
+      const maybeRole = existing.role ?? role ?? null;
+      await userRef.set({ ...base, role: maybeRole }, { merge: true });
+    }
+    return u;
+  } catch (err) {
+    console.warn('[Firebase] ensureAuth/profile error:', err?.code || err?.message);
+    return null;
+  }
+}
 
 export default function LoginScreen({ navigation }) {
   const { updateFormData } = useForm();
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState('');   // backend expects username
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -22,6 +90,7 @@ export default function LoginScreen({ navigation }) {
     setErrorMsg('');
     setLoading(true);
     try {
+      // 1) Your existing backend login (unchanged)
       const res = await fetch(LOGIN_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -29,7 +98,8 @@ export default function LoginScreen({ navigation }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Login failed');
-      // If you can, batch update (depends on your context logic)
+
+      // 2) Update your existing form context (unchanged)
       updateFormData({
         email: data.email,
         username: data.username,
@@ -38,14 +108,25 @@ export default function LoginScreen({ navigation }) {
         animals: data.animals || '',
         kids: data.kids || ''
       });
-  // Persist essentials
+
+      // 3) Persist your existing keys (unchanged)
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('currentUserId', data.email);
-  // Initialize FCM (non-blocking)
-  ensureChatFCM(data.email).catch(e=>console.warn('[FCM] post-login init failed:', e?.message));
+
+      // 4) NEW: Best-effort Firebase auth + profile (role null/"private")
+      // Use the returned email + the password the user typed.
+      const fbUser = await ensureFirebaseAuthAndProfile(data.email, password, 'private');
+      if (fbUser?.uid) {
+        await AsyncStorage.setItem('firebaseUid', fbUser.uid);
+      }
+
+      // 5) Notifications (unchanged, still uses email)
+      ensureChatFCM(data.email).catch(e => console.warn('[FCM] post-login init failed:', e?.message));
+
+      // 6) Your navigation (unchanged)
       navigation.navigate('Home');
     } catch (err) {
-      setErrorMsg(err.message);
+      setErrorMsg(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -60,6 +141,8 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.container}>
           <Text style={styles.title}>Login</Text>
           {errorMsg ? <Text style={styles.errorMsg}>{errorMsg}</Text> : null}
+
+          {/* Keep using username for your backend */}
           <TextInput
             style={styles.input}
             placeholder="Username"
@@ -69,8 +152,9 @@ export default function LoginScreen({ navigation }) {
             onChangeText={setUsername}
             editable={!loading}
             returnKeyType="next"
-            onSubmitEditing={() => { }}
           />
+
+          {/* Password is shared with Firebase step */}
           <TextInput
             style={styles.input}
             placeholder="Password"
@@ -81,6 +165,7 @@ export default function LoginScreen({ navigation }) {
             returnKeyType="done"
             onSubmitEditing={canLogin ? handleLogin : undefined}
           />
+
           <TouchableOpacity
             style={[styles.button, !canLogin && { opacity: 0.5 }]}
             disabled={!canLogin || loading}
@@ -89,6 +174,7 @@ export default function LoginScreen({ navigation }) {
           >
             {loading ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Login</Text>}
           </TouchableOpacity>
+
           <TouchableOpacity
             onPress={() => navigation.navigate('SignupPlantsLocation')}
             accessibilityLabel="Go to Signup"

@@ -739,10 +739,21 @@ export async function uploadAudio(file, contentType = (Platform.OS === 'web' ? '
 
 // ----------------------------
 // STT
-export const getSpeechToken = async () => {
-  // GET or POST both supported by the Function; GET is simplest.
-  return apiRequest('speechToken', { method: 'GET' });
-};
+// services/marketplaceApi.js (example)
+export async function getSpeechToken() {
+  const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+  const region = 'eastus'; // or read from config
+  const r = await fetch(`${API_BASE_URL}/speechToken?region=${region}`);
+  if (!r.ok) {
+    const t = await r.text();
+    const err = new Error(`speechToken failed: ${r.status}`);
+    err.status = r.status;
+    err.body = t;
+    throw err;
+  }
+  return r.json();
+}
+
 // Full response (text, status, confidence, debug if server returns it)
 export const speechToTextRaw = async (audioUrl, language = 'en-US') => {
   if (!audioUrl) throw new Error('Audio URL is required');

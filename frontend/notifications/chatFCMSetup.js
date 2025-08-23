@@ -1,81 +1,43 @@
-// notifications/chatFCMSetup.js - Direct FCM setup for Android chat
+// notifications/chatFCMSetup.js
 import { Platform } from 'react-native';
-import messaging from '@react-native-firebase/messaging';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as Notifications from 'expo-notifications';
 
-const TOKEN_KEY = 'fcm_primary_token_v1';
-// Use dedicated endpoint that appends device token without overwriting user
-const TOKEN_SYNC_ENDPOINT = 'https://usersfunctions.azurewebsites.net/api/update_device_token';
+const SAVE_TOKEN_API = 'https://usersfunctions.azurewebsites.net/api/saveDeviceToken';
+// If your function uses authLevel:function, include the key (TEMP for testing):
+const FUNCTIONS_KEY = ''; // e.g. 'abc123...' or leave '' if anonymous
 
-export async function ensureChatFCM(userEmail) {
-  if (!userEmail) return null;
-  if (Platform.OS !== 'android' && Platform.OS !== 'ios') return null;
+const sessionDone = new Set();
 
-  // Request permissions for notifications (expo-notifications)
-  try {
-    const { status } = await Notifications.getPermissionsAsync();
-    if (status !== 'granted') {
-      await Notifications.requestPermissionsAsync();
-    }
-  } catch {}
+async function postToken(userIdOrEmail, token) {
+  const url = FUNCTIONS_KEY ? `${SAVE_TOKEN_API}?code=${encodeURIComponent(FUNCTIONS_KEY)}` : SAVE_TOKEN_API;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ userId: userIdOrEmail, token, platform: Platform.OS, app: 'greener' }),
+  });
+  const body = await res.text();
+  console.log('[FCM] saveDeviceToken ->', res.status, body.slice(0, 200));
+  return res.ok; // don’t throw; just report
+}
 
-  // Create / ensure Android channel
-  if (Platform.OS === 'android') {
-    try {
-      await Notifications.setNotificationChannelAsync('chat-messages', {
-        name: 'Chat Messages',
-        importance: Notifications.AndroidImportance.HIGH,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#00ff00'
-      });
-    } catch (e) {
-      console.log('Channel setup failed:', e.message);
-    }
-  }
+export async function ensureChatFCM(email) {
+  if (Platform.OS !== 'android') return null;
+  const { getMessaging, requestPermission, getToken, onTokenRefresh } = await import('@react-native-firebase/messaging');
+  const messaging = getMessaging();
 
-  // Get token
-  const token = await messaging().getToken();
+  try { await requestPermission(messaging); } catch {}
+
+  const token = await getToken(messaging);
   if (!token) return null;
 
-  const existing = await AsyncStorage.getItem(TOKEN_KEY);
-  if (existing !== token) {
-    await AsyncStorage.setItem(TOKEN_KEY, token);
-  // Push to backend (lightweight update, idempotent)
-    try {
-      await fetch(TOKEN_SYNC_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: userEmail, token, platform: Platform.OS })
-      });
-    } catch (e) {
-      // swallow
-    }
-  }
+  await postToken(email, token);
 
-  // Foreground listener
-  messaging().onMessage(async remoteMessage => {
-    if (!remoteMessage) return;
-    const { notification, data } = remoteMessage;
-    const title = notification?.title || data?.title || 'New message';
-    const body = notification?.body || data?.body || 'You have a new chat message';
-    try {
-      await Notifications.scheduleNotificationAsync({
-        content: { title, body, data },
-        trigger: null, // immediate
-      });
-    } catch (e) {
-      console.log('Foreground local notification failed:', e.message);
-    }
-  });
-
-  // Background handler (must be in root index, but keep here for reference)
+  onTokenRefresh(messaging, async (newToken) => { try { await postToken(email, newToken); } catch {} });
   return token;
 }
 
-// Background handler (to be re-exported in index.js if needed)
-export function registerBackgroundHandler() {
-  messaging().setBackgroundMessageHandler(async remoteMessage => {
-    // Could log or persist badge counts here
-  });
+export async function ensureChatFCMOnce(email) {
+  if (!email || sessionDone.has(email)) return null;
+  sessionDone.add(email);
+  try { return await ensureChatFCM(email); }
+  catch (e) { console.warn('[FCM] ensureChatFCMOnce error:', e?.message); return null; }
 }

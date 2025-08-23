@@ -20,7 +20,7 @@ import {
 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-
+import { ensureChatFCMOnce } from '../../notifications/chatFCMSetup';
 // ✅ Layout wrapper (ensures the bottom BusinessNavigationBar is shown)
 import BusinessLayout from '../components/BusinessLayout';
 
@@ -74,7 +74,14 @@ export default function BusinessHomeScreen({ navigation }) {
 
     initializeBusinessId();
   }, []);
-
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!businessId) return;               // wait until AsyncStorage loads it
+    (async () => {
+      const tok = await ensureChatFCMOnce(businessId);
+      console.log('[FCM] Home(business) token', tok ? tok.slice(0, 16) + '...' : 'none');
+    })();
+  }, [businessId]);
   const loadDashboardData = async () => {
     if (refreshing) return;
     setIsLoading(!dashboardData);
