@@ -4,6 +4,10 @@ import AppNavigator from './navigation/AppNavigator';
 import PushWebSetup from './components/PushWebSetup';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ensureChatFCM } from './notifications/chatFCMSetup';
+import { registerBackgroundHandler } from './notifications/chatFCMSetup'; // added
+
+// Ensure background handler is registered ASAP (outside component)
+registerBackgroundHandler(); // safe no-op after first call
 
 // Toggle if you need to quickly disable FCM without removing code
 const ENABLE_FCM_INIT = true;

@@ -20,24 +20,7 @@ import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
-
-// For web push
-import { getApps, initializeApp } from "firebase/app";
-import { getMessaging, getToken } from "firebase/messaging";
-
-// For mobile push
-import messaging from '@react-native-firebase/messaging';
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBAKWjXK-zjao231_SDeuOIT8Rr95K7Bk0",
-  authDomain: "greenerapp2025.firebaseapp.com",
-  projectId: "greenerapp2025",
-  storageBucket: "greenerapp2025.appspot.com",
-  messagingSenderId: "241318918547",
-  appId: "1:241318918547:web:9fc472ce576da839f11066",
-  measurementId: "G-8K9XS4GPRM"
-};
-const vapidKey = "BKF6MrQxSOYR9yI6nZR45zgrz248vA62XXw0232dE8e6CdPxSAoxGTG2e-JC8bN2YwbPZhSX4qBxcSd23sn_nwg";
+import { initializeChatPush } from '../notifications/expoPushSetup';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -50,7 +33,6 @@ const IOS_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.iosClientId;
 const WEB_GOOGLE_CLIENT_ID = Constants.expoConfig.extra.expoClientId;
 
 // Helper
-const isWeb = Platform.OS === "web";
 const isStandalone = Constants.appOwnership === 'standalone';
 
 export default function SignInGoogleScreen({ navigation }) {
@@ -60,7 +42,7 @@ export default function SignInGoogleScreen({ navigation }) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   // Conditional proxy/redirect for cross-platform Google auth
-  const useProxy = isWeb ? true : !isStandalone;
+  const useProxy = !isStandalone;
   const redirectUri = AuthSession.makeRedirectUri({
     useProxy,
     native: 'greener://',
@@ -101,17 +83,6 @@ export default function SignInGoogleScreen({ navigation }) {
               updateFormData('email', userInfo.email);
               saveEmailForMarketplace(userInfo.email);
 
-              let webPushToken = null;
-              let fcmToken = null;
-              if (isWeb) {
-                webPushToken = await getWebPushToken();
-                console.log("📦 WebPushToken being sent:", webPushToken);
-                updateFormData('webPushSubscription', webPushToken);
-              } else if (Platform.OS === "android" || Platform.OS === "ios") {
-                fcmToken = await getFcmToken();
-                //updateFormData('fcmToken', fcmToken);
-              }
-
               // Only store minimal data locally for authentication
               await AsyncStorage.setItem('userEmail', userInfo.email);
               await AsyncStorage.setItem('currentUserId', userInfo.email);
@@ -125,9 +96,6 @@ export default function SignInGoogleScreen({ navigation }) {
                 intersted: formData.intersted,
                 animals: formData.animals,
                 kids: formData.kids,
-                expoPushToken: null,
-                webPushSubscription: webPushToken || formData.webPushSubscription || null,
-                fcmToken: fcmToken || null,
                 // FIXED: Ensure location data includes coordinates and address
                 location: formData.userLocation ? {
                   city: formData.userLocation.city || '',
@@ -141,10 +109,8 @@ export default function SignInGoogleScreen({ navigation }) {
                 } : null,
               };
 
-              console.log("📦 Sending user data:", {
+              console.log("Sending user data:", {
                 ...userData,
-                webPushSubscription: userData.webPushSubscription?.substring(0, 20) + '...' || null,
-                fcmToken: userData.fcmToken?.substring(0, 20) + '...' || null,
                 location: userData.location ? {
                   city: userData.location.city,
                   hasCoordinates: !!(userData.location.latitude && userData.location.longitude),
@@ -205,8 +171,7 @@ export default function SignInGoogleScreen({ navigation }) {
 
   async function saveUserToBackend(userData) {
     try {
-      // FIXED: Use the correct consumer registration endpoint instead of saveUser
-      // This prevents creating duplicate/incorrect user tables
+      // Use the correct consumer registration endpoint instead of saveUser
       const registrationData = {
         // Required fields for consumer registration
         username: userData.name?.replace(/\s+/g, '').toLowerCase() || userData.email.split('@')[0],
@@ -221,11 +186,6 @@ export default function SignInGoogleScreen({ navigation }) {
         // Location data
         location: userData.location,
         plantLocations: userData.plantLocations || formData.plantLocations || [],
-        
-        // Notification tokens
-        fcmToken: userData.fcmToken,
-        webPushSubscription: userData.webPushSubscription,
-        expoPushToken: null, // deprecated
         
         // Notification settings
         notificationSettings: {
@@ -246,18 +206,16 @@ export default function SignInGoogleScreen({ navigation }) {
         password: Math.random().toString(36).slice(-16) + Date.now().toString(36)
       };
 
-      console.log("📦 Using consumer registration endpoint with data:", {
+      console.log("Using consumer registration endpoint with data:", {
         ...registrationData,
         password: '[HIDDEN]',
-        webPushSubscription: registrationData.webPushSubscription?.substring(0, 20) + '...' || null,
-        fcmToken: registrationData.fcmToken?.substring(0, 20) + '...' || null,
         location: registrationData.location ? {
           city: registrationData.location.city,
           hasCoordinates: !!(registrationData.location.latitude && registrationData.location.longitude)
         } : 'No location'
       });
 
-      // FIXED: Use registerUser endpoint for consumers, not saveUser
+      // Use registerUser endpoint for consumers
       const response = await fetch('https://usersfunctions.azurewebsites.net/api/registerUser', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -273,150 +231,75 @@ export default function SignInGoogleScreen({ navigation }) {
         return;
       }
 
-      console.log('✅ Consumer registration successful via Google sign-in');
-      // Append token to multi-token list endpoint (idempotent) if we have one
-      if (registrationData.fcmToken) {
-        try {
-          await fetch('https://usersfunctions.azurewebsites.net/api/update_device_token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: registrationData.email, token: registrationData.fcmToken, platform: Platform.OS })
-          });
-        } catch (e) {
-          console.warn('⚠️ Failed updating device token list:', e.message);
-        }
-      }
+      console.log('Consumer registration successful via Google sign-in');
+      
       setIsLoading(false);
+      
+      // Register for push notifications (Expo) - AFTER successful registration
+      try {
+        const pushToken = await initializeChatPush(userData.email, (notificationData) => {
+          // Navigation handler when notification is tapped
+          if (notificationData?.conversationId) {
+            navigation.navigate('Chat', { conversationId: notificationData.conversationId });
+          } else if (notificationData?.chatId) {
+            navigation.navigate('Chat', { chatId: notificationData.chatId });
+          }
+        });
+        
+        if (pushToken) {
+          console.log('Expo push token registered:', pushToken);
+        }
+      } catch (pushError) {
+        console.log('Push notification registration failed:', pushError);
+        // Don't block user flow for push notification errors
+      }
+
+      // Navigate to home screen
       navigation.navigate('Home');
+      
     } catch (error) {
-      console.error('❌ Registration error:', error);
+      console.error('Registration error:', error);
       setIsLoading(false);
       setAuthError('Server connection error.');
     }
   }
 
-  async function getWebPushToken() {
-    try {
-      // Check if notifications are supported
-      if (!('Notification' in window)) {
-        console.log("📱 Notifications not supported in this browser");
-        return null;
-      }
-
-      // Check current permission state
-      let permission = Notification.permission;
-      
-      // If permission is default (not asked yet), request it
-      if (permission === 'default') {
-        console.log("📱 Requesting notification permission...");
-        permission = await Notification.requestPermission();
-      }
-
-      // Handle different permission states
-      if (permission === 'denied') {
-        console.log("📱 Notification permission denied by user");
-        return null;
-      }
-
-      if (permission === 'granted') {
-        console.log("📱 Notification permission granted, getting token...");
-        
-        try {
-          // Check if service worker is supported
-          if (!('serviceWorker' in navigator)) {
-            console.log("📱 Service Worker not supported");
-            return null;
-          }
-
-          // Register service worker
-          const reg = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-          console.log("📱 Service Worker registered successfully");
-
-          // Initialize Firebase app
-          const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-          const messaging = getMessaging(app);
-
-          // Get FCM token
-          const token = await getToken(messaging, { 
-            vapidKey, 
-            serviceWorkerRegistration: reg 
-          });
-
-          if (token) {
-            console.log("📱 Successfully obtained FCM token");
-            return token;
-          } else {
-            console.log("📱 No FCM token available");
-            return null;
-          }
-
-        } catch (tokenError) {
-          console.warn("📱 Error getting FCM token:", tokenError.message);
-          // Don't treat token errors as critical - app can still work without push notifications
-          return null;
-        }
-      }
-
-      console.log("📱 Notification permission not granted:", permission);
-      return null;
-
-    } catch (err) {
-      console.warn("📱 Error in web push token setup:", err.message);
-      // Don't throw error - app should continue to work without push notifications
-      return null;
-    }
-  }
-
-  async function getFcmToken() {
-    try {
-      const authStatus = await messaging().requestPermission();
-      const enabled =
-        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-      if (!enabled) return null;
-      return await messaging().getToken();
-    } catch (err) {
-      console.error("❌ Error getting FCM token:", err);
-      return null;
-    }
-  }
-
   return (
     <SafeAreaView style={styles.safeArea}>
-        <View style={styles.overlay}>
-          <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
-            <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
-              <Text style={styles.title}>Sign In</Text>
-              <Text style={styles.subtitle}>Use your Google account to log in</Text>
+      <View style={styles.overlay}>
+        <ScrollView contentContainerStyle={styles.scrollContent} bounces={false}>
+          <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
+            <Text style={styles.title}>Sign In</Text>
+            <Text style={styles.subtitle}>Use your Google account to log in</Text>
 
-              {authError && (
-                <View style={styles.errorContainer}>
-                  <Text style={styles.errorText}>{authError}</Text>
+            {authError && (
+              <View style={styles.errorContainer}>
+                <Text style={styles.errorText}>{authError}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={styles.googleButton}
+              onPress={() => promptAsync()}
+              disabled={isLoading}
+              activeOpacity={0.85}
+            >
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <View style={styles.googleContent}>
+                  <AntDesign name="google" size={22} color="white" style={{ marginRight: 8 }} />
+                  <Text style={styles.googleButtonText}>Continue with Google</Text>
                 </View>
               )}
+            </TouchableOpacity>
 
-              <TouchableOpacity
-                style={styles.googleButton}
-                onPress={() => promptAsync()}
-                disabled={isLoading}
-                activeOpacity={0.85}
-              >
-                {isLoading ? (
-                  <ActivityIndicator size="small" color="#fff" />
-                ) : (
-                  <View style={styles.googleContent}>
-                    <AntDesign name="google" size={22} color="white" style={{ marginRight: 8 }} />
-                    <Text style={styles.googleButtonText}>Continue with Google</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-
-              <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-                <Text style={styles.backButtonText}>Back to other login options</Text>
-              </TouchableOpacity>
-            </Animated.View>
-          </ScrollView>
-        </View>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Text style={styles.backButtonText}>Back to other login options</Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }

@@ -5,7 +5,7 @@ import {
 } from 'react-native';
 import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ensureChatFCM } from '../notifications/chatFCMSetup';
+import { registerAfterLogin } from '../pushRegistrationSnippet';
 
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
 
@@ -41,8 +41,15 @@ export default function LoginScreen({ navigation }) {
   // Persist essentials
       await AsyncStorage.setItem('userEmail', data.email);
       await AsyncStorage.setItem('currentUserId', data.email);
-  // Initialize FCM (non-blocking)
-  ensureChatFCM(data.email).catch(e=>console.warn('[FCM] post-login init failed:', e?.message));
+  // Register Expo push (non-blocking)
+      console.log('[push] requesting Expo token post-login');
+      registerAfterLogin(data.email, pushData => {
+        if (pushData?.conversationId) {
+          // navigation.navigate('Chat', { conversationId: pushData.conversationId });
+        }
+      })
+        .then(t => console.log('[push] token request finished'))
+        .catch(e => console.warn('[Push] post-login init failed:', e?.message));
       navigation.navigate('Home');
     } catch (err) {
       setErrorMsg(err.message);

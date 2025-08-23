@@ -1,0 +1,16 @@
+{
+  "bindings": [
+    {
+      "name": "inputDocuments",
+      "type": "cosmosDBTrigger",
+      "direction": "in",
+      "connectionStringSetting": "COSMOSDB_MARKETPLACE_CONNECTION_STRING",
+      "databaseName": "%COSMOSDB_MARKETPLACE_DATABASE_NAME%",
+      "collectionName": "%COSMOS_CONTAINER_MARKETPLACE_MESSAGES%",
+      "leaseCollectionName": "marketplace_messages_leases",
+      "createLeaseCollectionIfNotExists": true,
+      "leaseCollectionPrefix": "chatMessageNotify",
+      "feedPollDelay": 500
+    }
+  ]
+}

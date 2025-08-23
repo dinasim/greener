@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "241318918547",
+    "project_id": "greenerapp2025",
+    "storage_bucket": "greenerapp2025.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:241318918547:android:b04d0e10ca489e95f11066",
+        "android_client_info": {
+          "package_name": "com.yourname.greener"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "241318918547-74quhuidc2j69o61qsaev69pc4shn9li.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCqr7NaDdTb9mPRSvAFMHHCBoFl-0U6fWQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "241318918547-74quhuidc2j69o61qsaev69pc4shn9li.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "241318918547-cmj5p79839ci9kdrgjmbuskpfu6j4e6h.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.dinasim.greener"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
