@@ -989,7 +989,6 @@ export const fetchReviews = async (targetType, targetId) => {
  * 2) submitReview({ targetId, targetType, rating, text|comment, ... })
  */
 export const submitReview = async (...args) => {
-  // ---- normalize args
   let targetId, targetType, reviewData;
   if (typeof args[0] === 'object' && args[0] !== null && !args[1]) {
     ({ targetId, targetType, ...reviewData } = args[0]);
@@ -1001,10 +1000,15 @@ export const submitReview = async (...args) => {
     throw new Error('Target ID, type, and review data are required');
   }
 
-  const rating  = Number(reviewData.rating);
-  const comment = (reviewData.comment ?? reviewData.text ?? '').toString().trim();
-  if (!rating || rating < 1) throw new Error('Rating is required (1–5)');
-  if (!comment) throw new Error('Review text/comment is required');
+  const rating = Number(reviewData.rating);
+  const commentStr = (reviewData.comment ?? reviewData.text ?? '').toString().trim();
+
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    throw new Error('Rating is required (1–5)');
+  }
+  if (!commentStr) {
+    throw new Error('Review text/comment is required');
+  }
 
   const userEmail = (await AsyncStorage.getItem('userEmail')) || undefined;
 
@@ -1022,6 +1026,7 @@ export const submitReview = async (...args) => {
     body: JSON.stringify(payload) 
   });
 };
+
 
 export const deleteReview = async (targetType, targetId, reviewId) => {
   if (!targetType || !targetId || !reviewId) {
