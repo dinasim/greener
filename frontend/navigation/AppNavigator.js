@@ -126,6 +126,12 @@ export default function AppNavigator() {
         <Stack.Screen name="SearchScreen" component={withBackground(SearchScreen)} />
         <Stack.Screen name="AddOptionsScreen" component={withBackground(AddOptionsScreen)} />
         <Stack.Screen name="ForumTopicDetail" component={withBackground(ForumTopicDetail)} />
+        
+        {/* FIXED: Add BusinessSellerProfileScreen to main navigator */}
+        <Stack.Screen 
+          name="BusinessSellerProfileScreen" 
+          component={withBackground(require('../marketplace/screens/BusinessSellerProfileScreen').default)} 
+        />
       </Stack.Navigator>
     </FormProvider>
   );
