@@ -1027,7 +1027,7 @@ export const submitReview = async (...args) => {
     targetId,
     targetType,
     rating,
-    text: comment,  // Changed from 'comment' to 'text'
+    text: commentStr,  // Changed from 'comment' to 'text'
     userId: userEmail,
   };
   const endpoint = `submitreview/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}`;

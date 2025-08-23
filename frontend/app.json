@@ -17,6 +17,8 @@
     },
     "assetBundlePatterns": ["**/*"],
     "android": {
+      "package": "com.yourname.greener",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -48,6 +50,7 @@
     },
     "plugins": [
       "expo-asset",
+      "expo-notifications",
       [
         "expo-location",
         {

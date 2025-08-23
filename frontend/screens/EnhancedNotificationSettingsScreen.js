@@ -23,6 +23,9 @@ import universalNotificationManager, { NOTIFICATION_TYPES, PRIORITY } from '../s
 // Import the unified hook instead of separate ones
 import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 
+const SETTINGS_STORAGE_KEY = 'notification_settings_user';
+const API_ENDPOINT = 'https://usersfunctions.azurewebsites.net/api/consumer-notification-settings';
+
 export default function EnhancedNotificationSettingsScreen({ navigation }) {
   const [userEmail, setUserEmail] = useState(null);
   const [userType, setUserType] = useState('user');
@@ -31,6 +34,15 @@ export default function EnhancedNotificationSettingsScreen({ navigation }) {
   const [isSaving, setIsSaving] = useState(false);
   const [showQuietHoursStart, setShowQuietHoursStart] = useState(false);
   const [showQuietHoursEnd, setShowQuietHoursEnd] = useState(false);
+  const [settings, setSettings] = useState({
+    enabled: true,
+    wateringReminders: true,
+    marketplaceMessages: true,
+    marketplaceUpdates: false,
+    communityUpdates: false,
+  });
+  const [permissionStatus, setPermissionStatus] = useState('unknown');
+  const [hasToken, setHasToken] = useState(false);
 
   // Use the unified notification hook
   const {
@@ -38,7 +50,6 @@ export default function EnhancedNotificationSettingsScreen({ navigation }) {
     hasPermission,
     token,
     error,
-    settings,
     statistics,
     updateSettings,
     sendTestNotification,
@@ -49,7 +60,15 @@ export default function EnhancedNotificationSettingsScreen({ navigation }) {
 
   useEffect(() => {
     initializeSettings();
+    checkNotificationStatus();
   }, []);
+
+  // Check notification permission and token status
+  const checkNotificationStatus = async () => {
+    const status = await pushService.checkPushNotificationStatus();
+    setPermissionStatus(status.permissionStatus || 'unknown');
+    setHasToken(status.hasToken || false);
+  };
 
   const initializeSettings = async () => {
     try {
@@ -66,11 +85,102 @@ export default function EnhancedNotificationSettingsScreen({ navigation }) {
       setUserType(type || 'user');
       setBusinessId(bId);
       
+      // Get user ID from storage
+      const userId = await AsyncStorage.getItem('userEmail') || 
+                     await AsyncStorage.getItem('currentUserId');
+
+      if (!userId) {
+        console.log('No user ID found');
+        setIsLoading(false);
+        return;
+      }
+
+      // Try to fetch from server first
+      try {
+        console.log(`Fetching notification settings for user ${userId}`);
+        const response = await fetch(`${API_ENDPOINT}?userId=${encodeURIComponent(userId)}`);
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.settings) {
+            console.log('Loaded settings from server:', data.settings);
+            setSettings(data.settings);
+            // Update local storage to match server
+            await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(data.settings));
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.log('Error fetching settings from server:', err);
+      }
+
+      // Fallback to local storage
+      const storedSettings = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
+      if (storedSettings) {
+        const parsedSettings = JSON.parse(storedSettings);
+        console.log('Loaded settings from local storage:', parsedSettings);
+        setSettings(parsedSettings);
+      }
     } catch (error) {
-      console.error('Error initializing notification settings:', error);
+      console.error('Failed to load notification settings:', error);
       Alert.alert('Error', 'Failed to load notification settings');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Update a single setting
+  const updateSetting = async (key, value) => {
+    try {
+      const newSettings = { ...settings, [key]: value };
+      setSettings(newSettings);
+
+      // Save to local storage
+      await AsyncStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(newSettings));
+
+      // If disabling all notifications, show confirmation
+      if (key === 'enabled' && !value) {
+        Alert.alert(
+          'Notifications Disabled',
+          'You will no longer receive notifications from this app. You can re-enable them later in settings.',
+          [{ text: 'OK' }]
+        );
+      }
+
+      // Save to server
+      await saveSettingsToServer(newSettings);
+    } catch (error) {
+      console.error('Failed to update notification setting:', error);
+      Alert.alert('Error', 'Failed to update notification settings.');
+    }
+  };
+
+  // Save settings to server
+  const saveSettingsToServer = async (settingsToSave) => {
+    try {
+      const userId = await AsyncStorage.getItem('userEmail') || 
+                     await AsyncStorage.getItem('currentUserId');
+      
+      if (!userId) return;
+
+      console.log(`Saving notification settings for user ${userId}`);
+      const response = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          settings: settingsToSave
+        }),
+      });
+
+      if (!response.ok) {
+        console.log('Server error saving settings:', response.status);
+      }
+    } catch (error) {
+      console.error('Error saving settings to server:', error);
     }
   };
 

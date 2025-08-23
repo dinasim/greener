@@ -1,188 +1,231 @@
-// components/PlantDetailScreen-parts/SellerCard.js - FIXED VERSION
+// components/PlantDetailScreen-parts/SellerCard.js - FIXED VERSION with better name resolution
 import React from 'react';
 import { View, Text, Image, StyleSheet, TouchableOpacity } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
+import RatingStars from '../../components/RatingStars';
 
 const SellerCard = ({ seller, onPress }) => {
-  // Determine if this is a business seller
-  const isBusiness = seller?.isBusiness || seller?.businessName;
-  
-  // Fallback for avatar
+  if (!seller) return null;
+
+  // FIXED: Comprehensive name resolution with proper fallback priority
+  const getSellerName = () => {
+    // For debugging, log what seller data we have
+    console.log('[SellerCard] seller object:', {
+      name: seller.name,
+      sellerName: seller.sellerName,
+      displayName: seller.displayName,
+      userName: seller.userName,
+      fullName: seller.fullName,
+      businessName: seller.businessName,
+      email: seller.email
+    });
+
+    // Try all possible name fields in order of preference
+    const possibleNames = [
+      seller.name,
+      seller.sellerName,
+      seller.displayName,
+      seller.userName,
+      seller.fullName,
+      seller.businessName,
+    ].filter(name => name && typeof name === 'string' && name.trim());
+
+    // Return the first non-empty name found
+    if (possibleNames.length > 0) {
+      const chosenName = possibleNames[0].trim();
+      console.log('[SellerCard] using name:', chosenName);
+      return chosenName;
+    }
+
+    // If we have an email, extract a name from it
+    if (seller.email && typeof seller.email === 'string') {
+      const emailName = seller.email.split('@')[0];
+      if (emailName && emailName !== 'undefined') {
+        console.log('[SellerCard] using email-derived name:', emailName);
+        return emailName;
+      }
+    }
+
+    console.log('[SellerCard] falling back to Plant Enthusiast');
+    // Only fall back to "Plant Enthusiast" if absolutely no name is available
+    return 'Plant Enthusiast';
+  };
+
   const getAvatarUrl = () => {
-    // Try to get a valid avatar URL from the seller object
     if (seller.avatar && typeof seller.avatar === 'string' && seller.avatar.startsWith('http')) {
       return seller.avatar;
     }
     
-    if (seller.logo && typeof seller.logo === 'string' && seller.logo.startsWith('http')) {
-      return seller.logo;
-    }
+    const name = getSellerName();
+    const firstInitial = name.charAt(0).toUpperCase();
+    const bgColor = seller.isBusiness ? '4CAF50' : '9CCC65';
     
-    // Create avatar URL from seller's name with better fallback
-    const name = seller.businessName || seller.name || 'User';
-    const initial = name.charAt(0).toUpperCase();
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(initial)}&background=4CAF50&color=fff&size=100`;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(firstInitial)}&background=${bgColor}&color=fff&size=200`;
   };
 
-  // Get display name
-  const getDisplayName = () => {
-    if (isBusiness) {
-      return seller.businessName || seller.name || 'Business';
-    }
-    return seller.name || 'Plant Enthusiast';
-  };
-
-  // Get seller type label
-  const getSellerTypeLabel = () => {
-    if (isBusiness) {
-      return seller.businessType || 'Business Seller';
-    }
-    return 'Individual Seller';
-  };
+  const sellerName = getSellerName();
+  const displayTitle = seller.isBusiness ? 'About the Business' : 'About the Seller';
+  const sellerType = seller.isBusiness ? 'Business' : 'Individual Seller';
 
   return (
-    <View style={styles.container}>
-      <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>
-          {isBusiness ? 'About the Business' : 'About the Seller'}
-        </Text>
-        {isBusiness && (
-          <View style={styles.businessBadge}>
-            <MaterialIcons name="store" size={14} color="#4CAF50" />
-            <Text style={styles.businessBadgeText}>Business</Text>
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>{displayTitle}</Text>
+      
+      <TouchableOpacity style={styles.sellerCard} onPress={onPress} activeOpacity={0.7}>
+        <View style={styles.sellerHeader}>
+          <Image source={{ uri: getAvatarUrl() }} style={styles.avatar} />
+          
+          <View style={styles.sellerInfo}>
+            <View style={styles.nameRow}>
+              <Text style={styles.sellerName}>{sellerName}</Text>
+              <View style={[styles.badge, seller.isBusiness ? styles.businessBadge : styles.individualBadge]}>
+                <MaterialIcons 
+                  name={seller.isBusiness ? "store" : "person"} 
+                  size={12} 
+                  color={seller.isBusiness ? "#4CAF50" : "#2e7d32"} 
+                />
+                <Text style={[styles.badgeText, seller.isBusiness ? styles.businessBadgeText : styles.individualBadgeText]}>
+                  {sellerType}
+                </Text>
+              </View>
+            </View>
+            
+            {seller.email && (
+              <Text style={styles.sellerEmail}>{seller.email}</Text>
+            )}
+            
+            <View style={styles.ratingRow}>
+              {seller.rating > 0 ? (
+                <>
+                  <RatingStars rating={seller.rating || 0} size={14} />
+                  <Text style={styles.ratingText}>
+                    {(seller.rating || 0).toFixed(1)} ({seller.totalReviews || 0} reviews)
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.noRatingText}>No reviews yet</Text>
+              )}
+            </View>
+          </View>
+          
+          <MaterialIcons name="chevron-right" size={24} color="#ccc" />
+        </View>
+        
+        {seller.isBusiness && seller.businessName && (
+          <View style={styles.businessInfo}>
+            <MaterialCommunityIcons name="store-outline" size={16} color="#4CAF50" />
+            <Text style={styles.businessName}>{seller.businessName}</Text>
           </View>
         )}
-      </View>
-      
-      <TouchableOpacity style={styles.sellerContainer} onPress={onPress}>
-        <Image source={{ uri: getAvatarUrl() }} style={styles.sellerAvatar} />
-        <View style={styles.sellerInfo}>
-          <Text style={styles.sellerName}>{getDisplayName()}</Text>
-          <Text style={styles.sellerType}>{getSellerTypeLabel()}</Text>
-          
-          {seller.rating && (
-            <View style={styles.sellerRatingContainer}>
-              <MaterialIcons name="star" size={16} color="#FFC107" />
-              <Text style={styles.sellerRating}>
-                {typeof seller.rating === 'number' ? seller.rating.toFixed(1) : seller.rating} 
-                ({seller.totalReviews || seller.totalSells || seller.reviewCount || 0} reviews)
-              </Text>
-            </View>
-          )}
-          
-          {/* Business-specific info */}
-          {isBusiness && seller.location?.city && (
-            <View style={styles.locationContainer}>
-              <MaterialIcons name="place" size={14} color="#666" />
-              <Text style={styles.locationText}>{seller.location.city}</Text>
-            </View>
-          )}
-        </View>
-        <MaterialIcons name="chevron-right" size={24} color="#999" />
       </TouchableOpacity>
-      
-      {/* Additional business info */}
-      {isBusiness && (
-        <View style={styles.businessInfo}>
-          <Text style={styles.businessInfoText}>
-            🏪 Business listing • Pickup available • Professional service
-          </Text>
-        </View>
-      )}
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  section: {
+    marginVertical: 16,
     paddingHorizontal: 16,
-    marginBottom: 8
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginVertical: 12,
-  },
-  sectionTitle: { 
-    fontSize: 18, 
-    fontWeight: 'bold', 
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
     color: '#333',
-    flex: 1
+    marginBottom: 12,
+  },
+  sellerCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sellerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#e0e0e0',
+    marginRight: 12,
+  },
+  sellerInfo: {
+    flex: 1,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  sellerName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginRight: 8,
+  },
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   businessBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: '#e8f5e8',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    borderColor: '#C8E6C9',
   },
-  businessBadgeText: {
-    fontSize: 12,
-    color: '#4CAF50',
+  individualBadge: {
+    backgroundColor: '#F1F8E9',
+    borderColor: '#E0E0E0',
+  },
+  badgeText: {
+    fontSize: 10,
     fontWeight: '600',
     marginLeft: 4,
   },
-  sellerContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginVertical: 12, 
-    padding: 16, 
-    backgroundColor: '#f9f9f9', 
-    borderRadius: 10 
+  businessBadgeText: {
+    color: '#2E7D32',
   },
-  sellerAvatar: { 
-    width: 50, 
-    height: 50, 
-    borderRadius: 25, 
-    backgroundColor: '#e0e0e0' 
+  individualBadgeText: {
+    color: '#33691E',
   },
-  sellerInfo: { 
-    marginLeft: 10, 
-    flex: 1 
-  },
-  sellerName: { 
-    fontSize: 16, 
-    fontWeight: 'bold',
-    color: '#333'
-  },
-  sellerType: {
-    fontSize: 14,
+  sellerEmail: {
+    fontSize: 12,
     color: '#666',
-    marginTop: 2,
+    marginBottom: 4,
   },
-  sellerRatingContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    marginTop: 4 
-  },
-  sellerRating: { 
-    fontSize: 14, 
-    marginLeft: 5, 
-    color: '#666' 
-  },
-  locationContainer: {
+  ratingRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 4,
   },
-  locationText: {
-    fontSize: 13,
+  ratingText: {
+    fontSize: 12,
     color: '#666',
-    marginLeft: 4,
+    marginLeft: 6,
+  },
+  noRatingText: {
+    fontSize: 12,
+    color: '#999',
   },
   businessInfo: {
-    backgroundColor: '#f0f9f3',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
   },
-  businessInfoText: {
+  businessName: {
     fontSize: 14,
     color: '#4CAF50',
-    textAlign: 'center',
     fontWeight: '500',
+    marginLeft: 6,
   },
 });
 
