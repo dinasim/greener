@@ -215,38 +215,24 @@ const SpeechToTextComponent = ({ onTranscriptionResult, onRecordingStateChange, 
 
   /* ---------------- Upload helper (forces contentType) ---------------- */
   const uploadSpeechFile = async (fileUri, contentType, filename) => {
-    // Detect actual file extension from URI
-    const actualExtension = fileUri.split('.').pop().toLowerCase();
-    let actualContentType = contentType;
-    let actualFilename = filename;
-    
-    // Map extensions to correct content types
-    const extensionMap = {
-      'wav': 'audio/wav',
-      'mp4': 'audio/mp4',
-      'm4a': 'audio/mp4',
-      'webm': 'audio/webm',
-      '3gp': 'audio/3gpp',
-      'amr': 'audio/amr'
-    };
-    
-    if (extensionMap[actualExtension]) {
-      actualContentType = extensionMap[actualExtension];
-      actualFilename = `speech_${Date.now()}.${actualExtension}`;
-    }
-    
-    console.log(`Uploading audio: ${actualFilename} (${actualContentType})`);
-    
-    const base64 = await FileSystem.readAsStringAsync(fileUri, {
-      encoding: FileSystem.EncodingType.Base64,
-    });
+  // Force WAV for all uploads since we're now recording in WAV
+  const actualContentType = 'audio/wav';
+  const actualFilename = `speech_${Date.now()}.wav`;
+  
+  console.log(`Uploading audio: ${actualFilename} (${actualContentType})`);
+  
+  const base64 = await FileSystem.readAsStringAsync(fileUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 
-    const payload = {
-      file: base64,
-      type: 'speech',
-      filename: actualFilename,
-      contentType: actualContentType,
-    };
+  const payload = {
+    file: base64,
+    type: 'speech',
+    filename: actualFilename,
+    contentType: actualContentType,
+  };
+
+    
 
     const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
     const resp = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
@@ -300,8 +286,30 @@ const SpeechToTextComponent = ({ onTranscriptionResult, onRecordingStateChange, 
       
       // Use the HIGH_QUALITY preset which should work reliably
       // This produces PCM WAV files that Azure Speech handles well
-      const recordingOptions = Audio.RecordingOptionsPresets.HIGH_QUALITY;
-
+const recordingOptions = {
+  android: {
+    extension: '.wav',
+    outputFormat: Audio.AndroidOutputFormat.DEFAULT,
+    audioEncoder: Audio.AndroidAudioEncoder.DEFAULT,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 128000,
+  },
+  ios: {
+    extension: '.wav',
+    audioQuality: Audio.IOSAudioQuality.HIGH,
+    sampleRate: 16000,
+    numberOfChannels: 1,
+    bitRate: 128000,
+    linearPCMBitDepth: 16,
+    linearPCMIsBigEndian: false,
+    linearPCMIsFloat: false,
+  },
+  web: {
+    mimeType: 'audio/wav',
+    bitsPerSecond: 128000,
+  },
+};
       console.log('Using HIGH_QUALITY preset for recording');
 
       // Prepare and start recording

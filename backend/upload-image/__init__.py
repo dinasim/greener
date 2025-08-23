@@ -110,27 +110,39 @@ def _sniff_content_type_from_bytes(b: bytes, ct_hint: str) -> str:
     """Lightweight magic sniff to improve content-type detection."""
     try:
         head = b[:64]
+        logging.info(f"Magic sniff: first 16 bytes = {head[:16].hex()}")
+        
+        # WAV RIFF header - CHECK THIS FIRST before other formats
+        if head.startswith(b"RIFF") and b"WAVE" in head[:12]:
+            logging.info("Detected WAV via RIFF header")
+            return "audio/wav"
+            
         # AMR-NB/AMR-WB magic
         if head.startswith(b"#!AMR") or head.startswith(b"#!AMR-WB"):
+            logging.info("Detected AMR via magic header")
             return "audio/3gpp"
+            
         # ISO BMFF/MP4/3GP has 'ftyp' at 4..8
         if len(head) >= 12 and head[4:8] == b"ftyp":
             brand = head[8:12]
+            logging.info(f"Detected ftyp container with brand: {brand}")
             if brand in (b"3gp4", b"3gp5", b"3gpp"):
                 return "audio/3gpp"
             if brand in (b"isom", b"mp42", b"M4A ", b"M4B "):
                 return "audio/mp4"
-        # WAV RIFF header
-        if head.startswith(b"RIFF") and b"WAVE" in head[:12]:
-            return "audio/wav"
+                
         # MP3
         if head.startswith(b"ID3") or head.startswith(b"\xff\xfb"):
             return "audio/mpeg"
+            
         # WebM/Matroska
         if head.startswith(b"\x1a\x45\xdf\xa3"):
             return "audio/webm"
-    except Exception:
-        pass
+            
+    except Exception as e:
+        logging.warning(f"Magic sniff error: {e}")
+        
+    logging.info(f"No magic match, using hint: {ct_hint}")
     return ct_hint or ""
 
 
