@@ -978,7 +978,6 @@ export const fetchReviews = async (targetType, targetId) => {
  * 2) submitReview({ targetId, targetType, rating, text|comment, ... })
  */
 export const submitReview = async (...args) => {
-  // ---- normalize args
   let targetId, targetType, reviewData;
   if (typeof args[0] === 'object' && args[0] !== null && !args[1]) {
     ({ targetId, targetType, ...reviewData } = args[0]);
@@ -990,41 +989,46 @@ export const submitReview = async (...args) => {
     throw new Error('Target ID, type, and review data are required');
   }
 
-  const rating  = Number(reviewData.rating);
-  const comment = (reviewData.comment ?? reviewData.text ?? '').toString().trim();
-  if (!rating || rating < 1) throw new Error('Rating is required (1–5)');
-  if (!comment) throw new Error('Review text/comment is required');
+  const rating = Number(reviewData.rating);
+  const commentStr = (reviewData.comment ?? reviewData.text ?? '').toString().trim();
+
+  if (!Number.isFinite(rating) || rating < 1 || rating > 5) {
+    throw new Error('Rating is required (1–5)');
+  }
+  if (!commentStr) {
+    throw new Error('Review text/comment is required');
+  }
 
   const userEmail = (await AsyncStorage.getItem('userEmail')) || undefined;
 
   const payload = {
     targetId,
-    targetType,          // 'seller' | 'product'
+    targetType,     // e.g. 'seller' | 'product'
     rating,
-    comment,
-    userId: userEmail,   // some backends expect it
+    // Send BOTH keys to satisfy old/new backends:
+    text: commentStr,       // <- what your backend requires
+    comment: commentStr,    // <- keeps UI code flexible
+    userId: userEmail,
   };
-  // Try a list of possible endpoints, first one that 2xxs wins
-  const candidates = [
-    'marketplace/reviews/submit',
-    `marketplace/reviews/${encodeURIComponent(targetType)}/submit`,
-    `marketplace/reviews/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}/submit`,
-    'reviews-submit', // legacy
-  ];
 
-  let lastErr;
-  for (const ep of candidates) {
-    try {
-      return await apiRequest(ep, { method: 'POST', body: JSON.stringify(payload) });
-    } catch (e) {
-      const msg = String(e?.message || '');
-      // If it’s not a 404, it’s a real failure — bail early
-      if (!/404|not found/i.test(msg)) throw e;
-      lastErr = e; // keep going and try next endpoint
+  const endpoint = `submitreview/${encodeURIComponent(String(targetType))}/${encodeURIComponent(String(targetId))}`;
+
+  try {
+    return await apiRequest(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    if (/404|not found/i.test(String(err?.message || ''))) {
+      return await apiRequest('reviews-submit', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
     }
+    throw err;
   }
-  throw lastErr || new Error('Review submission failed');
 };
+
 
 export const deleteReview = async (targetType, targetId, reviewId) => {
   if (!targetType || !targetId || !reviewId) {
