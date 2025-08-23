@@ -1,216 +1,186 @@
-// components/PlantDetailScreen-parts/ActionButtons.js - FIXED FOR BUSINESS/INDIVIDUAL
+// components/PlantDetailScreen-parts/ActionButtons.js - FIXED BUTTON HANDLERS
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from 'react-native';
 import { MaterialIcons } from '@expo/vector-icons';
 
 const ActionButtons = ({ 
-  isFavorite, 
+  isFavorite = false, 
   onFavoritePress, 
   onContactPress, 
+  onOrderPress, // FIXED: Added missing prop
   onReviewPress,
   isSending = false,
   isBusiness = false,
-  plantName = 'this plant'
+  plant = null
 }) => {
+  
+  console.log('ActionButtons render:', { 
+    isBusiness, 
+    hasOrderPress: typeof onOrderPress === 'function',
+    isSending, 
+    plantTitle: plant?.title || plant?.name
+  });
+
+  const handleOrderPress = () => {
+    console.log('ActionButtons: Order button pressed');
+    console.log('ActionButtons: onOrderPress type:', typeof onOrderPress);
+    console.log('ActionButtons: isBusiness:', isBusiness);
+    
+    if (typeof onOrderPress === 'function') {
+      try {
+        onOrderPress();
+        console.log('ActionButtons: onOrderPress called successfully');
+      } catch (error) {
+        console.error('ActionButtons: Error calling onOrderPress:', error);
+      }
+    } else {
+      console.error('ActionButtons: onOrderPress is not a function:', onOrderPress);
+    }
+  };
+
+  // FIXED: Use the correct prop name
+  const handleFavoritePress = () => {
+    console.log('ActionButtons: Favorite button pressed');
+    if (typeof onFavoritePress === 'function') {
+      onFavoritePress();
+    } else {
+      console.error('ActionButtons: onFavoritePress is not a function:', onFavoritePress);
+    }
+  };
+
   return (
-    <View style={styles.container}>
-      <View style={styles.actionsContainer}>
-        <TouchableOpacity style={styles.favoriteActionButton} onPress={onFavoritePress}>
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>Actions</Text>
+      
+      <View style={styles.buttonContainer}>
+        {/* Favorite Button */}
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.favoriteButton, isFavorite && styles.favoriteButtonActive]}
+          onPress={handleFavoritePress}
+        >
           <MaterialIcons 
             name={isFavorite ? "favorite" : "favorite-border"} 
-            size={24} 
-            color={isFavorite ? "#f44336" : "#4CAF50"} 
+            size={20} 
+            color={isFavorite ? "#fff" : "#4CAF50"} 
           />
-          <Text style={styles.actionButtonText}>{isFavorite ? 'Favorited' : 'Favorite'}</Text>
+          <Text style={[styles.actionButtonText, isFavorite && styles.favoriteButtonTextActive]}>
+            {isFavorite ? 'Favorited' : 'Add to Favorites'}
+          </Text>
         </TouchableOpacity>
-        
-        {/* Different buttons for business vs individual */}
-        {isBusiness ? (
-          // Business products: Only Order button (opens chat with auto message)
+
+        {/* Contact Button */}
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.contactButton]}
+          onPress={onContactPress}
+        >
+          <MaterialIcons name="chat" size={20} color="#2196F3" />
+          <Text style={[styles.actionButtonText, styles.contactButtonText]}>
+            Message Seller
+          </Text>
+        </TouchableOpacity>
+
+        {/* Order Button - only show for business products */}
+        {isBusiness && (
           <TouchableOpacity 
-            style={styles.orderButton} 
-            onPress={onContactPress}
+            style={[
+              styles.actionButton, 
+              styles.orderButton,
+              isSending && styles.orderButtonDisabled
+            ]}
+            onPress={handleOrderPress}
             disabled={isSending}
-            accessible={true}
-            accessibilityLabel="Order Product"
-            accessibilityRole="button"
+            activeOpacity={0.7}
           >
             {isSending ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
-              <>
-                <MaterialIcons name="cart" size={24} color="#fff" />
-                <Text style={styles.orderButtonText}>Order Now</Text>
-              </>
+              <MaterialIcons name="shopping-cart" size={20} color="#fff" />
             )}
-          </TouchableOpacity>
-        ) : (
-          // Individual products: Only Contact button (no duplicate)
-          <TouchableOpacity 
-            style={styles.contactButton} 
-            onPress={onContactPress}
-            disabled={isSending}
-            accessible={true}
-            accessibilityLabel="Contact Seller"
-            accessibilityRole="button"
-          >
-            {isSending ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <>
-                <MaterialIcons name="chat" size={24} color="#fff" />
-                <Text style={styles.contactButtonText}>Contact Seller</Text>
-              </>
-            )}
+            <Text style={[styles.actionButtonText, styles.orderButtonText]}>
+              {isSending ? 'Processing...' : 'Order Product'}
+            </Text>
           </TouchableOpacity>
         )}
-      </View>
-      
-      <TouchableOpacity 
-        style={styles.reviewButton} 
-        onPress={onReviewPress}
-        accessible={true}
-        accessibilityLabel="Write a Review"
-        accessibilityRole="button"
-      >
-        <MaterialIcons name="rate-review" size={24} color="#4CAF50" />
-        <Text style={styles.reviewButtonText}>
-          Write a Review {isBusiness ? 'for Business' : 'for Seller'}
-        </Text>
-      </TouchableOpacity>
-      
-      <View style={styles.safetyContainer}>
-        <MaterialIcons name="shield" size={20} color="#4CAF50" />
-        <Text style={styles.safetyText}>
-          <Text style={styles.safetyBold}>Safety Tips: </Text>
-          {isBusiness 
-            ? 'Visit the business location and verify the product before purchase'
-            : 'Meet in a public place and inspect the plant before purchasing'
-          }
-        </Text>
-      </View>
-      
-      {/* Business-specific pickup info */}
-      {isBusiness && (
-        <View style={styles.pickupContainer}>
-          <MaterialIcons name="store" size={20} color="#4CAF50" />
-          <Text style={styles.pickupText}>
-            <Text style={styles.pickupBold}>Pickup: </Text>
-            Contact business for pickup arrangements and location details
+
+        {/* Review Button */}
+        <TouchableOpacity 
+          style={[styles.actionButton, styles.reviewButton]}
+          onPress={onReviewPress}
+        >
+          <MaterialIcons name="rate-review" size={20} color="#FF9800" />
+          <Text style={[styles.actionButtonText, styles.reviewButtonText]}>
+            Write Review
           </Text>
-        </View>
-      )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  section: {
+    marginVertical: 16,
     paddingHorizontal: 16,
-    marginBottom: 16
   },
-  actionsContainer: { 
-    flexDirection: 'row', 
-    justifyContent: 'space-between', 
-    marginTop: 20, 
-    marginBottom: 16 
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 12,
   },
-  favoriteActionButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    paddingVertical: 12, 
-    paddingHorizontal: 16, 
-    borderWidth: 1, 
-    borderColor: '#4CAF50', 
-    borderRadius: 8 
+  buttonContainer: {
+    gap: 12,
   },
-  actionButtonText: { 
-    fontSize: 16, 
-    color: '#4CAF50', 
-    marginLeft: 8, 
-    fontWeight: '600' 
-  },
-  contactButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#4CAF50', 
-    borderRadius: 8, 
-    paddingVertical: 12, 
-    paddingHorizontal: 16 
-  },
-  contactButtonText: { 
-    color: '#fff', 
-    marginLeft: 8, 
-    fontWeight: '600', 
-    fontSize: 16 
-  },
-  orderButton: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#FF9800', 
-    borderRadius: 8, 
-    paddingVertical: 12, 
-    paddingHorizontal: 16 
-  },
-  orderButtonText: { 
-    color: '#fff', 
-    marginLeft: 8, 
-    fontWeight: '600', 
-    fontSize: 16 
-  },
-  reviewButton: { 
-    flexDirection: 'row', 
+  actionButton: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f0f9f0',
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#4CAF50',
-    paddingVertical: 12,
+    paddingVertical: 14,
     paddingHorizontal: 16,
-    marginBottom: 16 
+    borderRadius: 12,
+    borderWidth: 1,
+    minHeight: 50,
   },
-  reviewButtonText: { 
-    color: '#4CAF50', 
+  actionButtonText: {
+    marginLeft: 8,
     fontSize: 16,
-    marginLeft: 8, 
-    fontWeight: '600' 
+    fontWeight: '600',
   },
-  safetyContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#f0f9f0', 
-    padding: 12, 
-    borderRadius: 8, 
-    marginBottom: 16 
+  favoriteButton: {
+    backgroundColor: '#fff',
+    borderColor: '#4CAF50',
   },
-  safetyText: { 
-    fontSize: 14, 
-    marginLeft: 8, 
-    color: '#555', 
-    flex: 1 
+  favoriteButtonActive: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
   },
-  safetyBold: { 
-    fontWeight: 'bold', 
-    color: '#333' 
+  favoriteButtonTextActive: {
+    color: '#fff',
   },
-  pickupContainer: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: '#fff3e0', 
-    padding: 12, 
-    borderRadius: 8, 
-    marginBottom: 16 
+  contactButton: {
+    backgroundColor: '#fff',
+    borderColor: '#2196F3',
   },
-  pickupText: { 
-    fontSize: 14, 
-    marginLeft: 8, 
-    color: '#555', 
-    flex: 1 
+  contactButtonText: {
+    color: '#2196F3',
   },
-  pickupBold: { 
-    fontWeight: 'bold', 
-    color: '#333' 
+  orderButton: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  orderButtonDisabled: {
+    backgroundColor: '#ccc',
+    borderColor: '#ccc',
+  },
+  orderButtonText: {
+    color: '#fff',
+  },
+  reviewButton: {
+    backgroundColor: '#fff',
+    borderColor: '#FF9800',
+  },
+  reviewButtonText: {
+    color: '#FF9800',
   },
 });
 
