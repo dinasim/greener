@@ -540,18 +540,16 @@ const PlantDetailScreen = () => {
     if (!plant || (!plant.sellerId && !plant.seller?._id && !businessId)) {
       return showToast('Seller information is not available', 'error');
     }
-    const sellerId = plant.seller?._id || plant.sellerId || businessId;
+    const sellerId = plant.sellerId || plant.seller?._id;
+    const isBiz = plant.isBusinessListing || plant.sellerType === 'business' || plant.seller?.isBusiness;
 
-    if (isBusiness) {
-      navigation.navigate('BusinessProfile', {
-        businessId: plant.businessId || sellerId,
-      });
-    } else {
-      navigation.navigate('SellerProfile', {
-        sellerId: sellerId,
-      });
-    }
-  }, [plant, navigation, showToast, isBusiness, businessId]);
+    navigation.navigate('SellerProfile', {
+      sellerId,
+      businessId: plant.businessId || sellerId,
+      sellerName: plant.seller?.businessName || plant.seller?.name || plant.sellerName,
+      isBusiness: true,
+    });
+  }, [plant, navigation, showToast]);
 
   // Images
   const images = useMemo(() => {

@@ -23,8 +23,11 @@
       },
       "package": "com.greener.app",
       "permissions": [
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
         "RECEIVE_BOOT_COMPLETED",
-        "NOTIFICATIONS"
+        "NOTIFICATIONS",
+        "RECORD_AUDIO"
       ],
       "useNextNotificationsApi": true,
     "googleServicesFile": "./frontend/google-services.json"    },
