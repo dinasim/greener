@@ -7,7 +7,6 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useForm } from '../../context/FormContext';
-import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 import ToastMessage from '../../marketplace/components/ToastMessage';
 
 // 🔑 Firebase (react-native-firebase)
@@ -95,7 +94,6 @@ const COLORS = {
 
 export default function BusinessSignInScreen({ navigation }) {
   const { updateFormData } = useForm();
-  const { initialize } = useUniversalNotifications();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);

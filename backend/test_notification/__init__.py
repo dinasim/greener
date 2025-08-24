@@ -1,226 +1,150 @@
-# test_notification/__init__.py
-import logging
+import os, json, logging
 import azure.functions as func
-import json
-import os
+from azure.cosmos import CosmosClient, exceptions
 import base64
-import hmac
-import hashlib
-import urllib.parse
-import time
-import datetime
-import requests
-import traceback
-from azure.cosmos import CosmosClient
+import firebase_admin
+from firebase_admin import credentials, messaging
 
-def main(req: func.HttpRequest) -> func.HttpResponse:
-    logging.info('Test Notification API triggered.')
-    
-    try:
-        # Get request data
-        req_body = req.get_json()
-        
-        business_id = req_body.get('businessId')
-        device_token = req_body.get('deviceToken')
-        
-        if not business_id:
-            return func.HttpResponse(
-                json.dumps({"error": "BusinessId is required"}),
-                status_code=400,
-                mimetype="application/json"
-            )
-        
-        # If no specific device token provided, get all tokens for the business
-        if not device_token:
-            device_tokens = get_device_tokens_for_business(business_id)
-            
-            if not device_tokens:
-                return func.HttpResponse(
-                    json.dumps({
-                        "error": "No registered device tokens found for this business",
-                        "businessId": business_id
-                    }),
-                    status_code=404,
-                    mimetype="application/json"
-                )
-        else:
-            device_tokens = [device_token]
-        
-        # Send test notification
-        success = send_test_notification(business_id, device_tokens)
-        
-        if success:
-            return func.HttpResponse(
-                json.dumps({
-                    "success": True,
-                    "message": "Test notification sent successfully",
-                    "businessId": business_id,
-                    "tokenCount": len(device_tokens)
-                }),
-                status_code=200,
-                mimetype="application/json"
-            )
-        else:
-            return func.HttpResponse(
-                json.dumps({
-                    "error": "Failed to send test notification",
-                    "businessId": business_id
-                }),
-                status_code=500,
-                mimetype="application/json"
-            )
-            
-    except Exception as e:
-        logging.error(f"Error sending test notification: {str(e)}")
-        logging.error(traceback.format_exc())
-        return func.HttpResponse(
-            json.dumps({"error": f"Internal server error: {str(e)}"}),
-            status_code=500,
-            mimetype="application/json"
-        )
+# ---- ENV expected ----
+# COSMOS_URL, COSMOS_KEY, COSMOS_DB (default 'greener'), COSMOS_CONTAINER_TOKENS (default 'push_tokens')
+# FIREBASE_SA_JSON_B64  (preferred)  OR  FIREBASE_SA_JSON  OR  FIREBASE_SA_JSON_PATH
 
-def get_device_tokens_for_business(business_id):
-    """Get all device tokens registered for a business"""
-    try:
-        # Initialize Cosmos client
-        endpoint = os.environ.get("COSMOSDB__MARKETPLACE_CONNECTION_STRING")
-        key = os.environ.get("COSMOSDB_KEY")
-        database_id = os.environ.get("COSMOSDB_MARKETPLACE_DATABASE_NAME", "GreenerMarketplace")
-        container_id = "watering_notifications"
-        
-        client = CosmosClient(endpoint, key)
-        database = client.get_database_client(database_id)
-        
+def _cors_headers():
+    return {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type,Authorization,X-User-Email",
+    }
+
+def _ok(body: dict, code=200):
+    return func.HttpResponse(
+        body=json.dumps(body),
+        status_code=code,
+        mimetype="application/json",
+        headers=_cors_headers(),
+    )
+
+def _bad(msg: str, code=400):
+    return _ok({"ok": False, "error": msg}, code)
+
+def _get_cosmos_container():
+    url = os.environ.get("COSMOS_URI")
+    key = os.environ.get("COSMOS_KEY")
+    if not url or not key:
+        raise RuntimeError("Missing COSMOS_URL or COSMOS_KEY env vars")
+
+    db_name ="GreenerDB"
+    c_name  = os.environ.get("COSMOS_CONTAINER_TOKENS", "push_tokens")
+
+    client = CosmosClient(url, credential=key)
+    db = client.get_database_client(db_name)
+    return db.get_container_client(c_name)
+
+def _init_firebase():
+    if firebase_admin._apps:
+        return
+    # Priority: B64 -> raw JSON -> path
+    b64 = os.environ.get("FIREBASE_SA_JSON_B64")
+    raw = os.environ.get("FIREBASE_SA_JSON")
+    path = os.environ.get("FIREBASE_SA_JSON_PATH")
+
+    if b64:
         try:
-            container = database.get_container_client(container_id)
-            
-            # Query for active notification preferences
-            query = """
-                SELECT c.deviceToken
-                FROM c
-                WHERE c.businessId = @businessId
-                AND c.status = 'active'
-            """
-            
-            items = list(container.query_items(
-                query=query,
-                parameters=[{"name": "@businessId", "value": business_id}],
-                enable_cross_partition_query=True
-            ))
-            
-            tokens = [item['deviceToken'] for item in items]
-            
-            logging.info(f"Found {len(tokens)} device tokens for business {business_id}")
-            return tokens
-            
+            sa = json.loads(base64.b64decode(b64).decode("utf-8"))
+            cred = credentials.Certificate(sa)
         except Exception as e:
-            logging.error(f"Error querying notification preferences: {str(e)}")
-            return []
-        
-    except Exception as e:
-        logging.error(f"Error getting device tokens: {str(e)}")
+            raise RuntimeError(f"FIREBASE_SA_JSON_B64 invalid: {e}")
+    elif raw:
+        try:
+            sa = json.loads(raw)
+            cred = credentials.Certificate(sa)
+        except Exception as e:
+            raise RuntimeError(f"FIREBASE_SA_JSON invalid: {e}")
+    elif path:
+        cred = credentials.Certificate(path)
+    else:
+        raise RuntimeError("Missing Firebase service account (set FIREBASE_SA_JSON_B64 or FIREBASE_SA_JSON or FIREBASE_SA_JSON_PATH)")
+
+    firebase_admin.initialize_app(cred)
+
+def _load_tokens_for_email(container, email: str):
+    # Your token doc schema: { id: <email>, userId: <email>, tokens: [{token, platform, app, lastSeen}] }
+    try:
+        item = container.read_item(item=email, partition_key=email)
+        tokens = [t.get("token") for t in item.get("tokens", []) if t.get("token")]
+        return tokens
+    except exceptions.CosmosResourceNotFoundError:
         return []
 
-def send_test_notification(business_id, device_tokens):
-    """Send a test notification to the specified device tokens"""
+def main(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return func.HttpResponse(status_code=204, headers=_cors_headers())
+
     try:
-        # Get notification hub connection details
-        connection_string = os.environ.get("AZURE_NOTIFICATION_HUB_CONNECTION_STRING")
-        hub_name = os.environ.get("AZURE_NOTIFICATION_HUB_NAME", "watering_business")
-        
-        if not connection_string:
-            logging.error("Missing Azure Notification Hub connection string")
-            return False
-        
-        # Parse connection string to get the required components
-        connection_parts = dict(item.split('=', 1) for item in connection_string.split(';') if '=' in item)
-        endpoint = connection_parts.get('Endpoint', '').rstrip('/')
-        shared_access_key_name = connection_parts.get('SharedAccessKeyName')
-        shared_access_key = connection_parts.get('SharedAccessKey')
-        
-        if not (endpoint and shared_access_key_name and shared_access_key):
-            logging.error("Invalid connection string format")
-            return False
-        
-        # Create authorization header using SAS token
-        target_uri = f"{endpoint}/{hub_name}/messages/?api-version=2015-04"
-        expiry = int(time.time()) + 3600  # Token valid for 1 hour
-        
-        string_to_sign = urllib.parse.quote_plus(target_uri) + '\n' + str(expiry)
-        signature = base64.b64encode(
-            hmac.HMAC(
-                base64.b64decode(shared_access_key), 
-                string_to_sign.encode('utf-8'), 
-                hashlib.sha256
-            ).digest()
-        ).decode('utf-8')
-        
-        token = f"SharedAccessSignature sr={urllib.parse.quote_plus(target_uri)}&sig={urllib.parse.quote(signature)}&se={expiry}&skn={shared_access_key_name}"
-        
-        successes = 0
-        
-        for device_token in device_tokens:
-            try:
-                # Check if token is an Expo token
-                is_expo = device_token.startswith('ExponentPushToken')
-                
-                if is_expo:
-                    # Expo format
-                    notification_payload = {
-                        "to": device_token,
-                        "title": "🌱 Test Notification",
-                        "body": "This is a test watering reminder notification",
-                        "data": {
-                            "type": "TEST_NOTIFICATION",
-                            "businessId": business_id,
-                            "timestamp": datetime.datetime.utcnow().isoformat()
-                        }
-                    }
-                    
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Authorization": token,
-                        "ServiceBusNotification-Format": "template"
-                    }
-                    
-                else:
-                    # FCM format
-                    notification_payload = {
-                        "data": {
-                            "title": "🌱 Test Notification",
-                            "body": "This is a test watering reminder notification",
-                            "type": "TEST_NOTIFICATION",
-                            "businessId": business_id,
-                            "timestamp": datetime.datetime.utcnow().isoformat()
-                        }
-                    }
-                    
-                    headers = {
-                        "Content-Type": "application/json",
-                        "Authorization": token,
-                        "ServiceBusNotification-Format": "gcm"
-                    }
-                
-                # Send the notification
-                response = requests.post(
-                    f"{endpoint}/{hub_name}/messages",
-                    headers=headers,
-                    json=notification_payload
-                )
-                
-                if response.status_code == 201:
-                    logging.info(f"Successfully sent test notification to {device_token[:10]}...")
-                    successes += 1
-                else:
-                    logging.error(f"Error sending test notification: {response.status_code} - {response.text}")
-                
-            except Exception as e:
-                logging.error(f"Error sending to token {device_token[:10]}...: {str(e)}")
-        
-        # Return True if at least one notification was sent successfully
-        return successes > 0
-        
+        body = req.get_json()
+    except Exception:
+        return _bad("Invalid JSON body")
+
+    email   = (body.get("email") or "").strip()
+    title   = (body.get("title") or "Greener").strip()
+    bodytxt = (body.get("body") or "Test notification").strip()
+    # Optional: send to a specific token instead of all saved
+    direct_token = (body.get("token") or "").strip()
+
+    if not email and not direct_token:
+        return _bad("Provide either 'email' (to load saved tokens) or 'token' (single device)")
+
+    try:
+        _init_firebase()
     except Exception as e:
-        logging.error(f"Error sending test notification: {str(e)}")
-        logging.error(traceback.format_exc())
-        return False
+        logging.exception("Firebase init failed")
+        return _bad(f"Firebase init failed: {e}", 500)
+
+    tokens = []
+    try:
+        if direct_token:
+            tokens = [direct_token]
+        else:
+            container = _get_cosmos_container()
+            tokens = _load_tokens_for_email(container, email)
+
+        tokens = [t for t in tokens if t and not t.startswith("ExponentPushToken")]  # skip Expo-only tokens
+        if not tokens:
+            who = direct_token and "provided token" or f"user '{email}'"
+            return _bad(f"No FCM tokens found for {who}", 404)
+
+        # Build the message (both notification + data)
+        message = messaging.MulticastMessage(
+            tokens=tokens,
+            notification=messaging.Notification(title=title, body=bodytxt),
+            data={
+                "type": "TEST_NOTIFICATION",
+                "ts": str(__import__("time").time()),
+            },
+            android=messaging.AndroidConfig(
+                priority="high",
+                notification=messaging.AndroidNotification(channel_id="default"),
+            ),
+        )
+
+        resp = messaging.send_each_for_multicast(message)
+        # Collect invalid tokens for your own pruning, if you want
+        invalid = []
+        for idx, r in enumerate(resp.responses):
+            if not r.success:
+                code = getattr(r.exception, "code", "")
+                msg = getattr(r.exception, "message", str(r.exception))
+                logging.warning(f"[FCM] send failed for token[{idx}]: {code} {msg}")
+                if "registration-token-not-registered" in msg or "invalid-argument" in msg:
+                    invalid.append(tokens[idx])
+
+        return _ok({
+            "ok": True,
+            "requested": len(tokens),
+            "successCount": resp.success_count,
+            "failureCount": resp.failure_count,
+            "invalidTokens": invalid
+        })
+    except Exception as e:
+        logging.exception("sendTestPush failed")
+        return _bad(f"sendTestPush failed: {e}", 500)

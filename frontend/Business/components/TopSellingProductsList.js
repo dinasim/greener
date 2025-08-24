@@ -1,4 +1,4 @@
-// Business/components/TopSellingProductsList.js - FIXED IMPORTS
+// Business/components/TopSellingProductsList.js - FIXED IMPORTS & PROP FORWARDING
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -7,7 +7,6 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  RefreshControl,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -21,6 +20,14 @@ const TopSellingProductsList = ({
   sortBy = 'totalSold',
   limit = 10,
   onProductPress,
+  // 🔽 NEW: forwardable view/scroll props from parent (Sales tab)
+  style,
+  contentContainerStyle,
+  ListHeaderComponent,
+  ListFooterComponent,
+  refreshing: refreshingProp,
+  onRefresh: onRefreshProp,
+  showsVerticalScrollIndicator,
   refreshTrigger,
 }) => {
   const [products, setProducts] = useState([]);
@@ -106,10 +113,7 @@ const TopSellingProductsList = ({
                 item.cost
             );
             const lineTotal = toNum(
-              item.total ??
-                item.lineTotal ??
-                item.extendedPrice ??
-                item.subtotal
+              item.total ?? item.lineTotal ?? item.extendedPrice ?? item.subtotal
             );
             const revenue = lineTotal > 0 ? lineTotal : unit * qty;
 
@@ -177,8 +181,7 @@ const TopSellingProductsList = ({
             })
             .reduce((sum, order) => {
               const it = order.items?.find(
-                (i) =>
-                  (i.productId || i.id || i.product?.id) === product.id
+                (i) => (i.productId || i.id || i.product?.id) === product.id
               );
               return sum + toNum(it?.quantity ?? it?.qty ?? 0);
             }, 0);
@@ -252,6 +255,12 @@ const TopSellingProductsList = ({
     loadTopSellingProducts(true);
   };
 
+  // Prefer external refreshing if provided (from parent Sales tab)
+  const effectiveRefreshing =
+    typeof refreshingProp === 'boolean' ? refreshingProp : refreshing;
+  const effectiveOnRefresh =
+    typeof onRefreshProp === 'function' ? onRefreshProp : handleRefresh;
+
   if (isLoading) {
     return (
       <View style={styles.cardWrap}>
@@ -303,76 +312,66 @@ const TopSellingProductsList = ({
     );
   }
 
+  // ✅ FlatList is now the ONLY scroll container and receives header/footer & styles
   return (
-    <View style={styles.listWrap}>
-      <FlatList
-        data={products}
-        keyExtractor={(item) => String(item.id)}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.productCard}
-            activeOpacity={0.8}
-            onPress={() => onProductPress && onProductPress(item)}
-          >
-            {/* header row: name + pill */}
-            <View style={styles.cardHeader}>
-              <Text style={styles.productName} numberOfLines={1}>
-                {item.name}
-              </Text>
-              <View style={[styles.pill, { backgroundColor: '#2196F3' }]}>
-                <Text style={styles.pillText}>{item.totalSold} sold</Text>
-              </View>
+    <FlatList
+      data={products}
+      keyExtractor={(item) => String(item.id)}
+      renderItem={({ item }) => (
+        <TouchableOpacity
+          style={styles.productCard}
+          activeOpacity={0.8}
+          onPress={() => onProductPress && onProductPress(item)}
+        >
+          {/* header row: name + pill */}
+          <View style={styles.cardHeader}>
+            <Text style={styles.productName} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <View style={[styles.pill, { backgroundColor: '#2196F3' }]}>
+              <Text style={styles.pillText}>{item.totalSold} sold</Text>
             </View>
+          </View>
 
-            {/* details row */}
-            <View style={styles.cardDetails}>
-              <Text style={styles.detailLeft} numberOfLines={1}>
-                Last sale:{' '}
-                {item.lastSaleDate
-                  ? new Date(item.lastSaleDate).toLocaleDateString()
-                  : '—'}
-              </Text>
-            </View>
+          {/* details row */}
+          <View style={styles.cardDetails}>
+            <Text style={styles.detailLeft} numberOfLines={1}>
+              Last sale:{' '}
+              {item.lastSaleDate
+                ? new Date(item.lastSaleDate).toLocaleDateString()
+                : '—'}
+            </Text>
+          </View>
 
-            {/* footer row */}
-            <View style={styles.cardFooter}>
-              <Text style={styles.totalText}>
-                ₪{(item.totalRevenue || 0).toFixed(2)}
-              </Text>
-              <Text style={styles.itemsText}>
-                Avg ₪{(item.averagePrice || 0).toFixed(2)}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        )}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={handleRefresh}
-            colors={['#216a94']}
-            tintColor="#216a94"
-          />
-        }
-        showsVerticalScrollIndicator={false}
-      />
-    </View>
+          {/* footer row */}
+          <View style={styles.cardFooter}>
+            <Text style={styles.totalText}>
+              ₪{(item.totalRevenue || 0).toFixed(2)}
+            </Text>
+            <Text style={styles.itemsText}>
+              Avg ₪{(item.averagePrice || 0).toFixed(2)}
+            </Text>
+          </View>
+        </TouchableOpacity>
+      )}
+      style={[{ flex: 1 }, style]}
+      contentContainerStyle={[{ paddingHorizontal: 16, paddingBottom: 24 }, contentContainerStyle]}
+      ListHeaderComponent={ListHeaderComponent}
+      ListFooterComponent={ListFooterComponent}
+      refreshing={effectiveRefreshing}
+      onRefresh={effectiveOnRefresh}
+      showsVerticalScrollIndicator={showsVerticalScrollIndicator ?? false}
+      keyboardShouldPersistTaps="handled"
+      removeClippedSubviews
+      initialNumToRender={10}
+      windowSize={11}
+    />
   );
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // Match Recent Orders spacing
-  listWrap: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-  cardWrap: {
-    marginHorizontal: 16,
-    marginBottom: 24,
-  },
-
-  // Generic card (used for empty/loading/error)
+  // wrappers for non-list states
+  cardWrap: { marginHorizontal: 16, marginBottom: 24 },
   card: {
     backgroundColor: '#fff',
     borderRadius: 12,
@@ -438,8 +437,6 @@ const styles = StyleSheet.create({
   },
   totalText: { fontSize: 16, fontWeight: 'bold', color: '#216a94' },
   itemsText: { fontSize: 12, color: '#666' },
-
-  separator: { height: 1, backgroundColor: '#F0F0F0', marginHorizontal: 16 },
 
   emptyTitle: { fontSize: 16, color: '#666', marginTop: 12, textAlign: 'center' },
   emptyText: { fontSize: 12, color: '#999', marginTop: 4, textAlign: 'center' },

@@ -1,3 +1,4 @@
+// App.js
 import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
@@ -5,6 +6,15 @@ import AppNavigator from './navigation/AppNavigator';
 import PushWebSetup from './components/PushWebSetup';
 import AuthProvider from './src/providers/AuthProvider';
 import * as Notifications from 'expo-notifications';
+
+// Make sure foreground notifications actually render a banner
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
 // Android channel
 if (Platform.OS === 'android') {
@@ -18,23 +28,38 @@ if (Platform.OS === 'android') {
 function useForegroundPushUI() {
   useEffect(() => {
     if (Platform.OS !== 'android') return;
+
     let unsub;
+
     (async () => {
-      const { getMessaging, onMessage } = await import('@react-native-firebase/messaging');
-      const messaging = getMessaging();
-      unsub = onMessage(messaging, async (remoteMessage) => {
-        const n = remoteMessage.notification;
+      // On Android 13+, ask the POST_NOTIFICATIONS permission once
+      try {
+        await Notifications.requestPermissionsAsync();
+      } catch {}
+
+      const m = await import('@react-native-firebase/messaging');
+      const { getMessaging, onMessage } = m;
+
+      const msg = getMessaging();
+      unsub = onMessage(msg, async (remoteMessage) => {
+        // Prefer server-side "notification" payloads; fallback to data
+        const n = remoteMessage?.notification || {};
+        const data = remoteMessage?.data || {};
+
         await Notifications.scheduleNotificationAsync({
           content: {
-            title: n?.title || 'Greener',
-            body: n?.body || '',
-            data: remoteMessage.data || {},
+            title: n.title || data.title || 'Greener',
+            body: n.body || data.body || '',
+            data,
           },
-          trigger: null,
+          trigger: null, // show immediately in foreground
         });
       });
     })();
-    return () => { if (typeof unsub === 'function') unsub(); };
+
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
   }, []);
 }
 
@@ -46,7 +71,7 @@ export default function App() {
       <NavigationContainer>
         <AppNavigator />
         {Platform.OS === 'web' ? <PushWebSetup /> : null}
-        {/* FCM registration is done in each profile's Home screen, not here */}
+        {/* FCM registration is triggered in each profile's Home screen */}
       </NavigationContainer>
     </AuthProvider>
   );

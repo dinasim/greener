@@ -739,7 +739,6 @@ export async function uploadAudio(file, contentType = (Platform.OS === 'web' ? '
 
 // ----------------------------
 // STT
-// services/marketplaceApi.js (example)
 export async function getSpeechToken() {
   const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
   const region = 'eastus'; // or read from config
@@ -752,6 +751,16 @@ export async function getSpeechToken() {
     throw err;
   }
   return r.json();
+}
+
+export async function fetchSpeechToken() {
+  const API_BASE_URL = 'https://usersfunctions.azurewebsites.net/api';
+  const r = await fetch(`${API_BASE_URL}/speechToken`);
+  if (!r.ok) {
+    const t = await r.text();
+    throw new Error(`speechToken failed: ${r.status} ${t}`);
+  }
+  return r.json(); // { token, region, expiresAt }
 }
 
 // Full response (text, status, confidence, debug if server returns it)

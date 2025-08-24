@@ -16,7 +16,6 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import { useForm } from '../../context/FormContext';
-import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 import ToastMessage from '../../marketplace/components/ToastMessage';
 import { colors, spacing, typography, borderRadius, getShadow, getWebSafeShadow } from '../../marketplace/services/theme';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -175,18 +174,6 @@ export default function BusinessSignUpScreen({ navigation }) {
     'Other'
   ]);
   
-  // Notification hook - fix initialization parameters
-  const {
-    requestPermission,
-    subscribeToTopic,
-    unsubscribeFromTopic,
-    getToken,
-    deleteToken,
-    onMessage,
-    setBackgroundMessageHandler,
-    initialize
-  } = useUniversalNotifications('business', formData.email, formData.email); // Pass business email as both userId and businessId
-
   // Initialize notifications on component mount
   useEffect(() => {
     const initializeNotifications = async () => {

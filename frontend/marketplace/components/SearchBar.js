@@ -23,6 +23,7 @@ import SpeechToTextComponent from './SpeechToTextComponent';
  * @param {Object} props.style Additional styles for the container
  * @param {string} props.placeholder Custom placeholder text
  * @param {Function} props.onRecordingStateChange Callback when recording state changes
+ * @param {string} props.language Speech recognition language, e.g., 'en-US' or 'he-IL'
  */
 const SearchBar = ({ 
   value, 
@@ -31,7 +32,8 @@ const SearchBar = ({
   sellerType = 'all',
   style,
   placeholder,
-  onRecordingStateChange
+  onRecordingStateChange,
+  language = 'en-US', // CHANGED: allow passing language down to mic
 }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
@@ -84,20 +86,12 @@ const SearchBar = ({
     }, 100);
   };
 
-  // Handle speech transcription results with business context
-  const handleTranscriptionResult = (transcribedText) => {
-    if (transcribedText) {
-      // Add business context to voice search if needed
-      let contextualText = transcribedText;
-      
-      // If user is searching in business mode and says generic terms, 
-      // we can keep it as is since businesses sell various items
-      onChangeText?.(contextualText);
-      
-      // Automatically submit after a short delay
-      setTimeout(() => {
-        onSubmit?.();
-      }, 500);
+  // CHANGED: only auto-submit when meta?.isFinal is true; still update text on partials
+  const handleTranscriptionResult = (transcribedText, meta) => {
+    if (!transcribedText) return;
+    onChangeText?.(transcribedText);
+    if (meta?.isFinal) {
+      setTimeout(() => onSubmit?.(), 200);
     }
   };
 
@@ -151,11 +145,12 @@ const SearchBar = ({
           </TouchableOpacity>
         ) : null}
 
-        {/* Voice search button */}
+        {/* Voice search button (Azure SDK) */}
         <SpeechToTextComponent 
           onTranscriptionResult={handleTranscriptionResult}
           onRecordingStateChange={handleRecordingStateChange}
           style={styles.micButton}
+          language={language} // CHANGED: forward language to mic
         />
       </View>
 
@@ -192,14 +187,14 @@ const SearchBar = ({
 const styles = StyleSheet.create({
   container: {
     backgroundColor: '#fff',
-    borderBottomWidth: 1,
+    borderBottomWidth: 0,
     borderBottomColor: '#eee',
   },
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
-    borderRadius: 8,
+    borderRadius: 12,
     paddingHorizontal: 8,
     marginHorizontal: 4,
     marginTop: 4,
@@ -213,7 +208,7 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     height: 32,
-    fontSize: 14,
+    fontSize: 11,
     color: '#333',
   },
   clearButton: {

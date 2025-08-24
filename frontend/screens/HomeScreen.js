@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 import {
   getWeatherData,
   generateWateringAdvice,
@@ -120,8 +119,6 @@ export default function HomeScreen({ navigation }) {
   const fadeAnim = useState(new Animated.Value(0))[0];
   const [fabOpen, setFabOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-
-  useUniversalNotifications(userEmail);
 
   // Weather data loading
   const loadWeatherData = async (silent = false) => {

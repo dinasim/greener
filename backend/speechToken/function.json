@@ -5,14 +5,9 @@
       "type": "httpTrigger",
       "direction": "in",
       "name": "req",
-      "methods": ["get", "post", "options"],
+      "methods": ["get", "options"],
       "route": "speechToken"
     },
-    {
-      "type": "http",
-      "direction": "out",
-      "name": "res"
-    }
-  ],
-  "scriptFile": "__init__.py"
+    { "type": "http", "direction": "out", "name": "res" }
+  ]
 }
