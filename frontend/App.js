@@ -1,48 +1,78 @@
+// App.js
 import React, { useEffect } from 'react';
+import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './navigation/AppNavigator';
 import PushWebSetup from './components/PushWebSetup';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { ensureChatFCM } from './notifications/chatFCMSetup';
-import { registerBackgroundHandler } from './notifications/chatFCMSetup'; // added
+import AuthProvider from './src/providers/AuthProvider';
+import * as Notifications from 'expo-notifications';
 
-// Ensure background handler is registered ASAP (outside component)
-registerBackgroundHandler(); // safe no-op after first call
+// Make sure foreground notifications actually render a banner
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: false,
+    shouldSetBadge: false,
+  }),
+});
 
-// Toggle if you need to quickly disable FCM without removing code
-const ENABLE_FCM_INIT = true;
+// Android channel
+if (Platform.OS === 'android') {
+  Notifications.setNotificationChannelAsync('default', {
+    name: 'default',
+    importance: Notifications.AndroidImportance.DEFAULT,
+  });
+}
+
+// Foreground banner (modular messaging + dynamic import)
+function useForegroundPushUI() {
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+
+    let unsub;
+
+    (async () => {
+      // On Android 13+, ask the POST_NOTIFICATIONS permission once
+      try {
+        await Notifications.requestPermissionsAsync();
+      } catch {}
+
+      const m = await import('@react-native-firebase/messaging');
+      const { getMessaging, onMessage } = m;
+
+      const msg = getMessaging();
+      unsub = onMessage(msg, async (remoteMessage) => {
+        // Prefer server-side "notification" payloads; fallback to data
+        const n = remoteMessage?.notification || {};
+        const data = remoteMessage?.data || {};
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: n.title || data.title || 'Greener',
+            body: n.body || data.body || '',
+            data,
+          },
+          trigger: null, // show immediately in foreground
+        });
+      });
+    })();
+
+    return () => {
+      if (typeof unsub === 'function') unsub();
+    };
+  }, []);
+}
 
 export default function App() {
-  useEffect(() => {
-    const initializeApp = async () => {
-      try {
-        if (ENABLE_FCM_INIT) {
-          const email = await AsyncStorage.getItem('userEmail');
-            if (email) {
-              try {
-                const token = await ensureChatFCM(email);
-                console.log('[FCM] init token', token ? token.slice(0, 16) + '...' : 'none');
-              } catch (fcmErr) {
-                console.warn('[FCM] init failed (continuing):', fcmErr?.message);
-              }
-            } else {
-              console.log('[FCM] skipped (no stored userEmail)');
-            }
-        } else {
-          console.log('[FCM] disabled via flag');
-        }
-        console.log('✅ App initialized successfully');
-      } catch (error) {
-        console.error('❌ App initialization error:', error);
-      }
-    };
-    initializeApp();
-  }, []);
+  useForegroundPushUI();
 
   return (
-    <NavigationContainer>
-      <AppNavigator />
-      <PushWebSetup />
-    </NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
+        <AppNavigator />
+        {Platform.OS === 'web' ? <PushWebSetup /> : null}
+        {/* FCM registration is triggered in each profile's Home screen */}
+      </NavigationContainer>
+    </AuthProvider>
   );
 }

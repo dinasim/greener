@@ -1,199 +1,134 @@
-import logging
-import os
+# firebase_helpers.py
+import os, json, base64, logging
+from typing import Dict, Any, List, Optional, Tuple
+from azure.cosmos import CosmosClient, exceptions
 import firebase_admin
 from firebase_admin import credentials, messaging
 
-# Global Firebase app instance
-_firebase_app = None
+log = logging.getLogger(__name__)
 
-def get_firebase_app():
-    """Get or initialize Firebase app instance"""
-    global _firebase_app
-    
-    if _firebase_app is None:
-        try:
-            # Build the service account dictionary from environment variables
-            service_account = {
-                "type": "service_account",
-                "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
-                "private_key_id": os.environ.get("FIREBASE_SECRET_KEY_ID"),
-                "private_key": os.environ.get("FIREBASE_SECRET_KEY", "").replace('\\n', '\n'),
-                "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
-                "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
-                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                "token_uri": "https://oauth2.googleapis.com/token",
-                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{os.environ.get('FIREBASE_CLIENT_EMAIL')}",
-                "universe_domain": "googleapis.com"
-            }
-            
-            # Validate required fields
-            required_fields = ["project_id", "private_key", "client_email"]
-            missing_fields = [field for field in required_fields if not service_account.get(field)]
-            
-            if missing_fields:
-                logging.error(f"Missing Firebase environment variables: {missing_fields}")
-                return None
-            
-            # Initialize Firebase
-            cred = credentials.Certificate(service_account)
-            _firebase_app = firebase_admin.initialize_app(cred)
-            logging.info("Firebase Admin SDK initialized successfully")
-            
-        except Exception as e:
-            logging.error(f"Failed to initialize Firebase Admin SDK: {str(e)}")
-            return None
-    
-    return _firebase_app
+# ---- ENV expected ----
+# COSMOS_URI or COSMOS_URL
+# COSMOS_KEY
+# COSMOS_DATABASE_NAME (default GreenerDB)
+# COSMOS_CONTAINER_TOKENS (default push_tokens)
+#
+# FIREBASE_SA_JSON_B64 (preferred) OR FIREBASE_SA_JSON OR FIREBASE_SA_JSON_PATH
 
-def send_fcm_notification(fcm_token, title, body, data=None):
+def _init_firebase_once():
+    if firebase_admin._apps:
+        return
+    b64 = (os.environ.get("FIREBASE_SA_JSON_B64") or "").strip()
+    raw = (os.environ.get("FIREBASE_SA_JSON") or "").strip()
+    path = (os.environ.get("FIREBASE_SA_JSON_PATH") or "").strip()
+
+    if b64:
+        sa = json.loads(base64.b64decode(b64).decode("utf-8"))
+        cred = credentials.Certificate(sa)
+    elif raw:
+        sa = json.loads(raw)
+        cred = credentials.Certificate(sa)
+    elif path:
+        cred = credentials.Certificate(path)
+    else:
+        raise RuntimeError("Missing Firebase service account env")
+
+    firebase_admin.initialize_app(cred)
+
+def _get_tokens_container():
+    endpoint = os.environ.get("COSMOS_URI") 
+    key = os.environ.get("COSMOS_KEY")
+    if not endpoint or not key:
+        raise RuntimeError("Missing COSMOS_URI/COSMOS_URL or COSMOS_KEY")
+
+    dbname = "GreenerDB"
+    c_tokens = os.environ.get("COSMOS_CONTAINER_TOKENS", "push_tokens")
+
+    client = CosmosClient(endpoint, credential=key)
+    db = client.get_database_client(dbname)
+    return db.get_container_client(c_tokens)
+
+def _resolve_user_email(users_container, receiver_id: str) -> Optional[str]:
     """
-    Send FCM notification using Firebase Admin SDK
-    
-    Args:
-        fcm_token (str): The FCM token of the target device
-        title (str): Notification title
-        body (str): Notification body
-        data (dict, optional): Additional data payload
-    
-    Returns:
-        bool: True if notification was sent successfully, False otherwise
+    receiver_id might be an email already, or the user's id.
+    We try both to get the email value to look up tokens.
     """
+    if not receiver_id:
+        return None
+
+    # If it looks like an email, just return it
+    if "@" in receiver_id:
+        return receiver_id
+
     try:
-        app = get_firebase_app()
-        if not app:
-            logging.error("Firebase app not initialized")
-            return False
-        
-        if not fcm_token:
-            logging.warning("FCM token is empty")
-            return False
-        
-        # Create the message
-        message = messaging.Message(
-            notification=messaging.Notification(
-                title=title,
-                body=body
-            ),
-            data=data or {},
-            token=fcm_token,
-            android=messaging.AndroidConfig(
-                priority='high',
-                notification=messaging.AndroidNotification(
-                    icon='/icon-192x192.png',
-                    sound='default',
-                    click_action='FLUTTER_NOTIFICATION_CLICK'
-                )
-            ),
-            apns=messaging.APNSConfig(
-                payload=messaging.APNSPayload(
-                    aps=messaging.Aps(
-                        sound='default',
-                        badge=1
-                    )
-                )
-            ),
-            webpush=messaging.WebpushConfig(
-                notification=messaging.WebpushNotification(
-                    icon='/icon-192x192.png'
-                )
-            )
-        )
-        
-        # Send the message
-        response = messaging.send(message, app=app)
-        logging.info(f"FCM notification sent successfully: {response}")
-        return True
-        
-    except messaging.UnregisteredError:
-        logging.warning(f"FCM token is unregistered: {fcm_token[:20]}...")
-        return False
-    except messaging.InvalidArgumentError as e:
-        logging.error(f"Invalid FCM token or message: {str(e)}")
-        return False
+        query = "SELECT TOP 1 c.id, c.email FROM c WHERE c.id = @id OR c.email = @id"
+        params = [{"name":"@id", "value": receiver_id}]
+        rows = list(users_container.query_items(query=query, parameters=params, enable_cross_partition_query=True))
+        if rows:
+            return rows[0].get("email") or rows[0].get("id")
     except Exception as e:
-        logging.error(f"Error sending FCM notification: {str(e)}")
-        return False
+        log.warning(f"User lookup failed for {receiver_id}: {e}")
+    return None
 
-def send_fcm_notification_to_user(user_container, user_id, title, body, data=None):
-    """
-    Send FCM notification to a specific user by looking up their tokens
-    
-    Args:
-        user_container: Cosmos DB container for users
-        user_id (str): User ID or email
-        title (str): Notification title
-        body (str): Notification body
-        data (dict, optional): Additional data payload
-    
-    Returns:
-        bool: True if at least one notification was sent successfully
-    """
+def _load_tokens_for_email(tokens_container, email: str) -> List[str]:
     try:
-        # Query for user by email or id
-        user_query = "SELECT c.id, c.email, c.fcmToken, c.fcmTokens, c.webPushSubscription FROM c WHERE c.id = @userId OR c.email = @userId"
-        user_params = [{"name": "@userId", "value": user_id}]
-        
-        users = list(user_container.query_items(
-            query=user_query,
-            parameters=user_params,
-            enable_cross_partition_query=True
-        ))
-        
-        if not users:
-            logging.warning(f"User {user_id} not found for notification")
-            return False
-        
-        user = users[0]
-        tokens = []
-        primary = user.get('fcmToken')
-        if primary:
-            tokens.append(primary)
-        # Support array field fcmTokens
-        extra = user.get('fcmTokens') or []
-        if isinstance(extra, list):
-            tokens.extend([t for t in extra if t])
-        # Deduplicate
-        tokens = list(dict.fromkeys(tokens))
-        if not tokens:
-            logging.warning(f"No FCM tokens found for user {user_id}")
-            return False
-
-        success_any = False
-        invalid_tokens = []
-        for t in tokens:
-            ok = send_fcm_notification(t, title, body, data)
-            if ok:
-                success_any = True
-            else:
-                invalid_tokens.append(t)
-
-        # Optional: prune invalid tokens if we have a write path
-        if invalid_tokens:
-            try:
-                remaining = [t for t in tokens if t not in invalid_tokens]
-                # Only update if there is change and container has item (need partition key; assume id/email both cross-partition allowed)
-                # Fetch full record for update
-                if user.get('id'):
-                    # Requery full doc
-                    full_query = "SELECT * FROM c WHERE c.id = @uid"
-                    full_items = list(user_container.query_items(
-                        query=full_query,
-                        parameters=[{"name": "@uid", "value": user.get('id')}],
-                        enable_cross_partition_query=True
-                    ))
-                    if full_items:
-                        full_doc = full_items[0]
-                        full_doc['fcmTokens'] = remaining
-                        # Keep primary token field consistent
-                        if remaining:
-                            full_doc['fcmToken'] = remaining[0]
-                        user_container.upsert_item(full_doc)
-            except Exception as prune_err:
-                logging.warning(f"Failed pruning invalid tokens for user {user_id}: {prune_err}")
-
-        return success_any
-        
+        doc = tokens_container.read_item(item=email, partition_key=email)
+        toks = [t.get("token") for t in (doc.get("tokens") or []) if t.get("token")]
+        # skip Expo-only tokens
+        return [t for t in toks if not str(t).startswith("ExponentPushToken")]
+    except exceptions.CosmosResourceNotFoundError:
+        return []
     except Exception as e:
-        logging.error(f"Error sending FCM notification to user {user_id}: {str(e)}")
-        return False
+        log.warning(f"Token load failed for {email}: {e}")
+        return []
+
+def _send_multicast(tokens: List[str], title: str, body: str, data: Dict[str, Any]) -> Tuple[int,int,List[str]]:
+    if not tokens:
+        return (0,0,[])
+    msg = messaging.MulticastMessage(
+        tokens=tokens,
+        notification=messaging.Notification(title=title, body=body),
+        data={k: str(v) for k,v in (data or {}).items()},
+        android=messaging.AndroidConfig(
+            priority="high",
+            notification=messaging.AndroidNotification(channel_id="default"),
+        ),
+    )
+    resp = messaging.send_each_for_multicast(msg)
+    invalid = []
+    for idx, r in enumerate(resp.responses):
+        if not r.success:
+            m = getattr(r.exception, "message", str(r.exception))
+            log.warning(f"[FCM] failure: {m}")
+            if "registration-token-not-registered" in m or "invalid-argument" in m:
+                invalid.append(tokens[idx])
+    return (resp.success_count, resp.failure_count, invalid)
+
+def send_fcm_notification_to_user(
+    users_container,
+    receiver_id: str,
+    title: str,
+    body: str,
+    data: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    - resolve receiver email (id or email)
+    - load tokens from push_tokens
+    - send multicast
+    """
+    _init_firebase_once()
+    email = _resolve_user_email(users_container, receiver_id)
+    if not email:
+        log.info(f"No email found for receiver_id={receiver_id}")
+        return {"requested": 0, "success": 0, "fail": 0}
+
+    tokens_c = _get_tokens_container()
+    tokens = _load_tokens_for_email(tokens_c, email)
+    if not tokens:
+        log.info(f"No tokens for email={email}")
+        return {"requested": 0, "success": 0, "fail": 0}
+
+    ok, fail, invalid = _send_multicast(tokens, title, body, data or {})
+    if invalid:
+        log.info(f"Invalid tokens for {email}: {len(invalid)}")
+    return {"requested": len(tokens), "success": ok, "fail": fail}

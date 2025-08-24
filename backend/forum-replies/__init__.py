@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import uuid
 import sys
 import os
+from firebase_helpers import send_fcm_notification_to_user
 
 # Add the parent directory to the Python path to import db_helpers
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -176,6 +177,51 @@ def handle_create_reply(req: func.HttpRequest) -> func.HttpResponse:
                 topic['replies'] = topic.get('replies', 0) + 1
                 topic['lastActivity'] = timestamp
                 container.replace_item(item=topic['id'], body=topic)
+            
+            # --- Notify topic creator about the new reply ---
+            try:
+                topic_author = (topic.get("author") or "").strip()
+                replier_email = (req_body.get("author") or "").strip()
+
+                # Do not notify if the author replies to their own topic
+                if topic_author and topic_author.lower() != replier_email.lower():
+                    # We need the users container for the helper to resolve tokens
+                    users_container = get_container("users")   # use "users" to match your other functions
+
+                    # Short preview for the notification body
+                    full_content = (req_body.get("content") or "").strip()
+                    preview = (full_content[:120] + "…") if len(full_content) > 120 else full_content
+
+                    # A friendly title using replier's display (email prefix)
+                    replier_display = replier_email.split("@")[0] if "@" in replier_email else replier_email
+                    title = f"New reply from {replier_display}"
+                    body  = preview or "Someone replied to your topic."
+
+                    # Pass deep-link data so the app can open the topic
+                    data = {
+                        "type": "forum_reply",
+                        "topicId": req_body["topicId"],
+                        "category": req_body["category"],
+                        "screen": "ForumTopic",
+                        "params": json.dumps({
+                            "topicId": req_body["topicId"],
+                            "category": req_body["category"]
+                        })
+                    }
+
+                    result = send_fcm_notification_to_user(
+                        users_container=users_container,
+                        receiver_id=topic_author,  # can be id or email; helper resolves to email
+                        title=title,
+                        body=body,
+                        data=data
+                    )
+                    logging.info(f"[Forum] Push sent to topic owner {topic_author}: {result}")
+                else:
+                    logging.info("[Forum] Skipping push: same author as replier or missing topic author.")
+            except Exception as push_err:
+                logging.warning(f"[Forum] Failed to send push to topic owner: {push_err}")
+
                 
         except Exception as e:
             logging.warning(f"Failed to update topic stats: {str(e)}")

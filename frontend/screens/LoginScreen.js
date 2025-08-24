@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useForm } from "../context/FormContext";
-import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 import ToastMessage from '../marketplace/components/ToastMessage';
 
 const LOGIN_API = 'https://usersfunctions.azurewebsites.net/api/loginUser';
@@ -27,15 +26,6 @@ export default function LoginScreen({ navigation }) {
   const [toast, setToast] = useState({ visible: false, message: '', type: 'info' });
 
   const canLogin = username.trim() && password.trim();
-
-  const setupNotifications = async (email) => {
-    try {
-      console.log('🔔 Setting up universal notifications...');
-      console.log('✅ Notifications will be setup automatically');
-    } catch (error) {
-      console.log('⚠️ Notification setup failed:', error.message);
-    }
-  };
 
   const handleLogin = async () => {
     setToast({ visible: false, message: '', type: 'info' });
@@ -61,12 +51,9 @@ export default function LoginScreen({ navigation }) {
       updateFormData('intersted', data.intersted || '');
       updateFormData('animals', data.animals || '');
       updateFormData('kids', data.kids || '');
-
-      setupNotifications(data.email);
       setLoading(false);
       navigation.navigate('Home');
     } catch (err) {
-      console.error('❌ Login error:', err);
       setLoading(false);
       setToast({ visible: true, message: err.message || 'Login failed', type: 'error' });
     }

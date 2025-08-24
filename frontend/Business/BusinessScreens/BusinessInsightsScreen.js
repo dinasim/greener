@@ -1,4 +1,3 @@
-// Business/BusinessScreens/BusinessInsightsScreen.js
 // Blue theme, robust matching (id/sku/name/scientific + fuzzy), no duplicate sections
 import React, { useState, useEffect, useRef } from 'react';
 import {
@@ -332,7 +331,7 @@ export default function BusinessInsightsScreen({ navigation, route }) {
         lowStock.push({ name: meta.name, quantity: meta.qty, minThreshold: meta.min, price: meta.price });
       }
       if (meta.qty === 0) {
-        +   outOfStock.push({
+        outOfStock.push({
           name: meta.name,
           quantity: 0,
           minThreshold: meta.min,
@@ -568,47 +567,9 @@ export default function BusinessInsightsScreen({ navigation, route }) {
     );
   };
 
-  const renderTabContent = () => {
+  // For Inventory/Customers tabs (no virtualized lists inside)
+  const renderNonSalesTabContent = () => {
     if (!data) return null;
-    if (activeTab === 'sales') {
-      // No extra chart/table redundancy. Just summary + weekday + one Top Products list
-      return (
-        <View>
-          {renderSalesSummary()}
-
-          {/* Sorter for top products inside Sales tab */}
-          <View style={[styles.sectionCard, { paddingTop: 12 }]}>
-            <View style={[styles.segment, { marginBottom: 12 }]}>
-              {[
-                { k: 'totalRevenue', label: 'Revenue' },
-                { k: 'totalSold', label: 'Sold' },
-                { k: 'recentSales', label: 'Recent' },
-                { k: 'growthRate', label: 'Growth' },
-                { k: 'averagePrice', label: 'Avg Price' },
-              ].map(opt => (
-                <TouchableOpacity
-                  key={opt.k}
-                  style={[styles.segmentBtn, salesSortBy === opt.k && styles.segmentBtnActive]}
-                  onPress={() => setSalesSortBy(opt.k)}
-                >
-                  <Text style={[styles.segmentText, salesSortBy === opt.k && styles.segmentTextActive]}>
-                    {opt.label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <TopSellingProductsList
-              businessId={bizId}
-              limit={10}
-              sortBy={salesSortBy}
-              refreshTrigger={`${timeframe}-${activeTab}-${salesSortBy}`}
-              onProductPress={(p) => navigation.navigate('BusinessProductDetailScreen', { productId: p.id, businessId: bizId })}
-            />
-          </View>
-        </View>
-      );
-    }
 
     if (activeTab === 'inventory') {
       return renderInventoryInsights();
@@ -640,6 +601,7 @@ export default function BusinessInsightsScreen({ navigation, route }) {
       );
     }
 
+    // default
     return null;
   };
 
@@ -735,23 +697,79 @@ export default function BusinessInsightsScreen({ navigation, route }) {
         </View>
 
         {/* Content */}
-        <ScrollView
-          style={styles.scrollView}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-          showsVerticalScrollIndicator={false}
-        >
-          <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>
-            {data.fromCache && (
-              <View style={styles.cacheNotice}>
-                <MaterialIcons name="info-outline" size={16} color={WARN} />
-                <Text style={styles.cacheText}>
-                  Showing cached data from {new Date(data.generatedAt).toLocaleString()}
-                </Text>
-              </View>
-            )}
-            {renderTabContent()}
-          </Animated.View>
-        </ScrollView>
+        {activeTab === 'sales' ? (
+          <TopSellingProductsList
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 16 }}
+            businessId={bizId}
+            limit={10}
+            sortBy={salesSortBy}
+            refreshTrigger={`${timeframe}-${activeTab}-${salesSortBy}`}
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            onProductPress={(p) =>
+              navigation.navigate('BusinessProductDetailScreen', { productId: p.id, businessId: bizId })
+            }
+            // 👇 everything above the list now scrolls together as the list's header
+            ListHeaderComponent={
+              <Animated.View style={{ opacity: fadeAnim, paddingTop: 16, paddingBottom: 0 }}>
+                {data.fromCache && (
+                  <View style={styles.cacheNotice}>
+                    <MaterialIcons name="info-outline" size={16} color={WARN} />
+                    <Text style={styles.cacheText}>
+                      Showing cached data from {new Date(data.generatedAt).toLocaleString()}
+                    </Text>
+                  </View>
+                )}
+
+                {renderSalesSummary()}
+
+                <View style={[styles.sectionCard, { paddingTop: 12 }]}>
+                  <View style={[styles.segment, { marginBottom: 12 }]}>
+                    {[
+                      { k: 'totalRevenue', label: 'Revenue' },
+                      { k: 'totalSold', label: 'Sold' },
+                      { k: 'recentSales', label: 'Recent' },
+                      { k: 'growthRate', label: 'Growth' },
+                      { k: 'averagePrice', label: 'Avg Price' },
+                    ].map(opt => (
+                      <TouchableOpacity
+                        key={opt.k}
+                        style={[styles.segmentBtn, salesSortBy === opt.k && styles.segmentBtnActive]}
+                        onPress={() => setSalesSortBy(opt.k)}
+                      >
+                        <Text style={[styles.segmentText, salesSortBy === opt.k && styles.segmentTextActive]}>
+                          {opt.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              </Animated.View>
+            }
+          />
+        ) : (
+          /* (keep your ScrollView code for the other tabs) */
+          <ScrollView
+            style={styles.scrollView}
+            refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
+            <Animated.View style={{ opacity: fadeAnim, padding: 16 }}>
+              {data.fromCache && (
+                <View style={styles.cacheNotice}>
+                  <MaterialIcons name="info-outline" size={16} color={WARN} />
+                  <Text style={styles.cacheText}>
+                    Showing cached data from {new Date(data.generatedAt).toLocaleString()}
+                  </Text>
+                </View>
+              )}
+              {renderNonSalesTabContent()}
+            </Animated.View>
+          </ScrollView>
+        )}
+
       </SafeAreaView>
     </BusinessLayout>
   );

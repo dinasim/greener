@@ -179,11 +179,16 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
             return create_error_response("Failed to create message", 500)
         
         # Send notification to receiver (non-critical)
+        # Send notification to receiver (non-critical)
         try:
+            # Friendly title/body
             plant_name = conversation.get('plantName', 'a plant')
             notification_title = f"New message from {sender_name}"
-            notification_body = f"About {plant_name}: {initial_message[:100]}{'...' if len(initial_message) > 100 else ''}"
-            
+            notification_body = (
+                f"About {plant_name}: {initial_message[:100]}{'...' if len(initial_message) > 100 else ''}"
+            )
+
+            # Keep payload shape aligned with send-message so the app deep-links consistently
             notification_data = {
                 'type': 'marketplace_message',
                 'conversationId': conversation_id,
@@ -192,17 +197,24 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                 'screen': 'MessagesScreen',
                 'params': json.dumps({
                     'conversationId': conversation_id,
-                    'sellerId': receiver_id
+                    # If your conversation has a sellerId field, keep the same rule used in send-message:
+                    # it should resolve to the seller's user id, not just "who to notify".
+                    'sellerId': sender_id if conversation.get('sellerId') == sender_id else receiver_id
                 })
             }
-            
-            send_fcm_notification_to_user(
-                users_container, 
-                receiver_id, 
-                notification_title, 
-                notification_body, 
-                notification_data
-            )
+
+            # Safety: don't notify yourself (shouldn't happen because we validated earlier)
+            if sender_id.lower() != receiver_id.lower():
+                send_fcm_notification_to_user(
+                    users_container,
+                    receiver_id,
+                    notification_title,
+                    notification_body,
+                    notification_data
+                )
+        except Exception as notification_error:
+            logging.warning(f"Error sending notification: {str(notification_error)}")
+
             
         except Exception as notification_error:
             logging.warning(f"Error sending notification: {str(notification_error)}")

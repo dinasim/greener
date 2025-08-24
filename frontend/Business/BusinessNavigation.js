@@ -21,9 +21,6 @@ import BusinessSettingsScreen from './BusinessScreens/BusinessSettingsScreen';
 import AddInventoryScreen from './BusinessScreens/AddInventoryScreen';
 import CreateOrderScreen from './BusinessScreens/CreateOrderScreen';
 import BusinessProductDetailScreen from './BusinessScreens/BusinessProductDetailScreen';
-import GPSWateringNavigator from './BusinessScreens/GPSWateringNavigator';
-import NotificationCenterScreen from './BusinessScreens/NotificationCenterScreen';
-import NotificationSettingsScreen from './BusinessScreens/NotificationSettingsScreen';
 import CustomerListScreen from './BusinessScreens/CustomerListScreen';
 import PlantCareForumScreen from '../screens/PlantCareForumScreen';
 
@@ -32,7 +29,6 @@ import BusinessWeatherScreen from './BusinessScreens/BusinessWeatherScreen';
 import BusinessCustomersScreen from './BusinessScreens/BusinessCustomersScreen';
 
 // Import the missing screens that exist but weren't imported
-import BusinessNotificationsScreen from './BusinessScreens/BusinessNotificationsScreen';
 import BusinessInsightsScreen from './BusinessScreens/BusinessInsightsScreen';
 
 const Stack = createNativeStackNavigator();
@@ -176,28 +172,7 @@ const BusinessNavigation = () => {
         options={{ title: 'Customers' }}
       />
 
-      <Stack.Screen
-        name="GPSWateringNavigator"
-        component={GPSWateringNavigator}
-        options={{ title: 'GPS Navigation' }}
-      />
 
-      {/* Notifications */}
-      <Stack.Screen
-        name="NotificationCenterScreen"
-        component={NotificationCenterScreen}
-        options={{ title: 'Notifications' }}
-      />
-      <Stack.Screen
-        name="NotificationSettingsScreen"
-        component={NotificationSettingsScreen}
-        options={{ title: 'Notification Settings' }}
-      />
-      <Stack.Screen
-        name="BusinessNotificationsScreen"
-        component={BusinessNotificationsScreen}
-        options={{ title: 'Business Notifications' }}
-      />
 
       {/* Forum */}
       <Stack.Screen

@@ -12,6 +12,7 @@ import {
   Alert,
   Linking,
   Modal,
+  Platform
 } from 'react-native';
 import {
   MaterialCommunityIcons,
@@ -20,7 +21,7 @@ import {
 } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
-
+import { ensureChatFCMOnce } from '../../notifications/chatFCMSetup';
 // ✅ Layout wrapper (ensures the bottom BusinessNavigationBar is shown)
 import BusinessLayout from '../components/BusinessLayout';
 
@@ -29,8 +30,6 @@ import KPIWidget from '../components/KPIWidget';
 import BusinessDashboardCharts from '../components/BusinessDashboardCharts';
 import TopSellingProductsList from '../components/TopSellingProductsList';
 import OrderDetailModal from '../components/OrderDetailModal';
-// 🔕 removed NotificationManager to avoid watering popups in business mode
-// import { useNotificationManager } from '../components/NotificationManager';
 import { getBusinessDashboard } from '../services/businessApi';
 
 // ⤵️ Path to AI screen (we're inside screens/Business/BusinessScreens)
@@ -74,7 +73,14 @@ export default function BusinessHomeScreen({ navigation }) {
 
     initializeBusinessId();
   }, []);
-
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!businessId) return;               // wait until AsyncStorage loads it
+    (async () => {
+      const tok = await ensureChatFCMOnce(businessId);
+      console.log('[FCM] Home(business) token', tok ? tok.slice(0, 16) + '...' : 'none');
+    })();
+  }, [businessId]);
   const loadDashboardData = async () => {
     if (refreshing) return;
     setIsLoading(!dashboardData);
@@ -400,42 +406,34 @@ export default function BusinessHomeScreen({ navigation }) {
         <KPIWidget
           title="Total Revenue"
           value={metrics.totalSales}
-          change={metrics.revenueGrowth}
           icon="cash"
           format="currency"
           color="#216a94"
-          onPress={handleInsights}
         />
 
         <KPIWidget
           title="Today's Sales"
           value={metrics.salesToday}
-          change={metrics.dailyGrowth}
           icon="trending-up"
           format="currency"
           color="#4CAF50"
-          onPress={handleInsights}
         />
 
         <KPIWidget
           title="New Orders"
           value={metrics.newOrders}
-          change={metrics.orderGrowth}
           icon="cart"
           format="number"
           color="#FF9800"
-          onPress={handleOrders}
           trend={metrics.newOrders > 0 ? 'up' : 'neutral'}
         />
 
         <KPIWidget
           title="Low Stock"
           value={metrics.lowStockItems}
-          change={metrics.stockChange}
           icon="alert-circle"
           format="number"
           color={metrics.lowStockItems > 0 ? '#F44336' : '#9E9E9E'}
-          onPress={handleInventory}
           trend={metrics.lowStockItems > 0 ? 'down' : 'neutral'}
         />
       </View>

@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useUniversalNotifications } from '../hooks/useUniversalNotifications';
 import {
   getWeatherData,
   generateWateringAdvice,
@@ -23,7 +22,7 @@ import {
 import SmartPlantCareAssistant from '../components/ai/SmartPlantCareAssistant';
 import { useCurrentUserType } from '../utils/authUtils';
 import NavigationBar from '../components/NavigationBar';
-
+import { ensureChatFCMOnce } from '../notifications/chatFCMSetup';
 const { width } = Dimensions.get('window');
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
 
@@ -121,8 +120,6 @@ export default function HomeScreen({ navigation }) {
   const [fabOpen, setFabOpen] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useUniversalNotifications(userEmail);
-
   // Weather data loading
   const loadWeatherData = async (silent = false) => {
     try {
@@ -169,6 +166,15 @@ export default function HomeScreen({ navigation }) {
       useNativeDriver: Platform.OS !== 'web',
     }).start();
   }, []);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    if (!userEmail) return; // wait until AsyncStorage loads
+    (async () => {
+      const tok = await ensureChatFCMOnce(userEmail);
+      console.log('[FCM] Home(private) token', tok ? tok.slice(0, 16) + '...' : 'none');
+    })();
+  }, [userEmail]);
 
   useEffect(() => {
     let mounted = true;

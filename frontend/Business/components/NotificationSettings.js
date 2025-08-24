@@ -13,7 +13,6 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useUniversalNotifications } from '../../hooks/useUniversalNotifications';
 
 export default function NotificationSettings({ visible, onClose }) {
   const [enableNotifications, setEnableNotifications] = useState(false);
@@ -23,16 +22,6 @@ export default function NotificationSettings({ visible, onClose }) {
   const [isSaving, setIsSaving] = useState(false);
   const [businessId, setBusinessId] = useState(null);
 
-  // Use universal notifications hook
-  const {
-    isInitialized,
-    hasPermission,
-    token,
-    initialize,
-    registerForWateringNotifications,
-    sendTestNotification,
-    getNotificationInfo
-  } = useUniversalNotifications(businessId);
 
   useEffect(() => {
     initializeSettings();

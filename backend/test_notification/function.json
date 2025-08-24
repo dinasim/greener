@@ -1,20 +1,13 @@
 {
-    "scriptFile": "__init__.py",
-    "bindings": [
-      {
-        "authLevel": "function",
-        "type": "httpTrigger",
-        "direction": "in",
-        "name": "req",
-        "methods": [
-          "post"
-        ],
-        "route": "business/test-notification"
-      },
-      {
-        "type": "http",
-        "direction": "out",
-        "name": "$return"
-      }
-    ]
-  }
+  "bindings": [
+    {
+      "authLevel": "anonymous",
+      "type": "httpTrigger",
+      "direction": "in",
+      "name": "req",
+      "methods": ["post", "options"],
+      "route": "sendTestPush"
+    },
+    { "type": "http", "direction": "out", "name": "$return" }
+  ]
+}
