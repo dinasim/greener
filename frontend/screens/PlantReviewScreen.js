@@ -9,13 +9,13 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
-  Platform,
+  SafeAreaView,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useForm } from '../context/FormContext';
-import MainLayout from '../components/MainLayout'; // <--- ADDED
+import MainLayout from '../components/MainLayout';
 
 // Helper: upload photo to Azure Blob Storage via your backend
 async function uploadPlantPhotoToAzure(uri) {
@@ -46,8 +46,7 @@ function normalizeId(email, nickname) {
 }
 
 export default function PlantReviewScreen({ route, navigation }) {
-  // Plant info passed from AddPlantScreen
-  const { plant } = route.params || {};
+  const { plant, source } = route.params || {};
   const { formData } = useForm();
   const userEmail = formData?.email;
 
@@ -56,7 +55,6 @@ export default function PlantReviewScreen({ route, navigation }) {
   const [photoUri, setPhotoUri] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // For date pickers
   const [showWatered, setShowWatered] = useState(false);
   const [showFed, setShowFed] = useState(false);
   const [showRepotted, setShowRepotted] = useState(false);
@@ -64,16 +62,6 @@ export default function PlantReviewScreen({ route, navigation }) {
   const [lastFed, setLastFed] = useState(null);
   const [lastRepotted, setLastRepotted] = useState(null);
 
-  // Tab handler for the nav bar
-  const handleTabPress = (tab) => {
-    if (tab === 'home') navigation.navigate('Home');
-    else if (tab === 'plants') navigation.navigate('Locations');
-    else if (tab === 'marketplace') navigation.navigate('MainTabs');
-    else if (tab === 'forum') navigation.navigate('PlantCareForumScreen');
-    else if (tab === 'disease') navigation.navigate('DiseaseChecker');
-  };
-
-  // Pick custom user photo
   const handlePhotoPick = async () => {
     let perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -85,7 +73,6 @@ export default function PlantReviewScreen({ route, navigation }) {
     setPhotoUri(res.uri || res.assets[0].uri);
   };
 
-  // Format date to readable string
   function formatDate(d) {
     if (!d) return 'Today';
     try {
@@ -95,16 +82,16 @@ export default function PlantReviewScreen({ route, navigation }) {
     }
   }
 
-  // Save to backend (Cosmos + upload)
   const handleSave = async () => {
     if (!nickname.trim() || !location.trim()) {
-      Alert.alert("Required", "Please enter a nickname and location.");
+      Alert.alert('Required', 'Please enter a nickname and location.');
       return;
     }
     if (!userEmail) {
-      Alert.alert("Error", "User email not found. Please sign in again.");
+      Alert.alert('Error', 'User email not found. Please sign in again.');
       return;
     }
+
     setLoading(true);
     try {
       let uploadedUrl = '';
@@ -112,31 +99,60 @@ export default function PlantReviewScreen({ route, navigation }) {
         uploadedUrl = await uploadPlantPhotoToAzure(photoUri);
       }
 
-      // Compose plant record using new data format
-      const id = normalizeId(userEmail, nickname); // normalized, deterministic!
+      const id = normalizeId(userEmail, nickname);
+
+      // Always provide a name to backend
+      const nameForSave =
+        (plant.common_name && String(plant.common_name).trim()) ||
+        (plant.scientific_name && String(plant.scientific_name).trim()) ||
+        'Unknown plant';
+
+      // Build nested care_info / schedule if missing on plant
+      const care_info =
+        (plant.care_info && Object.keys(plant.care_info).length > 0)
+          ? plant.care_info
+          : {
+              light: plant.sunlight ?? plant.shade ?? 'Unknown',
+              humidity: plant.humidity ?? 'Unknown',
+              temperature_min_c: plant.temperature_min_c ?? null,
+              temperature_max_c: plant.temperature_max_c ?? null,
+              pets: plant.pets ?? 'unknown',
+              difficulty: (typeof plant.care_difficulty === 'number') ? plant.care_difficulty : null,
+            };
+
+      const schedule =
+        (plant.schedule && (plant.schedule.water || plant.schedule.feed || plant.schedule.repot))
+          ? plant.schedule
+          : {
+              water:
+                (typeof plant.avg_watering === 'number' && plant.avg_watering > 0)
+                  ? { amount: plant.avg_watering, unit: 'day' }
+                  : null,
+              feed: null,
+              repot: null,
+            };
 
       const payload = {
         id,
         email: userEmail,
         nickname,
         location,
-        common_name: plant.common_name,
-        scientific_name: plant.scientific_name,
-        image_url: uploadedUrl || plant.image_url || plant.image_urls?.[0] || "",
-        care_info: plant.care_info || {},
-        schedule: plant.schedule || {},
-        family: plant.family || "",
-        care_tips: plant.care_tips || "",
+        common_name: plant.common_name || nameForSave,
+        scientific_name: plant.scientific_name || nameForSave,
+        image_url: uploadedUrl || plant.image_url || plant.image_urls?.[0] || '',
+        care_info,
+        schedule,
+        family: plant.family || '',
+        care_tips: plant.care_tips || '',
         common_problems: plant.common_problems || [],
-        origin: plant.origin || "",
+        origin: plant.origin || '',
         avg_watering: plant.avg_watering || 0,
-        // Date fields for backend logic
         last_watered: lastWatered,
         last_fed: lastFed,
         last_repotted: lastRepotted,
+        source: source || plant?.source || 'manual',
       };
 
-      // Save to backend
       const apiRes = await fetch('https://usersfunctions.azurewebsites.net/api/userplants/add', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -155,29 +171,29 @@ export default function PlantReviewScreen({ route, navigation }) {
   return (
     <MainLayout currentTab="plants" navigation={navigation}>
       <ScrollView contentContainerStyle={{ paddingBottom: 60 }}>
-        {/* Back Button */}
         <TouchableOpacity style={styles.backBtn} onPress={() => navigation.goBack()}>
           <Ionicons name="arrow-back" size={24} color="#2e7d32" />
-          <Text style={{ color: "#2e7d32", marginLeft: 7, fontWeight: "bold", fontSize: 17 }}>Back</Text>
+          <Text style={{ color: '#2e7d32', marginLeft: 7, fontWeight: 'bold', fontSize: 17 }}>Back</Text>
         </TouchableOpacity>
 
         <Text style={styles.header}>Review Plant</Text>
-        {/* Plant Image */}
+
         <Image
           source={{
             uri:
               photoUri ||
               plant.image_url ||
               (plant.image_urls && plant.image_urls[0]) ||
-              "https://www.pngitem.com/pimgs/m/113-1136906_transparent-background-plant-pot-png-png-download.png"
+              'https://www.pngitem.com/pimgs/m/113-1136906_transparent-background-plant-pot-png-png-download.png',
           }}
           style={styles.image}
         />
 
         <Text style={styles.label}>Plant Name</Text>
-        <Text style={styles.value}>{plant.common_name || plant.scientific_name}</Text>
+        <Text style={styles.value}>{plant.common_name || plant.scientific_name || '—'}</Text>
+
         <Text style={styles.label}>Scientific Name</Text>
-        <Text style={styles.value}>{plant.scientific_name || "—"}</Text>
+        <Text style={styles.value}>{plant.scientific_name || '—'}</Text>
 
         <Text style={styles.label}>Nickname</Text>
         <TextInput
@@ -195,10 +211,9 @@ export default function PlantReviewScreen({ route, navigation }) {
           placeholder="E.g. Living Room"
         />
 
-        {/* Last Watered */}
         <Text style={styles.label}>Last Watered</Text>
         <TouchableOpacity style={styles.input} onPress={() => setShowWatered(true)}>
-          <Text>{lastWatered ? formatDate(lastWatered) : "Today"}</Text>
+          <Text>{lastWatered ? formatDate(lastWatered) : 'Today'}</Text>
         </TouchableOpacity>
         {showWatered && (
           <DateTimePicker
@@ -212,10 +227,9 @@ export default function PlantReviewScreen({ route, navigation }) {
           />
         )}
 
-        {/* Last Fed */}
         <Text style={styles.label}>Last Fed</Text>
         <TouchableOpacity style={styles.input} onPress={() => setShowFed(true)}>
-          <Text>{lastFed ? formatDate(lastFed) : "Today"}</Text>
+          <Text>{lastFed ? formatDate(lastFed) : 'Today'}</Text>
         </TouchableOpacity>
         {showFed && (
           <DateTimePicker
@@ -229,10 +243,9 @@ export default function PlantReviewScreen({ route, navigation }) {
           />
         )}
 
-        {/* Last Repotted */}
         <Text style={styles.label}>Last Repotted</Text>
         <TouchableOpacity style={styles.input} onPress={() => setShowRepotted(true)}>
-          <Text>{lastRepotted ? formatDate(lastRepotted) : "Today"}</Text>
+          <Text>{lastRepotted ? formatDate(lastRepotted) : 'Today'}</Text>
         </TouchableOpacity>
         {showRepotted && (
           <DateTimePicker
@@ -264,14 +277,14 @@ export default function PlantReviewScreen({ route, navigation }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f4fff4', padding: 22 },
   backBtn: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  header: { fontSize: 25, fontWeight: "bold", marginBottom: 14, color: "#205d29" },
+  header: { fontSize: 25, fontWeight: 'bold', marginBottom: 14, color: '#205d29' },
   image: { width: 130, height: 130, borderRadius: 14, marginBottom: 16, alignSelf: 'center' },
-  label: { fontWeight: "bold", marginTop: 8, marginBottom: 3, color: "#222" },
-  value: { marginBottom: 5, fontSize: 15, color: "#444" },
-  input: { borderWidth: 1, borderColor: "#b7e2cd", borderRadius: 9, padding: 8, fontSize: 16, marginBottom: 8 },
-  uploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: "#43a047", borderRadius: 7, padding: 9, marginTop: 8, width: 130 },
-  uploadBtnText: { color: "#fff", marginLeft: 7, fontWeight: "bold" },
+  label: { fontWeight: 'bold', marginTop: 8, marginBottom: 3, color: '#222' },
+  value: { marginBottom: 5, fontSize: 15, color: '#444' },
+  input: { borderWidth: 1, borderColor: '#b7e2cd', borderRadius: 9, padding: 8, fontSize: 16, marginBottom: 8 },
+  uploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#43a047', borderRadius: 7, padding: 9, marginTop: 8, width: 130 },
+  uploadBtnText: { color: '#fff', marginLeft: 7, fontWeight: 'bold' },
   imagePreview: { width: 100, height: 100, borderRadius: 9, marginVertical: 10, alignSelf: 'center' },
-  saveBtn: { backgroundColor: "#2e7d32", borderRadius: 8, padding: 13, alignItems: "center", marginTop: 18 },
-  saveBtnText: { color: "#fff", fontWeight: "bold", fontSize: 17 },
+  saveBtn: { backgroundColor: '#2e7d32', borderRadius: 8, padding: 13, alignItems: 'center', marginTop: 18 },
+  saveBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 17 },
 });

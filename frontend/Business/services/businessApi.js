@@ -766,7 +766,7 @@ export const updateInventoryItem = async (inventoryId, updateData) => {
       mainImage: updateData.mainImage || updateData.imageUrls?.[0] || updateData.images?.[0],
     };
 
-    const url = `${API_BASE_URL}/business-inventory-update`;
+    const url = `${API_BASE_URL}/business/inventory/`;
     const response = await apiRequest(url, {
       method: 'POST',
       headers,

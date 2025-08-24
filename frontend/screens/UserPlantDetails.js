@@ -15,6 +15,7 @@ import { Ionicons, MaterialCommunityIcons, MaterialIcons } from '@expo/vector-ic
 import MainLayout from '../components/MainLayout';
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
+const DELETE_URL = 'https://usersfunctions.azurewebsites.net/api/userplants/delete';
 
 function daysUntil(dateStr) {
   if (!dateStr) return '?';
@@ -38,6 +39,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
   const { plant: passedPlant, plantId } = route.params || {};
   const [plant, setPlant] = useState(passedPlant || null);
   const [loading, setLoading] = useState(!passedPlant);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!plant && plantId) {
@@ -50,9 +52,49 @@ export default function UserPlantDetailScreen({ route, navigation }) {
     }
   }, [plantId]);
 
+  const canDelete = Boolean(plant?.id && plant?.email);
+
+  const confirmDelete = () => {
+    if (!canDelete) return;
+    Alert.alert(
+      'Remove plant',
+      'This will remove the plant from your collection. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Delete', style: 'destructive', onPress: handleDelete },
+      ]
+    );
+  };
+
+  const handleDelete = async () => {
+    if (!canDelete) return;
+    try {
+      setDeleting(true);
+      const resp = await fetch(DELETE_URL, {
+        method: 'POST', // your function accepts POST/DELETE
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: plant.id,
+          email: plant.email,
+          location: plant.location || undefined, // helps clean location index
+        }),
+      });
+      if (!resp.ok) {
+        const txt = await resp.text();
+        throw new Error(txt || 'Delete failed');
+      }
+      Alert.alert('Deleted', 'Plant removed from your collection.');
+      navigation.navigate('Locations');
+    } catch (e) {
+      Alert.alert('Error', e.message || String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (loading || !plant) {
     return (
-      <MainLayout currentTab="plants" navigation={navigation}> 
+      <MainLayout currentTab="plants" navigation={navigation}>
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f7f7fa' }}>
           <ActivityIndicator size="large" color="#4caf50" />
           <Text style={{ marginTop: 18 }}>Loading plant info…</Text>
@@ -100,23 +142,18 @@ export default function UserPlantDetailScreen({ route, navigation }) {
 
   async function markTaskDone(key) {
     try {
-      console.log('Making request to markTaskDone with:', { id: plant.id, email: plant.email, task: key });
       const res = await fetch('https://usersfunctions.azurewebsites.net/api/markTaskDone', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: plant.id, email: plant.email, task: key, date: new Date().toISOString() }),
       });
-      console.log('Response status:', res.status);
-      console.log('Response URL:', res.url);
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('Error response body:', errorText);
         throw new Error(`HTTP ${res.status}: ${errorText}`);
       }
       const updated = await res.json();
       setPlant(updated);
     } catch (err) {
-      console.error('Full error object:', err);
       Alert.alert("Error", "Failed to update task: " + err.message);
     }
   }
@@ -128,8 +165,22 @@ export default function UserPlantDetailScreen({ route, navigation }) {
           <Ionicons name="arrow-back" size={26} color="#2e7d32" />
           <Text style={{ color: "#2e7d32", fontWeight: "bold", marginLeft: 6, fontSize: 16 }}>Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{plant.nickname || plant.common_name}</Text>
-        <View style={{ width: 34 }} />
+
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          {plant.nickname || plant.common_name}
+        </Text>
+
+        {canDelete ? (
+          <TouchableOpacity onPress={confirmDelete} disabled={deleting} style={styles.deleteBtn}>
+            {deleting ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Ionicons name="trash" size={20} color="#fff" />
+            )}
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 34 }} />
+        )}
       </View>
 
       <ScrollView contentContainerStyle={{ paddingBottom: 90 }}>
@@ -145,19 +196,16 @@ export default function UserPlantDetailScreen({ route, navigation }) {
 
         {/* Task summary row */}
         <View style={styles.tasksRow}>
-          {actions.map((act, idx) => {
+          {actions.map((act) => {
             let status = '';
             let statusColor = act.color;
             const days = parseInt(act.days);
-            if (days < 0) {
-              status = `${Math.abs(days)}d late`;
-              statusColor = "#D90429";
-            } else if (days === 0) {
-              status = "Today";
-              statusColor = "#e68c29";
+            if (Number.isFinite(days)) {
+              if (days < 0) { status = `${Math.abs(days)}d late`; statusColor = "#D90429"; }
+              else if (days === 0) { status = "Today"; statusColor = "#e68c29"; }
+              else { status = `in ${days}d`; }
             } else {
-              status = `in ${days}d`;
-              statusColor = act.color;
+              status = '—';
             }
             return (
               <View key={act.key} style={styles.kpiCard}>
@@ -267,6 +315,7 @@ export default function UserPlantDetailScreen({ route, navigation }) {
     </MainLayout>
   );
 }
+
 const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
@@ -286,13 +335,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#e6f4ea",
     alignSelf: 'flex-start'
   },
-  headerTitle: { fontWeight: 'bold', fontSize: 21, color: "#205d29" },
-  heroBox: {
+  headerTitle: { fontWeight: 'bold', fontSize: 21, color: "#205d29", flex: 1, textAlign: 'center' },
+  deleteBtn: {
+    backgroundColor: '#d32f2f',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    minWidth: 34,
     alignItems: 'center',
-    marginTop: 10,
-    marginBottom: 12,
-    paddingBottom: 2,
+    justifyContent: 'center'
   },
+
+  heroBox: { alignItems: 'center', marginTop: 10, marginBottom: 12, paddingBottom: 2 },
   image: { width: 122, height: 122, borderRadius: 16, borderWidth: 2, borderColor: "#e0f2f1", marginBottom: 7 },
   name: { fontSize: 25, fontWeight: "bold", marginTop: 6, marginBottom: 3, color: "#205d29", textAlign: 'center' },
   scientific: { fontStyle: 'italic', fontSize: 15, color: "#666", textAlign: 'center', marginBottom: 6 },
@@ -310,14 +364,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     elevation: 2,
   },
-  kpiCard: {
-    alignItems: "center",
-    flex: 1,
-    paddingHorizontal: 2,
-    marginHorizontal: 4,
-    minWidth: 90,
-    maxWidth: 130,
-  },
+  kpiCard: { alignItems: "center", flex: 1, paddingHorizontal: 2, marginHorizontal: 4, minWidth: 90, maxWidth: 130 },
   kpiIconCircle: {
     width: 38, height: 38, borderRadius: 19, borderWidth: 2,
     alignItems: "center", justifyContent: "center", marginBottom: 4, backgroundColor: "#f7fff9"

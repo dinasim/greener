@@ -561,6 +561,25 @@ export async function getSpecific(productId) {
     return null;
   }
 }
+export const updateProductPrice = async (productId, newPrice) => {
+  if (!productId) throw new Error('Product ID is required');
+  const price = Number(newPrice);
+  if (!Number.isFinite(price) || price < 0) throw new Error('Invalid price');
+
+  // Preferred: price patch endpoint
+  try {
+    return await apiRequest(`marketplace/products/${encodeURIComponent(productId)}/price`, {
+      method: 'PATCH',
+      body: JSON.stringify({ price }),
+    });
+  } catch (e) {
+    // Fallback: generic update if your backend only supports PUT /marketplace/products/{id}
+    return apiRequest(`marketplace/products/${encodeURIComponent(productId)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ price }),
+    });
+  }
+};
 
 export const wishProduct = async (productId) => {
   if (!productId) throw new Error('Product ID is required');
@@ -601,9 +620,12 @@ export const deleteProduct = async (productId) => {
   return apiRequest(`marketplace/products/${productId}`, { method: 'DELETE' });
 };
 
-export const markAsSold = async (productId) => {
-  if (!productId) throw new Error('Product ID is required');
-  return apiRequest(`marketplace/products/${productId}/sold`, { method: 'PATCH' });
+export const markAsSold = async (productId, { buyerId = null, notes = '' } = {}) => {
+ if (!productId) throw new Error('Product ID is required');
+ return apiRequest(`marketplace/products/${encodeURIComponent(productId)}/sold`, {
+      method: 'POST',
+       body: JSON.stringify({ buyerId, notes })
+  });
 };
 
 export const clearMarketplaceCache = () => {
@@ -798,20 +820,29 @@ export const speechToText = async (audioUrl, language = 'en-US') => {
 
 // ----------------------------
 // Business purchase
+// services/marketplaceApi.js
 export async function purchaseBusinessProduct(productId, businessId, quantity = 1, customerInfo) {
-  return apiRequest('business-order-create', {
-    method: 'POST',
-    body: JSON.stringify({
-      businessId,
-      customerEmail: customerInfo.email,
-      customerName: customerInfo.name,
-      customerPhone: customerInfo.phone || '',
-      items: [{ id: productId, quantity }],
-      notes: customerInfo.notes || '',
-      communicationPreference: 'messages',
-    }),
-  });
+  const body = {
+    businessId,
+    customerEmail: customerInfo.email,
+    customerName: customerInfo.name,
+    customerPhone: customerInfo.phone || '',
+    items: [{ id: productId, quantity: Number(quantity) }],
+    notes: customerInfo.notes || '',
+    communicationPreference: 'messages',
+  };
+
+  // Primary: correct route per your function.json
+  try {
+    return await apiRequest('business/orders/create', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw err;
+  }
 }
+
 
 // ----------------------------
 // Location & Maps
@@ -1142,6 +1173,7 @@ export default {
   deleteProduct,
   markAsSold,
   wishProduct,
+  updateProductPrice,
 
   // User
   fetchUserProfile,

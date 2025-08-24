@@ -479,12 +479,6 @@ export default function BusinessHomeScreen({ navigation }) {
       <TopSellingProductsList
         businessId={businessId}
         timeframe="month"
-        onProductPress={(product) =>
-          navigation.navigate('BusinessProductDetailScreen', {
-            productId: product.id,
-            businessId,
-          })
-        }
         limit={5}
       />
 

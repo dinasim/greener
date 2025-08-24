@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   TextInput,
   RefreshControl,
+  Platform,
 } from 'react-native';
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -57,7 +58,6 @@ export default function BusinessInventoryScreen({ navigation, route }) {
       else if (res?.inventory) items = res.inventory;
       else if (res?.data) items = res.data;
 
-      // Normalize + filter out inactive
       items = (items || [])
         .filter((i) => (i?.status || 'active') === 'active')
         .map((i) => ({
@@ -99,9 +99,7 @@ export default function BusinessInventoryScreen({ navigation, route }) {
 
   const sections = useMemo(() => {
     const grouped = groupBy(filtered, (i) => i.category || 'Uncategorized');
-    // sort categories by name
     grouped.sort((a, b) => a.title.localeCompare(b.title));
-    // sort items within each category by name
     grouped.forEach((s) => s.data.sort((a, b) => a.name.localeCompare(b.name)));
     return grouped;
   }, [filtered]);
@@ -125,17 +123,17 @@ export default function BusinessInventoryScreen({ navigation, route }) {
   const renderItem = ({ item }) => (
     <TouchableOpacity
       style={styles.itemRow}
-      activeOpacity={0.7}
+      activeOpacity={0.75}
       onPress={() => {
-        // navigate to edit/details if you have it
         navigation.navigate?.('EditProductScreen', { product: item.raw });
       }}
     >
+      {/* fixed-width gutter keeps rows aligned */}
       <View style={styles.itemLeftGutter}>
         <MaterialCommunityIcons
           name={item.category?.toLowerCase().includes('plant') ? 'leaf' : 'cube-outline'}
-          size={20}
-          color="#4CAF50"
+          size={22}
+          color="#2e7d32"
         />
       </View>
 
@@ -149,7 +147,7 @@ export default function BusinessInventoryScreen({ navigation, route }) {
           </Text>
         )}
 
-        {/* THE IMPORTANT BIT: single-line price + stock row */}
+        {/* single, stable line for price + stock */}
         <View style={styles.metaRow}>
           <Text style={styles.metaPrice} numberOfLines={1}>
             ₪{item.price.toFixed(2)}
@@ -160,7 +158,9 @@ export default function BusinessInventoryScreen({ navigation, route }) {
         </View>
       </View>
 
-      <MaterialIcons name="chevron-right" size={22} color="#c0c6cc" />
+      <View style={styles.chevronHitbox}>
+        <MaterialIcons name="chevron-right" size={22} color="#b0bac5" />
+      </View>
     </TouchableOpacity>
   );
 
@@ -194,13 +194,14 @@ export default function BusinessInventoryScreen({ navigation, route }) {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search name, scientific name, or category…"
+          placeholder="Search products…"
           placeholderTextColor="#a0aec0"
           style={styles.searchInput}
+          returnKeyType="search"
         />
         {!!search && (
-          <TouchableOpacity onPress={() => setSearch('')}>
-            <MaterialIcons name="close" size={18} color="#a0aec0" />
+          <TouchableOpacity onPress={() => setSearch('')} style={styles.clearBtn}>
+            <MaterialIcons name="close" size={18} color="#8fa1b3" />
           </TouchableOpacity>
         )}
       </View>
@@ -238,47 +239,68 @@ export default function BusinessInventoryScreen({ navigation, route }) {
   );
 }
 
+/* ==== Design tokens (keeps proportions consistent) ==== */
+const RADIUS = 12;
+const PAD = 12;
+const GAP = 8;
+const ROW_MIN_HEIGHT = 76; // stable visual rhythm
+const CONTROL = 44;        // touch target (search/header buttons)
+
+const isWeb = Platform.OS === 'web';
+
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#f5f7fa' },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   loadingText: { marginTop: 12, color: '#667085' },
 
+  /* Header */
   header: {
     backgroundColor: '#fff',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    height: 56,
     borderBottomWidth: 1,
     borderBottomColor: '#edf2f7',
   },
   headerBtn: {
-    padding: 8,
+    width: CONTROL,
+    height: CONTROL,
     borderRadius: 10,
     backgroundColor: '#eef5f9',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
     color: '#216a94',
-    fontWeight: '700',
+    fontWeight: '800',
     fontSize: 18,
   },
 
+  /* Search */
   searchBar: {
-    margin: 12,
+    marginHorizontal: 12,
+    marginTop: 10,
+    marginBottom: 6,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 12,
+    height: CONTROL,
+    borderRadius: RADIUS,
     backgroundColor: '#ffffff',
     borderWidth: 1,
     borderColor: '#e2e8f0',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: GAP,
+    ...(isWeb
+      ? { boxShadow: '0 1px 2px rgba(16,24,40,0.05)' }
+      : { elevation: 1, shadowColor: '#000', shadowOpacity: 0.05, shadowOffset: { width: 0, height: 1 }, shadowRadius: 2 }),
   },
-  searchInput: { flex: 1, color: '#1f2937', fontSize: 15 },
+  searchInput: { flex: 1, color: '#1f2937', fontSize: 15, paddingVertical: 0 },
+  clearBtn: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
 
+  /* Error */
   errorBox: {
     marginHorizontal: 12,
     marginBottom: 6,
@@ -293,16 +315,14 @@ const styles = StyleSheet.create({
   },
   errorText: { color: '#9b2c2c', flex: 1, fontSize: 13 },
 
-  listContent: {
-    paddingHorizontal: 8,
-    paddingBottom: 20,
-  },
+  /* List container */
+  listContent: { paddingHorizontal: 10, paddingBottom: 24 },
 
-  // CATEGORY HEADER with clean indent
+  /* Section header */
   sectionHeader: {
-    paddingTop: 16,
-    paddingBottom: 8,
-    paddingLeft: 16, // header left pad
+    paddingTop: 14,
+    paddingBottom: 6,
+    paddingLeft: 16,
   },
   sectionHeaderChip: {
     alignSelf: 'flex-start',
@@ -319,78 +339,81 @@ const styles = StyleSheet.create({
   sectionHeaderText: {
     color: '#216a94',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: 12,
     maxWidth: 280,
   },
 
-  // ITEM ROW neatly indented under header
+  /* Item row */
   itemRow: {
-    marginHorizontal: 10,
-    marginBottom: 8,
+    marginHorizontal: 6,
+    marginBottom: 10,
     backgroundColor: '#fff',
-    borderRadius: 12,
+    borderRadius: RADIUS,
     borderWidth: 1,
     borderColor: '#edf2f7',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingRight: 10,
-    // subtle elevation
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
+    minHeight: ROW_MIN_HEIGHT,
+    paddingRight: 6,
+    ...(isWeb
+      ? { boxShadow: '0 1px 4px rgba(16,24,40,0.06)' }
+      : { elevation: 1, shadowColor: '#000', shadowOpacity: 0.06, shadowOffset: { width: 0, height: 1 }, shadowRadius: 2 }),
   },
-  // left “gutter” ensures visual indent from header
   itemLeftGutter: {
-    width: 28,
+    width: 44,              // fixed gutter keeps alignment
     alignItems: 'center',
-    marginLeft: 16, // actual indent from the screen edge
-    marginRight: 8,
+    justifyContent: 'center',
+    marginLeft: 8,
+    marginRight: 6,
   },
-  itemBody: {
-    flex: 1,
-    minWidth: 0, // allow text to ellipsize
-  },
+  itemBody: { flex: 1, minWidth: 0, paddingVertical: 8 },
+
   itemName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#1f2937',
   },
   itemSci: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#6b7280',
     fontStyle: 'italic',
-    marginTop: 2,
+    marginTop: 1,
   },
 
-  // *** CRITICAL LAYOUT FIX ***
-  // keep on one line, baseline aligned, no wrapping
+  /* Price + stock line (no wrapping) */
   metaRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
-    flexWrap: 'nowrap',
-    width: '100%',
     marginTop: 6,
   },
   metaPrice: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '800',
     color: '#216a94',
     flexShrink: 0,
-    marginRight: 8,
+    maxWidth: '55%',
   },
   metaStock: {
     fontSize: 14,
     color: '#64748b',
     flexShrink: 0,
-    marginLeft: 8,
+    minWidth: 92,          // stable width to avoid jitter
     textAlign: 'right',
-    minWidth: 90, // keeps it from collapsing and wrapping
+    marginLeft: 8,
   },
 
+  /* Chevron */
+  chevronHitbox: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+
+  /* Empty */
   empty: { alignItems: 'center', paddingVertical: 60 },
   emptyText: { color: '#94a3b8', marginTop: 10 },
 });

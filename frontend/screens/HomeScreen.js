@@ -19,12 +19,22 @@ import {
   getWeatherData,
   generateWateringAdvice,
 } from '../services/weatherService';
+import { geocodeAddress } from '../marketplace/services/marketplaceApi';
+
 import SmartPlantCareAssistant from '../components/ai/SmartPlantCareAssistant';
 import { useCurrentUserType } from '../utils/authUtils';
 import NavigationBar from '../components/NavigationBar';
 import { ensureChatFCMOnce } from '../notifications/chatFCMSetup';
-const { width } = Dimensions.get('window');
+
 const API_URL = 'https://usersfunctions.azurewebsites.net/api/getalluserplants';
+
+function withTimeout(promise, ms, label = 'timeout') {
+  let t;
+  const timeout = new Promise((_, reject) => {
+    t = setTimeout(() => reject(new Error(label)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(t));
+}
 
 function daysUntil(dateStr) {
   if (!dateStr) return 9999;
@@ -34,6 +44,41 @@ function daysUntil(dateStr) {
   target.setHours(0, 0, 0, 0);
   return Math.floor((target - today) / (1000 * 60 * 60 * 24));
 }
+
+/* ===== NEW HELPERS ===== */
+function startOfDay(dateLike) {
+  const d = new Date(dateLike);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function isTaskCompleted(plant, taskDef) {
+  const due = plant?.[taskDef.key];
+  if (!due) return true; // no due => nothing to do
+
+  const dueDay = startOfDay(due);
+
+  switch (taskDef.key) {
+    case 'next_water': {
+      const last = plant?.last_watered || plant?.wateringSchedule?.lastWatered;
+      if (!last) return false;
+      return startOfDay(last) >= dueDay; // watered on/after due day
+    }
+    case 'next_feed': {
+      const last = plant?.last_fed;
+      if (!last) return false;
+      return startOfDay(last) >= dueDay;
+    }
+    case 'next_repot': {
+      const last = plant?.last_repotted;
+      if (!last) return false;
+      return startOfDay(last) >= dueDay;
+    }
+    default:
+      return false;
+  }
+}
+/* ===== END NEW HELPERS ===== */
 
 // Which tasks do we track + default icon/colors
 const TASK_DEFS = [
@@ -63,7 +108,7 @@ const TaskChip = ({ task }) => {
   );
 };
 
-// Build all tasks for a plant and filter by tab
+// ===== UPDATED: Build tasks and filter by tab with completion awareness =====
 function getTasksForPlant(plant, tab = 'today') {
   const tasks = TASK_DEFS
     .map(def => {
@@ -79,16 +124,14 @@ function getTasksForPlant(plant, tab = 'today') {
 
       return { ...def, date, days: d, status, color };
     })
-    .filter(Boolean);
+    .filter(Boolean)
+    // NEW: hide tasks already completed (last_* on/after due date)
+    .filter(t => !isTaskCompleted(plant, t))
+    // NEW: Today = due today or late; Upcoming = strictly future
+    .filter(t => (tab === 'today' ? t.days <= 0 : t.days > 0))
+    .sort((a, b) => a.days - b.days);
 
-  // tab filtering
-  const filtered = tasks.filter(t =>
-    tab === 'today' ? t.days <= 0 : t.days > 0
-  );
-
-  // sort urgent first
-  filtered.sort((a, b) => a.days - b.days);
-  return filtered;
+  return tasks;
 }
 
 function getNextTask(plant) {
@@ -124,33 +167,109 @@ export default function HomeScreen({ navigation }) {
   const loadWeatherData = async (silent = false) => {
     try {
       if (!silent) setWeatherLoading(true);
+
       let location = null;
-      if (
-        userProfile &&
-        userProfile.location &&
-        userProfile.location.latitude &&
-        userProfile.location.longitude
-      ) {
+      const profileLoc = userProfile?.location;
+
+      // 1) If we already have coords, use them as-is
+      if (profileLoc?.latitude && profileLoc?.longitude) {
         location = {
-          latitude: userProfile.location.latitude,
-          longitude: userProfile.location.longitude,
-          city: userProfile.location.city,
-          country: userProfile.location.country || 'Israel',
+          latitude: Number(profileLoc.latitude),
+          longitude: Number(profileLoc.longitude),
+          city: profileLoc.city || 'Tel Aviv-Yafo',
+          country: profileLoc.country || 'Israel',
         };
+      } else if (profileLoc?.city) {
+        // 2) We have a city but no coords — geocode it
+        try {
+          const geo = await geocodeAddress(
+            `${profileLoc.city}, ${profileLoc.country || 'Israel'}`
+          );
+          if (Number.isFinite(geo.latitude) && Number.isFinite(geo.longitude)) {
+            location = {
+              latitude: geo.latitude,
+              longitude: geo.longitude,
+              city: profileLoc.city,
+              country: profileLoc.country || 'Israel',
+            };
+            // cache for future runs
+            await AsyncStorage.multiSet([
+              ['lastKnownCity', String(profileLoc.city)],
+              ['lastKnownCoords', JSON.stringify({ latitude: geo.latitude, longitude: geo.longitude })],
+            ]);
+          }
+        } catch (e) {
+          console.warn('[HomeScreen] geocodeAddress failed:', e?.message || e);
+        }
       }
-      const weather = await getWeatherData(location);
+
+      // 3) If we still don’t have coords, try cached last known coords
+      if (!location) {
+        try {
+          const cachedCoordsStr = await AsyncStorage.getItem('lastKnownCoords');
+          const cachedCity = (await AsyncStorage.getItem('lastKnownCity')) || undefined;
+          if (cachedCoordsStr) {
+            const cached = JSON.parse(cachedCoordsStr);
+            if (Number.isFinite(cached.latitude) && Number.isFinite(cached.longitude)) {
+              location = {
+                latitude: cached.latitude,
+                longitude: cached.longitude,
+                city: cachedCity,
+                country: 'Israel',
+              };
+            }
+          }
+        } catch {}
+      }
+
+      // 4) Fetch weather
+      const weather = await withTimeout(getWeatherData(location), 12000, 'weather fetch timeout');
       setWeatherData(weather);
+
+      try {
+        const wantedCity = (location?.city || '').toLowerCase();
+        const gotCity = (weather?.location?.city || '').toLowerCase();
+        if (wantedCity && gotCity && wantedCity !== gotCity) {
+          const keys = await AsyncStorage.getAllKeys();
+          const toRemove = keys.filter(k =>
+            /^weather[_:]/i.test(k) ||
+            ['userCity', 'defaultCity', 'lastWeatherCity'].includes(k)
+          );
+          if (toRemove.length) await AsyncStorage.multiRemove(toRemove);
+          const fresh = await getWeatherData(location);
+          setWeatherData(fresh);
+          const advice2 = generateWateringAdvice(fresh, plants);
+          setWateringAdvice(advice2);
+          return fresh;
+        }
+      } catch (e) {
+        // non-fatal
+      }
+
+      // Optional: persist the resolved city if the API returns one
+      if (weather?.location?.city && location?.latitude && location?.longitude) {
+        await AsyncStorage.multiSet([
+          ['lastKnownCity', String(weather.location.city)],
+          ['lastKnownCoords', JSON.stringify({ latitude: location.latitude, longitude: location.longitude })],
+        ]);
+      }
+
+      // 5) Watering advice
       const advice = generateWateringAdvice(weather, plants);
       setWateringAdvice(advice);
+
+      return weather;
     } catch (error) {
+      console.warn('[HomeScreen] loadWeatherData error:', error?.message || error);
       setWateringAdvice({
         general: 'Weather data unavailable. Follow your regular watering schedule.',
         urgency: 'normal',
         icon: 'help-circle-outline',
         color: '#666',
       });
+      return null;
     } finally {
-      if (!silent) setWeatherLoading(false);
+      setWeatherLoading(false);
     }
   };
 
@@ -182,41 +301,21 @@ export default function HomeScreen({ navigation }) {
       setLoading(true);
       const plantsPromise = (async () => {
         try {
-          let userEmail = await AsyncStorage.getItem('userEmail');
+          const userEmail = await AsyncStorage.getItem('userEmail');
           setUserEmail(userEmail);
           if (!userEmail) return [];
           const res = await fetch(`${API_URL}?email=${encodeURIComponent(userEmail)}`);
           if (!res.ok) throw new Error('Failed to fetch');
           const data = await res.json();
-          // console.log("API returned data:", data);
-          let allPlants = [];
-          if (Array.isArray(data)) {
-            allPlants = data;
-          }
-          return allPlants;
+          return Array.isArray(data) ? data : [];
         } catch (e) {
           return [];
         }
       })();
-
-      const weatherPromise = (async () => {
-        try {
-          const weather = await loadWeatherData(true);
-          return weather;
-        } catch {
-          return null;
-        }
-      })();
-
-      const [allPlants, weather] = await Promise.all([plantsPromise, weatherPromise]);
+      const [allPlants] = await Promise.all([plantsPromise]); // no weather here
       if (mounted) {
         setPlants(allPlants);
-        if (weather) setWeatherData(weather);
         setLoading(false);
-        if (weather && allPlants.length > 0) {
-          const advice = generateWateringAdvice(weather, allPlants);
-          setWateringAdvice(advice);
-        }
       }
     };
     fetchAllData();
@@ -226,12 +325,15 @@ export default function HomeScreen({ navigation }) {
   }, []);
 
   useEffect(() => {
+    if (!personaChecked) return;
+    loadWeatherData(false);
+  }, [personaChecked]);
+
+  useEffect(() => {
     if (!userTypeLoading) setPersonaChecked(true);
   }, [userTypeLoading]);
 
   useEffect(() => {
-    // Your login logic here, set isLoggedIn to true after login
-    // For demo, you can set isLoggedIn to true manually or based on your auth state
     setIsLoggedIn(true);
   }, []);
 
@@ -252,7 +354,6 @@ export default function HomeScreen({ navigation }) {
     return null;
   }
 
-  // Main tab content
   const renderMainTabContent = () => {
     switch (mainTab) {
       case 'home':
@@ -307,7 +408,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // --- Consumer Profile Card ---
   const renderConsumerProfileCard = () => {
     if (!userProfile) return null;
     const missingFields = [];
@@ -328,7 +428,7 @@ export default function HomeScreen({ navigation }) {
               Welcome back, {userProfile.name || userProfile.email?.split('@')[0] || 'Plant Lover'}! 🌱
             </Text>
             <Text style={styles.profileSubtitle}>
-              {plants.length} plant{plants.length !== 1 ? 's' : ''} in your garden
+              {plants.length} plant{plants.length !== 1 ? 's' : ''}
             </Text>
           </View>
           <TouchableOpacity
@@ -379,7 +479,6 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  // --- Plants Section & Tabs ---
   const renderTabRow = () => (
     <View style={styles.tabRow}>
       <TouchableOpacity
@@ -419,7 +518,6 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color="#4CAF50" />
@@ -447,7 +545,6 @@ export default function HomeScreen({ navigation }) {
       </View>
     );
   };
-
 
   const renderPlantItem = (item, tasks, index) => {
     const main = tasks[0] || { color: '#4CAF50', icon: 'leaf' };
@@ -485,7 +582,6 @@ export default function HomeScreen({ navigation }) {
           <Text style={styles.plantName}>{item.nickname || item.common_name}</Text>
           <Text style={styles.plantLocation}>{item.location}</Text>
 
-          {/* Pretty chips */}
           <View style={styles.chipsWrap}>
             {tasks.slice(0, 4).map((t, idx) => (
               <TaskChip key={`${t.type}-${idx}`} task={t} />
@@ -503,11 +599,8 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-
-
-  // --- Weather Card ---
   const renderWeatherCard = () => {
-    if (!weatherData || weatherLoading) {
+    if (weatherLoading) {
       return (
         <View style={styles.weatherCard}>
           <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
@@ -528,8 +621,27 @@ export default function HomeScreen({ navigation }) {
         </View>
       );
     }
+    if (!weatherData) {
+      return (
+        <View style={styles.weatherCard}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
+            <MaterialCommunityIcons name="weather-partly-cloudy" size={26} color="#388e3c" style={{ marginRight: 6 }} />
+            <Text style={{ fontSize: 22, fontWeight: 'bold', color: '#388e3c', flex: 1 }}>
+              Weather
+            </Text>
+            <View style={styles.weatherActions}>
+              <TouchableOpacity onPress={() => loadWeatherData(false)}>
+                <MaterialIcons name="refresh" size={20} color="#4CAF50" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.weatherUnavailable}>
+            Weather data is currently unavailable. Tap refresh to try again.
+          </Text>
+        </View>
+      );
+    }
 
-    // Format date string (short weekday, day, short month)
     const dateStr = new Date().toLocaleDateString(undefined, {
       weekday: "short", day: "numeric", month: "short"
     });
@@ -553,9 +665,7 @@ export default function HomeScreen({ navigation }) {
           </View>
         </View>
 
-        {/* Main Weather Row */}
         <View style={styles.weatherMainRow2}>
-          {/* Left - Big temp + weather icon + city/date */}
           <View style={styles.weatherLeftCol2}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
               {icon && (
@@ -572,7 +682,6 @@ export default function HomeScreen({ navigation }) {
               {(weatherData.location?.city || "Location")} · {dateStr}
             </Text>
           </View>
-          {/* Right - weather stats */}
           <View style={styles.weatherMetricsCol2}>
             <WeatherMetric icon="water-percent" value={wd.humidity + "%"} label="Humidity" color="#2196F3" />
             <WeatherMetric icon="weather-rainy" value={weatherData.precipitation?.last24h + " mm"} label="Rain" color="#4FC3F7" />
@@ -580,7 +689,7 @@ export default function HomeScreen({ navigation }) {
             <WeatherMetric icon="white-balance-sunny" value={wd.uvIndex || 0} label="UV" color="#FFD600" />
           </View>
         </View>
-        {/* Advice */}
+
         {wateringAdvice && (
           <View style={styles.weatherAdviceBanner}>
             <MaterialCommunityIcons
@@ -598,7 +707,6 @@ export default function HomeScreen({ navigation }) {
     );
   };
 
-  // WeatherMetric helper
   function WeatherMetric({ icon, value, label, color }) {
     return (
       <View style={styles.weatherMetricBox2}>
@@ -609,10 +717,8 @@ export default function HomeScreen({ navigation }) {
     );
   }
 
-
   return (
     <SafeAreaView style={styles.container}>
-      {/* === Add the header here === */}
       {mainTab === 'home' && (
         <View style={styles.header}>
           <View style={styles.headerLeftRow}>
@@ -635,14 +741,13 @@ export default function HomeScreen({ navigation }) {
         </View>
       )}
 
-      {/* Main content below the header */}
       <View style={styles.contentContainer}>
         {renderMainTabContent()}
       </View>
-      {/* Bottom navigation bar */}
+
       <NavigationBar currentTab={mainTab} navigation={navigation} />
+
       <>
-        {/* Floating Action Button */}
         <View style={styles.fabContainer} pointerEvents="box-none">
           {fabOpen && (
             <View style={styles.fabActions}>
@@ -680,7 +785,6 @@ export default function HomeScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
 
 const isWeb = Platform.OS === 'web';
 
@@ -744,7 +848,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 
-  // Enhanced Profile Card Styles
   enhancedProfileCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -829,7 +932,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
-  // Enhanced Feature Tabs
   featureTabsRow: {
     flexGrow: 0,
     flexShrink: 0,
@@ -884,45 +986,42 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Enhanced Plant Item Styles
   enhancedTaskCard: {
     flexDirection: 'row',
     backgroundColor: '#fff',
-    padding: 16,
+    padding: 14,
     borderRadius: 16,
     marginHorizontal: 16,
     marginBottom: 12,
     alignItems: 'center',
     elevation: 2,
-    ...(!isWeb ? {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 1 },
-      shadowOpacity: 0.1,
-      shadowRadius: 3,
-    } : {
-      boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-    }),
+    ...(Platform.OS !== 'web'
+      ? { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4 }
+      : { boxShadow: '0 1px 8px rgba(0,0,0,0.06)' }),
   },
   plantImageContainer: {
     position: 'relative',
     marginRight: 16,
   },
-  plantImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30
-  },
+  plantImage: { width: 64, height: 64, borderRadius: 12 },
   statusBadge: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 20,
+    top: -6,
+    right: -6,
+    minWidth: 20,
     height: 20,
+    paddingHorizontal: 6,
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
     borderColor: '#fff',
+  },
+  statusBadgeCount: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 12,
   },
   taskInfo: {
     justifyContent: 'center',
@@ -930,26 +1029,15 @@ const styles = StyleSheet.create({
   },
   plantName: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontWeight: '800',
     color: '#2e7d32',
-    marginBottom: 2,
   },
   plantLocation: {
-    fontSize: 14,
-    color: '#66bb6a',
-    marginBottom: 4,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusText: {
-    marginLeft: 6,
-    fontWeight: '600',
-    fontSize: 14,
+    fontSize: 13,
+    color: '#7CB342',
+    marginTop: 2,
   },
 
-  // Tab row styles
   tabRow: {
     flexDirection: 'row',
     backgroundColor: '#fff',
@@ -985,7 +1073,6 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
 
-  // Content styles
   scrollContent: {
     flex: 1,
   },
@@ -996,29 +1083,12 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: 20,
   },
-  plantsSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginHorizontal: 16,
-    marginVertical: 12,
-  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: '#2e7d32',
   },
-  plantsCountBadge: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-  },
-  plantsCountText: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
+
   loadingContainer: {
     flexDirection: 'column',
     alignItems: 'center',
@@ -1067,77 +1137,6 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
 
-  // Weather Card Styles (keep existing)
-  weatherCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
-    marginHorizontal: 16,
-    marginBottom: 16,
-    ...(!isWeb ? {
-      shadowColor: '#000',
-      shadowOffset: { width: 0, height: 2 },
-      shadowOpacity: 0.1,
-      shadowRadius: 4,
-      elevation: 3,
-    } : {
-      boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    }),
-  },
-  weatherHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  weatherTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-    flex: 1,
-    marginLeft: 8,
-  },
-  weatherLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 20,
-  },
-  weatherLoadingText: {
-    color: '#666',
-    marginLeft: 8,
-    fontSize: 14,
-  },
-  weatherUnavailable: {
-    color: '#666',
-    textAlign: 'center',
-    paddingVertical: 20,
-    fontSize: 14,
-  },
-  weatherContent: {
-    flexDirection: 'column',
-  },
-  weatherMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  weatherLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  weatherIcon: {
-    width: 50,
-    height: 50,
-    marginRight: 12,
-  },
-  temperature: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-  },
   // --- chips ---
   chipsWrap: {
     flexDirection: 'row',
@@ -1168,131 +1167,7 @@ const styles = StyleSheet.create({
     color: '#607D8B',
   },
 
-  // --- card tweaks ---
-  enhancedTaskCard: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    padding: 14,
-    borderRadius: 16,
-    marginHorizontal: 16,
-    marginBottom: 12,
-    alignItems: 'center',
-    elevation: 2,
-    ...(Platform.OS !== 'web'
-      ? { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.08, shadowRadius: 4 }
-      : { boxShadow: '0 1px 8px rgba(0,0,0,0.06)' }),
-  },
-  plantImage: { width: 64, height: 64, borderRadius: 12 }, // squircle look
-  statusBadge: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    minWidth: 20,
-    height: 20,
-    paddingHorizontal: 6,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  statusBadgeCount: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 12,
-  },
-  plantName: {
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#2e7d32',
-  },
-  plantLocation: {
-    fontSize: 13,
-    color: '#7CB342',
-    marginTop: 2,
-  },
-  taskRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-
-  weatherDescription: {
-    fontSize: 14,
-    color: '#666',
-    textTransform: 'capitalize',
-  },
-  location: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#888',
-    marginTop: 2,
-  },
-  weatherDetails: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 4,
-    marginLeft: 12,
-  },
-  weatherDetailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  weatherDetailText: {
-    fontSize: 12,
-    color: '#333',
-    marginLeft: 4,
-  },
-  // Watering Advice Styles
-  wateringAdvice: {
-    borderLeftWidth: 4,
-    paddingLeft: 12,
-    paddingVertical: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 8,
-    marginTop: 12,
-  },
-  adviceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  adviceTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginLeft: 8,
-    flex: 1,
-  },
-  plantsBadge: {
-    backgroundColor: '#4CAF50',
-    borderRadius: 12,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
-    marginLeft: 8,
-  },
-  plantsBadgeText: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#fff',
-  },
-  adviceText: {
-    fontSize: 13,
-    color: '#333',
-    lineHeight: 18,
-  },
-  weatherActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  calendarButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: '#f0f9f3',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  // Business Weather Insights Styles
-  businessWeatherCard: {
+  weatherCard: {
     backgroundColor: '#fff',
     borderRadius: 16,
     padding: 16,
@@ -1308,194 +1183,24 @@ const styles = StyleSheet.create({
       boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
     }),
   },
-  businessWeatherHeader: {
+  weatherLoading: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
+    justifyContent: 'center',
+    paddingVertical: 20,
   },
-  businessWeatherTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-    flex: 1,
-    marginLeft: 8,
-  },
-  businessWeatherContent: {
-    flexDirection: 'column',
-  },
-  businessWeatherMain: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  businessWeatherLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  taskRow: { flexDirection: 'row', alignItems: 'center', marginTop: 2 },
-  businessTemperature: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-  },
-  businessWeatherDescription: {
-    fontSize: 14,
+  weatherLoadingText: {
     color: '#666',
-    textTransform: 'capitalize',
-  },
-  businessLocation: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#888',
-    marginTop: 2,
-  },
-  businessWeatherDetails: {
-    flexDirection: 'column',
-    alignItems: 'flex-end',
-    gap: 4,
-  },
-  businessWeatherDetailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  businessWeatherDetailText: {
-    fontSize: 12,
-    color: '#333',
-    marginLeft: 4,
-  },
-  weatherMainRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  weatherLeftColumn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  bigTemperature: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: '#2e7d32',
-    marginBottom: 2,
-  },
-  weatherInfoCol: {
-    alignItems: 'flex-end',
-    justifyContent: 'center',
-    gap: 6,
-    marginLeft: 12,
-  },
-  weatherInfoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 2,
-  },
-  weatherInfoText: {
-    fontSize: 13,
-    color: '#333',
-    marginLeft: 4,
-  },
-  weatherAdviceRow: { // PALE GREEN advice area
-    marginTop: 6,
-    borderRadius: 12,
-    backgroundColor: '#F7FCF7',
-    padding: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
-  },
-  adviceSectionLeft: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flex: 2,
-    minWidth: 0,
-    marginRight: 12,
-  },
-  advicePriorityText: {
-    fontSize: 15,
-    fontWeight: 'bold',
-    color: '#388e3c',
-    marginBottom: 4,
-  },
-  adviceGeneral: {
+    marginLeft: 8,
     fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-    flexWrap: 'wrap',
   },
-  statsRow: {
-    flexDirection: 'row',
-    flex: 2.5,
-    justifyContent: 'space-evenly',
-    alignItems: 'center',
-    marginLeft: 10,
-    flexWrap: 'wrap',
+  weatherUnavailable: {
+    color: '#666',
+    textAlign: 'center',
+    paddingVertical: 20,
+    fontSize: 14,
   },
-  statItem: {
-    alignItems: 'center',
-    marginHorizontal: 4,
-    minWidth: 52,
-  },
-  statValue: {
-    fontWeight: 'bold',
-    color: '#2e7d32',
-    fontSize: 15,
-  },
-  statLabel: {
-    fontSize: 11,
-    color: '#444',
-  },
-  fabContainer: {
-    position: 'absolute',
-    right: 24,
-    bottom: Platform.OS === 'web' ? 36 : 36,
-    alignItems: 'flex-end',
-    zIndex: 1000,
-    pointerEvents: 'box-none',
-  },
-  fab: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#4CAF50',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 6,
-    marginBottom: 8,
-  },
-  fabActions: {
-    marginBottom: 12,
-    alignItems: 'flex-end',
-  },
-  fabActionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#388e3c',
-    borderRadius: 24,
-    paddingVertical: 10,
-    paddingHorizontal: 18,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.17,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  fabActionLabel: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 16,
-    marginLeft: 10,
-  },
+
   weatherMainRow2: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1566,15 +1271,71 @@ const styles = StyleSheet.create({
     flex: 1,
     flexWrap: 'wrap',
   },
+
   countPill: {
-  flexDirection: 'row',
-  alignItems: 'center',
-  backgroundColor: '#43A047',
-  borderRadius: 14,
-  paddingHorizontal: 10,
-  paddingVertical: 4,
-  alignSelf: 'flex-start',
-  marginTop: 8,
-},
-countPillText: { color: '#fff', fontWeight: '800', marginLeft: 6, fontSize: 12 },
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#43A047',
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+  },
+  countPillText: { color: '#fff', fontWeight: '800', marginLeft: 6, fontSize: 12 },
+
+  // FAB
+  fabContainer: {
+    position: 'absolute',
+    right: 20,
+    bottom: Platform.OS === 'web' ? 36 : 36,
+    alignItems: 'flex-end',
+    zIndex: 1000,
+    pointerEvents: 'box-none',
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 70,
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#4CAF50',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 10,
+    elevation: 6,
+    zIndex: 100,
+  },
+  fabActions: {
+    position: 'absolute',
+    right: 16,
+    bottom: 146,
+    alignItems: 'flex-end',
+    zIndex: 101,
+    elevation: 7,
+  },
+  fabActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#388e3c',
+    borderRadius: 24,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.17,
+    shadowRadius: 3,
+    elevation: 3,
+  },
+  fabActionLabel: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 16,
+    marginLeft: 10,
+  },
 });

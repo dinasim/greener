@@ -516,10 +516,11 @@ const AddPlantScreen = () => {
         setShowSuccess(true);
         setTimeout(() => {
           setShowSuccess(false);
-          navigation.navigate('MarketplaceHome', { refresh: true });
-          setTimeout(() => {
-            navigation.navigate('Profile', { refresh: true });
-          }, 300);
+          navigation.navigate('MarketplaceTabs', {
+  screen: 'Profile',              // or 'MarketplaceHome'
+  params: { refresh: true },
+});
+
         }, 1500);
       } else {
         throw new Error('Failed to create listing');

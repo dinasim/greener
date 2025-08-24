@@ -21,27 +21,23 @@ import PropTypes from 'prop-types';
 import ProductEditModal from './ProductEditModal';
 import LowStockBanner from './LowStockBanner';
 
-const ROW_HEIGHT = 80;
+const ROW_HEIGHT = 72;
+
+// Base (regular) column widths. Compact widths are defined in styles.*Compact
+const COL = { CHECK: 36, STOCK: 56, PRICE: 72, STATUS: 80, ACTIONS: 110 };
 
 const InventoryTable = React.memo(({
-  // data + state
   inventory = [],
   isLoading = false,
   refreshing = false,
   error = null,
-
-  // actions
   onRefresh = () => {},
   onEditProduct = () => {},
   onDeleteProduct = () => {},
   onUpdateStock = () => {},
   onProductPress = () => {},
-
-  // ids / nav
   businessId,
   navigation,
-
-  // external header/empty to compose a single scroll surface
   ListHeaderComponent = null,
   ListEmptyComponent = null,
 }) => {
@@ -124,10 +120,7 @@ const InventoryTable = React.memo(({
     }
   };
 
-  const getSortIcon = (field) => {
-    if (sortBy !== field) return 'sort';
-    return sortOrder === 'asc' ? 'keyboard-arrow-up' : 'keyboard-arrow-down';
-  };
+  const getSortIcon = (field) => (sortBy !== field ? 'sort' : (sortOrder === 'asc' ? 'keyboard-arrow-up' : 'keyboard-arrow-down'));
 
   const handleSort = (field) => {
     if (sortBy === field) setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'));
@@ -216,7 +209,7 @@ const InventoryTable = React.memo(({
     Linking.openURL(url).catch(() => Alert.alert('Error', 'Could not open maps application'));
   };
 
-  // row component
+  // row
   const InventoryItem = React.memo(({ item, index, isSelected }) => (
     <Animated.View
       style={[
@@ -249,19 +242,17 @@ const InventoryTable = React.memo(({
         accessibilityLabel={`View details for ${item.name || item.common_name}`}
       >
         <View style={styles.productInfo}>
-          <View style={styles.productIcon}>
-            <MaterialCommunityIcons
-              name={item.productType === 'plant' ? 'leaf' : 'cube-outline'}
-              size={20}
-              color="#4CAF50"
-            />
           </View>
           <View style={styles.productDetails}>
-            <Text style={[styles.productName, compact && { fontSize: 14 }]} numberOfLines={1}>
+            <Text
+              style={[styles.productName, compact && { fontSize: 14 }]}
+              numberOfLines={1}
+              ellipsizeMode="tail"
+            >
               {item.name || item.common_name || 'Unknown Product'}
             </Text>
             {item.scientific_name && !compact && (
-              <Text style={styles.productScientific} numberOfLines={1}>
+              <Text style={styles.productScientific} numberOfLines={1} ellipsizeMode="tail">
                 {item.scientific_name}
               </Text>
             )}
@@ -289,7 +280,7 @@ const InventoryTable = React.memo(({
               </View>
             )}
           </View>
-        </View>
+        
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -315,7 +306,7 @@ const InventoryTable = React.memo(({
       </TouchableOpacity>
 
       <View style={[styles.tableCell, styles.colPrice, compact && styles.colPriceCompact]}>
-        <Text style={styles.priceText}>${(item.finalPrice || item.price || 0).toFixed(2)}</Text>
+        <Text style={styles.priceText}>₪{(item.finalPrice || item.price || 0).toFixed(2)}</Text>
         {!compact && item.discount > 0 && <Text style={styles.discountText}>-{item.discount}%</Text>}
       </View>
 
@@ -423,7 +414,7 @@ const InventoryTable = React.memo(({
         accessibilityRole="button"
         accessibilityLabel="Sort by product name"
       >
-        <Text style={styles.headerText}>Product</Text>
+        <Text numberOfLines={1} ellipsizeMode="clip" style={styles.headerText}>Product</Text>
         <MaterialIcons name={getSortIcon('name')} size={16} color="#666" />
       </TouchableOpacity>
 
@@ -433,7 +424,7 @@ const InventoryTable = React.memo(({
         accessibilityRole="button"
         accessibilityLabel="Sort by stock quantity"
       >
-        <Text style={styles.headerText}>Stock</Text>
+        <Text numberOfLines={1} ellipsizeMode="clip" style={styles.headerText}>Stock</Text>
         <MaterialIcons name={getSortIcon('quantity')} size={16} color="#666" />
       </TouchableOpacity>
 
@@ -443,7 +434,7 @@ const InventoryTable = React.memo(({
         accessibilityRole="button"
         accessibilityLabel="Sort by price"
       >
-        <Text style={styles.headerText}>Price</Text>
+        <Text numberOfLines={1} ellipsizeMode="clip" style={styles.headerText}>Price</Text>
         <MaterialIcons name={getSortIcon('price')} size={16} color="#666" />
       </TouchableOpacity>
 
@@ -453,12 +444,12 @@ const InventoryTable = React.memo(({
         accessibilityRole="button"
         accessibilityLabel="Sort by status"
       >
-        <Text style={styles.headerText}>Status</Text>
+        <Text numberOfLines={1} ellipsizeMode="clip" style={styles.headerText}>Status</Text>
         <MaterialIcons name={getSortIcon('status')} size={16} color="#666" />
       </TouchableOpacity>
 
       <View style={[styles.headerCell, styles.colActions, compact && styles.colActionsCompact]}>
-        <Text style={styles.headerText}>Actions</Text>
+        <Text numberOfLines={1} ellipsizeMode="clip" style={styles.headerText}>Actions</Text>
       </View>
     </Animated.View>
   ), [fadeAnim, slideAnim, bulkActionMode, selectedItems, filteredInventory, sortBy, sortOrder, compact]);
@@ -477,7 +468,7 @@ const InventoryTable = React.memo(({
 
       <View style={styles.controlsContainer}>
         <View style={styles.searchContainer}>
-          <MaterialIcons name="search" size={20} color="#4CAF50" />
+          <MaterialIcons name="search" size={15} color="#4CAF50" />
           <TextInput
             style={styles.searchInput}
             value={searchQuery}
@@ -684,13 +675,13 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#f5f5f5',
-    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 12, marginBottom: 16,
+    borderRadius: 12, paddingHorizontal: 16, paddingVertical: 7, marginBottom: 16,
     borderWidth: 1, borderColor: '#e9ecef',
   },
-  searchInput: { flex: 1, fontSize: 16, color: '#333', marginLeft: 12 },
+  searchInput: { flex: 1, fontSize: 14, color: '#333', marginLeft: 12 },
   filterTabs: { flexDirection: 'row', marginBottom: 16, flexWrap: 'wrap', gap: 8 },
   filterTab: {
-    paddingVertical: 10, paddingHorizontal: 16, borderRadius: 20,
+    paddingVertical: 3, paddingHorizontal: 10, borderRadius: 20,
     backgroundColor: '#f5f5f5', borderWidth: 1, borderColor: '#e0e0e0',
   },
   activeFilterTab: { backgroundColor: '#4CAF50', borderColor: '#4CAF50' },
@@ -698,8 +689,8 @@ const styles = StyleSheet.create({
   activeFilterTabText: { color: '#fff', fontWeight: '700' },
   bulkActionsContainer: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
   bulkActionButton: {
-    flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 16,
-    borderRadius: 20, borderWidth: 1.5, borderColor: '#4CAF50', backgroundColor: '#fff',
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10,
+    borderRadius: 10, borderWidth: 1.5, borderColor: '#4CAF50', backgroundColor: '#fff',
   },
   activeBulkButton: { backgroundColor: '#4CAF50' },
   bulkActionText: { fontSize: 13, color: '#4CAF50', marginLeft: 6, fontWeight: '600' },
@@ -726,26 +717,26 @@ const styles = StyleSheet.create({
   tableHeaderCompact: { paddingVertical: 10 },
 
   headerCell: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 6 },
-  headerText: { fontSize: 13, fontWeight: '700', color: '#2d3436' },
+  headerText: { fontSize: 10, fontWeight: '700', color: '#2d3436' },
 
   // Column sizing (shared by header + rows)
-  colCheck: { width: 36 },
-  colName: { flex: 2.6 },      // main column
-  colStock: { flex: 0.9, alignItems: 'flex-start' },
-  colPrice: { flex: 1, alignItems: 'flex-start' },
-  colStatus: { flex: 0.9, alignItems: 'flex-start' },
-  colActions: { width: 120, alignItems: 'flex-end' },
+  colCheck:   { width: COL.CHECK },
+  colName:    { flexGrow: 1, flexShrink: 1, minWidth: 80, paddingRight: 8 },
+  colStock:   { width: COL.STOCK, alignItems: 'flex-end' },
+  colPrice:   { width: COL.PRICE, alignItems: 'flex-end' },
+  colStatus:  { width: COL.STATUS, alignItems: 'center' },
+  colActions: { width: COL.ACTIONS, alignItems: 'center', justifyContent: 'space-evenly' },
 
-  // Compact tweaks
-  colNameCompact: { flex: 1.8 },
-  colStockCompact: { flex: 0.8 },
-  colPriceCompact: { flex: 0.9 },
-  colStatusCompact: { flex: 0.7 },
-  colActionsCompact: { width: 92 },
+  // Compact tweaks (keep fixed columns small so name always has room)
+  colNameCompact:   { minWidth: 100 },
+  colStockCompact:  { width: 44 },
+  colPriceCompact:  { width: 64 },
+  colStatusCompact: { width: 68 },
+  colActionsCompact:{ width: 92 },
 
   tableRow: {
     flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 16, paddingHorizontal: 16,
+    paddingVertical: 12, paddingHorizontal: 16,
     borderBottomWidth: 1, borderBottomColor: '#f0f0f0',
     minHeight: ROW_HEIGHT,
     backgroundColor: '#fff',
@@ -760,26 +751,27 @@ const styles = StyleSheet.create({
     width: 36, height: 36, borderRadius: 18, backgroundColor: '#f0f9f3',
     justifyContent: 'center', alignItems: 'center', marginRight: 12, borderWidth: 1, borderColor: '#e8f5e8',
   },
-  productDetails: { flex: 1 },
+  productDetails: { flex: 1, minWidth: 0 },
   productName: { fontSize: 15, fontWeight: '700', color: '#2d3436', lineHeight: 20 },
   productScientific: { fontSize: 13, fontStyle: 'italic', color: '#636e72', marginTop: 2 },
   productMetaInfo: { flexDirection: 'row', alignItems: 'center', marginTop: 6 },
   metaInfoItem: { flexDirection: 'row', alignItems: 'center', marginRight: 16 },
   metaInfoText: { fontSize: 12, color: '#2196F3', marginLeft: 4, fontWeight: '500' },
 
-  stockContainer: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  stockText: { fontSize: 15, fontWeight: '700', color: '#2d3436' },
+  stockContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6, width: '100%' },
+  stockText: { fontSize: 10, fontWeight: '700', color: '#2d3436' },
   lowStockText: { color: '#FF9800' },
-  thresholdText: { fontSize: 12, color: '#636e72', marginTop: 4, fontWeight: '500' },
-  priceText: { fontSize: 15, fontWeight: '700', color: '#4CAF50' },
+  thresholdText: { fontSize: 12, color: '#636e72', marginTop: 4, fontWeight: '500', textAlign: 'right' },
+  priceText: { fontSize: 10, fontWeight: '800', color: '#216a94', textAlign: 'right' },
   discountText: { fontSize: 12, color: '#f44336', marginTop: 4, fontWeight: '600' },
 
-  statusBadge: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 16 },
-  statusText: { fontSize: 11, fontWeight: '700', color: '#fff' },
+  statusBadge: { paddingHorizontal: 5, paddingVertical: 6, borderRadius: 16, alignItems: 'center' },
+  statusText: { fontSize: 10, fontWeight: '700', color: '#fff' },
 
-  actionsContainer: { flexDirection: 'row', gap: 8 },
+  actionsContainer: { flexDirection: 'row', gap: 8, justifyContent: 'center' },
   actionButton: {
-    padding: 8, borderRadius: 8, backgroundColor: '#f8f9fa', borderWidth: 1, borderColor: '#e9ecef',
+    width: 30, height: 30, borderRadius: 18, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#f8f9fa', borderWidth: 1, borderColor: '#e9ecef',
     ...Platform.select({
       web: { boxShadow: '0px 1px 2px rgba(0,0,0,0.05)' },
       default: { shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2, elevation: 1 }

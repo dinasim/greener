@@ -89,7 +89,7 @@ export default function BusinessDashboardCharts({
   autoRefresh = true,
   refreshInterval = 60000,
 }) {
-  const [activeChart, setActiveChart] = useState('sales');
+  const [activeChart, setActiveChart] = useState('orders');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [chartError, setChartError] = useState(null);
 
@@ -225,51 +225,6 @@ export default function BusinessDashboardCharts({
     }
 
     switch (activeChart) {
-      case 'sales':
-        return (
-          <View style={styles.chartContainer}>
-            <Text style={styles.chartTitle}>Sales This Week</Text>
-            <WebSafeChart
-              chartType="line"
-              fallback={
-                <View style={styles.chartFallback}>
-                  <MaterialIcons name="trending-up" size={48} color="#4CAF50" />
-                  <Text style={styles.chartFallbackText}>Sales: {fmtMoney(computedTotal)}</Text>
-                  <Text style={styles.chartFallbackSubtext}>Average: {fmtMoney(computedAvg, computedAvg < 10 ? 1 : 0)}/day</Text>
-                </View>
-              }
-            >
-              {LineChart && (
-                <LineChart
-                  data={getSalesChartData()}
-                  width={chartWidth}
-                  height={220}
-                  chartConfig={chartConfig}
-                  style={styles.chart}
-                  withShadow={false}
-                  fromZero
-                  bezier={Platform.OS !== 'web'}
-                  withDots={Platform.OS !== 'web'}
-                  withInnerLines={Platform.OS !== 'web'}
-                  withOuterLines={Platform.OS !== 'web'}
-                  withHorizontalLabels={showYAxisLabels} // hide noisy 0/1 labels
-                  segments={4}
-                  yAxisLabel="" // avoid double prefix
-                  yLabelsOffset={8}
-                  formatYLabel={(v) =>
-                    showYAxisLabels ? fmtMoney(Number(v), maxSales < 5 ? 1 : 0) : ''
-                  }
-                />
-              )}
-            </WebSafeChart>
-            <View style={styles.chartInsights}>
-              <Text style={styles.insightText}>
-                📈 Total: {fmtMoney(computedTotal)} | Avg: {fmtMoney(computedAvg, computedAvg < 10 ? 1 : 0)}/day
-              </Text>
-            </View>
-          </View>
-        );
-
       case 'orders':
         return (
           <View style={styles.chartContainer}>
@@ -379,7 +334,6 @@ export default function BusinessDashboardCharts({
       {/* Tabs */}
       <View style={styles.chartTabs} accessible accessibilityRole="tablist">
         {[
-          { key: 'sales', label: 'Sales', icon: 'trending-up' },
           { key: 'orders', label: 'Orders', icon: 'receipt' },
           { key: 'inventory', label: 'Stock', icon: 'inventory' },
         ].map((tab) => (

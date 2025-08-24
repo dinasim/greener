@@ -1,5 +1,4 @@
 // AddPlantScreen.js
-
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
@@ -23,69 +22,175 @@ import AppHeader from '../components/AppHeader';
 const PLANT_SEARCH_URL   = 'https://usersfunctions.azurewebsites.net/api/plant_search';
 const PLANTNET_PROXY_URL = 'https://usersfunctions.azurewebsites.net/api/identifyPlantPhoto';
 
-// Fallback list for trending/popular plants
-const fallbackPopular = [
-  { id: 'Epipremnum aureum', common_name: 'Golden Pothos', scientific_name: 'Epipremnum aureum', family_common_name: 'Araceae', image_url: null },
-  { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata', family_common_name: 'Asparagaceae', image_url: null },
-  { id: 'Monstera deliciosa', common_name: 'Monstera', scientific_name: 'Monstera deliciosa', family_common_name: 'Araceae', image_url: null },
-  { id: 'Ocimum basilicum', common_name: 'Basil', scientific_name: 'Ocimum basilicum', family_common_name: 'Lamiaceae', image_url: null },
-  { id: 'Zamioculcas zamiifolia', common_name: 'ZZ Plant', scientific_name: 'Zamioculcas zamiifolia', family_common_name: 'Araceae', image_url: null },
+// ✅ Default items now act like “real” plants (we immediately look them up in DB)
+const seedPopular = [
+  { id: 'Epipremnum aureum', common_name: 'Golden Pothos', scientific_name: 'Epipremnum aureum' },
+  { id: 'Sansevieria trifasciata', common_name: "Snake Plant 'Laurentii'", scientific_name: 'Sansevieria trifasciata' },
+  { id: 'Monstera deliciosa', common_name: 'Monstera', scientific_name: 'Monstera deliciosa' },
+  { id: 'Ocimum basilicum', common_name: 'Basil', scientific_name: 'Ocimum basilicum' },
+  { id: 'Zamioculcas zamiifolia', common_name: 'ZZ Plant', scientific_name: 'Zamioculcas zamiifolia' },
 ];
 
+// ---- helpers -----------------------------------------------------------------
+const clean = (s) => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const firstDefined = (...vals) => vals.find((v) => v !== undefined && v !== null && v !== '');
+
+function pickBestMatch(list, stub) {
+  if (!Array.isArray(list) || !list.length) return null;
+  const sc = clean(stub.scientific_name);
+  const cc = clean(stub.common_name);
+
+  // exact scientific/common name
+  let m = list.find((p) => clean(p.scientific_name) === sc || clean(p.common_name) === cc);
+  if (m) return m;
+
+  // contains
+  m = list.find((p) => clean(p.scientific_name)?.includes(sc) || clean(p.common_name)?.includes(cc));
+  if (m) return m;
+
+  // fallback: first result
+  return list[0];
+}
+
+/**
+ * Normalize for display BUT preserve rich fields for saving.
+ * We keep sun/water/temp fields both as:
+ *   - booleans (for icon tint)
+ *   - raw values (so PlantReview can save details)
+ */
+function normalize(dbLike) {
+  const image =
+    firstDefined(
+      dbLike.image_url,
+      dbLike.image,
+      Array.isArray(dbLike.image_urls) ? dbLike.image_urls[0] : null,
+      dbLike.images && Array.isArray(dbLike.images) ? dbLike.images[0]?.url : null,
+      dbLike.photo_url
+    ) || null;
+
+  const commonName =
+    firstDefined(
+      dbLike.common_name,
+      (Array.isArray(dbLike.common_names) && dbLike.common_names[0]),
+      dbLike.commonName
+    ) || '';
+
+  const sciName =
+    firstDefined(
+      dbLike.scientific_name,
+      dbLike.latin_name,
+      dbLike.scientificName,
+      dbLike.scientificNameWithoutAuthor
+    ) || '';
+
+  // Raw care-ish fields (preserve for saving)
+  const sunlightRaw = firstDefined(dbLike.sunlight, dbLike.light, dbLike.exposure, dbLike.shade);
+  const wateringRaw = firstDefined(dbLike.watering, dbLike.moisture, dbLike.water, dbLike.soil_moisture);
+  const tempMinRaw  = firstDefined(
+    dbLike.temperature_min_c,
+    dbLike.min_temperature?.celsius,
+    dbLike.temperature?.min,
+    dbLike.temperature
+  );
+  const tempMaxRaw  = firstDefined(
+    dbLike.temperature_max_c,
+    dbLike.max_temperature?.celsius,
+    dbLike.temperature?.max
+  );
+
+  const difficulty =
+    firstDefined(
+      dbLike.care_difficulty,
+      dbLike.difficulty,
+      dbLike.easy_of_care,
+      dbLike.careLevel
+    ) || null;
+
+  return {
+    // core identity
+    id: dbLike.id || dbLike._id || sciName || commonName || String(Math.random()),
+    common_name: commonName,
+    scientific_name: sciName,
+    image_url: image,
+    family_common_name: firstDefined(dbLike.family_common_name, dbLike.family, dbLike.origin, dbLike.native_to) || '',
+
+    // UI tags
+    care_difficulty: difficulty,
+    shade: Boolean(sunlightRaw),
+    moisture: Boolean(wateringRaw),
+    temperature: Boolean(tempMinRaw || tempMaxRaw),
+
+    // PRESERVED fields for saving later:
+    sunlight: sunlightRaw,
+    watering: wateringRaw,
+    temperature_min_c: tempMinRaw ?? null,
+    temperature_max_c: tempMaxRaw ?? null,
+    hardiness: dbLike.hardiness ?? null,
+  };
+}
+
+// ------------------------------------------------------------------------------
+// Screen
 export default function AddPlantScreen({ navigation }) {
   const [query, setQuery]                 = useState('');
   const [plants, setPlants]               = useState([]);
-  const [popularPlants, setPopularPlants] = useState(fallbackPopular);
+  const [popularPlants, setPopularPlants] = useState([]); // hydrated from DB
   const [loading, setLoading]             = useState(false);
   const [searchDone, setSearchDone]       = useState(false);
   const [scanBusy, setScanBusy]           = useState(false);
   const webFileInputRef = useRef(null);
 
-  // Normalize API data
-  const normalize = (p) => ({
-    id:                  p.id,
-    common_name:         p.common_name || '',
-    scientific_name:     p.scientific_name || p.latin_name || '',
-    image_url:           p.image_url || (Array.isArray(p.image_urls) ? p.image_urls[0] : null) || null,
-    family_common_name:  p.family_common_name || p.origin || '',
-    care_difficulty:     p.care_difficulty || null,
-    shade:               p.shade || null,
-    moisture:            p.moisture || null,
-    temperature:         p.temperature || null,
-  });
+  // ---- DB calls --------------------------------------------------------------
+  async function searchPlantsByName(name) {
+    const res = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(name)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.json(); // expected: array of DB rows
+  }
 
-  async function fetchByScientificName(name) {
+  async function fetchPopularFromDB() {
+    setLoading(true);
     try {
-      const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(name)}`);
-      const data = await res.json();
-      const match = data.find((p) => p.scientific_name === name);
-      return match ? normalize(match) : null;
-    } catch {
-      return null;
+      const hydrated = [];
+      for (const stub of seedPopular) {
+        try {
+          const list = await searchPlantsByName(stub.scientific_name || stub.common_name);
+          const best = pickBestMatch(list, stub);
+          if (best) {
+            const n = normalize(best);
+            hydrated.push({ ...n, db_id: best.id ?? best._id ?? null, _raw: best, source: 'cosmos' });
+          } else {
+            const n = normalize(stub);
+            hydrated.push({ ...n, db_id: null, _raw: stub, source: 'seed' });
+          }
+        } catch {
+          // network hiccup → keep stub but still normalized
+          const n = normalize(stub);
+          hydrated.push({ ...n, db_id: null, _raw: stub, source: 'seed' });
+        }
+      }
+      setPopularPlants(hydrated);
+    } finally {
+      setLoading(false);
     }
   }
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const results = await Promise.all(
-        fallbackPopular.map(async (stub) => (await fetchByScientificName(stub.scientific_name)) || stub)
-      );
-      setPopularPlants(results);
-      setLoading(false);
-    })();
+    // Load default list from DB so it behaves like search results
+    fetchPopularFromDB();
   }, []);
 
-  // Search by text
+  // ---- Text search -----------------------------------------------------------
   const loadCosmosPlants = async () => {
     if (!query.trim() || loading || scanBusy) return;
     setLoading(true);
     setSearchDone(false);
     try {
-      const res  = await fetch(`${PLANT_SEARCH_URL}?name=${encodeURIComponent(query)}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setPlants(data.map(normalize));
+      const data = await searchPlantsByName(query.trim());
+      const mapped = (Array.isArray(data) ? data : []).map((row) => {
+        const n = normalize(row);
+        return { ...n, db_id: row.id ?? row._id ?? null, _raw: row, source: 'cosmos' };
+      });
+      setPlants(mapped);
       setSearchDone(true);
     } catch (e) {
       console.warn('plant search error:', e);
@@ -95,9 +200,9 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // Native (iOS/Android) upload
+  // ---- Photo search (PlantNet proxy) -----------------------------------------
   const processFileNative = async (uri) => {
-    const filename = uri.split('/').pop();
+    const filename = uri.split('/').pop() || `photo_${Date.now()}.jpg`;
     const extMatch = /\.(\w+)$/.exec(filename);
     const type     = extMatch ? `image/${extMatch[1]}` : 'image/jpeg';
     const form = new FormData();
@@ -111,17 +216,28 @@ export default function AddPlantScreen({ navigation }) {
   const identifyAndShow = async (uri) => {
     const json = await processFileNative(uri);
     const results = json.results || [];
-    setPlants(results.map((r) => ({
-      id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
-      common_name:        r.species?.commonNames?.[0] || '',
-      scientific_name:    r.species?.scientificNameWithoutAuthor,
-      image_url:          r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s || null,
-      family_common_name: r.species?.family?.scientificNameWithoutAuthor,
-    })));
+
+    // Build DB-like objects so normalize() preserves details
+    const mapped = results.map((r) => {
+      const dbLike = {
+        scientific_name: r.species?.scientificNameWithoutAuthor,
+        common_name: (r.species?.commonNames || [])[0],
+        image_url: r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s,
+        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
+        // raw care-ish fields if present
+        sunlight: r.species?.growth?.light,
+        watering: r.species?.growth?.atmospheric_humidity,
+        temperature_min_c: r.species?.growth?.minimum_temperature?.deg_c,
+        temperature_max_c: r.species?.growth?.maximum_temperature?.deg_c,
+      };
+      const n = normalize(dbLike);
+      return { ...n, db_id: null, _rawCandidate: r, source: 'plantnet' };
+    });
+
+    setPlants(mapped);
     setSearchDone(true);
   };
 
-  // Choose camera or library
   const handlePhotoSearch = async () => {
     if (Platform.OS === 'web') {
       webFileInputRef.current?.click();
@@ -205,7 +321,6 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
-  // Web upload
   const handleWebFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -221,13 +336,21 @@ export default function AddPlantScreen({ navigation }) {
       if (!resp.ok) throw new Error(await resp.text());
       const json = await resp.json();
       const results = json.results || [];
-      setPlants(results.map((r) => ({
-        id:                 r.species?.scientificNameWithoutAuthor || Math.random().toString(),
-        common_name:        r.species?.commonNames?.[0] || '',
-        scientific_name:    r.species?.scientificNameWithoutAuthor,
-        image_url:          r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s || null,
-        family_common_name: r.species?.family?.scientificNameWithoutAuthor,
-      })));
+      const mapped = results.map((r) => {
+        const dbLike = {
+          scientific_name: r.species?.scientificNameWithoutAuthor,
+          common_name: (r.species?.commonNames || [])[0],
+          image_url: r.images?.[0]?.url?.o || r.images?.[0]?.url?.m || r.images?.[0]?.url?.s,
+          family_common_name: r.species?.family?.scientificNameWithoutAuthor,
+          sunlight: r.species?.growth?.light,
+          watering: r.species?.growth?.atmospheric_humidity,
+          temperature_min_c: r.species?.growth?.minimum_temperature?.deg_c,
+          temperature_max_c: r.species?.growth?.maximum_temperature?.deg_c,
+        };
+        const n = normalize(dbLike);
+        return { ...n, db_id: null, _rawCandidate: r, source: 'plantnet' };
+      });
+      setPlants(mapped);
       setSearchDone(true);
     } catch (err) {
       Alert.alert('Error', 'Failed to identify plant.\n' + err.message);
@@ -238,10 +361,22 @@ export default function AddPlantScreen({ navigation }) {
     }
   };
 
+  // ---- Add / navigate to Review --------------------------------------------
   const onAdd = (item) => {
-    navigation.navigate('PlantReview', { plant: item });
+    // Give PlantReview everything it might need:
+    // - plantId: prefer real DB id, else fall back to scientific name
+    // - plant: normalized object with preserved details
+    // - raw: original DB row or candidate
+    navigation.navigate('PlantReview', {
+      plant: item,
+      plantId: item.db_id || item.id || item.scientific_name || null,
+      raw: item._raw || item._rawCandidate || null,
+      source: item.source || null,
+      from: 'AddPlantScreen',
+    });
   };
 
+  // ---- UI bits --------------------------------------------------------------
   const CareIcons = (p) => {
     const col = (v, c) => (v ? c : '#ccc');
     return (
@@ -250,9 +385,9 @@ export default function AddPlantScreen({ navigation }) {
           <View
             style={[
               styles.tag,
-              p.care_difficulty === 'Easy'
+              p.care_difficulty?.toLowerCase() === 'easy'
                 ? styles.tagEasy
-                : p.care_difficulty === 'Moderate'
+                : p.care_difficulty?.toLowerCase() === 'moderate'
                 ? styles.tagModerate
                 : styles.tagHard,
             ]}
@@ -279,7 +414,7 @@ export default function AddPlantScreen({ navigation }) {
 
       <View style={styles.content}>
         <TouchableOpacity
-          onPress={() => navigation.navigate('PlantDetail', { plantId: item.id })}
+          onPress={() => navigation.navigate('PlantDetail', { plantId: item.db_id || item.id })}
           activeOpacity={0.8}
         >
           <Text style={styles.title}>{item.common_name || item.scientific_name}</Text>
@@ -289,7 +424,6 @@ export default function AddPlantScreen({ navigation }) {
 
         <CareIcons {...item} />
 
-        {/* Nice Add button */}
         <View style={styles.cardFooter}>
           <TouchableOpacity
             style={styles.addBtn}
@@ -360,7 +494,7 @@ export default function AddPlantScreen({ navigation }) {
         <FlatList
           data={dataToShow}
           renderItem={renderItem}
-          keyExtractor={(i, idx) => String(i.id || idx)}
+          keyExtractor={(i, idx) => String(i.db_id || i.id || idx)}
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.listContent}
           ListFooterComponent={loading ? <ActivityIndicator style={{ margin: 16 }} /> : null}

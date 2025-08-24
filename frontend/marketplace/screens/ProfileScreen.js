@@ -1,9 +1,8 @@
 // screens/ProfileScreen.js — SINGLE FLATLIST, FAVORITES AS LIST, FIXED HOOK ORDER
-
 import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Image, TouchableOpacity, FlatList,
-  ActivityIndicator, SafeAreaView, Linking
+  ActivityIndicator, SafeAreaView, Linking, Alert
 } from 'react-native';
 import { MaterialIcons, Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
@@ -13,6 +12,10 @@ import PlantCard from '../components/PlantCard';
 import ReviewsList from '../components/ReviewsList';
 import RatingStars from '../components/RatingStars';
 import * as WishlistService from '../services/WishlistService';
+import { markAsSold, updateProductPrice } from '../services/marketplaceApi';
+
+// NEW: import listings helpers
+import { getUserListings, processIndividualProducts } from '../services/marketplaceApi';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -27,6 +30,10 @@ const ProfileScreen = () => {
   const [lastUpdateTime, setLastUpdateTime] = useState(Date.now());
   const [wishlistProducts, setWishlistProducts] = useState([]);
 
+  // NEW: hold real listings (not user.plants)
+  const [myListings, setMyListings] = useState([]);
+  const [isListingsLoading, setIsListingsLoading] = useState(false);
+
   // ---- memoized helpers
   const getAvatarUrl = useCallback(() => {
     if (!user) return `https://ui-avatars.com/api/?name=User&background=4CAF50&color=fff&size=80`;
@@ -38,21 +45,70 @@ const ProfileScreen = () => {
   }, [user?.avatar, user?.name]);
 
   const tabData = useMemo(() => [
-    { id: 'myPlants',  label: 'My Plants', icon: 'eco',         count: user?.plants?.length || 0 },
+    { id: 'myPlants',  label: 'My Plants', icon: 'eco',         count: myListings.length || 0 },
     { id: 'favorites', label: 'Favorites', icon: 'favorite',    count: wishlistProducts.length || 0 },
     { id: 'sold',      label: 'Sold',      icon: 'local-offer', count: user?.soldPlants?.length || 0 },
     { id: 'reviews',   label: 'Reviews',   icon: 'star',        count: ratingData?.count || 0 },
-  ], [user?.plants?.length, wishlistProducts.length, user?.soldPlants?.length, ratingData?.count]);
+  ], [myListings.length, wishlistProducts.length, user?.soldPlants?.length, ratingData?.count]);
 
   // ---- data loaders
+  // UPDATED: de-dupe IDs and products; provide stable composite keys
   const refreshWishlist = useCallback(async (force = false) => {
     try {
-      const ids   = await WishlistService.load({ force });
-      const prods = await WishlistService.fetchProducts(ids);
-      setWishlistProducts(prods);
+      const raw = await WishlistService.load({ force });
+      // 1) normalize to IDs
+      const ids = Array.isArray(raw)
+        ? raw
+            .map(x =>
+              typeof x === 'string'
+                ? x
+                : x?.id ?? x?._id ?? x?.productId ?? x?.product?.id ?? x?.product?._id
+            )
+            .filter(Boolean)
+        : [];
+      // 2) dedupe ids
+      const uniqIds = [...new Set(ids)];
+      if (!uniqIds.length) {
+        setWishlistProducts([]);
+        return;
+      }
+      // 3) fetch & dedupe products by composite key (type + seller + id)
+      const fetched = await WishlistService.fetchProducts(uniqIds);
+      const prods = Array.isArray(fetched) ? fetched : [];
+      const buildKey = (p, idx) =>
+        `${p?.isBusinessListing ? 'biz' : 'ind'}:${p?.businessId || p?.sellerId || ''}:${p?.id || p?._id || idx}`;
+      const seen = new Set();
+      const uniqProds = [];
+      for (let i = 0; i < prods.length; i++) {
+        const p = prods[i] || {};
+        const k = buildKey(p, i);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        uniqProds.push({ ...p, __key: k }); // stash computed key for keyExtractor
+      }
+      setWishlistProducts(uniqProds);
     } catch (e) {
       console.warn('[ProfileScreen] refreshWishlist failed:', e?.message);
       setWishlistProducts([]);
+    }
+  }, []);
+
+  // NEW: fetch listings from API and normalize to Product cards
+  const loadMyListings = useCallback(async (uid) => {
+    if (!uid) return;
+    setIsListingsLoading(true);
+    try {
+      const res = await getUserListings(uid, 'active');
+      const raw = Array.isArray(res)
+        ? res
+        : (res.listings || res.products || res.items || res.data || []);
+      const normalized = processIndividualProducts(raw);
+      setMyListings(normalized);
+    } catch (e) {
+      console.warn('[ProfileScreen] getUserListings failed:', e?.message || e);
+      setMyListings([]);
+    } finally {
+      setIsListingsLoading(false);
     }
   }, []);
 
@@ -85,7 +141,8 @@ const ProfileScreen = () => {
               email: d.email || userEmail,
               joinDate: d.joinDate || d.created_at || new Date().toISOString(),
               bio: d.bio || '',
-              plants: d.plants || [],
+              // NOTE: do NOT trust d.plants; we load via getUserListings
+              plants: [],
               favorites: d.favorites || [],
               soldPlants: d.soldPlants || [],
               stats: d.stats || { salesCount: 0 },
@@ -93,7 +150,10 @@ const ProfileScreen = () => {
               avatar: d.avatar || null,
             };
             setUser(profile);
-            await refreshWishlist(false);
+            await Promise.all([
+              refreshWishlist(false),
+              loadMyListings(userId),      // NEW
+            ]);
             return;
           }
         }
@@ -127,7 +187,10 @@ const ProfileScreen = () => {
               });
             } catch (e) { console.warn('[ProfileScreen] Error saving new profile:', e.message); }
             setUser(newProfile);
-            await refreshWishlist(false);
+            await Promise.all([
+              refreshWishlist(false),
+              loadMyListings(userId),      // NEW
+            ]);
             return;
           }
         }
@@ -154,7 +217,10 @@ const ProfileScreen = () => {
             avatar: null,
           };
           setUser(fallback);
-          await refreshWishlist(false);
+          await Promise.all([
+            refreshWishlist(false),
+            loadMyListings(userId),        // NEW
+          ]);
           return;
         }
       } catch (e) {
@@ -176,7 +242,10 @@ const ProfileScreen = () => {
         avatar: null,
       };
       setUser(minimal);
-      await refreshWishlist(false);
+      await Promise.all([
+        refreshWishlist(false),
+        loadMyListings(userId),          // NEW
+      ]);
     } catch (err) {
       console.error('[ProfileScreen] Critical error loading profile:', err);
       setError(`Failed to load profile: ${err.message}`);
@@ -184,19 +253,20 @@ const ProfileScreen = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [refreshWishlist]);
+  }, [refreshWishlist, loadMyListings]);
 
   const handleRetry = useCallback(async () => {
     await loadUserProfile();
+    if (user?.id) await loadMyListings(user.id); // NEW: ensure listings reload
     await refreshWishlist(true);
     setLastUpdateTime(Date.now());
-  }, [loadUserProfile, refreshWishlist]);
+  }, [loadUserProfile, refreshWishlist, loadMyListings, user?.id]);
 
   useFocusEffect(
     useCallback(() => {
       const controller = new AbortController();
-      loadUserProfile();
       (async () => {
+        await loadUserProfile();
         try {
           if (controller.signal.aborted) return;
           const flags = await Promise.all([
@@ -218,6 +288,7 @@ const ProfileScreen = () => {
             await loadUserProfile();
             setLastUpdateTime(Date.now());
             await refreshWishlist(true);
+            if (user?.id) await loadMyListings(user.id); // NEW
             if (route.params?.refresh) navigation.setParams({ refresh: undefined });
           }
         } catch (e) {
@@ -225,7 +296,7 @@ const ProfileScreen = () => {
         }
       })();
       return () => controller.abort();
-    }, [loadUserProfile, refreshWishlist, navigation, route.params?.refresh])
+    }, [loadUserProfile, refreshWishlist, loadMyListings, navigation, route.params?.refresh, user?.id])
   );
 
   // ----- list config (ALL HOOKS ABOVE ANY RETURNS) -----
@@ -234,11 +305,11 @@ const ProfileScreen = () => {
   const numColumns = isGridTab ? 2 : 1;
 
   const data = useMemo(() => {
-    if (activeTab === 'myPlants')  return user?.plants || [];
+    if (activeTab === 'myPlants')  return myListings || [];
     if (activeTab === 'favorites') return wishlistProducts || [];
     if (activeTab === 'sold')      return user?.soldPlants || [];
     return []; // reviews tab -> header renders content
-  }, [activeTab, user?.plants, user?.soldPlants, wishlistProducts]);
+  }, [activeTab, myListings, user?.soldPlants, wishlistProducts]);
 
   const emptyMeta = useMemo(() => {
     if (activeTab === 'myPlants') {
@@ -320,7 +391,7 @@ const ProfileScreen = () => {
 
       <View style={styles.statsRow}>
         <View style={styles.statBox}>
-          <Text style={styles.statValue}>{user?.plants?.length || 0}</Text>
+          <Text style={styles.statValue}>{myListings.length || 0}</Text>
           <Text style={styles.statLabel}>Listings</Text>
         </View>
         <View style={styles.statBox}>
@@ -364,23 +435,38 @@ const ProfileScreen = () => {
         </View>
       )}
     </View>
-  ), [activeTab, getAvatarUrl, navigation, ratingData?.average, ratingData?.count, tabData, user?.bio, user?.email, user?.id, user?.joinDate, user?.name, user?.plants?.length, user?.socialMedia, user?.stats?.salesCount]);
+  ), [activeTab, getAvatarUrl, navigation, ratingData?.average, ratingData?.count, tabData, user?.bio, user?.email, user?.id, user?.joinDate, myListings.length, user?.stats?.salesCount]);
 
-  const keyExtractor = useCallback((item, i) => String(item?.id ?? item?._id ?? i), []);
+  // UPDATED: stable composite keys (uses __key if present)
+  const keyExtractor = useCallback((item, i) => {
+    if (item?.__key) return String(item.__key);
+    const part1 = item?.isBusinessListing ? 'biz' : 'ind';
+    const part2 = item?.businessId || item?.sellerId || '';
+    const part3 = item?.id || item?._id || i;
+    return `${part1}:${part2}:${part3}`;
+  }, []);
 
   const renderItem = useCallback(({ item }) => {
-    // Wrap to control width per layout
-    return (
-      <View style={isGridTab ? styles.gridItem : styles.listItem}>
-        <PlantCard
-          plant={item}
-          delayPressIn={120}
-          pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
-          hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
-        />
-      </View>
-    );
-  }, [isGridTab]);
+    const onMarkedSold = async (id) => {
+      setMyListings(prev => prev.map(p => p.id === id ? { ...p, status: 'sold' } : p));
+    };
+    const onPriceChanged = async (id, price) => {
+      setMyListings(prev => prev.map(p => p.id === id ? { ...p, price } : p));
+    };
+   return (
+       <View style={isGridTab ? styles.gridItem : styles.listItem}>
+         <PlantCard
+           plant={item}
+         forceOwner={activeTab === 'myPlants'}
+         onMarkedSold={onMarkedSold}
+         onPriceChanged={onPriceChanged}
+           delayPressIn={120}
+           pressRetentionOffset={{ top: 20, bottom: 20, left: 20, right: 20 }}
+           hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+         />
+       </View>
+     );
+   }, [isGridTab, activeTab]);
 
   // ---- early returns (no hooks below this line) ----
   if (isLoading) {
@@ -435,7 +521,7 @@ const ProfileScreen = () => {
         keyExtractor={keyExtractor}
         renderItem={renderItem}
         numColumns={numColumns}
-        key={numColumns}                        // force layout refresh when columns change
+        key={numColumns}
         ListHeaderComponent={header}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 80 }}
@@ -445,7 +531,7 @@ const ProfileScreen = () => {
         maxToRenderPerBatch={8}
         windowSize={11}
         ListEmptyComponent={() =>
-          isLoading ? (
+          (isLoading || isListingsLoading) ? (
             <View style={styles.centerContainer}>
               <ActivityIndicator size="large" color="#4CAF50" />
               <Text style={styles.loadingText}>Loading...</Text>
@@ -519,8 +605,8 @@ const styles = StyleSheet.create({
   activeTabText: { color: '#4CAF50', fontWeight: 'bold' },
 
   // list item wrappers
-  gridItem: { flex: 1, marginVertical: 6, marginHorizontal: 4 }, // 2-column cells
-  listItem: { width: '100%', marginVertical: 8 },                 // full-width row
+  gridItem: { flex: 1, marginVertical: 6, marginHorizontal: 4 },
+  listItem: { width: '100%', marginVertical: 8 },
 
   emptyStateContainer: { justifyContent: 'center', alignItems: 'center', marginTop: 40, minHeight: 200 },
   emptyStateText: { fontSize: 16, color: '#888', textAlign: 'center', marginTop: 12 },

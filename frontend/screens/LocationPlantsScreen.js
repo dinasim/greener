@@ -9,6 +9,10 @@ import { useForm } from '../context/FormContext';
 import NavigationBar from '../components/NavigationBar'; 
 
 const PLANT_PHOTO_PLACEHOLDER = require('../assets/plant-placeholder.png');
+const getWaterIntervalDays = (v) => {
+  const n = parseInt(String(v), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
 
 export default function LocationPlantsDetail() {
   const { params } = useRoute();
@@ -50,9 +54,7 @@ export default function LocationPlantsDetail() {
         <Text style={styles.name}>{item.nickname || item.common_name || item.scientific_name}</Text>
         <Text style={styles.species}>{item.scientific_name}</Text>
         <View style={styles.waterRow}>
-          <Ionicons name="water" size={16} color="#53b881" />
-          <Text style={styles.waterText}>Every {item.water_days} days</Text>
-        </View>
+      </View>
       </View>
     </TouchableOpacity>
   );

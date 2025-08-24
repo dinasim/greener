@@ -730,14 +730,6 @@ const LocationPicker = ({
           <MaterialIcons name="edit-location" size={16} color="#FF6B35" />
           <Text style={[styles.actionButtonText, { color: '#FF6B35' }]}>Manual</Text>
         </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, styles.mapButton]}
-          onPress={() => setShowMap(true)}
-        >
-          <MaterialIcons name="map" size={16} color="#4CAF50" />
-          <Text style={[styles.actionButtonText, { color: '#4CAF50' }]}>Map</Text>
-        </TouchableOpacity>
       </View>
 
       {/* Search Suggestions */}
@@ -815,73 +807,7 @@ const LocationPicker = ({
         </View>
       )}
 
-      {/* Integrated Map */}
-      {alwaysShowMap && azureMapsKey && (
-        <View style={styles.integratedMapContainer}>
-          <View style={styles.integratedMapHeader}>
-            <MaterialIcons name="map" size={20} color="#4CAF50" />
-            <Text style={styles.integratedMapTitle}>Location Preview</Text>
-            <TouchableOpacity
-              style={styles.fullScreenMapButton}
-              onPress={() => setShowMap(true)}
-            >
-              <MaterialIcons name="fullscreen" size={20} color="#4CAF50" />
-            </TouchableOpacity>
-          </View>
-          
-          <View style={styles.integratedMapWrapper}>
-            <CrossPlatformAzureMapView
-              ref={mapRef}
-              region={mapRegion}
-              initialRegion={mapRegion}
-              markers={getCurrentMarkers()}
-              onMarkerPress={(marker) => {
-                console.log('Integrated map marker pressed:', marker);
-              }}
-              onLocationSelect={handleLocationSelect}
-              onMapPress={handleLocationSelect}
-              style={styles.integratedMap}
-              interactive={true}
-              azureMapsKey={azureMapsKey}
-              showMyLocation={!!liveGpsLocation}
-              myLocation={liveGpsLocation}
-            />
-
-            {/* Map Controls */}
-            <View style={styles.integratedMapControls}>
-              <TouchableOpacity
-                style={styles.integratedMapControlButton}
-                onPress={getCurrentLocation}
-                disabled={gpsLoading}
-              >
-                {gpsLoading ? (
-                  <ActivityIndicator size="small" color="#4CAF50" />
-                ) : (
-                  <MaterialIcons name="my-location" size={20} color="#4CAF50" />
-                )}
-              </TouchableOpacity>
-              
-              {/* GPS Tracking Toggle */}
-              {liveGpsLocation && (
-                <TouchableOpacity
-                  style={styles.integratedMapControlButton}
-                  onPress={gpsWatchRef.current ? stopGPSTracking : startGPSTracking}
-                >
-                  <MaterialIcons 
-                    name={gpsWatchRef.current ? "gps-off" : "gps-fixed"} 
-                    size={20} 
-                    color={gpsWatchRef.current ? "#FF5722" : "#2196F3"} 
-                  />
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-          
-          <Text style={styles.integratedMapHint}>
-            📍 Tap on the map to select a location, or use GPS for your current position
-          </Text>
-        </View>
-      )}
+      
 {/* Manual Address Entry Modal */}
 <Modal
        visible={showManualEntry}
@@ -990,99 +916,6 @@ const LocationPicker = ({
              )}
            </TouchableOpacity>
          </View>
-       </View>
-     </Modal>
-
-     {/* Full Screen Map Modal */}
-     <Modal
-       visible={showMap}
-       animationType="slide"
-       onRequestClose={() => setShowMap(false)}
-     >
-       <View style={styles.modalContainer}>
-         <View style={styles.modalHeader}>
-           <Text style={styles.modalTitle}>Select Location</Text>
-           <TouchableOpacity
-             style={styles.closeButton}
-             onPress={() => setShowMap(false)}
-           >
-             <MaterialIcons name="close" size={24} color="#333" />
-           </TouchableOpacity>
-         </View>
-
-         {/* User instruction message */}
-         <View style={{padding: 12, backgroundColor: '#f8f9fa'}}>
-           <Text style={{color: '#666', fontSize: 13, textAlign: 'center'}}>
-             Double tap on the map to pin your location, then press Confirm.
-           </Text>
-         </View>
-
-         <CrossPlatformAzureMapView
-           ref={mapRef}
-           region={mapRegion}
-           initialRegion={mapRegion}
-           markers={getCurrentMarkers()}
-           onMarkerPress={(marker) => {
-             console.log('Full screen map marker pressed:', marker);
-           }}
-           onLocationSelect={handleLocationSelect}
-           onMapPress={handleLocationSelect}
-           style={styles.map}
-           interactive={true}
-           azureMapsKey={azureMapsKey}
-           showMyLocation={!!liveGpsLocation}
-           myLocation={liveGpsLocation}
-         />
-
-         {/* Map Controls */}
-         <View style={styles.mapControls}>
-           <TouchableOpacity
-             style={styles.mapControlButton}
-             onPress={getCurrentLocation}
-             disabled={gpsLoading}
-           >
-             {gpsLoading ? (
-               <ActivityIndicator size="small" color="#216a94" />
-             ) : (
-               <MaterialIcons name="my-location" size={24} color="#216a94" />
-             )}
-           </TouchableOpacity>
-           
-           {/* GPS Tracking Control */}
-           {liveGpsLocation && (
-             <TouchableOpacity
-               style={styles.mapControlButton}
-               onPress={gpsWatchRef.current ? stopGPSTracking : startGPSTracking}
-             >
-               <MaterialIcons 
-                 name={gpsWatchRef.current ? "gps-off" : "gps-fixed"} 
-                 size={24} 
-                 color={gpsWatchRef.current ? "#FF5722" : "#2196F3"} 
-               />
-             </TouchableOpacity>
-           )}
-         </View>
-
-         {/* Confirm Button */}
-         {selectedLocation && (
-           <TouchableOpacity
-             style={styles.confirmButton}
-             onPress={() => {
-               showToast('Location confirmed successfully!', 'success');
-               
-               if (autoCloseOnConfirm) {
-                 setTimeout(() => {
-                   setShowMap(false);
-                 }, 1500);
-               } else {
-                 setShowMap(false);
-               }
-             }}
-           >
-             <MaterialIcons name="check" size={20} color="#fff" style={{ marginRight: 8 }} />
-             <Text style={styles.confirmButtonText}>Confirm Location</Text>
-           </TouchableOpacity>
-         )}
        </View>
      </Modal>
 

@@ -518,28 +518,53 @@ export default function OrderDetailModal({
             )}
 
             {/* Pickup Information */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Pickup Information</Text>
-              <View style={styles.pickupContainer}>
-                <View style={styles.pickupItem}>
-                  <MaterialIcons name="event" size={16} color="#666" />
-                  <Text style={styles.pickupLabel}>Order Date:</Text>
-                  <Text style={styles.pickupValue}>{formatDate(order.orderDate)}</Text>
-                </View>
+<View style={styles.section}>
+  <Text style={styles.sectionTitle}>Pickup Information</Text>
 
-                <View style={styles.pickupItem}>
-                  <MaterialIcons name="payment" size={16} color="#666" />
-                  <Text style={styles.pickupLabel}>Payment:</Text>
-                  <Text style={styles.pickupValue}>Pay on pickup</Text>
-                </View>
+  <View style={styles.pickupCard}>
+    {/* Order date */}
+    <View style={styles.pickupRow}>
+      <View style={styles.pickupLeft}>
+        <MaterialIcons name="event" size={16} color="#616161" />
+        <Text style={styles.pickupLabel}>Order Date</Text>
+      </View>
+      <Text style={styles.pickupValue}>{formatDate(order.orderDate)}</Text>
+    </View>
 
-                <View style={styles.pickupItem}>
-                  <MaterialIcons name="location-on" size={16} color="#666" />
-                  <Text style={styles.pickupLabel}>Location:</Text>
-                  <Text style={styles.pickupValue}>{businessInfo.address || 'Store location'}</Text>
-                </View>
-              </View>
-            </View>
+    <View style={styles.pickupDivider} />
+
+    {/* Payment */}
+    <View style={styles.pickupRow}>
+      <View style={styles.pickupLeft}>
+        <MaterialIcons name="payment" size={16} color="#616161" />
+        <Text style={styles.pickupLabel}>Payment</Text>
+      </View>
+      <View style={styles.paymentPill}>
+        <Text style={styles.paymentPillText}>Pay on pickup</Text>
+      </View>
+    </View>
+
+    <View style={styles.pickupDivider} />
+
+    {/* Location */}
+    <TouchableOpacity
+      style={styles.pickupRow}
+      accessibilityRole="button"
+      accessibilityLabel="Open pickup location in maps"
+    >
+      <View style={styles.pickupLeft}>
+        <MaterialIcons name="location-on" size={16} color="#616161" />
+        <Text style={styles.pickupLabel}>Location</Text>
+      </View>
+
+      <View style={styles.pickupRight}>
+        <Text style={styles.pickupValue} numberOfLines={2}>
+          {businessInfo.address || 'Store location'}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  </View>
+</View>
           </ScrollView>
 
           {/* Status Update Menu */}
@@ -666,7 +691,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 16,
     width: '95%',
-    maxHeight: '90%',
+    height: '85%',
+    overflow: 'hidden',
     maxWidth: 500,
   },
   header: {
@@ -709,6 +735,71 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: '#f5f5f5',
   },
+  pickupCard: {
+  backgroundColor: '#fff',
+  borderRadius: 12,
+  borderWidth: 1,
+  borderColor: '#e9ecef',
+  paddingVertical: 8,
+  overflow: 'hidden',
+},
+
+pickupRow: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  justifyContent: 'space-between',
+  paddingHorizontal: 12,
+  paddingVertical: 12,
+},
+
+pickupLeft: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  gap: 8,
+  minWidth: 120,
+},
+
+pickupRight: {
+  flexDirection: 'row',
+  alignItems: 'center',
+  maxWidth: '62%',
+  gap: 6,
+},
+
+pickupLabel: {
+  fontSize: 13,
+  color: '#6b7280', // slate-500
+  fontWeight: '600',
+},
+
+pickupValue: {
+  fontSize: 14,
+  color: '#2d3436',
+  textAlign: 'right',
+  flexShrink: 1,
+},
+
+pickupDivider: {
+  height: 1,
+  backgroundColor: '#f0f0f0',
+  marginHorizontal: 12,
+},
+
+paymentPill: {
+  paddingHorizontal: 10,
+  paddingVertical: 6,
+  borderRadius: 999,
+  backgroundColor: '#f0f9f3',
+  borderWidth: 1,
+  borderColor: '#e0f2e9',
+},
+
+paymentPillText: {
+  fontSize: 12,
+  fontWeight: '700',
+  color: '#2e7d32',
+  textTransform: 'none',
+},
   closeButton: {
     padding: 8,
     borderRadius: 8,
@@ -717,6 +808,7 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: 20,
+     paddingBottom: 20,
   },
   section: {
     marginBottom: 24,

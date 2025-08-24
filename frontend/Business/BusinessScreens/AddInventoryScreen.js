@@ -20,6 +20,7 @@ import {
 import { MaterialCommunityIcons, MaterialIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import BusinessLayout from '../components/BusinessLayout';
+import * as FileSystem from 'expo-file-system';
 
 // Safe ImagePicker import with web fallback
 let ImagePicker;
@@ -74,6 +75,9 @@ export default function AddInventoryScreen({ navigation, route }) {
   // Product type
   const [productType, setProductType] = useState('plant'); // 'plant' | 'tool' | 'accessory'
 
+  // Manual plant entry toggle
+  const [manualPlantMode, setManualPlantMode] = useState(false);
+
   // UX state
   const [lastSavedItem, setLastSavedItem] = useState(null);
   const [autoRefreshEnabled] = useState(true);
@@ -116,6 +120,18 @@ export default function AddInventoryScreen({ navigation, route }) {
     material: '',
     dimensions: '',
     weight: '',
+    // Manual-plant fields
+    waterDays: '',
+    light: '',
+    humidity: '',
+    tempMin: '',
+    tempMax: '',
+    pets: '',
+    difficulty: '',
+    repot: '',
+    feed: '',
+    origin: '',
+    site: 'indoor',
   });
 
   const [errors, setErrors] = useState({});
@@ -254,7 +270,7 @@ export default function AddInventoryScreen({ navigation, route }) {
     if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
 
     debounceTimeout.current = setTimeout(() => {
-      if (productType === 'plant' && searchQuery.length >= 2) {
+      if (productType === 'plant' && !manualPlantMode && searchQuery.length >= 2) {
         handleSearch(searchQuery);
         setShowSearchHistory(false);
       } else {
@@ -266,7 +282,7 @@ export default function AddInventoryScreen({ navigation, route }) {
     return () => {
       if (debounceTimeout.current) clearTimeout(debounceTimeout.current);
     };
-  }, [searchQuery, productType]);
+  }, [searchQuery, productType, manualPlantMode]);
 
   // Auto-refresh inventory
   useEffect(() => {
@@ -335,15 +351,16 @@ export default function AddInventoryScreen({ navigation, route }) {
       setSearchQuery(transcribedText.trim());
       searchInputRef.current?.focus();
       Animated.sequence([
-        Animated.timing(searchBarFocusAnim, { toValue: 1, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(searchBarFocusAnim, { toValue: 1, duration: 200, useNativeDriver: false }),
         Animated.delay(1000),
-        Animated.timing(searchBarFocusAnim, { toValue: 0, duration: 200, useNativeDriver: Platform.OS !== 'web' }),
+        Animated.timing(searchBarFocusAnim, { toValue: 0, duration: 200, useNativeDriver: false }),
       ]).start();
     }
   };
 
-  // Select plant
+  // Select plant from DB
   const handleSelectPlant = (plant) => {
+    setManualPlantMode(false);
     setSelectedPlant(plant);
     setSearchResults([]);
     setSearchQuery(plant.common_name || '');
@@ -364,9 +381,18 @@ export default function AddInventoryScreen({ navigation, route }) {
       brand: '',
       scientificName: plant.scientific_name || '',
       careInstructions: plant.careInstructions || '',
-      material: '',
-      dimensions: '',
-      weight: '',
+      // clear manual-only fields so UI displays cleanly if user toggles
+      waterDays: plant.water_days ? String(plant.water_days) : '',
+      light: plant.light || '',
+      humidity: plant.humidity || '',
+      tempMin: plant.temperature?.min != null ? String(plant.temperature.min) : '',
+      tempMax: plant.temperature?.max != null ? String(plant.temperature.max) : '',
+      pets: plant.pets || '',
+      difficulty: plant.difficulty != null ? String(plant.difficulty) : '',
+      repot: plant.repot || '',
+      feed: plant.feed || '',
+      origin: plant.origin || '',
+      site: 'indoor',
     }));
     Animated.timing(headerHeightAnim, { toValue: 85, duration: 300, useNativeDriver: false }).start();
   };
@@ -570,11 +596,14 @@ export default function AddInventoryScreen({ navigation, route }) {
   const validateForm = () => {
     const newErrors = {};
 
-    if (productType === 'plant' && !selectedPlant) {
-      newErrors.plant = 'Please select a plant from the search results';
-    }
-
-    if (productType !== 'plant' && !formData.name.trim()) {
+    if (productType === 'plant') {
+      if (!manualPlantMode && !selectedPlant) {
+        newErrors.plant = 'Please select a plant from the search results';
+      }
+      if (manualPlantMode && !formData.name.trim()) {
+        newErrors.name = 'Please enter a plant name';
+      }
+    } else if (!formData.name.trim()) {
       newErrors.name = 'Please enter a product name';
     }
 
@@ -605,45 +634,55 @@ export default function AddInventoryScreen({ navigation, route }) {
   };
 
   // Upload images
-  const prepareImageData = async () => {
-    try {
-      const uploaded = [];
-      for (const uri of images) {
-        if (uri.startsWith('http')) {
-          uploaded.push(uri);
-          continue;
-        }
-        if (Platform.OS !== 'web') {
-          const response = await fetch(uri);
-          const blob = await response.blob();
-
-          const formData = new FormData();
-          formData.append('file', blob, `business-product-${Date.now()}.jpg`);
-          formData.append('type', 'business-product');
-          formData.append('contentType', 'image/jpeg');
-
-          const uploadResponse = await fetch(`${API_BASE_URL}/marketplace/uploadImage`, {
-            method: 'POST',
-            body: formData,
-          });
-
-          if (uploadResponse.ok) {
-            const result = await uploadResponse.json();
-            uploaded.push(result.url);
-          } else {
-            throw new Error(`Upload failed for image: ${uploadResponse.status}`);
-          }
-        } else {
-          const result = await uploadImage(uri, 'business-product');
-          if (result?.url) uploaded.push(result.url);
-        }
-      }
-      return uploaded;
-    } catch (error) {
-      console.error('Error uploading images:', error);
-      throw new Error('Image upload failed. Please try again.');
+  const uploadNativeImage = async (uri, mime = 'image/jpeg') => {
+  const name = `business-product-${Date.now()}.jpg`;
+  const result = await FileSystem.uploadAsync(
+    `${API_BASE_URL}/marketplace/uploadImage`,
+    uri,
+    {
+      httpMethod: 'POST',
+      uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+      fieldName: 'file', // server expects 'file'
+      parameters: { type: 'business-product', contentType: mime },
+      headers: { Accept: 'application/json' }, // don't set Content-Type manually
     }
-  };
+  );
+
+  if (result.status < 200 || result.status >= 300) {
+    // helpful debugging:
+    console.log('Upload failed:', result.status, result.body);
+    throw new Error(`Upload failed (${result.status})`);
+  }
+  const json = JSON.parse(result.body || '{}');
+  if (!json.url) throw new Error('Upload returned no URL');
+  return json.url;
+};
+
+const prepareImageData = async () => {
+  try {
+    const uploaded = [];
+    for (const uri of images) {
+      // already remote? just keep it
+      if (/^https?:\/\//i.test(uri)) {
+        uploaded.push(uri);
+        continue;
+      }
+      if (Platform.OS === 'web') {
+        // on web, images come from <input>; those are uploaded in handleWebFilePick
+        // but if a data URL slipped in, bail out gracefully
+        throw new Error('Please select an image file via the picker on web.');
+      } else {
+        const url = await uploadNativeImage(uri);
+        uploaded.push(url);
+      }
+    }
+    return uploaded;
+  } catch (error) {
+    console.error('Error uploading images:', error);
+    throw new Error('Image upload failed. Please try again.');
+  }
+};
+
 
   // Save
   const handleSave = async () => {
@@ -652,74 +691,128 @@ export default function AddInventoryScreen({ navigation, route }) {
     setIsLoading(true);
     setNetworkStatus('loading');
 
+    const toNum = (v) => (v === '' || v === undefined || v === null ? undefined : Number(v));
+    const toFloat = (v, def = 0) => {
+      const n = parseFloat(v);
+      return isNaN(n) ? def : n;
+    };
+
     try {
       const imageData = await prepareImageData();
-      let inventoryItem;
+      let payload;
 
       if (productType === 'plant') {
-        inventoryItem = {
+        const isManual = manualPlantMode;
+
+        const manualInfo = {
+          id: formData.scientificName || formData.name,
+          common_name: formData.name,
+          scientific_name: formData.scientificName,
+          origin: formData.origin || undefined,
+          water_days: toNum(formData.waterDays),
+          light: formData.light || undefined,
+          humidity: formData.humidity || undefined,
+          temperature: (formData.tempMin || formData.tempMax)
+            ? { min: toNum(formData.tempMin), max: toNum(formData.tempMax) }
+            : undefined,
+          pets: formData.pets || undefined,
+          difficulty: toNum(formData.difficulty),
+          repot: formData.repot || undefined,
+          feed: formData.feed || undefined,
+          common_problems: [],
+        };
+
+        const searchedInfo = selectedPlant && {
+          id: selectedPlant.id,
+          common_name: selectedPlant.common_name,
+          scientific_name: selectedPlant.scientific_name,
+          origin: selectedPlant.origin,
+          water_days: selectedPlant.water_days,
+          light: selectedPlant.light,
+          humidity: selectedPlant.humidity,
+          temperature: selectedPlant.temperature, // {min, max}
+          pets: selectedPlant.pets,
+          difficulty: selectedPlant.difficulty,
+          repot: selectedPlant.repot,
+          feed: selectedPlant.feed,
+          common_problems: selectedPlant.common_problems,
+        };
+
+        const plantInfo = isManual ? manualInfo : searchedInfo;
+
+        const price = toFloat(formData.price);
+        const discountPct = toFloat(formData.discount, 0);
+        const finalPrice = price * (1 - (discountPct / 100));
+
+        payload = {
+          // Function-required/validated keys
+          name: isManual ? formData.name : (selectedPlant?.common_name || ''),
+          common_name: isManual ? formData.name : (selectedPlant?.common_name || ''),
+          scientific_name: isManual ? formData.scientificName : (selectedPlant?.scientific_name || ''),
+          productName: isManual ? formData.name : (selectedPlant?.common_name || ''),
           productType: 'plant',
-          plantData: {
-            id: selectedPlant.id,
-            common_name: selectedPlant.common_name,
-            scientific_name: selectedPlant.scientific_name,
-            origin: selectedPlant.origin,
-            water_days: selectedPlant.water_days,
-            light: selectedPlant.light,
-            humidity: selectedPlant.humidity,
-            temperature: selectedPlant.temperature,
-            pets: selectedPlant.pets,
-            difficulty: selectedPlant.difficulty,
-            repot: selectedPlant.repot,
-            feed: selectedPlant.feed,
-            common_problems: selectedPlant.common_problems,
-          },
-          name: selectedPlant.common_name,
-          description: formData.careInstructions || `${selectedPlant.common_name} - Beautiful indoor plant`,
-          quantity: parseInt(formData.quantity, 10),
-          price: parseFloat(formData.price),
-          minThreshold: parseInt(formData.minThreshold, 10) || 5,
-          discount: parseFloat(formData.discount) || 0,
-          notes: formData.notes,
           category: formData.category || 'Indoor Plants',
+          description:
+            formData.description ||
+            (isManual
+              ? `${formData.name} - Beautiful plant`
+              : (selectedPlant?.careInstructions || `${selectedPlant?.common_name} - Beautiful plant`)),
+          notes: formData.notes,
+
+          quantity: parseInt(formData.quantity, 10),
+          originalQuantity: parseInt(formData.quantity, 10),
+          price,
+          finalPrice,
+          discount: discountPct || 0,
+          minThreshold: parseInt(formData.minThreshold, 10) || 5,
+
           status: 'active',
           mainImage: imageData[0],
           images: imageData,
           imageUrls: imageData,
-          site: formData.site || 'indoor',
+
+          // Stored verbatim by your create Function:
+          plantInfo, // ✅ matches backend
+          wateringSchedule: plantInfo?.water_days ? { everyDays: plantInfo.water_days } : {}, // ✅ optional
         };
       } else {
-        inventoryItem = {
+        const price = toFloat(formData.price);
+        const discountPct = toFloat(formData.discount, 0);
+        const finalPrice = price * (1 - (discountPct / 100));
+
+        payload = {
           productType,
           name: formData.name,
-          description: formData.description,
+          common_name: formData.name,
+          productName: formData.name,
           category: formData.category,
+          description: formData.description,
           brand: formData.brand,
           quantity: parseInt(formData.quantity, 10),
-          price: parseFloat(formData.price),
+          originalQuantity: parseInt(formData.quantity, 10),
+          price,
+          finalPrice,
+          discount: discountPct || 0,
           minThreshold: parseInt(formData.minThreshold, 10) || 5,
-          discount: parseFloat(formData.discount) || 0,
           notes: formData.notes,
           status: 'active',
           mainImage: imageData[0],
           images: imageData,
           imageUrls: imageData,
-          specifications: {
-            material: formData.material,
-            dimensions: formData.dimensions,
-            weight: formData.weight,
-          }
         };
       }
 
-      await createInventoryItem(inventoryItem);
-      const productName = productType === 'plant' ? selectedPlant?.common_name : formData.name;
+      await createInventoryItem(payload);
+      const productName =
+        productType === 'plant'
+          ? (manualPlantMode ? formData.name : selectedPlant?.common_name)
+          : formData.name;
 
       Alert.alert(
         '✅ Success!',
-        `${productName} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
+        `${productName || 'Item'} has been added to your inventory with ${images.length} image${images.length > 1 ? 's' : ''}!`,
         [
-          { text: 'Add Another', onPress: () => { resetForm(); setShowInventory(false); if (productType === 'plant') searchInputRef.current?.focus(); } },
+          { text: 'Add Another', onPress: () => { resetForm(); setShowInventory(false); if (productType === 'plant' && !manualPlantMode) searchInputRef.current?.focus(); } },
           { text: 'View Inventory', onPress: () => { resetForm(); setShowInventory(true); } },
         ]
       );
@@ -748,6 +841,7 @@ export default function AddInventoryScreen({ navigation, route }) {
     setSelectedPlant(null);
     setSearchQuery('');
     setImages([]);
+    setManualPlantMode(false);
     setFormData({
       name: '',
       description: '',
@@ -763,6 +857,17 @@ export default function AddInventoryScreen({ navigation, route }) {
       material: '',
       dimensions: '',
       weight: '',
+      waterDays: '',
+      light: '',
+      humidity: '',
+      tempMin: '',
+      tempMax: '',
+      pets: '',
+      difficulty: '',
+      repot: '',
+      feed: '',
+      origin: '',
+      site: 'indoor',
     });
     setErrors({});
     setShowSearchHistory(false);
@@ -818,8 +923,40 @@ export default function AddInventoryScreen({ navigation, route }) {
         })}
       </View>
 
-      {/* SEARCH BELOW THE BUTTONS */}
-      {!showInventory && productType === 'plant' && (
+      {/* Toggle between DB search and Manual entry */}
+      {productType === 'plant' && (
+        <View style={styles.toggleRow}>
+          <TouchableOpacity
+            style={[styles.toggleBtn, !manualPlantMode && styles.toggleBtnActive]}
+            onPress={() => setManualPlantMode(false)}
+            activeOpacity={0.9}
+          >
+            <MaterialCommunityIcons name="magnify" size={18} color={!manualPlantMode ? '#fff' : '#4CAF50'} />
+            <Text style={[styles.toggleBtnText, !manualPlantMode && styles.toggleBtnTextActive]}>
+              Search database
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.toggleBtn, manualPlantMode && styles.toggleBtnActive]}
+            onPress={() => {
+              setManualPlantMode(true);
+              setSelectedPlant(null);
+              setSearchResults([]);
+              setSearchQuery('');
+            }}
+            activeOpacity={0.9}
+          >
+            <MaterialCommunityIcons name="pencil" size={18} color={manualPlantMode ? '#fff' : '#4CAF50'} />
+            <Text style={[styles.toggleBtnText, manualPlantMode && styles.toggleBtnTextActive]}>
+              Manual entry
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* SEARCH BELOW THE BUTTONS (only when not manual) */}
+      {!showInventory && productType === 'plant' && !manualPlantMode && (
         <Animated.View
           style={[
             styles.searchContainer,
@@ -860,7 +997,6 @@ export default function AddInventoryScreen({ navigation, route }) {
       )}
     </View>
   );
-
 
   // Manual product form (tools/accessories)
   const renderManualProductForm = () => (
@@ -1028,6 +1164,151 @@ export default function AddInventoryScreen({ navigation, route }) {
             placeholder="Additional notes..."
             multiline
             numberOfLines={3}
+          />
+        </View>
+      </View>
+    </View>
+  );
+
+  // Manual plant form
+  const renderManualPlantForm = () => (
+    <View style={styles.section}>
+      <Text style={styles.sectionTitle}>
+        <MaterialCommunityIcons name="leaf" size={20} color="#4CAF50" /> Add Plant Details (Manual)
+      </Text>
+
+      {renderImagePicker()}
+
+      <View style={styles.formContainer}>
+        {/* Names */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Common Name *</Text>
+          <TextInput
+            style={[styles.input, errors.name && styles.inputError]}
+            value={formData.name}
+            onChangeText={(t) => handleInputChange('name', t)}
+            placeholder="e.g., Golden Pothos"
+          />
+          {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Scientific Name</Text>
+          <TextInput
+            style={styles.input}
+            value={formData.scientificName}
+            onChangeText={(t) => handleInputChange('scientificName', t)}
+            placeholder="e.g., Epipremnum aureum"
+          />
+        </View>
+
+        {/* Category */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Plant Category *</Text>
+          <View style={styles.categoryContainer}>
+            {productCategories.plant.map((cat) => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.categoryChip, formData.category === cat && styles.categoryChipActive]}
+                onPress={() => handleInputChange('category', cat)}
+              >
+                <Text style={[styles.categoryChipText, formData.category === cat && styles.categoryChipTextActive]}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          {errors.category && <Text style={styles.errorText}>{errors.category}</Text>}
+        </View>
+
+        {/* Business fields */}
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Quantity *</Text>
+            <TextInput
+              style={[styles.input, errors.quantity && styles.inputError]}
+              value={formData.quantity}
+              onChangeText={(t) => handleInputChange('quantity', t)}
+              placeholder="1"
+              keyboardType="numeric"
+            />
+            {errors.quantity && <Text style={styles.errorText}>{errors.quantity}</Text>}
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Price *</Text>
+            <TextInput
+              style={[styles.input, errors.price && styles.inputError]}
+              value={formData.price}
+              onChangeText={(t) => handleInputChange('price', t)}
+              placeholder="0.00"
+              keyboardType="decimal-pad"
+            />
+            {errors.price && <Text style={styles.errorText}>{errors.price}</Text>}
+          </View>
+        </View>
+
+        {/* Care data */}
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Water every (days)</Text>
+            <TextInput style={styles.input} value={formData.waterDays} onChangeText={(t)=>handleInputChange('waterDays',t)} keyboardType="numeric" placeholder="e.g., 7" />
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Light</Text>
+            <TextInput style={styles.input} value={formData.light} onChangeText={(t)=>handleInputChange('light',t)} placeholder="Bright indirect" />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Temp Min (°C)</Text>
+            <TextInput style={styles.input} value={formData.tempMin} onChangeText={(t)=>handleInputChange('tempMin',t)} keyboardType="decimal-pad" placeholder="e.g., 15" />
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Temp Max (°C)</Text>
+            <TextInput style={styles.input} value={formData.tempMax} onChangeText={(t)=>handleInputChange('tempMax',t)} keyboardType="decimal-pad" placeholder="e.g., 30" />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Humidity</Text>
+            <TextInput style={styles.input} value={formData.humidity} onChangeText={(t)=>handleInputChange('humidity',t)} placeholder="Medium-High" />
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Difficulty (1-10)</Text>
+            <TextInput style={styles.input} value={formData.difficulty} onChangeText={(t)=>handleInputChange('difficulty',t)} keyboardType="numeric" placeholder="e.g., 3" />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Pet Safety</Text>
+            <TextInput style={styles.input} value={formData.pets} onChangeText={(t)=>handleInputChange('pets',t)} placeholder="Pet-friendly / Toxic" />
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Origin</Text>
+            <TextInput style={styles.input} value={formData.origin} onChangeText={(t)=>handleInputChange('origin',t)} placeholder="e.g., SE Asia" />
+          </View>
+        </View>
+
+        <View style={styles.row}>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Repot</Text>
+            <TextInput style={styles.input} value={formData.repot} onChangeText={(t)=>handleInputChange('repot',t)} placeholder="Every 1-2 years" />
+          </View>
+          <View style={styles.halfInput}>
+            <Text style={styles.label}>Feed</Text>
+            <TextInput style={styles.input} value={formData.feed} onChangeText={(t)=>handleInputChange('feed',t)} placeholder="Monthly in spring" />
+          </View>
+        </View>
+
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Notes / Description</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={formData.description}
+            onChangeText={(t) => handleInputChange('description', t)}
+            multiline numberOfLines={3}
+            placeholder="Anything you want customers to know…"
           />
         </View>
       </View>
@@ -1244,7 +1525,7 @@ export default function AddInventoryScreen({ navigation, route }) {
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.keyboardAvoid}>
           {/* Content */}
           {showInventory ? (
-            // Better performance: let InventoryTable's FlatList be the only scroller.
+            // Let InventoryTable's FlatList be the only scroller.
             <InventoryTable
               inventory={currentInventory}
               isLoading={isLoading}
@@ -1255,7 +1536,6 @@ export default function AddInventoryScreen({ navigation, route }) {
               onProductPress={handleEditInventoryItem}
               businessId={currentBusinessId}
               error={inventoryError}
-              // Forwarded to FlatList inside InventoryTable (see note below)
               ListHeaderComponent={InventoryHeader}
               ListEmptyComponent={isInventoryEmpty && !inventoryError ? EmptyInventory : null}
             />
@@ -1271,7 +1551,8 @@ export default function AddInventoryScreen({ navigation, route }) {
             >
               {renderProductTypeSelector()}
 
-              {productType === 'plant' && (
+              {/* PLANTS: DB search path */}
+              {productType === 'plant' && !manualPlantMode && (
                 <>
                   {searchResults.length > 0 && (
                     <View style={styles.section}>
@@ -1511,7 +1792,7 @@ export default function AddInventoryScreen({ navigation, route }) {
                           </View>
                         </View>
 
-                        <View className="inputGroup">
+                        <View style={styles.inputGroup}>
                           <Text style={styles.label}>Notes (Optional)</Text>
                           <TextInput
                             style={[styles.input, styles.textArea]}
@@ -1528,6 +1809,9 @@ export default function AddInventoryScreen({ navigation, route }) {
                 </>
               )}
 
+              {/* PLANTS: Manual entry path */}
+              {productType === 'plant' && manualPlantMode && renderManualPlantForm()}
+
               {/* Tools / Accessories */}
               {productType !== 'plant' && renderManualProductForm()}
             </ScrollView>
@@ -1535,7 +1819,11 @@ export default function AddInventoryScreen({ navigation, route }) {
 
           {/* Save Button (when adding) */}
           {!showInventory && (
-            ((productType === 'plant' && selectedPlant) || (productType !== 'plant' && formData.name.trim())) && (
+            ((productType === 'plant' &&
+              ((manualPlantMode && formData.name.trim()) || (!manualPlantMode && selectedPlant))
+            ) ||
+            (productType !== 'plant' && formData.name.trim())
+            ) && (
               <Animated.View style={[styles.footer, { opacity: fadeAnim }]}>
                 <TouchableOpacity
                   style={[styles.saveButton, isLoading && styles.saveButtonDisabled]}
@@ -1610,11 +1898,6 @@ const styles = StyleSheet.create({
   subText: { fontSize: 12, color: '#666', marginLeft: 4 },
   headerActions: { flexDirection: 'row', gap: 8 },
   headerButton: { padding: 8, borderRadius: 6, backgroundColor: '#f0f8ff' },
-  headerTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  headerCenter: { flex: 1, alignItems: 'center', marginHorizontal: 16 },
-  headerTitle: { fontSize: 18, fontWeight: '700', color: '#216a94' },
-  networkStatusContainer: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
-  headerSubtitle: { fontSize: 12, color: '#666', marginLeft: 4 },
 
   searchContainer: {
     flexDirection: 'row',
@@ -1727,7 +2010,7 @@ const styles = StyleSheet.create({
     shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 2,
   },
   searchBelow: {
-    marginTop: 12,   // space under the cards
+    marginTop: 12,
     marginHorizontal: 0,
   },
   careInfoGrid: { flexDirection: 'row', flexWrap: 'wrap', marginVertical: 12 },
@@ -1782,7 +2065,7 @@ const styles = StyleSheet.create({
 
   errorContainer: { padding: 16, backgroundColor: '#fff3f3', borderRadius: 8, borderWidth: 1, borderColor: '#f44336', marginTop: 16 },
 
-  // Floating action button (ensure it exists)
+  // Floating action button (exists if you ever re-enable)
   fab: {
     position: 'absolute',
     right: 16,
@@ -1818,4 +2101,35 @@ const styles = StyleSheet.create({
     color: '#333',
   },
 
+  // Manual toggle styles
+  toggleRow: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  toggleBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderColor: '#4CAF50', backgroundColor: '#fff'
+  },
+  toggleBtnActive: { backgroundColor: '#4CAF50' },
+  toggleBtnText: { marginLeft: 8, color: '#4CAF50', fontWeight: '600' },
+  toggleBtnTextActive: { color: '#fff' },
+
+  // Footer Save Button
+  footer: {
+    position: 'absolute',
+    left: 0, right: 0, bottom: 0,
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e9eef3',
+  },
+  saveButton: {
+    backgroundColor: '#216a94',
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  saveButtonDisabled: { opacity: 0.7 },
+  saveButtonText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

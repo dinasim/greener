@@ -7,59 +7,56 @@ import PushWebSetup from './components/PushWebSetup';
 import AuthProvider from './src/providers/AuthProvider';
 import * as Notifications from 'expo-notifications';
 
-// Make sure foreground notifications actually render a banner
+// Foreground policy: actually render a banner
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
-    shouldPlaySound: false,
+    shouldPlaySound: true,     // you can set false if you prefer
     shouldSetBadge: false,
   }),
 });
 
-// Android channel
-if (Platform.OS === 'android') {
-  Notifications.setNotificationChannelAsync('default', {
-    name: 'default',
-    importance: Notifications.AndroidImportance.DEFAULT,
-  });
+// Make sure we have permission + a high-importance Android channel
+async function prepareNotifications() {
+  await Notifications.requestPermissionsAsync();
+
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'default',
+      importance: Notifications.AndroidImportance.HIGH,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: '#FF231F7C',
+      sound: 'default',
+    });
+  }
 }
 
-// Foreground banner (modular messaging + dynamic import)
+// Foreground banner for data-only FCM
 function useForegroundPushUI() {
   useEffect(() => {
-    if (Platform.OS !== 'android') return;
-
     let unsub;
 
     (async () => {
-      // On Android 13+, ask the POST_NOTIFICATIONS permission once
-      try {
-        await Notifications.requestPermissionsAsync();
-      } catch {}
+      await prepareNotifications();
 
-      const m = await import('@react-native-firebase/messaging');
-      const { getMessaging, onMessage } = m;
+      // Dynamic import so web still bundles fine
+      const messaging = (await import('@react-native-firebase/messaging')).default;
 
-      const msg = getMessaging();
-      unsub = onMessage(msg, async (remoteMessage) => {
-        // Prefer server-side "notification" payloads; fallback to data
-        const n = remoteMessage?.notification || {};
+      // Called when an FCM arrives while app is in FOREGROUND
+      unsub = messaging().onMessage(async (remoteMessage) => {
+        const n = remoteMessage?.notification; // present if your FCM had "notification" payload
         const data = remoteMessage?.data || {};
-
-        await Notifications.scheduleNotificationAsync({
-          content: {
-            title: n.title || data.title || 'Greener',
-            body: n.body || data.body || '',
+        if (!n) {
+          await Notifications.presentNotificationAsync({
+            title: data.title || 'Greener',
+            body: data.body || '',
             data,
-          },
-          trigger: null, // show immediately in foreground
-        });
+          });
+        }
       });
     })();
 
-    return () => {
-      if (typeof unsub === 'function') unsub();
-    };
+    return () => unsub?.();
   }, []);
 }
 
@@ -71,7 +68,7 @@ export default function App() {
       <NavigationContainer>
         <AppNavigator />
         {Platform.OS === 'web' ? <PushWebSetup /> : null}
-        {/* FCM registration is triggered in each profile's Home screen */}
+        {/* FCM registration can remain where you currently do it */}
       </NavigationContainer>
     </AuthProvider>
   );

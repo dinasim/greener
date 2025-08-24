@@ -6,7 +6,7 @@
         "direction": "in",
         "name": "req",
         "methods": ["patch", "options"],
-        "route": "business/inventory/{inventoryId}"
+        "route": "business/inventory/"
       },
       {
         "type": "http",

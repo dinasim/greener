@@ -10,7 +10,7 @@ COSMOS_URI = "https://greener-database.documents.azure.com:443/"
 COSMOS_KEY = "Mqxy0jUQCmwDYNjaxtFOauzxc2CRPeNFaxDKktxNJTmUiGlARA2hIZueLt8D1u8B8ijgvEbzCtM5ACDbUzDRKg=="
 DB_NAME = "GreenerDB"
 PLANTS_CONTAINER = "Plants"
-GOOGLE_KEY = "AIzaSyDaj4uxYtaVndDVu6YTIeZpbL8yZiF8mgk"
+GOOGLE_KEY = "AIzaSyAFR55U0tZw7SFb2Z578W2pi6qUqmq74nw"
 
 def _cors_headers():
     return {

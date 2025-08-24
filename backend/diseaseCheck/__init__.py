@@ -4,7 +4,7 @@ import logging
 import azure.functions as func
 import google.generativeai as genai
 
-GOOGLE_KEY = "AIzaSyDaj4uxYtaVndDVu6YTIeZpbL8yZiF8mgk"
+GOOGLE_KEY = "AIzaSyAFR55U0tZw7SFb2Z578W2pi6qUqmq74nw"
 
 def _cors_headers():
     return {

@@ -1,0 +1,56 @@
+[33mbf229bc[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mspeech+notifications[m[33m)[m HEAD@{0}: checkout: moving from speech+notifications to speech+notifications
+[33mbf229bc[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mspeech+notifications[m[33m)[m HEAD@{1}: rebase (finish): returning to refs/heads/speech+notifications
+[33mbf229bc[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mspeech+notifications[m[33m)[m HEAD@{2}: rebase (continue): working speech + notifications
+[33m637c471[m HEAD@{3}: rebase (continue): notification
+[33m0fce146[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{4}: rebase (start): checkout origin/main
+[33m59db427[m HEAD@{5}: rebase (abort): returning to refs/heads/speech+notifications
+[33m0fce146[m[33m ([m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m HEAD@{6}: rebase (start): checkout origin/main
+[33m59db427[m HEAD@{7}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener into speech+notifications
+[33m92fe77d[m HEAD@{8}: commit: working speech + notifications
+[33m9dc6dac[m[33m ([m[1;32mmain[m[33m)[m HEAD@{9}: checkout: moving from main to speech+notifications
+[33m9dc6dac[m[33m ([m[1;32mmain[m[33m)[m HEAD@{10}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33me1b35ad[m HEAD@{11}: commit: notification
+[33m8940e1d[m HEAD@{12}: commit: fixed reviews
+[33mf3a5889[m HEAD@{13}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33maf718bb[m HEAD@{14}: commit: another try on speech
+[33m96f1672[m HEAD@{15}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m37fb85c[m HEAD@{16}: commit: price filter
+[33m19fde63[m HEAD@{17}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33mbf7e7e1[m HEAD@{18}: commit: sound
+[33mefe53e6[m HEAD@{19}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m33ab362[m HEAD@{20}: commit: d
+[33m3561023[m HEAD@{21}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33mfd24840[m HEAD@{22}: commit: speech
+[33mae2ff78[m HEAD@{23}: commit: ma[
+[33ma035ccb[m HEAD@{24}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m174dc69[m HEAD@{25}: commit: speech
+[33mc9fcfa6[m HEAD@{26}: commit: more fixes
+[33m23a4766[m HEAD@{27}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m02a666d[m HEAD@{28}: commit: a
+[33mae17918[m HEAD@{29}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m21d6964[m HEAD@{30}: commit: map
+[33mc686166[m HEAD@{31}: commit: most of the stuff are working
+[33m90c32fa[m HEAD@{32}: commit: organized business pages
+[33m8c47549[m HEAD@{33}: pull: Fast-forward
+[33mffa631b[m HEAD@{34}: commit: more working staff
+[33md2a3b84[m HEAD@{35}: commit: navigation bar + working markTask
+[33mf8e0b7a[m HEAD@{36}: commit: working weather and marketplace page
+[33m949eef9[m HEAD@{37}: commit (merge): temp
+[33mfe1504e[m HEAD@{38}: commit (merge): merged
+[33m00e4ae5[m HEAD@{39}: reset: moving to HEAD
+[33m00e4ae5[m HEAD@{40}: commit (merge): Merge branch 'main' of https://github.com/dinasim/greener
+[33m50b8fda[m HEAD@{41}: commit: smaller marketplace
+[33m3244055[m HEAD@{42}: pull: Fast-forward
+[33m1060822[m HEAD@{43}: commit: marketask
+[33m849f138[m HEAD@{44}: commit: marketask
+[33m55961ea[m HEAD@{45}: commit: user plant details
+[33m52d8eee[m HEAD@{46}: commit: addplanet
+[33m7bb8308[m HEAD@{47}: commit: details
+[33mc15173d[m HEAD@{48}: commit: details
+[33mdc54807[m HEAD@{49}: commit: detailsjson
+[33m6b7e00c[m HEAD@{50}: commit: detailsjson
+[33m6096bdd[m HEAD@{51}: commit: details
+[33mefcec3c[m HEAD@{52}: commit: working build
+[33m1d52dfd[m HEAD@{53}: commit (merge): merged
+[33ma08c64c[m HEAD@{54}: commit: updated modules
+[33mc3f547b[m HEAD@{55}: clone: from https://github.com/dinasim/greener.git
