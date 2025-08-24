@@ -393,8 +393,8 @@ const styles = StyleSheet.create({
   // Product item styled like an order card
   productCard: {
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 10,
+    padding: 13,
     marginBottom: 12,
     elevation: 1,
     shadowColor: '#000',

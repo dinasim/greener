@@ -11,6 +11,7 @@ import {
   FlatList,
   RefreshControl,
   TextInput,
+  Alert
 } from 'react-native';
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -114,9 +115,61 @@ export default function BusinessCustomersScreen({ navigation, route }) {
     setRefreshing(true);
     loadCustomers();
   };
+// Build a deterministic room id between business and customer (lowercase + sorted)
+const makeRoomId = (a, b) => {
+  const norm = (s) => String(s || '').trim().toLowerCase();
+  const [x, y] = [norm(a), norm(b)].sort();
+  return `${encodeURIComponent(x)}__${encodeURIComponent(y)}`;
+};
+
+// Best-effort route name resolver (works with different navigator setups)
+const resolveMessagesRoute = () => {
+  const candidates = [
+    'MessagesScreen',          // common
+    'Messages',                // alt
+    'BusinessMessagesScreen',  // business-specific
+    'ChatScreen',
+    'Chat',
+  ];
+  const state = navigation?.getState?.();
+  const routeNames = state?.routeNames || [];
+  return candidates.find((r) => routeNames.includes(r)) || candidates[0];
+};
+
+// Open Messages with preselected peer + room id
+const openMessages = async (customer) => {
+  try {
+    const businessEmail = (await AsyncStorage.getItem('userEmail')) || businessId;
+    if (!businessEmail) {
+      Alert.alert('Chat unavailable', 'Business authentication required.');
+      return;
+    }
+
+    const roomId = makeRoomId(businessEmail, customer?.email);
+    const route = resolveMessagesRoute();
+
+    navigation.navigate(route, {
+      // consistent with how your OrderDetailModal calls onContactCustomer(..., 'chat')
+      isBusiness: true,
+      via: 'business-customers',
+      roomId, // let Messages screen jump directly into the thread if supported
+      peer: {
+        email: customer?.email,
+        name: customer?.name || customer?.email || 'Customer',
+        avatar: customer?.avatarUrl, // harmless if undefined
+      },
+      // nice-to-have extra metadata
+      business: { email: businessEmail },
+    });
+  } catch (e) {
+    Alert.alert('Chat unavailable', e?.message || 'Could not open messages.');
+  }
+};
 
   const renderCustomerItem = ({ item }) => (
-    <TouchableOpacity style={styles.customerItem}>
+    <TouchableOpacity style={styles.customerItem}
+     onLongPress={() => openMessages(item)} 
+        delayLongPress={250}>
       <View style={styles.customerAvatar}>
         <Text style={styles.customerInitial}>
           {(item.name || item.email || 'C').charAt(0).toUpperCase()}
@@ -143,11 +196,10 @@ export default function BusinessCustomersScreen({ navigation, route }) {
         </View>
       </View>
       <View style={styles.customerActions}>
-        <TouchableOpacity style={styles.actionButton}>
+        <TouchableOpacity style={styles.actionButton}
+         onPress={() => openMessages(item)}
+       accessibilityLabel={`Message ${item.name || item.email}`}>
           <MaterialIcons name="message" size={20} color="#4CAF50" />
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.actionButton}>
-          <MaterialIcons name="more-vert" size={20} color="#666" />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>

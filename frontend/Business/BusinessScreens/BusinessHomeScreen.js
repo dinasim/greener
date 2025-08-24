@@ -48,9 +48,6 @@ export default function BusinessHomeScreen({ navigation }) {
   const [showOrderModal, setShowOrderModal] = useState(false);
   const [assistantVisible, setAssistantVisible] = useState(false);
 
-  // 🔕 Business mode: no watering popups / notifications here
-  // useNotificationManager(businessId, navigation, { autoNavigate: false });
-
   // Load dashboard data when screen comes into focus
   useFocusEffect(
     useCallback(() => {
@@ -73,6 +70,7 @@ export default function BusinessHomeScreen({ navigation }) {
 
     initializeBusinessId();
   }, []);
+
   useEffect(() => {
     if (Platform.OS !== 'android') return;
     if (!businessId) return;               // wait until AsyncStorage loads it
@@ -81,6 +79,7 @@ export default function BusinessHomeScreen({ navigation }) {
       console.log('[FCM] Home(business) token', tok ? tok.slice(0, 16) + '...' : 'none');
     })();
   }, [businessId]);
+
   const loadDashboardData = async () => {
     if (refreshing) return;
     setIsLoading(!dashboardData);
@@ -175,7 +174,7 @@ export default function BusinessHomeScreen({ navigation }) {
     navigation.navigate('PlantCareForumScreen');
   };
 
-  // Order management handlers
+  // Order management handlers (kept, but Recent Orders are now non-pressable)
   const handleOrderPress = (order) => {
     setSelectedOrder(order);
     setShowOrderModal(true);
@@ -183,7 +182,6 @@ export default function BusinessHomeScreen({ navigation }) {
 
   const handleUpdateOrderStatus = async (orderId, newStatus) => {
     try {
-      // Update order status logic here, then refresh
       await loadDashboardData();
       setShowOrderModal(false);
     } catch (error) {
@@ -471,18 +469,20 @@ export default function BusinessHomeScreen({ navigation }) {
         autoRefresh
       />
 
-      {/* Top Selling Products */}
+      {/* Top Selling Products (non-pressable) */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Top Products</Text>
       </View>
+      <View pointerEvents="none" accessible={false}>
+        <TopSellingProductsList
+          businessId={businessId}
+          timeframe="month"
+          limit={5}
+          // onProductPress omitted intentionally – items are disabled
+        />
+      </View>
 
-      <TopSellingProductsList
-        businessId={businessId}
-        timeframe="month"
-        limit={5}
-      />
-
-      {/* Recent Orders */}
+      {/* Recent Orders (non-pressable) */}
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>Recent Orders</Text>
         <TouchableOpacity style={styles.viewAllButton} onPress={handleOrders}>
@@ -494,10 +494,11 @@ export default function BusinessHomeScreen({ navigation }) {
       <View style={styles.ordersContainer}>
         {recentOrders && recentOrders.length > 0 ? (
           recentOrders.slice(0, 3).map((order) => (
-            <TouchableOpacity
+            <View
               key={order.id}
               style={styles.orderItem}
-              onPress={() => handleOrderPress(order)}
+              // no onPress here – card is read-only
+              accessible={false}
             >
               <View style={styles.orderHeader}>
                 <Text style={styles.orderConfirmation}>#{order.confirmationNumber}</Text>
@@ -520,7 +521,7 @@ export default function BusinessHomeScreen({ navigation }) {
                 <Text style={styles.orderTotal}>₪{(order.total || 0).toFixed(2)}</Text>
                 <Text style={styles.orderItems}>{order.items?.length || 0} items</Text>
               </View>
-            </TouchableOpacity>
+            </View>
           ))
         ) : (
           <View style={styles.emptyState}>
@@ -710,7 +711,7 @@ export default function BusinessHomeScreen({ navigation }) {
           contentContainerStyle={{ paddingBottom: 24 }}
         />
 
-        {/* Order Detail Modal */}
+        {/* Order Detail Modal (will remain closed since Recent Orders are not pressable) */}
         <OrderDetailModal
           visible={showOrderModal}
           order={selectedOrder}
@@ -1086,7 +1087,7 @@ const styles = StyleSheet.create({
   editBusinessButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'lex-start',
+    alignSelf: 'flex-start',
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 16,

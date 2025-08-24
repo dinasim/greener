@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta content="width=device-width, initial-scale=1.0" name="viewport">
+  <title>Greener – Submission Page</title>
+  <meta name="description" content="">
+  <meta name="keywords" content="">
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css?family=Poppins:400,600,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com" rel="preconnect">
+  <link href="https://fonts.gstatic.com" rel="preconnect" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&family=Rubik:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap"
+    rel="stylesheet">
+
+  <!-- Favicons -->
+  <link href="assets/img/favicon.png" rel="icon">
+  <link href="assets/img/apple-touch-icon.png" rel="apple-touch-icon">
+
+  <!-- Vendor CSS Files -->
+  <link href="assets/vendor/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+  <link href="assets/vendor/bootstrap-icons/bootstrap-icons.css" rel="stylesheet">
+  <link href="assets/vendor/aos/aos.css" rel="stylesheet">
+  <link href="assets/vendor/glightbox/css/glightbox.min.css" rel="stylesheet">
+  <link href="assets/vendor/swiper/swiper-bundle.min.css" rel="stylesheet">
+
+  <!-- Main CSS File -->
+  <link href="assets/css/main.css" rel="stylesheet">
+
+  <!-- Page-specific styles -->
+  <style>
+    /* Smooth scroll + offset for fixed header */
+    html { scroll-behavior: smooth; }
+    section { scroll-margin-top: 90px; } /* adjust if header height changes */
+
+    .hero-buttons {
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 1.25rem;
+    }
+
+    #hero.hero.section {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      background: #f8fdf7 url('assets/img/background/background.png') repeat;
+      background-size: auto;
+      padding: 0;
+      border: none;
+      overflow: hidden;
+    }
+
+    #hero.hero.section::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.5);
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    #hero .hero-content { position: relative; z-index: 2; width: 100%; }
+
+    .hero-title {
+      font-family: 'Montserrat', 'Calibri', Arial, sans-serif;
+      font-size: 5rem !important;
+      font-weight: 800;
+      color: #387d53 !important;
+      letter-spacing: 2px;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.05em !important;
+    }
+
+    .hero-subtitle {
+      font-family: 'Poppins', Arial, sans-serif;
+      font-size: clamp(1.5rem, 4vw, 2.2rem);
+      font-weight: 400;
+      color: #133d33;
+      margin-bottom: 2.5rem;
+      line-height: 1.2;
+    }
+
+    @media (max-width: 700px) {
+      .hero-title { font-size: 2.7rem; }
+      .hero-subtitle { font-size: 1.2rem; }
+    }
+
+    .about-images-wrapper { display: flex; gap: 2rem; justify-content: center; align-items: center; }
+
+    .about-img {
+      width: 350px;
+      height: 450px;
+      object-fit: cover;
+      border-radius: 2rem;
+      box-shadow: 0 2px 10px 0 rgba(0, 0, 0, 0.05);
+      object-position: center bottom;
+    }
+
+    .feature-img { border-radius: 20px; }
+    .feature-title { font-weight: 700; font-size: 1.08rem; color: #23274c; display: inline; margin-right: 0.2em; }
+    .feature-desc { font-weight: 400; font-size: 1.08rem; color: #444; display: inline; }
+
+    .btn-secondary.glightbox {
+      font-size: 1.25rem; padding: 0.75rem 2rem; border-radius: 2rem;
+      background: #e9f9ed; color: #387d53; border: none; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 0.75em; font-weight: 600;
+      box-shadow: 0 2px 8px rgba(50, 108, 71, 0.04);
+      transition: background .2s ease, color .2s ease;
+    }
+    .btn-secondary.glightbox:hover { background: #d5f3df; color: #285e39; }
+    .btn-secondary.glightbox i { font-size: 1.5em; }
+
+    .modern-service-card {
+      background: #fff; border-radius: 24px; border: 1.5px solid #e5ece6;
+      box-shadow: 0 4px 18px rgba(50, 108, 71, 0.06);
+      padding: 2.5rem 2rem 2rem; margin-bottom: 2rem; min-height: 270px;
+      display: flex; gap: 2rem; align-items: flex-start; transition: box-shadow .2s;
+    }
+    .modern-service-card:hover { box-shadow: 0 8px 32px rgba(56, 125, 83, 0.10); }
+
+    .service-card-number {
+      background: #e3f1fa; color: #2196c9; border-radius: 18px; font-size: 2.3rem; font-weight: 700;
+      min-width: 64px; min-height: 64px; display: flex; align-items: center; justify-content: center;
+      margin-right: 1.3rem; margin-top: 0.15rem; box-shadow: 0 2px 8px rgba(50, 108, 71, 0.04);
+    }
+    .modern-service-title { font-size: 1.4rem; font-weight: 700; margin-bottom: .6rem; color: #1b3930; }
+    .modern-service-desc { color: #567167; font-size: 1.05rem; margin-bottom: 0; font-weight: 400; }
+
+    /* Architecture (Logic) */
+    .arch-card {
+      background: #fff; border: 1.5px solid #e5ece6; border-radius: 24px;
+      box-shadow: 0 4px 18px rgba(50, 108, 71, 0.06); padding: 2rem;
+    }
+    .arch-title { font-weight: 800; letter-spacing: -0.02em; color: #1b3930; }
+    svg.arch-diagram { width: 100%; height: auto; max-width: 980px; }
+    .arch-node { fill: #ffffff; stroke: #dbe8df; stroke-width: 1.5; }
+    .arch-core { fill: #e9f9ed; stroke: #bfe7c9; }
+    .arch-right { fill: #eef6ff; stroke: #cfe0ff; }
+    .arch-badge { font-weight: 700; fill: #133d33; }
+    .arch-label { fill: #2a2a2a; font-size: 13px; }
+    .arch-small { fill: #567167; font-size: 12px; }
+    .arch-arrow { stroke: #1e3540; stroke-width: 2.2; marker-end: url(#arrowhead); }
+    @media (max-width: 768px) { .arch-title { font-size: 1.6rem; } }
+
+    /* Team section */
+    .team-card {
+      background: #fff; border: 1.5px solid #e5ece6; border-radius: 24px;
+      box-shadow: 0 4px 18px rgba(50, 108, 71, 0.06); padding: 1.25rem; text-align: center; height: 100%;
+    }
+    .team-photo {
+      width: 100%; max-width: 320px; aspect-ratio: 4/5; object-fit: cover;
+      border-radius: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin: 0 auto;
+    }
+    .team-name { font-weight: 700; color: #1b3930; margin-top: .85rem; margin-bottom: .1rem; }
+    .team-role { font-size: .95rem; color: #567167; }
+
+    /* Make Features header match other sections */
+    .section-title .subtitle {
+      font-size: 1.2rem;
+      color: #444;
+      margin-top: 0.5em;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+      text-align: center;
+    }
+  </style>
+
+  <!-- =======================================================
+  * Template Name: Landify
+  * Template URL: https://bootstrapmade.com/landify-bootstrap-landing-page-template/
+  * Updated: Aug 04 2025 with Bootstrap v5.3.7
+  * Author: BootstrapMade.com
+  * License: https://bootstrapmade.com/license/
+  ======================================================== -->
+</head>
+
+<body class="index-page">
+
+  <header id="header" class="header d-flex align-items-center fixed-top">
+    <div class="container position-relative d-flex align-items-center justify-content-between">
+
+      <a href="#hero" class="logo d-flex align-items-center me-auto me-xl-0">
+        <!-- <img src="assets/img/logo.webp" alt=""> -->
+        <h1 class="sitename">Greener</h1>
+      </a>
+
+      <nav id="navmenu" class="navmenu">
+        <ul>
+          <li><a href="#hero" class="active">Home</a></li>
+          <li><a href="#about">About</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#services">Services</a></li>
+          <li><a href="#logic">Logic</a></li>
+          <li><a href="#team">Team</a></li>
+        </ul>
+        <i class="mobile-nav-toggle d-xl-none bi bi-list"></i>
+      </nav>
+
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- Home Section -->
+    <section id="hero" class="hero section d-flex align-items-center justify-content-center">
+      <div class="hero-content">
+        <h1 class="hero-title">
+          Greener
+          <i class="bi bi-leaf" style="color:#387d53;font-size:1.3em;margin-left:.25em;vertical-align:middle;transform:rotate(80deg);"></i>
+        </h1>
+        <div class="hero-subtitle">Smart Plant Care Assistant</div>
+
+        <div class="hero-buttons">
+          <!-- Video Button 1 -->
+          <a href="assets/video/user.mp4" class="btn-secondary glightbox" data-type="video" data-autoplay="true">
+            <i class="bi bi-play-circle"></i>
+            <span>I'm a user/seller</span>
+          </a>
+
+          <!-- Video Button 2 -->
+          <a href="assets/video/business.mp4" class="btn-secondary glightbox" data-type="video" data-autoplay="true">
+            <i class="bi bi-play-circle"></i>
+            <span>I'm a business</span>
+          </a>
+        </div>
+      </div>
+    </section><!-- /Home Section -->
+
+    <!-- About Section -->
+    <section id="about" class="about section">
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="row gy-5">
+          <div class="col-lg-6" data-aos="fade-right" data-aos-delay="200">
+            <div class="content-wrapper">
+              <div class="section-header">
+                <span class="section-badge">ABOUT THE APP</span>
+                <h2>Helping plants and businesses grow</h2>
+              </div>
+              <p class="description-text">
+                <strong>Greener is a smart plant care and marketplace app designed to help both regular users and
+                  businesses grow, trade, and take care of plants in smarter ways.</strong>
+              </p>
+              <p class="description-text">
+                <strong>For plant lovers:</strong> AI-powered guidance, weather-aware tips, and smart care tracking—plus
+                photo-based plant and disease recognition. Get help nurturing your plants and consult with experts or
+                nearby businesses when you need advice.
+              </p>
+
+              <p class="description-text">
+                <strong>For businesses:</strong> Manage inventory, publish marketplace listings, and reach nearby
+                customers with location services—plus direct messaging to answer questions, offer guidance, and close
+                sales.
+              </p>
+
+              <p class="description-text">
+                By combining personal plant care with a vibrant community forum, Greener creates a space where plant
+                lovers, sellers, and nurseries can exchange knowledge, connect, and thrive together.
+              </p>
+            </div>
+          </div>
+
+          <div class="col-lg-6 d-flex align-items-center justify-content-center" data-aos="fade-left" data-aos-delay="300">
+            <div class="about-images-wrapper">
+              <img src="assets/img/about/greenhouse.png" alt="Plant nursery" class="about-img">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <!-- /About Section -->
+
+    <!-- Features Section -->
+    <section id="features" class="features section">
+      <!-- Header (now matches Services/Logic) -->
+      <div class="container section-title" data-aos="fade-up">
+        <span class="description-title">Features</span>
+        <h2>Features</h2>
+        <p class="subtitle">
+          Greener gives both plant lovers and plant businesses the tools to thrive — with AI, smart reminders, and a dynamic marketplace.
+        </p>
+      </div>
+
+      <!-- Content -->
+      <div class="container" data-aos="fade-up">
+        <!-- Users / Sellers -->
+        <div class="row align-items-center mb-5 flex-lg-row-reverse">
+          <div class="col-lg-6 mb-4 mb-lg-0">
+            <img src="assets/img/features/Users.png" class="img-fluid feature-img" alt="plant owners" style="width: 400px; height: 400px;">
+          </div>
+          <div class="col-lg-6">
+            <h3 class="mb-4"><i class="bi bi-person icon-lg"></i> Users / Sellers</h3>
+            <div class="feature-list-simple">
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-calendar-check me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Care Reminders:</span>
+                  <span class="feature-desc">Personalized alerts for every plant care need, plus daily tips for enthusiastic plant owners.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-camera me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Plant ID & Diagnosis:</span>
+                  <span class="feature-desc">Snap a photo to identify plants or detect diseases instantly.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-robot me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">AI Chat Assistant:</span>
+                  <span class="feature-desc">Get instant answers about plant care, growing tips, or troubleshooting directly from the built-in AI chat.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-chat-dots me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Marketplace Chat:</span>
+                  <span class="feature-desc">Message directly with other users or sellers to ask questions, get care advice, or finalize marketplace deals.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-shop me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Marketplace:</span>
+                  <span class="feature-desc">Buy, sell, or swap plants with ease, and check seller reviews before making a purchase.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-people me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Community Forum:</span>
+                  <span class="feature-desc">Join discussions, share experiences, and get advice from fellow plant lovers and businesses.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Businesses -->
+        <div class="row align-items-center mb-5">
+          <div class="col-lg-6 mb-4 mb-lg-0">
+            <img src="assets/img/features/plantshop_leaf.png" class="img-fluid feature-img" alt="For businesses" style="width: 600px; height: 400px;">
+          </div>
+          <div class="col-lg-6">
+            <h3 class="mb-4"><i class="bi bi-briefcase icon-lg"></i> Businesses</h3>
+            <div class="feature-list-simple">
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-shop-window me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Selling & Marketing Platform:</span>
+                  <span class="feature-desc">Showcase plants and services to a wide audience, attract new customers, and grow your business presence.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-bag-check me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Inventory & Orders:</span>
+                  <span class="feature-desc">Manage stock, track orders, and streamline operations from one place.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-robot me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">AI Chat Assistant:</span>
+                  <span class="feature-desc">Answer customer questions instantly with smart automated support tailored for businesses.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-virus me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Disease Detection:</span>
+                  <span class="feature-desc">Upload plant photos to quickly diagnose issues and provide professional solutions.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-bar-chart me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Sales Analytics:</span>
+                  <span class="feature-desc">Track performance, discover trends, and make data-driven decisions.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-chat-dots me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Direct Chat with Buyers:</span>
+                  <span class="feature-desc">Build trust and close deals faster by chatting directly with customers.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Marketplace & Location -->
+        <div class="row align-items-center mb-5 flex-lg-row-reverse">
+          <div class="col-lg-6 mb-4 mb-lg-0">
+            <img src="assets/img/features/map.png" class="img-fluid feature-img" alt="Marketplace & map" style="width: 600px; height: 400px;">
+          </div>
+          <div class="col-lg-6">
+            <h3 class="mb-4"><i class="bi bi-geo-alt icon-lg"></i> Marketplace & Map</h3>
+            <div class="feature-list-simple">
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-geo me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Find Nearby Sellers:</span>
+                  <span class="feature-desc">Discover local plant businesses.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-shop-window me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Shop Local:</span>
+                  <span class="feature-desc">Buy and sell plants safely in your area.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-star me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Reviews:</span>
+                  <span class="feature-desc">Trust feedback from other users.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI & Smart Tools -->
+        <div class="row align-items-center mb-5">
+          <div class="col-lg-6 mb-4 mb-lg-0">
+            <img src="assets/img/features/AI.png" class="img-fluid feature-img" alt="AI features" style="width: 400px; height: 400px;">
+          </div>
+          <div class="col-lg-6">
+            <h3 class="mb-4"><i class="bi bi-robot icon-lg"></i> AI & Smart Tools</h3>
+            <div class="feature-list-simple">
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-chat-dots me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">AI Chat:</span>
+                  <span class="feature-desc">Get answers to your plant questions any time.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-cloud-sun me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Weather Alerts:</span>
+                  <span class="feature-desc">Tips and reminders based on your location.</span>
+                </div>
+              </div>
+              <div class="mb-3 d-flex align-items-start">
+                <i class="bi bi-camera me-2 icon-lg"></i>
+                <div>
+                  <span class="feature-title">Photo Diagnosis:</span>
+                  <span class="feature-desc">Upload a photo for instant help.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div> <!-- /Features content container -->
+    </section><!-- /Features Section -->
+
+    <!-- Services Section -->
+    <section id="services" class="services section">
+      <!-- Section Title -->
+      <div class="container section-title" data-aos="fade-up">
+        <span class="description-title">Services</span>
+        <h2>Services</h2>
+      </div><!-- End Section Title -->
+
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="services-grid mt-5">
+          <div class="row g-4">
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="100">
+              <div class="service-card">
+                <div class="card-number"><span>01</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Azure Cosmos DB</a></h5>
+                  <p class="service-description">A globally distributed, multi-model database service. Cosmos DB stores
+                    all Greener user, plant, and marketplace data, enabling fast, scalable, and reliable access for both
+                    users and businesses.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="200">
+              <div class="service-card">
+                <div class="card-number"><span>02</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Azure Functions</a></h5>
+                  <p class="service-description">A serverless compute service that runs backend logic, scheduled
+                    notifications, and automation tasks—such as sending weather alerts or care reminders—without
+                    managing servers.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="300">
+              <div class="service-card">
+                <div class="card-number"><span>03</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Azure Blob Storage</a></h5>
+                  <p class="service-description">Object storage for unstructured data, used in Greener to save
+                    user-uploaded images (like plant photos), business assets, and other large files securely and
+                    efficiently.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="100">
+              <div class="service-card">
+                <div class="card-number"><span>04</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Speech-To-Text</a></h5>
+                  <p class="service-description">Real-time speech recognition so users can add care notes or search for
+                    plants by voice, making the app more accessible and hands-free.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="200">
+              <div class="service-card">
+                <div class="card-number"><span>05</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Firebase Cloud Messaging (FCM)</a></h5>
+                  <p class="service-description">Sends instant push notifications to users’ web browsers and mobile
+                    devices, keeping them up-to-date with weather alerts, plant care reminders, and important app
+                    updates.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="300">
+              <div class="service-card">
+                <div class="card-number"><span>06</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">OpenWeatherMap API</a></h5>
+                  <p class="service-description">Supplies real-time weather forecasts used in Greener’s smart
+                    notifications, enabling personalized care advice and alerts for each user’s plant location.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="100">
+              <div class="service-card">
+                <div class="card-number"><span>07</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Marketplace API</a></h5>
+                  <p class="service-description">Powers the app’s buying and selling experience by managing products,
+                    seller profiles, reviews, messaging, and location services through a unified backend.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="200">
+              <div class="service-card">
+                <div class="card-number"><span>08</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Google Gemini API</a></h5>
+                  <p class="service-description">Provides advanced generative AI capabilities for the app, enabling
+                    natural language understanding, smart plant care suggestions, and interactive user experiences.</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="300">
+              <div class="service-card">
+                <div class="card-number"><span>09</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Azure Signal IR</a></h5>
+                  <p class="service-description">Real-time, bi-directional messaging between app and backend—powering
+                    live marketplace chat, instant order updates, and in-app notifications without page refreshes</p>
+                </div>
+              </div>
+            </div>
+            <div class="col-lg-4 col-md-6" data-aos="fade-up" data-aos-delay="100">
+              <div class="service-card">
+                <div class="card-number"><span>10</span></div>
+                <div class="card-content">
+                  <h5 class="service-title"><a href="#">Plant Identification API</a></h5>
+                  <p class="service-description">Enables users to take or upload a photo of a plant and instantly
+                    recognize its species. The API analyzes the image via the PlantNet recognition service and returns
+                    details such as the scientific name, common name, family, and reference images — powering the app’s
+                    “Scan” feature for effortless plant discovery.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section><!-- /Services Section -->
+
+    <!-- Logic Section -->
+    <section id="logic" class="architecture section">
+      <div class="container section-title" data-aos="fade-up">
+        <span class="description-title">Logic</span>
+        <h2>Logic</h2>
+        <p class="text-muted" style="max-width:900px;margin:0 auto">
+          This diagram shows a React Native app backed by Azure Functions, Cosmos DB, and Blob Storage powering plant
+          care, marketplace, and chat — repo:
+          <a href="https://github.com/dinasim/greener" target="_blank" rel="noopener">github.com/dinasim/greener</a>.
+        </p>
+      </div>
+
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="arch-card" data-aos="zoom-in" data-aos-delay="150" style="text-align:center">
+          <a href="assets/img/app_diagram.png" class="glightbox" data-gallery="arch">
+            <img src="assets/img/app_diagram.png?v=1" alt="Greener architecture diagram" class="img-fluid"
+              loading="lazy" style="max-width:980px; width:100%; height:auto; border-radius:18px;" />
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Team Section -->
+    <section id="team" class="team section light-background">
+      <!-- Section Title -->
+      <div class="container section-title" data-aos="fade-up">
+        <span class="description-title">Team</span>
+        <h2>Our Team</h2>
+        <p>We are Computer Science students. This project was developed as part of the ‘Internet of Things’ Workshop at
+          Tel Aviv University.</p>
+      </div><!-- End Section Title -->
+
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="row g-4 justify-content-center">
+          <div class="col-md-6 col-lg-4" data-aos="zoom-in" data-aos-delay="150">
+            <div class="team-card">
+              <img src="assets/img/team/member-1.jpeg" alt="Team member 1" class="team-photo" loading="lazy">
+              <div class="team-name">Dina Simanovsky</div>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4" data-aos="zoom-in" data-aos-delay="200">
+            <div class="team-card">
+              <img src="assets/img/team/member-2.jpg" alt="Team member 2" class="team-photo" loading="lazy">
+              <div class="team-name">Ilana Kolody</div>
+            </div>
+          </div>
+          <div class="col-md-6 col-lg-4" data-aos="zoom-in" data-aos-delay="250">
+            <div class="team-card">
+              <img src="assets/img/team/member-3.jpg" alt="Team member 3" class="team-photo" loading="lazy">
+              <div class="team-name">Daniel Simanovsky</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section><!-- /Team Section -->
+
+  </main>
+
+  <footer id="footer" class="footer position-relative dark-background">
+    <div class="container copyright text-center mt-4">
+      <p>© <span>Copyright</span> <strong class="px-1 sitename">MyWebsite</strong> <span>All Rights Reserved</span></p>
+      <div class="credits">
+        Designed by <a href="https://bootstrapmade.com/">BootstrapMade</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll Top -->
+  <a href="#" id="scroll-top" class="scroll-top d-flex align-items-center justify-content-center">
+    <i class="bi bi-arrow-up-short"></i>
+  </a>
+
+  <!-- Vendor JS Files -->
+  <script src="assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
+  <script src="assets/vendor/php-email-form/validate.js"></script>
+  <script src="assets/vendor/aos/aos.js"></script>
+  <script src="assets/vendor/glightbox/js/glightbox.min.js"></script>
+  <script src="assets/vendor/swiper/swiper-bundle.min.js"></script>
+  <script src="assets/vendor/purecounter/purecounter_vanilla.js"></script>
+
+  <!-- Main JS File -->
+  <script src="assets/js/main.js"></script>
+</body>
+
+</html>
