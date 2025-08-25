@@ -182,30 +182,54 @@ const MessagesScreen = () => {
   };
 
   const loadMessages = async (conversationId) => {
-    if (!conversationId) {
-      setMessages([]);
-      setIsMessagesLoading(false);
-      return;
-    }
-    try {
-      setIsMessagesLoading(true);
-      setError(null);
-      const userEmail = (await AsyncStorage.getItem('userEmail')) || 'default@example.com';
-      const data = await fetchMessages(conversationId, userEmail);
+  if (!conversationId) {
+    setMessages([]);
+    setIsMessagesLoading(false);
+    return;
+  }
+  try {
+    setIsMessagesLoading(true);
+    setError(null);
+    const userEmail = (await AsyncStorage.getItem('userEmail')) || 'default@example.com';
+    const data = await fetchMessages(conversationId, userEmail);
+    const messagesList = Array.isArray(data) ? data : (data?.messages || []);
+    setMessages(messagesList);
 
-      const messagesList = Array.isArray(data) ? data : (data?.messages || []);
-      setMessages(messagesList);
-
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: false });
-      }, 100);
-    } catch (err) {
-      console.error('Messages error:', err);
-      setError('Failed to load messages. Please try again later.');
-    } finally {
-      setIsMessagesLoading(false);
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: false });
+    }, 100);
+  } catch (err) {
+    // If the server says chat not found and this is an ORDER chat, try to resolve id and retry once
+    const msg = String(err?.message || '').toLowerCase();
+    if (isOrderChat && (msg.includes('chat not found') || msg.includes('not found') || err?.status === 404)) {
+      try {
+        const userEmail = (await AsyncStorage.getItem('userEmail')) || 'default@example.com';
+        const resolvedId = await findConversationIdForOrder(
+          userEmail,
+          sellerId,
+          params.orderId,
+          params.orderNumber
+        );
+        if (resolvedId && resolvedId !== conversationId) {
+          setSelectedConversation((prev) => ({ ...prev, id: resolvedId }));
+          const data2 = await fetchMessages(resolvedId, userEmail);
+          const list2 = Array.isArray(data2) ? data2 : (data2?.messages || []);
+          setMessages(list2);
+          setIsMessagesLoading(false);
+          return;
+        }
+      } catch (e) {
+        console.error('Retry resolve id failed:', e);
+      }
     }
-  };
+
+    console.error('Messages error:', err);
+    setError('Failed to load messages. Please try again later.');
+  } finally {
+    setIsMessagesLoading(false);
+  }
+};
+
 
   // -------------------- Helpers --------------------
   const getUserProfile = async (userEmail) => {
@@ -279,6 +303,40 @@ const MessagesScreen = () => {
     }
   };
 
+  // Resolve conversation id for an order by scanning the user's conversations
+const findConversationIdForOrder = async (userEmail, sellerEmail, orderId, orderNumber) => {
+  try {
+    const data = await fetchConversations(userEmail);
+    const list = Array.isArray(data) ? data : (data?.conversations || []);
+    const sellerNorm = (sellerEmail || '').trim().toLowerCase();
+
+    const match = list.find((c) => {
+      const participants = [
+        c.otherUserEmail,
+        c.sellerId,
+        c.buyerId,
+        ...(Array.isArray(c.participants) ? c.participants : []),
+      ]
+        .filter(Boolean)
+        .map((e) => String(e).trim().toLowerCase());
+
+      const sameSeller = participants.includes(sellerNorm);
+      const sameOrderId =
+        orderId != null && String(c.orderId) === String(orderId);
+      const sameOrderNumber =
+        orderNumber != null && String(c.orderNumber) === String(orderNumber);
+
+      return sameSeller && (sameOrderId || sameOrderNumber);
+    });
+
+    return match?.id || null;
+  } catch (e) {
+    console.error('findConversationIdForOrder error:', e);
+    return null;
+  }
+};
+
+
   const findOrCreateConversation = async () => {
     try {
       if (conversations.length === 0) {
@@ -337,133 +395,150 @@ const MessagesScreen = () => {
     }
   };
 
-  const handleSendMessage = async () => {
-    if (!newMessage.trim()) return;
+const handleSendMessage = async () => {
+  if (!newMessage.trim()) return;
 
-    const messageText = newMessage;
-    const tempId = `temp-${Date.now()}`;
-    const sendTimestamp = new Date().toISOString();
+  const messageText = newMessage;
+  const tempId = `temp-${Date.now()}`;
+  const sendTimestamp = new Date().toISOString();
 
-    const optimisticConversationUpdate = (convId) => {
-      setConversations((prev) => {
-        // If conversation already exists, update it
-        const existingIdx = prev.findIndex(c => c.id === convId);
-        if (existingIdx !== -1) {
-          const updated = [...prev];
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            lastMessage: messageText,
-            lastMessageTimestamp: sendTimestamp,
-            lastMessageAt: sendTimestamp,
-            unreadCount: 0,
-          };
-          // Move to top
-          const [item] = updated.splice(existingIdx, 1);
-          return [item, ...updated];
-        }
-        // Otherwise create new conversation shell
-        const newConv = {
-          id: convId,
-            otherUserEmail: sellerId,
-            otherUserName: selectedConversation?.otherUserName || sellerName || (sellerId ? sellerId.split('@')[0] : 'User'),
-            otherUserAvatar: selectedConversation?.otherUserAvatar || null,
-            isBusiness: !!selectedConversation?.isBusiness,
-            plantName: plantName || selectedConversation?.plantName || 'Plant discussion',
-            lastMessage: messageText,
-            lastMessageTimestamp: sendTimestamp,
-            lastMessageAt: sendTimestamp,
-            unreadCount: 0,
+  const optimisticConversationUpdate = (convId) => {
+    setConversations((prev) => {
+      const existingIdx = prev.findIndex((c) => c.id === convId);
+      if (existingIdx !== -1) {
+        const updated = [...prev];
+        updated[existingIdx] = {
+          ...updated[existingIdx],
+          lastMessage: messageText,
+          lastMessageTimestamp: sendTimestamp,
+          lastMessageAt: sendTimestamp,
+          unreadCount: 0,
         };
-        return [newConv, ...prev];
-      });
-    };
-
-    try {
-      setIsSending(true);
-      const userEmail =
-        (await AsyncStorage.getItem('userEmail')) || 'default@example.com';
-
-      // optimistic add
-      const temp = {
-        id: tempId,
-        senderId: userEmail,
-        text: messageText,
-        message: messageText,
-        timestamp: new Date().toISOString(),
-        pending: true,
-        isFromCurrentUser: true,
+        const [item] = updated.splice(existingIdx, 1);
+        return [item, ...updated];
+      }
+      const newConv = {
+        id: convId,
+        otherUserEmail: sellerId,
+        otherUserName:
+          selectedConversation?.otherUserName ||
+          sellerName ||
+          (sellerId ? sellerId.split('@')[0] : 'User'),
+        otherUserAvatar: selectedConversation?.otherUserAvatar || null,
+        isBusiness: !!selectedConversation?.isBusiness,
+        plantName:
+          plantName || selectedConversation?.plantName || 'Plant discussion',
+        orderId: isOrderChat ? (params.orderId || null) : undefined,
+        orderNumber: isOrderChat ? (params.orderNumber || null) : undefined,
+        lastMessage: messageText,
+        lastMessageTimestamp: sendTimestamp,
+        lastMessageAt: sendTimestamp,
+        unreadCount: 0,
       };
-  setMessages((prev) => [...prev, temp]);
-      setNewMessage('');
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
+      return [newConv, ...prev];
+    });
+  };
 
-      if (selectedConversation?.id) {
-        // Existing conversation (plant or order thread that already has an id)
-        await sendMessage(selectedConversation.id, messageText, userEmail);
-        optimisticConversationUpdate(selectedConversation.id);
-      } else if (isOrderChat && sellerId) {
-        // Order chat – send directly with order metadata
-        await sendOrderMessage(sellerId, messageText, userEmail, {
-          orderId: params.orderId,
-          confirmationNumber: params.orderNumber,
-          topic: 'order',
-        });
+  try {
+    setIsSending(true);
+    const userEmail = (await AsyncStorage.getItem('userEmail')) || 'default@example.com';
 
-        // Give a stable synthetic id locally so subsequent sends use sendMessage
-        setSelectedConversation((prev) => ({
-          ...prev,
-          id: prev?.id || `order-${params.orderId || Date.now()}`,
-        }));
+    // optimistic add (bubble)
+    const temp = {
+      id: tempId,
+      senderId: userEmail,
+      text: messageText,
+      message: messageText,
+      timestamp: new Date().toISOString(),
+      pending: true,
+      isFromCurrentUser: true,
+    };
+    setMessages((prev) => [...prev, temp]);
+    setNewMessage('');
+    setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 80);
 
-        optimisticConversationUpdate(`order-${params.orderId || Date.now()}`);
+    if (selectedConversation?.id) {
+      // Existing conversation (plant or order)
+      await sendMessage(selectedConversation.id, messageText, userEmail);
+      optimisticConversationUpdate(selectedConversation.id);
+    } else if (isOrderChat && sellerId) {
+      // New ORDER chat: send via order API and resolve the REAL conversation id
+      const result = await sendOrderMessage(sellerId, messageText, userEmail, {
+        orderId: params.orderId,
+        confirmationNumber: params.orderNumber,
+        topic: 'order',
+      });
 
-        // Refresh conversations quietly
-        setTimeout(loadConversations, 200);
-      } else if (sellerId && plantId) {
-        // Plant chat – create conversation in backend
-        const result = await startConversation(
+      // Try to extract an id from response (support multiple shapes)
+      const fromResponse =
+        result?.conversationId ||
+        result?.conversation?.id ||
+        result?.conversation?.conversationId ||
+        result?.id ||
+        result?.message?.conversationId ||
+        null;
+
+      let realId = fromResponse;
+      if (!realId) {
+        // Fallback: read conversations and match by (seller, orderId/orderNumber)
+        realId = await findConversationIdForOrder(
+          userEmail,
           sellerId,
-          plantId,
-          messageText,
-          userEmail
+          params.orderId,
+          params.orderNumber
         );
-        const newId = result?.conversationId || result?.messageId;
-        if (!newId) throw new Error('Failed to create conversation');
-
-        setSelectedConversation((prev) => ({ ...prev, id: newId }));
-        optimisticConversationUpdate(newId);
-        setTimeout(loadConversations, 200);
-      } else {
-        throw new Error('Missing information to send message');
       }
 
-      // clear pending
-      setMessages((prev) =>
-        prev.map((m) => (m.id === tempId ? { ...m, pending: false } : m))
-      );
+      if (realId) {
+        setSelectedConversation((prev) => ({ ...prev, id: realId }));
+        optimisticConversationUpdate(realId);
+        // Quietly refresh list and load messages for the real id
+        setTimeout(loadConversations, 200);
+        setTimeout(() => loadMessages(realId), 200);
+      } else {
+        // If we still couldn't resolve, keep optimistic bubble but avoid forcing a bogus id
+        console.warn('Could not resolve conversation id after sendOrderMessage');
+      }
+    } else if (sellerId && plantId) {
+      // New PLANT chat
+      const result = await startConversation(sellerId, plantId, messageText, userEmail);
+      const newId = result?.conversationId || result?.messageId;
+      if (!newId) throw new Error('Failed to create conversation');
 
-      triggerUpdate(UPDATE_TYPES.MESSAGE, {
-        type: 'NEW_MESSAGE',
-        conversationId: selectedConversation?.id || `order-${params.orderId}`,
-        senderId: userEmail,
-        receiverId: sellerId,
-        message: messageText,
-        plantName,
-        orderNumber: params.orderNumber,
-        timestamp: Date.now(),
-      });
-
-      setIsSending(false);
-    } catch (err) {
-      console.error('Send error:', err);
-      setIsSending(false);
-      setNewMessage(messageText);
-      setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      Alert.alert('Error', 'Failed to send message. Please try again.', [
-        { text: 'OK' },
-      ]);
+      setSelectedConversation((prev) => ({ ...prev, id: newId }));
+      optimisticConversationUpdate(newId);
+      setTimeout(loadConversations, 200);
+      setTimeout(() => loadMessages(newId), 200);
+    } else {
+      throw new Error('Missing information to send message');
     }
-  };
+
+    // clear "pending"
+    setMessages((prev) =>
+      prev.map((m) => (m.id === tempId ? { ...m, pending: false } : m))
+    );
+
+    triggerUpdate(UPDATE_TYPES.MESSAGE, {
+      type: 'NEW_MESSAGE',
+      conversationId: selectedConversation?.id, // may be updated above
+      senderId: userEmail,
+      receiverId: sellerId,
+      message: messageText,
+      plantName,
+      orderNumber: params.orderNumber,
+      timestamp: Date.now(),
+    });
+
+    setIsSending(false);
+  } catch (err) {
+    console.error('Send error:', err);
+    setIsSending(false);
+    setNewMessage(messageText);
+    setMessages((prev) => prev.filter((m) => m.id !== tempId));
+    Alert.alert('Error', 'Failed to send message. Please try again.', [{ text: 'OK' }]);
+  }
+};
+
 
   const handleRefresh = () => {
     setRefreshing(true);

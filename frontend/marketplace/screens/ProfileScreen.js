@@ -50,48 +50,16 @@ const ProfileScreen = () => {
     { id: 'sold',      label: 'Sold',      icon: 'local-offer', count: user?.soldPlants?.length || 0 },
     { id: 'reviews',   label: 'Reviews',   icon: 'star',        count: ratingData?.count || 0 },
   ], [myListings.length, wishlistProducts.length, user?.soldPlants?.length, ratingData?.count]);
-
-  // ---- data loaders
-  // UPDATED: de-dupe IDs and products; provide stable composite keys
-  const refreshWishlist = useCallback(async (force = false) => {
-    try {
-      const raw = await WishlistService.load({ force });
-      // 1) normalize to IDs
-      const ids = Array.isArray(raw)
-        ? raw
-            .map(x =>
-              typeof x === 'string'
-                ? x
-                : x?.id ?? x?._id ?? x?.productId ?? x?.product?.id ?? x?.product?._id
-            )
-            .filter(Boolean)
-        : [];
-      // 2) dedupe ids
-      const uniqIds = [...new Set(ids)];
-      if (!uniqIds.length) {
-        setWishlistProducts([]);
-        return;
-      }
-      // 3) fetch & dedupe products by composite key (type + seller + id)
-      const fetched = await WishlistService.fetchProducts(uniqIds);
-      const prods = Array.isArray(fetched) ? fetched : [];
-      const buildKey = (p, idx) =>
-        `${p?.isBusinessListing ? 'biz' : 'ind'}:${p?.businessId || p?.sellerId || ''}:${p?.id || p?._id || idx}`;
-      const seen = new Set();
-      const uniqProds = [];
-      for (let i = 0; i < prods.length; i++) {
-        const p = prods[i] || {};
-        const k = buildKey(p, i);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        uniqProds.push({ ...p, __key: k }); // stash computed key for keyExtractor
-      }
-      setWishlistProducts(uniqProds);
-    } catch (e) {
-      console.warn('[ProfileScreen] refreshWishlist failed:', e?.message);
-      setWishlistProducts([]);
-    }
-  }, []);
+const refreshWishlist = useCallback(async (force = false) => {
+   try {
+     const ids   = await WishlistService.load({ force });
+     const prods = await WishlistService.fetchProducts(ids);
+     setWishlistProducts(prods);
+   } catch (e) {
+     console.warn('[ProfileScreen] refreshWishlist failed:', e?.message);
+     setWishlistProducts([]);
+   }
+ }, []);
 
   // NEW: fetch listings from API and normalize to Product cards
   const loadMyListings = useCallback(async (uid) => {

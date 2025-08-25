@@ -94,8 +94,6 @@ async function apiRequest(endpoint, options = {}, retries = 3) {
     }
     throw lastError || new Error(`Request failed: ${endpoint}`);
   } catch (error) {
-    console.error(`❌ API request failed (${endpoint}):`, error);
-    throw error;
   }
 }
 

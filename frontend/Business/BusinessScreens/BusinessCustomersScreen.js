@@ -1,4 +1,3 @@
-// Business/BusinessScreens/BusinessCustomersScreen.js
 import React, { useState, useEffect } from 'react';
 import {
   View,
@@ -115,61 +114,69 @@ export default function BusinessCustomersScreen({ navigation, route }) {
     setRefreshing(true);
     loadCustomers();
   };
-// Build a deterministic room id between business and customer (lowercase + sorted)
-const makeRoomId = (a, b) => {
-  const norm = (s) => String(s || '').trim().toLowerCase();
-  const [x, y] = [norm(a), norm(b)].sort();
-  return `${encodeURIComponent(x)}__${encodeURIComponent(y)}`;
-};
 
-// Best-effort route name resolver (works with different navigator setups)
-const resolveMessagesRoute = () => {
-  const candidates = [
-    'MessagesScreen',          // common
-    'Messages',                // alt
-    'BusinessMessagesScreen',  // business-specific
-    'ChatScreen',
-    'Chat',
-  ];
-  const state = navigation?.getState?.();
-  const routeNames = state?.routeNames || [];
-  return candidates.find((r) => routeNames.includes(r)) || candidates[0];
-};
+  // Build a deterministic room id between business and customer (lowercase + sorted)
+  const makeRoomId = (a, b) => {
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const [x, y] = [norm(a), norm(b)].sort();
+    return `${encodeURIComponent(x)}__${encodeURIComponent(y)}`;
+  };
 
-// Open Messages with preselected peer + room id
-const openMessages = async (customer) => {
-  try {
-    const businessEmail = (await AsyncStorage.getItem('userEmail')) || businessId;
-    if (!businessEmail) {
-      Alert.alert('Chat unavailable', 'Business authentication required.');
-      return;
-    }
+  // Best-effort route name resolver (works with different navigator setups)
+  const resolveMessagesRoute = () => {
+    const candidates = [
+      'MessagesScreen',          // common
+      'Messages',                // alt
+      'BusinessMessagesScreen',  // business-specific
+      'ChatScreen',
+      'Chat',
+    ];
+    const state = navigation?.getState?.();
+    const routeNames = state?.routeNames || [];
+    return candidates.find((r) => routeNames.includes(r)) || candidates[0];
+  };
 
-    const roomId = makeRoomId(businessEmail, customer?.email);
+  // Open Messages inbox (header button)
+  const openMessagesInbox = () => {
     const route = resolveMessagesRoute();
+    navigation.navigate(route, { via: 'business-customers' });
+  };
 
-    navigation.navigate(route, {
-      // consistent with how your OrderDetailModal calls onContactCustomer(..., 'chat')
-      isBusiness: true,
-      via: 'business-customers',
-      roomId, // let Messages screen jump directly into the thread if supported
-      peer: {
-        email: customer?.email,
-        name: customer?.name || customer?.email || 'Customer',
-        avatar: customer?.avatarUrl, // harmless if undefined
-      },
-      // nice-to-have extra metadata
-      business: { email: businessEmail },
-    });
-  } catch (e) {
-    Alert.alert('Chat unavailable', e?.message || 'Could not open messages.');
-  }
-};
+  // Open Messages with preselected peer + room id (kept for long-press on a row)
+  const openMessages = async (customer) => {
+    try {
+      const businessEmail = (await AsyncStorage.getItem('userEmail')) || businessId;
+      if (!businessEmail) {
+        Alert.alert('Chat unavailable', 'Business authentication required.');
+        return;
+      }
+
+      const roomId = makeRoomId(businessEmail, customer?.email);
+      const route = resolveMessagesRoute();
+
+      navigation.navigate(route, {
+        isBusiness: true,
+        via: 'business-customers',
+        roomId,
+        peer: {
+          email: customer?.email,
+          name: customer?.name || customer?.email || 'Customer',
+          avatar: customer?.avatarUrl,
+        },
+        business: { email: businessEmail },
+      });
+    } catch (e) {
+      Alert.alert('Chat unavailable', e?.message || 'Could not open messages.');
+    }
+  };
 
   const renderCustomerItem = ({ item }) => (
-    <TouchableOpacity style={styles.customerItem}
-     onLongPress={() => openMessages(item)} 
-        delayLongPress={250}>
+    <TouchableOpacity
+      style={styles.customerItem}
+      onLongPress={() => openMessages(item)}
+      delayLongPress={250}
+      accessibilityHint="Long-press to open chat with this customer"
+    >
       <View style={styles.customerAvatar}>
         <Text style={styles.customerInitial}>
           {(item.name || item.email || 'C').charAt(0).toUpperCase()}
@@ -195,13 +202,7 @@ const openMessages = async (customer) => {
           </Text>
         </View>
       </View>
-      <View style={styles.customerActions}>
-        <TouchableOpacity style={styles.actionButton}
-         onPress={() => openMessages(item)}
-       accessibilityLabel={`Message ${item.name || item.email}`}>
-          <MaterialIcons name="message" size={20} color="#4CAF50" />
-        </TouchableOpacity>
-      </View>
+      {/* Per-card message button removed per request */}
     </TouchableOpacity>
   );
 
@@ -218,7 +219,6 @@ const openMessages = async (customer) => {
   if (isLoading) {
     return (
       <BusinessLayout navigation={navigation} businessId={businessId} currentTab="customers">
-
         <SafeAreaView style={styles.container}>
           <StatusBar barStyle="dark-content" backgroundColor="#fff" />
           <View style={styles.header}>
@@ -226,7 +226,22 @@ const openMessages = async (customer) => {
               <MaterialIcons name="arrow-back" size={24} color="#216a94" />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Customers</Text>
-            <View style={styles.placeholder} />
+            <View style={styles.headerRight}>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={onRefresh}
+                accessibilityLabel="Refresh"
+              >
+                <MaterialIcons name="refresh" size={24} color="#216a94" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.iconButton}
+                onPress={openMessagesInbox}
+                accessibilityLabel="Open Messages"
+              >
+                <MaterialIcons name="chat" size={24} color="#216a94" />
+              </TouchableOpacity>
+            </View>
           </View>
           <View style={styles.centered}>
             <ActivityIndicator size="large" color="#216a94" />
@@ -246,9 +261,24 @@ const openMessages = async (customer) => {
             <MaterialIcons name="arrow-back" size={24} color="#216a94" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Customers</Text>
-          <View className={styles.placeholder} />
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={onRefresh}
+              accessibilityLabel="Refresh"
+            >
+              <MaterialIcons name="refresh" size={24} color="#216a94" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={openMessagesInbox}
+              accessibilityLabel="Open Messages"
+            >
+              <MaterialIcons name="chat" size={24} color="#216a94" />
+            </TouchableOpacity>
+          </View>
         </View>
-        <View style={styles.centered}>
+        <View className={styles.centered}>
           <MaterialIcons name="error-outline" size={48} color="#f44336" />
           <Text style={styles.errorText}>{error}</Text>
           <TouchableOpacity style={styles.retryButton} onPress={loadCustomers}>
@@ -266,19 +296,31 @@ const openMessages = async (customer) => {
       currentTab="customers"
       badges={{}} // or e.g. { customers: stats.totalCustomers }
     >
-
       <SafeAreaView style={styles.container}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-        {/* Header with Back Button */}
+        {/* Header with Back, Refresh, Messages */}
         <View style={styles.header}>
           <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <MaterialIcons name="arrow-back" size={24} color="#216a94" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Customers</Text>
-          <TouchableOpacity style={styles.refreshButton} onPress={onRefresh}>
-            <MaterialIcons name="refresh" size={24} color="#216a94" />
-          </TouchableOpacity>
+          <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={onRefresh}
+              accessibilityLabel="Refresh"
+            >
+              <MaterialIcons name="refresh" size={24} color="#216a94" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={openMessagesInbox}
+              accessibilityLabel="Open Messages"
+            >
+              <MaterialIcons name="chat" size={24} color="#216a94" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Search Bar */}
@@ -372,7 +414,11 @@ const styles = StyleSheet.create({
     flex: 1,
     textAlign: 'center',
   },
-  refreshButton: {
+  headerRight: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
     padding: 8,
     borderRadius: 20,
     backgroundColor: '#f8f9fa',
@@ -520,15 +566,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#999',
     marginBottom: 2,
-  },
-  customerActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 20,
-    backgroundColor: '#f8f9fa',
   },
   emptyState: {
     flex: 1,
