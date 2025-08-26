@@ -320,40 +320,6 @@ export const getBusinessWateringChecklist = async () => {
   }
 };
 
-/**
- * Optimize Watering Route
- */
-export const optimizeWateringRoute = async (plantsToWater) => {
-  try {
-    console.log('🗺️ Optimizing watering route for', plantsToWater.length, 'plants');
-    const headers = await getEnhancedHeaders();
-
-    const url = `${API_BASE_URL}/business-watering-route`;
-    const response = await apiRequest(
-      url,
-      {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ plants: plantsToWater }),
-      },
-      3,
-      'Optimize Watering Route'
-    );
-
-    return {
-      success: true,
-      optimizedRoute: response.optimizedRoute || [],
-      routeMap: response.routeMap || [],
-      estimatedTime: response.estimatedTime || 0,
-      totalDistance: response.totalDistance || 0,
-      routeEfficiency: response.routeEfficiency || 'optimal',
-    };
-  } catch (error) {
-    console.error('❌ Optimize Watering Route error:', error);
-    throw error;
-  }
-};
-
 // -----------------------------
 // AI helper
 // -----------------------------
@@ -420,7 +386,6 @@ export default {
   generatePlantBarcode,
   markPlantsAsWatered,
   getBusinessWateringChecklist,
-  optimizeWateringRoute,
 
   // ai
   getAIPlantCareAdvice,

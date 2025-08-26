@@ -3,7 +3,6 @@ import { getAuth, onAuthStateChanged } from '@react-native-firebase/auth';
 import { getFirestore, doc, getDoc } from '@react-native-firebase/firestore';
 
 const AuthCtx = createContext(null);
-export const useAuth = () => useContext(AuthCtx);
 
 export default function AuthProvider({ children }) {
   const [user, setUser] = useState(null);

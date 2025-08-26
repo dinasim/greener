@@ -18,7 +18,6 @@ import {
 import { MaterialIcons, MaterialCommunityIcons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
-import CrossPlatformAzureMapView from '../../marketplace/components/CrossPlatformAzureMapView';
 
 export default function BusinessWeatherScreen({ navigation, route }) {
   const { businessId } = route.params || {};

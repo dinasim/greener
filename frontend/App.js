@@ -3,7 +3,6 @@ import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import AppNavigator from './navigation/AppNavigator';
-import PushWebSetup from './components/PushWebSetup';
 import AuthProvider from './src/providers/AuthProvider';
 import * as Notifications from 'expo-notifications';
 
@@ -67,8 +66,6 @@ export default function App() {
     <AuthProvider>
       <NavigationContainer>
         <AppNavigator />
-        {Platform.OS === 'web' ? <PushWebSetup /> : null}
-        {/* FCM registration can remain where you currently do it */}
       </NavigationContainer>
     </AuthProvider>
   );

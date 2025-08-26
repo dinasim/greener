@@ -16,12 +16,8 @@ import {
 } from 'react-native';
 import * as Location from 'expo-location';
 import { MaterialIcons } from '@expo/vector-icons';
-import { colors } from '../services/theme';
 import { getAzureMapsKey, geocodeAddress, reverseGeocode } from '../services/azureMapsService';
-import CrossPlatformAzureMapView from './CrossPlatformAzureMapView';
 import ToastMessage from './ToastMessage';
-
-const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 const LocationPicker = ({ 
   value, 

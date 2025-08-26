@@ -20,7 +20,6 @@ import { useForm } from "../context/FormContext";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import marketplaceApi from '../marketplace/services/marketplaceApi';
 import { AntDesign } from '@expo/vector-icons';
-import { initializeChatPush, enablePushRegistration } from '../notifications/expoPushSetup';
 
 WebBrowser.maybeCompleteAuthSession();
 

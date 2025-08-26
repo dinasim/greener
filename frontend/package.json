@@ -59,7 +59,6 @@
     "expo-web-browser": "~14.1.6",
     "firebase": "^12.1.0",
     "jwt-decode": "^4.0.0",
-    "microsoft-cognitiveservices-speech-sdk": "^1.45.0",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-is": "^19.1.1",
