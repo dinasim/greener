@@ -25,6 +25,7 @@
 ---
 
 ## 📱 Preview
+
 Here are some screenshots of the app in action:
 <div align="center">
   <table>
@@ -46,6 +47,7 @@ Here are some screenshots of the app in action:
   </table>
 </div>
 ---
+---
 
 ## 💡 Why Greener?
 
@@ -53,7 +55,7 @@ Here are some screenshots of the app in action:
 * 👥 **Dual Personas** — Tailored experiences for plant lovers and green businesses
 * 🤖 **AI Plant Assistant** — Weather-aware care tips, reminders, and push notifications
 * 📈 **Business Insights** — Dashboards, inventory tools, KPIs, and customer intelligence  
-* 💬 **Community & Messaging** — Forums, reviews, and chat
+* 💬 **Community & Messaging** — Forums, reviews, and SignalR-powered real-time chat
 
 ---
 
@@ -102,7 +104,7 @@ frontend/
 │   → Ensures design consistency across screens
 │
 ├── /services/                  # API client layer
-│   • marketplaceApi.js, businessApi.js, plantApi.js, chatApi.js
+│   • marketplaceApi.js, businessApi.js, plantApi.js, 
 │   → Handles HTTP requests to Azure Functions backend
 │   → Provides standardized error handling and caching
 │
@@ -115,16 +117,12 @@ frontend/
 │
 ├── /marketplace/               # Marketplace-specific flows
 │   • Browse products/plants, wishlist, reviews
-│   • Integrates with marketplaceApi.js
-│
+├──────/marketplace/services
+│      •  marketplaceApi.js, wishlist service, maptiler service and so..
+├─────/marketplace/components
 ├── /notifications/             # Push notification logic
 │   • FCM token registration
-│
-├── pushRegistrationSnippet.js  # Helper for registering push tokens
-├── /utils/                     # Helper utilities (formatting, constants, validation)
-├── /hooks/                     # Custom React hooks (e.g., useAuth, useNotifications)
-├── /public/                    # Web build assets
-└── config & build files        # (babel.config.js, tsconfig.json, eslint.config.mjs, etc.)
+└── 
 
 
 backend/
@@ -159,7 +157,7 @@ backend/
 │   • create-chat, get-messages, read-message, send-message, conversations
 │   • typing-indicator, chat-history, chatMessageNotify, signalr-negotiate
 │   • plant-care-forum, forum-replies
-│   → Real-time chat with SignalR, message history, read receipts, typing indicators, and plant forums
+│   → Real-time chat, message history, read receipts, typing indicators, and plant forums
 │
 ├── notifications
 │   • registerDeviceToken, registerWebPush, listUserTokens
@@ -176,19 +174,14 @@ backend/
 │
 ├── shared utilities
 │   • db_helpers.py, http_helpers.py, storage_helpers.py
-│   • speechToText, speechToken
 │   → Common helpers for Cosmos DB access, HTTP requests, blob storage, and speech APIs
-│
-├── monitoring & misc
-│   • ping, markTaskDone
-│   • host.json, local.settings.json, requirements.txt
-│   → Health checks, task markers, and configuration
+└──
 
 
 ```
 ## 🏗️ Architecture Overview
-- **Frontend:** A cross-platform application built with React Native and Expo, targeting Android and Web platforms. The codebase features a modular architecture organized by features (Marketplace, Chat) and personas (User, Business), with component-based design patterns and custom services for API interaction and state management.
-- **Backend:** A serverless backend powered by Azure Functions (Python) for scalable compute. Data persistence is handled through Azure Cosmos DB, while real-time messaging capabilities are provided by Azure SignalR Service. Push notifications are delivered via Firebase Cloud Messaging (FCM). The system includes a robust custom authentication layer with role-based access control (RBAC).
+- **Frontend:** An Android application built with React Native and Expo. The codebase features a modular architecture organized by features (Marketplace) and personas (User, Business), with component-based design patterns and custom services for API interaction and state management.
+- **Backend:** A serverless backend powered by Azure Functions (Python) for scalable compute. Data persistence is handled through Azure Cosmos DB. Push notifications are delivered via Firebase Cloud Messaging (FCM). 
 
 ## 🧰 Tech Stack
 <div align="center">
@@ -212,7 +205,7 @@ backend/
 * 💧 Watering reminders & care schedules
 * 🛒 Personalized marketplace & wishlists
 * 📚 My Plants dashboard
-* 🧑‍🧳 Community forums, reviews & real-time chat
+* 🧑‍🧳 Community forums, reviews & chat
 
 ### 💼 Business Experience
 
@@ -221,14 +214,6 @@ backend/
 * 👨‍💼 Customer profile insights
 * 🌐 Online storefront with branding
 * 💧 Weather-linked watering forecasts & checklists
-
-### ⚖️ Admin & Security
-
-* 🔐 Role-based access (consumer, business, admin)
-* 🛡️ Secure session handling
-* 📃 Encrypted Cosmos DB storage
-* 🔒  Custom authentication with hash+salt
-
 ---
 
 ## 📜 License
