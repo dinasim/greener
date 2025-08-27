@@ -204,7 +204,6 @@ export default function UserSettingsScreen({ navigation }) {
         style: 'destructive',
         onPress: async () => {
           try {
-            await clearNotifications();
             await deleteLocalFcmTokens();
             await AsyncStorage.multiRemove([
               'userEmail',

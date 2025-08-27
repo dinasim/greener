@@ -254,11 +254,6 @@ const handleRealtimeUpdated = (partial) => {
   setSelectedOrder(prev => (prev && String(prev.id||prev.orderId)===id ? { ...prev, ...partial } : prev));
 };
 
-useOrdersSignalR(businessId, {
-  onOrderCreated: handleRealtimeCreated,
-  onOrderUpdated: handleRealtimeUpdated,
-  enabled: !!businessId,
-});
 
   // --------------------------------------------------------
 
