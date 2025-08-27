@@ -25,29 +25,26 @@
 ---
 
 ## 📱 Preview
-
 Here are some screenshots of the app in action:
-
 <div align="center">
   <table>
     <tr>
-      <td align="center"><img src="/docs/assets/img/github/pic1.jpg" width="260"><br><sub><b>business homescreen</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic2.jpg" width="260"><br><sub><b>Plant Care forum</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic3.jpg" width="260"><br><sub><b>orders</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic1.jpg" width="260"><br><b>Business Home Screen</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic2.jpg" width="260"><br><b>Plant Care Forum</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic3.jpg" width="260"><br><b>Orders</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/assets/img/github/pic4.jpg" width="260"><br><sub><b>Marketplace homescreen</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic5.jpg" width="260"><br><sub><b>Marketplace map</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><sub><b>Real-time Chat</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic4.jpg" width="260"><br><b>Marketplace Home Screen</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic5.jpg" width="260"><br><b>Marketplace Map</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><b>Real-time Chat</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/assets/img/github/pic7.jpg" width="260"><br><sub><b>AI chat bot</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic8.jpg" width="260"><br><sub><b>my plants</b></sub></td>
-      <td align="center"><img src="docs/assets/img/github/pic9.jpg" width="260"><br><sub><b>consumer homescreen</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic7.jpg" width="260"><br><b>AI Chatbot</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic8.jpg" width="260"><br><b>My Plants</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic9.jpg" width="260"><br><b>Consumer Home Screen</b></td>
     </tr>
   </table>
 </div>
-
 ---
 
 ## 💡 Why Greener?
