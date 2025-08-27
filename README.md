@@ -15,11 +15,11 @@
 
 **Greener** is a modern, cloud-native platform for sustainable living. It connects plant enthusiasts and green businesses through a feature-rich ecosystem that includes a marketplace, plant care assistant, inventory management, real-time chat, and business analytics.
 
-* ✅ Mobile-first (React Native)
+* ✅ Android App.
 * ✅ Azure-based scalable backend with Cosmos DB
 * ✅ Smart plant care: weather-aware advice powered by Azure Maps & OpenWeather
 * ✅ Dual user roles: consumers (personal plant care, wishlists) & businesses (inventory, analytics, reviews)
-* ✅ Notifications: push alerts via Firebase Cloud Messaging (FCM) for web & mobile
+* ✅ Notifications: push alerts via Firebase Cloud Messaging (FCM) 
 * ✅ Real-time, AI-powered, and secure
 
 ---
@@ -31,19 +31,19 @@ Here are some screenshots of the app in action:
 <div align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/img/github/pic1.jpg" width="260"><br><sub><b>Login & Onboarding</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic2.jpg" width="260"><br><sub><b>Plant Care Dashboard</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic3.jpg" width="260"><br><sub><b>AI Plant Assistant</b></sub></td>
+      <td align="center"><img src="/docs/assets/img/github/pic1.jpg" width="260"><br><sub><b>Login & Onboarding</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic2.jpg" width="260"><br><sub><b>Plant Care Dashboard</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic3.jpg" width="260"><br><sub><b>AI Plant Assistant</b></sub></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/img/github/pic4.jpg" width="260"><br><sub><b>Marketplace (Grid)</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic5.jpg" width="260"><br><sub><b>Marketplace (List)</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic6.jpg" width="260"><br><sub><b>Real-time Chat</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic4.jpg" width="260"><br><sub><b>Marketplace (Grid)</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic5.jpg" width="260"><br><sub><b>Marketplace (List)</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><sub><b>Real-time Chat</b></sub></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/img/github/pic7.jpg" width="260"><br><sub><b>Business Dashboard</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic8.jpg" width="260"><br><sub><b>Business Inventory</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic9.jpg" width="260"><br><sub><b>User Profile</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic7.jpg" width="260"><br><sub><b>Business Dashboard</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic8.jpg" width="260"><br><sub><b>Business Inventory</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic9.jpg" width="260"><br><sub><b>User Profile</b></sub></td>
     </tr>
   </table>
 </div>
@@ -57,7 +57,6 @@ Here are some screenshots of the app in action:
 * 🤖 **AI Plant Assistant** — Weather-aware care tips, reminders, and push notifications
 * 📈 **Business Insights** — Dashboards, inventory tools, KPIs, and customer intelligence  
 * 💬 **Community & Messaging** — Forums, reviews, and SignalR-powered real-time chat
-* 🔐 **Secure & Scalable** — Custom authentication, RBAC, and encrypted Cosmos DB storage
 
 ---
 
@@ -84,39 +83,21 @@ cd greener
 # Install frontend dependencies
 npm install
 
-# Start the React Native frontend (Expo)
-npm run dev
-# or
-expo start
-
-# Start backend locally (in separate terminal)
-cd backend
-# Install Python dependencies
-pip install -r requirements.txt
-# Start Azure Functions backend
-func start
+# Start the React app
+npx expo run:android
 ```
 
-### Notes:
-- For web push notifications, ensure you have the correct Firebase config in `frontend/components/PushWebSetup.js`.
-- For Android FCM, native modules are loaded in `frontend/index.js`.
-- Metro config is customized for web/native in [`frontend/metro.config.js`](frontend/metro.config.js).
-- Business and marketplace features require additional setup as described in their respective README sections.
----
-
 ## 🧰 System Architecture
-
 ```
 frontend/
 │
 ├── App.js                     # Entry point, loads navigation and initializes global providers
 ├── app.json / eas.json         # Expo & EAS configuration
 ├── assets/                     # Static images, icons, and other media
-├── android/                    # Native Android project for builds and deployment
 │
-├── /screens/                   # Feature-specific screens for users and businesses
+├── /screens/                   # Feature-specific screens for users
 │   • PlantCareScreen, ProfileScreen, MarketplaceScreen
-│   • BusinessDashboardScreen, InventoryScreen, AnalyticsScreen
+│   • BusinessDashboardScreen, InventoryScreen
 │   → Handles UI, connects to context & services for data
 │
 ├── /components/                # Reusable UI components
@@ -128,14 +109,8 @@ frontend/
 │   → Handles HTTP requests to Azure Functions backend
 │   → Provides standardized error handling and caching
 │
-├── /context/                   # React Context for global state
-│   • AuthContext, BusinessContext, PlantContext
-│   → Manages authentication, user data, business state
-│   → Provides app-wide access without prop drilling
-│
 ├── /navigation/                # App routing and navigation
 │   • Tab navigation for consumer vs. business flows
-│   • Deep linking setup for notifications and marketplace links
 │
 ├── /Business/                  # Business-specific flows
 │   • Dashboard, inventory management, sales insights
@@ -147,7 +122,6 @@ frontend/
 │
 ├── /notifications/             # Push notification logic
 │   • FCM token registration
-│   • Foreground/background message handling
 │
 ├── pushRegistrationSnippet.js  # Helper for registering push tokens
 ├── /utils/                     # Helper utilities (formatting, constants, validation)
