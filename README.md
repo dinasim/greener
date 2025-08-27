@@ -15,11 +15,11 @@
 
 **Greener** is a modern, cloud-native platform for sustainable living. It connects plant enthusiasts and green businesses through a feature-rich ecosystem that includes a marketplace, plant care assistant, inventory management, real-time chat, and business analytics.
 
-* ✅ Mobile-first (React Native)
+* ✅ Android App.
 * ✅ Azure-based scalable backend with Cosmos DB
 * ✅ Smart plant care: weather-aware advice powered by Azure Maps & OpenWeather
 * ✅ Dual user roles: consumers (personal plant care, wishlists) & businesses (inventory, analytics, reviews)
-* ✅ Notifications: push alerts via Firebase Cloud Messaging (FCM) for web & mobile
+* ✅ Notifications: push alerts via Firebase Cloud Messaging (FCM) 
 * ✅ Real-time, AI-powered, and secure
 
 ---
@@ -27,27 +27,26 @@
 ## 📱 Preview
 
 Here are some screenshots of the app in action:
-
 <div align="center">
   <table>
     <tr>
-      <td align="center"><img src="docs/img/github/pic1.jpg" width="260"><br><sub><b>Login & Onboarding</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic2.jpg" width="260"><br><sub><b>Plant Care Dashboard</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic3.jpg" width="260"><br><sub><b>AI Plant Assistant</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic1.jpg" width="260"><br><b>Business Home Screen</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic2.jpg" width="260"><br><b>Plant Care Forum</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic3.jpg" width="260"><br><b>Orders</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/img/github/pic4.jpg" width="260"><br><sub><b>Marketplace (Grid)</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic5.jpg" width="260"><br><sub><b>Marketplace (List)</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic6.jpg" width="260"><br><sub><b>Real-time Chat</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic4.jpg" width="260"><br><b>Marketplace Home Screen</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic5.jpg" width="260"><br><b>Marketplace Map</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><b>Chat</b></td>
     </tr>
     <tr>
-      <td align="center"><img src="docs/img/github/pic7.jpg" width="260"><br><sub><b>Business Dashboard</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic8.jpg" width="260"><br><sub><b>Business Inventory</b></sub></td>
-      <td align="center"><img src="docs/img/github/pic9.jpg" width="260"><br><sub><b>User Profile</b></sub></td>
+      <td align="center"><img src="docs/assets/img/github/pic7.jpg" width="260"><br><b>AI Chatbot</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic8.jpg" width="260"><br><b>My Plants</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic9.jpg" width="260"><br><b>Consumer Home Screen</b></td>
     </tr>
   </table>
 </div>
-
+---
 ---
 
 ## 💡 Why Greener?
@@ -57,7 +56,6 @@ Here are some screenshots of the app in action:
 * 🤖 **AI Plant Assistant** — Weather-aware care tips, reminders, and push notifications
 * 📈 **Business Insights** — Dashboards, inventory tools, KPIs, and customer intelligence  
 * 💬 **Community & Messaging** — Forums, reviews, and SignalR-powered real-time chat
-* 🔐 **Secure & Scalable** — Custom authentication, RBAC, and encrypted Cosmos DB storage
 
 ---
 
@@ -70,9 +68,7 @@ Here are some screenshots of the app in action:
 - **Python** >= 3.9.0
 - **Azure CLI** >= 2.0.0
 - **Expo CLI** (`npm install -g expo-cli`)
-- **.NET SDK** (for Azure Functions extensions, if using C#)
 - **Android Studio** or **Xcode** (for mobile emulation, optional)
-- **Firebase CLI** (for push notification setup, optional)
 
 ## 🧪 Local Development
 
@@ -84,39 +80,21 @@ cd greener
 # Install frontend dependencies
 npm install
 
-# Start the React Native frontend (Expo)
-npm run dev
-# or
-expo start
-
-# Start backend locally (in separate terminal)
-cd backend
-# Install Python dependencies
-pip install -r requirements.txt
-# Start Azure Functions backend
-func start
+# Start the React app
+npx expo start --dev-client
 ```
 
-### Notes:
-- For web push notifications, ensure you have the correct Firebase config in `frontend/components/PushWebSetup.js`.
-- For Android FCM, native modules are loaded in `frontend/index.js`.
-- Metro config is customized for web/native in [`frontend/metro.config.js`](frontend/metro.config.js).
-- Business and marketplace features require additional setup as described in their respective README sections.
----
-
 ## 🧰 System Architecture
-
 ```
 frontend/
 │
 ├── App.js                     # Entry point, loads navigation and initializes global providers
 ├── app.json / eas.json         # Expo & EAS configuration
 ├── assets/                     # Static images, icons, and other media
-├── android/                    # Native Android project for builds and deployment
 │
-├── /screens/                   # Feature-specific screens for users and businesses
+├── /screens/                   # Feature-specific screens for users
 │   • PlantCareScreen, ProfileScreen, MarketplaceScreen
-│   • BusinessDashboardScreen, InventoryScreen, AnalyticsScreen
+│   • BusinessDashboardScreen, InventoryScreen
 │   → Handles UI, connects to context & services for data
 │
 ├── /components/                # Reusable UI components
@@ -124,18 +102,12 @@ frontend/
 │   → Ensures design consistency across screens
 │
 ├── /services/                  # API client layer
-│   • marketplaceApi.js, businessApi.js, plantApi.js, chatApi.js
+│   • marketplaceApi.js, businessApi.js, plantApi.js, 
 │   → Handles HTTP requests to Azure Functions backend
 │   → Provides standardized error handling and caching
 │
-├── /context/                   # React Context for global state
-│   • AuthContext, BusinessContext, PlantContext
-│   → Manages authentication, user data, business state
-│   → Provides app-wide access without prop drilling
-│
 ├── /navigation/                # App routing and navigation
 │   • Tab navigation for consumer vs. business flows
-│   • Deep linking setup for notifications and marketplace links
 │
 ├── /Business/                  # Business-specific flows
 │   • Dashboard, inventory management, sales insights
@@ -143,17 +115,12 @@ frontend/
 │
 ├── /marketplace/               # Marketplace-specific flows
 │   • Browse products/plants, wishlist, reviews
-│   • Integrates with marketplaceApi.js
-│
+├──────/marketplace/services
+│      •  marketplaceApi.js, wishlist service, maptiler service and so..
+├─────/marketplace/components
 ├── /notifications/             # Push notification logic
 │   • FCM token registration
-│   • Foreground/background message handling
-│
-├── pushRegistrationSnippet.js  # Helper for registering push tokens
-├── /utils/                     # Helper utilities (formatting, constants, validation)
-├── /hooks/                     # Custom React hooks (e.g., useAuth, useNotifications)
-├── /public/                    # Web build assets
-└── config & build files        # (babel.config.js, tsconfig.json, eslint.config.mjs, etc.)
+└── 
 
 
 backend/
@@ -188,7 +155,7 @@ backend/
 │   • create-chat, get-messages, read-message, send-message, conversations
 │   • typing-indicator, chat-history, chatMessageNotify, signalr-negotiate
 │   • plant-care-forum, forum-replies
-│   → Real-time chat with SignalR, message history, read receipts, typing indicators, and plant forums
+│   → Real-time chat, message history, read receipts, typing indicators, and plant forums
 │
 ├── notifications
 │   • registerDeviceToken, registerWebPush, listUserTokens
@@ -205,19 +172,14 @@ backend/
 │
 ├── shared utilities
 │   • db_helpers.py, http_helpers.py, storage_helpers.py
-│   • speechToText, speechToken
 │   → Common helpers for Cosmos DB access, HTTP requests, blob storage, and speech APIs
-│
-├── monitoring & misc
-│   • ping, markTaskDone
-│   • host.json, local.settings.json, requirements.txt
-│   → Health checks, task markers, and configuration
+└──
 
 
 ```
 ## 🏗️ Architecture Overview
-- **Frontend:** A cross-platform application built with React Native and Expo, targeting Android and Web platforms. The codebase features a modular architecture organized by features (Marketplace, Chat) and personas (User, Business), with component-based design patterns and custom services for API interaction and state management.
-- **Backend:** A serverless backend powered by Azure Functions (Python) for scalable compute. Data persistence is handled through Azure Cosmos DB, while real-time messaging capabilities are provided by Azure SignalR Service. Push notifications are delivered via Firebase Cloud Messaging (FCM). The system includes a robust custom authentication layer with role-based access control (RBAC).
+- **Frontend:** An Android application built with React Native and Expo. The codebase features a modular architecture organized by features (Marketplace) and personas (User, Business), with component-based design patterns and custom services for API interaction and state management.
+- **Backend:** A serverless backend powered by Azure Functions (Python) for scalable compute. Data persistence is handled through Azure Cosmos DB. Push notifications are delivered via Firebase Cloud Messaging (FCM). 
 
 ## 🧰 Tech Stack
 <div align="center">
@@ -241,7 +203,7 @@ backend/
 * 💧 Watering reminders & care schedules
 * 🛒 Personalized marketplace & wishlists
 * 📚 My Plants dashboard
-* 🧑‍🧳 Community forums, reviews & real-time chat
+* 🧑‍🧳 Community forums, reviews & chat
 
 ### 💼 Business Experience
 
@@ -250,14 +212,6 @@ backend/
 * 👨‍💼 Customer profile insights
 * 🌐 Online storefront with branding
 * 💧 Weather-linked watering forecasts & checklists
-
-### ⚖️ Admin & Security
-
-* 🔐 Role-based access (consumer, business, admin)
-* 🛡️ Secure session handling
-* 📃 Encrypted Cosmos DB storage
-* 🔒  Custom authentication with hash+salt
-
 ---
 
 ## 📜 License
