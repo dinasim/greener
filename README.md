@@ -36,7 +36,7 @@ Here are some screenshots of the app in action:
     <tr>
       <td align="center"><img src="docs/assets/img/github/pic4.jpg" width="260"><br><b>Marketplace Home Screen</b></td>
       <td align="center"><img src="docs/assets/img/github/pic5.jpg" width="260"><br><b>Marketplace Map</b></td>
-      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><b>Real-time Chat</b></td>
+      <td align="center"><img src="docs/assets/img/github/pic6.jpg" width="260"><br><b>Chat</b></td>
     </tr>
     <tr>
       <td align="center"><img src="docs/assets/img/github/pic7.jpg" width="260"><br><b>AI Chatbot</b></td>
