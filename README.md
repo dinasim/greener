@@ -68,9 +68,7 @@ Here are some screenshots of the app in action:
 - **Python** >= 3.9.0
 - **Azure CLI** >= 2.0.0
 - **Expo CLI** (`npm install -g expo-cli`)
-- **.NET SDK** (for Azure Functions extensions, if using C#)
 - **Android Studio** or **Xcode** (for mobile emulation, optional)
-- **Firebase CLI** (for push notification setup, optional)
 
 ## 🧪 Local Development
 
@@ -83,7 +81,7 @@ cd greener
 npm install
 
 # Start the React app
-npx expo run:android
+npx expo start --dev-client
 ```
 
 ## 🧰 System Architecture
