@@ -176,6 +176,62 @@
       margin-right: auto;
       text-align: center;
     }
+
+    /* Acknowledgments section styles */
+    .acknowledgments-content {
+      max-width: 800px;
+      margin: 0 auto;
+      text-align: left;
+    }
+    
+    .acknowledgments-content p {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #444;
+      margin-bottom: 1rem;
+    }
+    
+    .acknowledgments-content ul {
+      list-style: none;
+      padding: 0;
+    }
+    
+    .acknowledgments-content li {
+      font-size: 1.1rem;
+      color: #567167;
+      margin-bottom: 0.5rem;
+      padding-left: 1rem;
+    }
+    
+    .acknowledgments-content li:before {
+      content: "• ";
+      color: #387d53;
+      font-weight: bold;
+      margin-right: 0.5rem;
+    }
+
+    /* Video link styling - UPDATED TO CENTER */
+    .video-link {
+      color: #387d53; 
+      text-decoration: none; 
+      font-weight: 600;
+      display: block;
+      margin-top: 0.5rem;
+      text-align: center;
+    }
+    
+    .video-link:hover {
+      color: #285e39;
+      text-decoration: underline;
+    }
+    
+    .video-description {
+      font-size: 0.9rem; 
+      color: #567167; 
+      margin-top: 0.5rem; 
+      font-style: italic;
+      text-align: center;
+    }
   </style>
 
   <!-- =======================================================
@@ -289,7 +345,7 @@
         <span class="description-title">Features</span>
         <h2>Features</h2>
         <p class="subtitle">
-          Greener gives both plant lovers and plant businesses the tools to thrive — with AI, smart reminders, and a dynamic marketplace.
+          Greener equips both plant owners and eco-businesses with smart tools — combining AI, weather-aware notifications, and a connected marketplace.
         </p>
       </div>
 
@@ -307,42 +363,63 @@
                 <i class="bi bi-calendar-check me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Care Reminders:</span>
-                  <span class="feature-desc">Personalized alerts for every plant care need, plus daily tips for enthusiastic plant owners.</span>
+                  <span class="feature-desc">Push notifications (via Firebase) remind you to water, fertilize, or repot each plant, based on weather forecasts and your plant's profile.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-camera me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Plant ID & Diagnosis:</span>
-                  <span class="feature-desc">Snap a photo to identify plants or detect diseases instantly.</span>
+                  <span class="feature-desc">Upload or snap a photo. Greener identifies the plant species and checks for common diseases using AI models.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-robot me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">AI Chat Assistant:</span>
-                  <span class="feature-desc">Get instant answers about plant care, growing tips, or troubleshooting directly from the built-in AI chat.</span>
+                  <span class="feature-desc">Ask questions like "Why are my leaves yellow?" or "How often should I water basil?" and get AI-powered responses tailored to your plants.</span>
+                  <br>
+                  <a href="assets/video/aibot.mp4" class="glightbox video-link" data-type="video" data-autoplay="true">
+                    <i class="bi bi-play-circle me-1"></i>Explore AI Assistant
+                  </a>
+                  <div class="video-description">
+                    Experience how our AI provides instant, personalized plant care guidance through natural conversation.
+                  </div>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-chat-dots me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Marketplace Chat:</span>
-                  <span class="feature-desc">Message directly with other users or sellers to ask questions, get care advice, or finalize marketplace deals.</span>
+                  <span class="feature-desc">Message sellers or other users directly through chat to arrange purchases, ask for plant advice, or negotiate deals.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-shop me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Marketplace:</span>
-                  <span class="feature-desc">Buy, sell, or swap plants with ease, and check seller reviews before making a purchase.</span>
+                  <span class="feature-desc">Browse plants and eco-products, add items to your wishlist, and check seller ratings before buying. Listings update in real time from business inventory.</span>
+                  <br>
+                  <a href="assets/video/market.mp4" class="glightbox video-link" data-type="video" data-autoplay="true">
+                    <i class="bi bi-play-circle me-1"></i>Explore Marketplace
+                  </a>
+                  <div class="video-description">
+                    See how users discover plants, add favorites to wishlists, and make informed purchases through our intuitive marketplace.
+                  </div>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-people me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Community Forum:</span>
-                  <span class="feature-desc">Join discussions, share experiences, and get advice from fellow plant lovers and businesses.</span>
+                  <span class="feature-desc">Join topic-based forums, share experiences, and exchange plant care tips with other enthusiasts and businesses.</span>
+                  <br>
+                  <a href="assets/video/forum.mp4" class="glightbox video-link" data-type="video" data-autoplay="true">
+                    <i class="bi bi-play-circle me-1"></i>Explore Forum
+                  </a>
+                  <div class="video-description">
+                    Watch how plant lovers connect, share experiences, and get expert advice through our vibrant community forum.
+                  </div>
                 </div>
               </div>
             </div>
@@ -352,7 +429,7 @@
         <!-- Businesses -->
         <div class="row align-items-center mb-5">
           <div class="col-lg-6 mb-4 mb-lg-0">
-            <img src="assets/img/features/plantshop_leaf.png" class="img-fluid feature-img" alt="For businesses" style="width: 600px; height: 400px;">
+            <img src="assets/img/allert.jpg" class="img-fluid feature-img" alt="notifications and alerts" style="width: 400px; height: 400px; border-radius: 20px;">
           </div>
           <div class="col-lg-6">
             <h3 class="mb-4"><i class="bi bi-briefcase icon-lg"></i> Businesses</h3>
@@ -361,42 +438,42 @@
                 <i class="bi bi-shop-window me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Selling & Marketing Platform:</span>
-                  <span class="feature-desc">Showcase plants and services to a wide audience, attract new customers, and grow your business presence.</span>
+                  <span class="feature-desc">Create an online storefront with your branding. Upload products, set prices, and reach local plant buyers instantly.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-bag-check me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Inventory & Orders:</span>
-                  <span class="feature-desc">Manage stock, track orders, and streamline operations from one place.</span>
+                  <span class="feature-desc">Update stock, mark items as sold, and track customer orders. Changes sync in real-time to the marketplace.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-robot me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">AI Chat Assistant:</span>
-                  <span class="feature-desc">Answer customer questions instantly with smart automated support tailored for businesses.</span>
+                  <span class="feature-desc">Businesses can use the built-in AI to auto-reply to common customer questions (availability, care instructions, delivery options).</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-virus me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Disease Detection:</span>
-                  <span class="feature-desc">Upload plant photos to quickly diagnose issues and provide professional solutions.</span>
+                  <span class="feature-desc">Offer customers quick photo-based plant health checks to build trust and provide professional support.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-bar-chart me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Sales Analytics:</span>
-                  <span class="feature-desc">Track performance, discover trends, and make data-driven decisions.</span>
+                  <span class="feature-desc">Visualize KPIs like top-selling plants, repeat customers, and revenue growth through dashboards powered by Cosmos DB analytics.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-chat-dots me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Direct Chat with Buyers:</span>
-                  <span class="feature-desc">Build trust and close deals faster by chatting directly with customers.</span>
+                  <span class="feature-desc">Respond to questions instantly and close deals faster with SignalR real-time chat integration.</span>
                 </div>
               </div>
             </div>
@@ -415,21 +492,21 @@
                 <i class="bi bi-geo me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Find Nearby Sellers:</span>
-                  <span class="feature-desc">Discover local plant businesses.</span>
+                  <span class="feature-desc">Use location services to discover plant shops and eco-businesses close to you.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-shop-window me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Shop Local:</span>
-                  <span class="feature-desc">Buy and sell plants safely in your area.</span>
+                  <span class="feature-desc">Support nearby growers by buying directly within your area.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-star me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Reviews:</span>
-                  <span class="feature-desc">Trust feedback from other users.</span>
+                  <span class="feature-desc">Check ratings and written feedback from past buyers before making a purchase.</span>
                 </div>
               </div>
             </div>
@@ -439,7 +516,7 @@
         <!-- AI & Smart Tools -->
         <div class="row align-items-center mb-5">
           <div class="col-lg-6 mb-4 mb-lg-0">
-            <img src="assets/img/features/AI.png" class="img-fluid feature-img" alt="AI features" style="width: 400px; height: 400px;">
+            <!-- Empty space -->
           </div>
           <div class="col-lg-6">
             <h3 class="mb-4"><i class="bi bi-robot icon-lg"></i> AI & Smart Tools</h3>
@@ -448,21 +525,21 @@
                 <i class="bi bi-chat-dots me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">AI Chat:</span>
-                  <span class="feature-desc">Get answers to your plant questions any time.</span>
+                  <span class="feature-desc">Get 24/7 answers to plant care questions, powered by conversational AI models.</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-cloud-sun me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Weather Alerts:</span>
-                  <span class="feature-desc">Tips and reminders based on your location.</span>
+                  <span class="feature-desc">Receive notifications when local weather may affect your plants (e.g., frost warnings, heatwaves, or heavy rain).</span>
                 </div>
               </div>
               <div class="mb-3 d-flex align-items-start">
                 <i class="bi bi-camera me-2 icon-lg"></i>
                 <div>
                   <span class="feature-title">Photo Diagnosis:</span>
-                  <span class="feature-desc">Upload a photo for instant help.</span>
+                  <span class="feature-desc">Upload a photo for instant suggestions on plant care or issue resolution, leveraging Greener's AI recognition pipeline.</span>
                 </div>
               </div>
             </div>
@@ -530,7 +607,7 @@
                 <div class="card-number"><span>05</span></div>
                 <div class="card-content">
                   <h5 class="service-title"><a href="#">Firebase Cloud Messaging (FCM)</a></h5>
-                  <p class="service-description">Sends instant push notifications to users’ web browsers and mobile
+                  <p class="service-description">Sends instant push notifications to users' web browsers and mobile
                     devices, keeping them up-to-date with weather alerts, plant care reminders, and important app
                     updates.</p>
                 </div>
@@ -541,8 +618,8 @@
                 <div class="card-number"><span>06</span></div>
                 <div class="card-content">
                   <h5 class="service-title"><a href="#">OpenWeatherMap API</a></h5>
-                  <p class="service-description">Supplies real-time weather forecasts used in Greener’s smart
-                    notifications, enabling personalized care advice and alerts for each user’s plant location.</p>
+                  <p class="service-description">Supplies real-time weather forecasts used in Greener's smart
+                    notifications, enabling personalized care advice and alerts for each user's plant location.</p>
                 </div>
               </div>
             </div>
@@ -551,7 +628,7 @@
                 <div class="card-number"><span>07</span></div>
                 <div class="card-content">
                   <h5 class="service-title"><a href="#">Marketplace API</a></h5>
-                  <p class="service-description">Powers the app’s buying and selling experience by managing products,
+                  <p class="service-description">Powers the app's buying and selling experience by managing products,
                     seller profiles, reviews, messaging, and location services through a unified backend.</p>
                 </div>
               </div>
@@ -583,8 +660,8 @@
                   <h5 class="service-title"><a href="#">Plant Identification API</a></h5>
                   <p class="service-description">Enables users to take or upload a photo of a plant and instantly
                     recognize its species. The API analyzes the image via the PlantNet recognition service and returns
-                    details such as the scientific name, common name, family, and reference images — powering the app’s
-                    “Scan” feature for effortless plant discovery.</p>
+                    details such as the scientific name, common name, family, and reference images — powering the app's
+                    "Scan" feature for effortless plant discovery.</p>
                 </div>
               </div>
             </div>
@@ -621,7 +698,7 @@
       <div class="container section-title" data-aos="fade-up">
         <span class="description-title">Team</span>
         <h2>Our Team</h2>
-        <p>We are Computer Science students. This project was developed as part of the ‘Internet of Things’ Workshop at
+        <p>We are Computer Science students. This project was developed as part of the 'Internet of Things' Workshop at
           Tel Aviv University.</p>
       </div><!-- End Section Title -->
 
@@ -648,6 +725,25 @@
         </div>
       </div>
     </section><!-- /Team Section -->
+
+    <!-- Acknowledgments Section -->
+    <section id="acknowledgments" class="acknowledgments section">
+      <!-- Section Title -->
+      <div class="container section-title" data-aos="fade-up">
+        <span class="description-title">Acknowledgments</span>
+        <h2>🙏 Acknowledgments</h2>
+      </div><!-- End Section Title -->
+
+      <div class="container" data-aos="fade-up" data-aos-delay="100">
+        <div class="acknowledgments-content">
+          <p>Developed as part of a university project at Tel Aviv University.</p>
+          <ul>
+            <li>Nir Levi – Course Instructor</li>
+            <li>Omer Avramovich – Teaching Assistant</li>
+          </ul>
+        </div>
+      </div>
+    </section><!-- /Acknowledgments Section -->
 
   </main>
 
