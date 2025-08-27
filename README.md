@@ -53,7 +53,7 @@ Here are some screenshots of the app in action:
 * 👥 **Dual Personas** — Tailored experiences for plant lovers and green businesses
 * 🤖 **AI Plant Assistant** — Weather-aware care tips, reminders, and push notifications
 * 📈 **Business Insights** — Dashboards, inventory tools, KPIs, and customer intelligence  
-* 💬 **Community & Messaging** — Forums, reviews, and SignalR-powered real-time chat
+* 💬 **Community & Messaging** — Forums, reviews, and chat
 
 ---
 
