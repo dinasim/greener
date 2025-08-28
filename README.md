@@ -220,7 +220,7 @@ backend/
 
 ---
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 Developed as part of a university project at Tel Aviv University.
 
